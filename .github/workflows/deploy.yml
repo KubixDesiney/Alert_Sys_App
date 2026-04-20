@@ -14,7 +14,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.0'
+          flutter-version: '3.31.0'
           channel: 'stable'
 
       - name: Install dependencies
@@ -23,8 +23,10 @@ jobs:
       - name: Build Web
         run: flutter build web --release
 
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
       - name: Deploy to Firebase Hosting
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          firebase deploy --only hosting --debug
+        run: firebase deploy --only hosting --debug
