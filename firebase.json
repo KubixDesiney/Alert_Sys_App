@@ -1,0 +1,58 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "alertappsys",
+          "appId": "1:284893821377:android:8d898224d4b2914489d740",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "alertappsys",
+          "configurations": {
+            "android": "1:284893821377:android:8d898224d4b2914489d740",
+            "ios": "1:284893821377:ios:0a01173e8cd7279289d740",
+            "macos": "1:284893821377:ios:0a01173e8cd7279289d740",
+            "web": "1:284893821377:web:cc49bb5284b409e989d740",
+            "windows": "1:284893821377:web:eb1d515ff9ad7bab89d740"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "codebase": "default",
+      "predeploy": [],
+      "source": "functions"
+    },
+    {
+      "source": "codebasedelta",
+      "codebase": "codebasedelta",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
