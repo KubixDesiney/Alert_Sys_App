@@ -1274,50 +1274,59 @@ class _ReceivedView extends StatelessWidget {
     required this.superviseurName,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    if (alerts.isEmpty) {
-      return _empty(Icons.notifications_off_outlined, Colors.orange,
-          'No alerts available', 'All alerts are being handled');
-    }
-    return Column(
-        children: alerts
-            .map((a) => _AlertRow(
-                  alert: a,
-                  rowColor: const Color(0xFFFFF7ED),
-                  statusLabel: 'Available',
-                  statusColor: Colors.orange,
-                  trailing: ElevatedButton.icon(
-                    onPressed: () async {
-                      await provider.takeAlert(a.id, superviseurId, superviseurName);
-                      // Add PM action for the supervisor
-                      final pmRef = FirebaseDatabase.instance.ref('pm_actions/$superviseurId').push();
-                      await pmRef.set({
-                        'title': 'Alert Assigned',
-                        'description': 'You claimed alert: ${a.description}',
-                        'timestamp': DateTime.now().toIso8601String(),
-                        'status': 'unread',
-                        'alertId': a.id,
-                        'type': 'alert_assigned',
-                      });
-                    },
-                    icon: const Icon(Icons.play_circle_outline, size: 16),
-                    label: const Text('Claim'),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: _navy,
-                        foregroundColor: _white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        textStyle: const TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w600),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8))),
-                  ),
-                ))
-            .toList());
+@override
+Widget build(BuildContext context) {
+  if (alerts.isEmpty) {
+    return _empty(Icons.notifications_off_outlined, Colors.orange,
+        'No alerts available', 'All alerts are being handled');
   }
+  return Column(
+    children: alerts
+        .map((a) => _AlertRow(
+              alert: a,
+              rowColor: const Color(0xFFFFF7ED),
+              statusLabel: 'Available',
+              statusColor: Colors.orange,
+              trailing: ElevatedButton.icon(
+                onPressed: () async {
+                  try {
+                    await provider.takeAlert(a.id, superviseurId, superviseurName);
+                    // Add PM action for the supervisor
+                    final pmRef = FirebaseDatabase.instance.ref('pm_actions/$superviseurId').push();
+                    await pmRef.set({
+                      'title': 'Alert Assigned',
+                      'description': 'You claimed alert: ${a.description}',
+                      'timestamp': DateTime.now().toIso8601String(),
+                      'status': 'unread',
+                      'alertId': a.id,
+                      'type': 'alert_assigned',
+                    });
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(e.toString()),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.play_circle_outline, size: 16),
+                label: const Text('Claim'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _navy,
+                  foregroundColor: _white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ))
+        .toList(),
+  );
 }
-
+}
 // ---------- CLAIMED VIEW ----------
 class _ClaimedView extends StatelessWidget {
   final List<AlertModel> alerts;
@@ -1389,9 +1398,36 @@ class _ClaimedView extends StatelessWidget {
     }
   }
 
-  Future<void> _toggleCritical(AlertModel alert) async {
-    await provider.toggleCritical(alert.id, !alert.isCritical);
+Future<void> _toggleCritical(AlertModel alert, BuildContext context) async {
+  String? note;
+  if (!alert.isCritical) { // only ask for note when marking as critical
+    note = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Mark as Critical'),
+        content: TextField(
+          decoration: const InputDecoration(
+            hintText: 'Optional note (reason, impact, etc.)',
+          ),
+          maxLines: 3,
+          onChanged: (value) => note = value,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, note ?? ''),
+            child: const Text('Mark Critical'),
+          ),
+        ],
+      ),
+    );
+    if (note == null) return; // user cancelled
   }
+  await provider.toggleCritical(alert.id, !alert.isCritical, note: note?.isNotEmpty == true ? note : null);
+}
 
   Future<void> _requestAssistance(BuildContext context, AlertModel alert) async {
     await provider.requestAssistanceForAlert(alert.id);
@@ -1461,7 +1497,7 @@ class _ClaimedView extends StatelessWidget {
         statusColor: Colors.blue,
         pulseDot: !isMine,
         extraContent: _ElapsedTimer(alert: a, provider: provider),
-        onCriticalToggle: isMine ? () => _toggleCritical(a) : null,
+        onCriticalToggle: isMine ? () => _toggleCritical(a, context) : null,
         onRequestAssistance: showRequestAssistance
             ? () => _requestAssistance(context, a)
             : null,

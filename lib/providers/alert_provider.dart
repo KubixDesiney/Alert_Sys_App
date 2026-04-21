@@ -192,14 +192,20 @@ class AlertProvider extends ChangeNotifier {
   // Actions
   // ----------------------------------------------------------------------
   Future<void> takeAlert(String alertId, String superviseurId, String superviseurName) async {
-    _updateLocal(alertId, (a) => a.copyWith(
-      status: 'en_cours',
-      superviseurId: superviseurId,
-      superviseurName: superviseurName,
-      takenAtTimestamp: DateTime.now(),
-    ));
-    await _service.takeAlert(alertId, superviseurId, superviseurName);
+  // Check if this supervisor already has an in-progress alert
+  final existingInProgress = _alerts.any((a) => a.status == 'en_cours' && a.superviseurId == superviseurId);
+  if (existingInProgress) {
+    // Optionally throw an exception or show a snackbar; here we'll just return an error state
+    throw Exception('You already have an alert in progress. Please resolve it before claiming a new one.');
   }
+  _updateLocal(alertId, (a) => a.copyWith(
+    status: 'en_cours',
+    superviseurId: superviseurId,
+    superviseurName: superviseurName,
+    takenAtTimestamp: DateTime.now(),
+  ));
+  await _service.takeAlert(alertId, superviseurId, superviseurName);
+}
 
   Future<void> returnToQueue(String alertId) async {
     _updateLocal(alertId, (a) => a.copyWith(
@@ -232,12 +238,14 @@ class AlertProvider extends ChangeNotifier {
     await _service.addComment(alertId, newComment);
   }
 
-  Future<void> toggleCritical(String alertId, bool isCritical) async {
-    _updateLocal(alertId, (a) => a.copyWith(isCritical: isCritical));
-    await _service.toggleCritical(alertId, isCritical);
-    await _notifyAllUsers(alertId, isCritical);
+Future<void> toggleCritical(String alertId, bool isCritical, {String? note}) async {
+  _updateLocal(alertId, (a) => a.copyWith(isCritical: isCritical, criticalNote: note));
+  await _service.toggleCritical(alertId, isCritical);
+  if (note != null) {
+    await _service.setCriticalNote(alertId, note);
   }
-
+  await _notifyAllUsers(alertId, isCritical);
+}
   Future<void> requestAssistanceForAlert(String alertId) async {
     final alert = _alerts.firstWhere((a) => a.id == alertId);
     if (alert.superviseurId == null) return;

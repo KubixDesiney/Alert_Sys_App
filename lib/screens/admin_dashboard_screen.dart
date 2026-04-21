@@ -1907,6 +1907,8 @@ class _AlertHistoryRow extends StatelessWidget {
           if (alert.superviseurName != null)
             Text('Assigned: ${alert.superviseurName}',
                 style: const TextStyle(fontSize: 11, color: _blue)),
+                if (alert.criticalNote != null && alert.criticalNote!.isNotEmpty)
+  Text('Critical note: ${alert.criticalNote}', style: const TextStyle(fontSize: 11, color: Colors.red)),
         ])),
         const SizedBox(width: 8),
         Container(
@@ -3292,6 +3294,8 @@ class _AlertRow extends StatelessWidget {
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: _muted)),
             if (alert.superviseurName != null)
               Text('👤 Assigned: ${alert.superviseurName}', style: const TextStyle(fontSize: 11, color: _blue)),
+              if (alert.criticalNote != null && alert.criticalNote!.isNotEmpty)
+  Text('Critical note: ${alert.criticalNote}', style: const TextStyle(fontSize: 11, color: Colors.red)),
           ]),
         ),
         const SizedBox(width: 8),
