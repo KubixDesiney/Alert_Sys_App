@@ -5,7 +5,6 @@ import '../models/alert_model.dart';
 import '../services/alert_service.dart';
 import '../services/ai_service.dart';
 
-
 class AlertProvider extends ChangeNotifier {
   final AlertService _service = AlertService();
   List<AlertModel> _alerts = [];
@@ -42,29 +41,28 @@ class AlertProvider extends ChangeNotifier {
     _startClock();
   }
 
-void init(String usine) {
-  // Cancel any existing subscription and reset state
-  _alertsSubscription?.cancel();
-  _alerts = [];
-  _previousAlertIds.clear();
-  _lastProcessed.clear();
-  isLoading = true;
-  notifyListeners();
-
-  bool firstLoad = true;
-  _alertsSubscription = _service.getAlertsForUsine(usine).listen((alerts) {
-    if (firstLoad) {
-      _previousAlertIds = alerts.map((a) => a.id).toSet();
-      firstLoad = false;
-    } else {
-      _checkNewAlerts(alerts);
-    }
-    _alerts = alerts;
-    isLoading = false;
+  void init(String usine) {
+    _alertsSubscription?.cancel();
+    _alerts = [];
+    _previousAlertIds.clear();
+    _lastProcessed.clear();
+    isLoading = true;
     notifyListeners();
-  });
-  _startClock();
-}
+
+    bool firstLoad = true;
+    _alertsSubscription = _service.getAlertsForUsine(usine).listen((alerts) {
+      if (firstLoad) {
+        _previousAlertIds = alerts.map((a) => a.id).toSet();
+        firstLoad = false;
+      } else {
+        _checkNewAlerts(alerts);
+      }
+      _alerts = alerts;
+      isLoading = false;
+      notifyListeners();
+    });
+    _startClock();
+  }
 
   void reset() {
     _clockTimer?.cancel();
@@ -80,74 +78,79 @@ void init(String usine) {
   }
 
   // ----------------------------------------------------------------------
-  // Deduplication logic
+  // New alert detection with debug prints
   // ----------------------------------------------------------------------
-void _checkNewAlerts(List<AlertModel> newAlerts) {
-  final newIds = newAlerts.map((a) => a.id).toSet();
-  final addedIds = newIds.difference(_previousAlertIds);
-  final now = DateTime.now();
-  for (var id in addedIds) {
-    // Check if already processed in the last 2 seconds
-    if (_lastProcessed.containsKey(id)) {
-      final last = _lastProcessed[id]!;
-      if (now.difference(last) < const Duration(seconds: 2)) {
-        continue;
+  void _checkNewAlerts(List<AlertModel> newAlerts) {
+    final newIds = newAlerts.map((a) => a.id).toSet();
+    final addedIds = newIds.difference(_previousAlertIds);
+    final now = DateTime.now();
+
+    for (var id in addedIds) {
+      // Deduplication guard
+      if (_lastProcessed.containsKey(id)) {
+        final last = _lastProcessed[id]!;
+        if (now.difference(last) < const Duration(seconds: 2)) {
+          print('⏩ Skipping duplicate alert $id (already processed)');
+          continue;
+        }
       }
+      _lastProcessed[id] = now;
+      final alert = newAlerts.firstWhere((a) => a.id == id);
+
+      // ✅ Debug print – new alert detected
+      print('📢 New alert detected: ${alert.id} (${alert.type}) – calling sendNewAlertNotification');
+
+      // Send push notification (OneSignal)
+      _service.sendNewAlertNotification(alert.id, alert.type, alert.description);
     }
-    // Mark as processed immediately to prevent concurrent duplicates
-    _lastProcessed[id] = now;
-    final alert = newAlerts.firstWhere((a) => a.id == id);
-    _service.sendNewAlertNotification(alert.id, alert.type, alert.description);
+    _previousAlertIds = newIds;
   }
-  _previousAlertIds = newIds;
-}
-Future<List<String>> getPastResolutionsForType(String type, int limit) async {
-  final similar = _alerts
-      .where((a) => a.type == type && a.status == 'validee' && a.resolutionReason != null)
-      .toList()
-    ..sort((a, b) => b.resolvedAt!.compareTo(a.resolvedAt!));
-  return similar.take(limit).map((a) => a.resolutionReason!).toList();
-}
 
-// NEW: Get past resolutions for same usine + line + post
-Future<List<String>> getPastResolutionsForLocation({
-  required String type,
-  required String usine,
-  required int convoyeur,
-  required int poste,
-  int limit = 3,
-}) async {
-  final similar = _alerts
-      .where((a) => a.type == type &&
-                     a.status == 'validee' &&
-                     a.resolutionReason != null &&
-                     a.usine == usine &&
-                     a.convoyeur == convoyeur &&
-                     a.poste == poste)
-      .toList()
-    ..sort((a, b) => b.resolvedAt!.compareTo(a.resolvedAt!));
-  return similar.take(limit).map((a) => a.resolutionReason!).toList();
-}
+  Future<List<String>> getPastResolutionsForType(String type, int limit) async {
+    final similar = _alerts
+        .where((a) => a.type == type && a.status == 'validee' && a.resolutionReason != null)
+        .toList()
+      ..sort((a, b) => b.resolvedAt!.compareTo(a.resolvedAt!));
+    return similar.take(limit).map((a) => a.resolutionReason!).toList();
+  }
 
-// Get AI suggestion using location context
-Future<String> getAiSuggestionForAlert(AlertModel alert) async {
-  final pastResolutions = await getPastResolutionsForLocation(
-    type: alert.type,
-    usine: alert.usine,
-    convoyeur: alert.convoyeur,
-    poste: alert.poste,
-    limit: 3,
-  );
-  final aiService = AIService();
-  return await aiService.getResolutionSuggestion(
-    alertType: alert.type,
-    alertDescription: alert.description,
-    usine: alert.usine,
-    convoyeur: alert.convoyeur,
-    poste: alert.poste,
-    pastResolutions: pastResolutions,
-  );
-}
+  Future<List<String>> getPastResolutionsForLocation({
+    required String type,
+    required String usine,
+    required int convoyeur,
+    required int poste,
+    int limit = 3,
+  }) async {
+    final similar = _alerts
+        .where((a) => a.type == type &&
+                       a.status == 'validee' &&
+                       a.resolutionReason != null &&
+                       a.usine == usine &&
+                       a.convoyeur == convoyeur &&
+                       a.poste == poste)
+        .toList()
+      ..sort((a, b) => b.resolvedAt!.compareTo(a.resolvedAt!));
+    return similar.take(limit).map((a) => a.resolutionReason!).toList();
+  }
+
+  Future<String> getAiSuggestionForAlert(AlertModel alert) async {
+    final pastResolutions = await getPastResolutionsForLocation(
+      type: alert.type,
+      usine: alert.usine,
+      convoyeur: alert.convoyeur,
+      poste: alert.poste,
+      limit: 3,
+    );
+    final aiService = AIService();
+    return await aiService.getResolutionSuggestion(
+      alertType: alert.type,
+      alertDescription: alert.description,
+      usine: alert.usine,
+      convoyeur: alert.convoyeur,
+      poste: alert.poste,
+      pastResolutions: pastResolutions,
+    );
+  }
 
   void _startClock() {
     _clockTimer?.cancel();
@@ -185,7 +188,9 @@ Future<String> getAiSuggestionForAlert(AlertModel alert) async {
   String get currentSuperviseurId => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get currentSuperviseurName => FirebaseAuth.instance.currentUser?.email?.split('@').first ?? 'Supervisor';
 
-  // Actions (unchanged)
+  // ----------------------------------------------------------------------
+  // Actions
+  // ----------------------------------------------------------------------
   Future<void> takeAlert(String alertId, String superviseurId, String superviseurName) async {
     _updateLocal(alertId, (a) => a.copyWith(
       status: 'en_cours',
