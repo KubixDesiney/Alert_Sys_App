@@ -68,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Connectez-vous à votre compte pour accéder au système',
+                    'Connexion (v2.0 - Patched!)',
                     style: TextStyle(
                       fontSize: 14,
                       color: _textMuted,

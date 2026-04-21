@@ -2,20 +2,41 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'firebase_options.dart';
 import 'providers/alert_provider.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'package:shorebird_code_push/shorebird_code_push.dart';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Check if already initialized to avoid duplicate error on hot restart
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Safe Firebase initialization: ignore duplicate error
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      print('Firebase initialized successfully');
+    } else {
+      print('Firebase already initialized');
+    }
+  } catch (e) {
+    print('Firebase init error (ignored): $e');
+    // If duplicate, we can still continue because it's already initialized.
   }
+
+  // Initialize OneSignal
+  OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
+    // Enable verbose logging for debugging
+  OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+  OneSignal.Notifications.requestPermission(true);
+  final shorebirdCodePush = ShorebirdCodePush();
+
 
   runApp(const AlertSysApp());
 }
@@ -45,7 +66,6 @@ class AlertSysApp extends StatelessWidget {
   }
 }
 
-// ── AuthGate — listens to Firebase auth state ──────────────────────────────
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -54,51 +74,37 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // Still connecting
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _LoadingScreen(message: 'Connecting…');
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-
-        // Firebase error
         if (snapshot.hasError) {
           return Scaffold(
-            backgroundColor: const Color(0xFFF3F4F6),
             body: Center(
-              child: Text('Firebase error:\n${snapshot.error}',
-                  style: const TextStyle(color: Colors.red),
+              child: Text('Firebase auth error:\n${snapshot.error}',
                   textAlign: TextAlign.center),
             ),
           );
         }
-
-        // Logged out → reset provider and show login
-        if (!snapshot.hasData || snapshot.data == null) {
-          // Reset provider on logout
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Provider.of<AlertProvider>(context, listen: false).reset();
-          });
+        if (!snapshot.hasData) {
           return const LoginScreen();
         }
-
-        // Logged in → read role and route
-        return _RoleRouter(uid: snapshot.data!.uid);
+        return RoleRouter(uid: snapshot.data!.uid);
       },
     );
   }
 }
 
-// ── _RoleRouter — reads role from RTDB and routes to correct screen ─────────
-class _RoleRouter extends StatefulWidget {
+class RoleRouter extends StatefulWidget {
   final String uid;
-  const _RoleRouter({required this.uid});
+  const RoleRouter({super.key, required this.uid});
 
   @override
-  State<_RoleRouter> createState() => _RoleRouterState();
+  State<RoleRouter> createState() => _RoleRouterState();
 }
 
-class _RoleRouterState extends State<_RoleRouter> {
+class _RoleRouterState extends State<RoleRouter> {
   String? _role;
-  bool    _loading = true;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -107,54 +113,28 @@ class _RoleRouterState extends State<_RoleRouter> {
   }
 
   Future<void> _loadRole() async {
-    final role = await AuthService().getUserRole(widget.uid);
-    if (!mounted) return;
-
-    // Init provider based on role
-    final provider = Provider.of<AlertProvider>(context, listen: false);
-    if (role == 'admin') {
-      provider.initForProductionManager();
-    } else {
-      provider.init('Usine A');
+    try {
+      final role = await AuthService().getUserRole(widget.uid);
+      setState(() {
+        _role = role;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _role = 'supervisor';
+      });
     }
-
-    setState(() {
-      _role    = role;
-      _loading = false;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const _LoadingScreen(message: 'Loading profile…');
-
-    debugPrint('Routing to role: $_role');
-
-    if (_role == 'admin') return const AdminDashboardScreen();
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_role == 'admin') {
+      return const AdminDashboardScreen();
+    }
     return const DashboardScreen();
-  }
-}
-
-// ── Loading screen ─────────────────────────────────────────────────────────
-class _LoadingScreen extends StatelessWidget {
-  final String message;
-  const _LoadingScreen({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
-      body: Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const CircularProgressIndicator(color: Color(0xFF0D4A75)),
-          const SizedBox(height: 16),
-          Text(message,
-              style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontFamily: 'monospace',
-                  fontSize: 12)),
-        ]),
-      ),
-    );
   }
 }

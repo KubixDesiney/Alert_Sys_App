@@ -1,8 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/user_model.dart';  // ✅ Add this import
+import 'package:onesignal_flutter/onesignal_flutter.dart';
+
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -18,14 +19,6 @@ Future<String?> login(String email, String password) async {
     if (uid != null) {
       // Get FCM token for push notifications (web requires VAPID key)
       String? fcmToken;
-      try {
-        // Replace 'YOUR_VAPID_PUBLIC_KEY' with your actual VAPID key from Firebase Console
-        const String vapidKey = 'BA3PXTBW9vgJ5bW9a4bZ7-m4ZZLEeh8mRPNZXJqbYKhvlydTUsDaiOwqV5u2B08SMaR2A5Pcr8vUWs5angG5ipw';
-        fcmToken = await FirebaseMessaging.instance.getToken(vapidKey: vapidKey);
-      } catch (e) {
-        debugPrint('Failed to get FCM token: $e');
-      }
-
       final updates = {
         'status': 'active',
         'lastSeen': DateTime.now().toIso8601String(),
@@ -33,6 +26,11 @@ Future<String?> login(String email, String password) async {
       if (fcmToken != null) {
         updates['fcmToken'] = fcmToken;
       }
+      String? playerId = await OneSignal.User.getOnesignalId();
+if (playerId != null && playerId.isNotEmpty) {
+  updates['onesignalId'] = playerId;
+  print('Saved OneSignal player ID: $playerId');
+}
       await _db.child('users/$uid').update(updates);
     }
     return null;
