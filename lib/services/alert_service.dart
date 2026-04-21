@@ -144,11 +144,14 @@ class AlertService {
     if (!snapshot.exists) return {};
     return Map<String, dynamic>.from(snapshot.value as Map);
   }
+  Future<void> setCriticalNote(String alertId, String note) async {
+  await _db.child('alerts/$alertId').update({'criticalNote': note});
+}
 
   // ✅ Fixed sendNewAlertNotification method
 Future<void> sendNewAlertNotification(String alertId, String alertType, String description) async {
   const String onesignalAppId = "322abcb7-c4e5-4630-811f-ccea86a6f481";
-  const String onesignalRestKey = "os_v2_app_givlzn6e4vddbai7ztvinjxuqex4akbbf2fuwsvkc4xdwsz3gh5ves6vdzpixnhfob23ohyfc4dknmroh2q2qgkag6dbfsw6ctj34ly";
+  const String onesignalRestKey = "os_v2_app_givlzn6e4vddbai7ztvinjxuqgulgf5q6bbu3zvlgakoljwepgg5te3w2xelv7655notgsajp3tapx7qmbuqhpu2q4yupcw2isbp7ui";
 
   final alertSnap = await _db.child('alerts/$alertId').get();
   if (alertSnap.exists && alertSnap.child('notificationSent').value == true) return;

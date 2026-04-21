@@ -8,6 +8,7 @@ import 'providers/alert_provider.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 
@@ -15,7 +16,7 @@ import 'package:shorebird_code_push/shorebird_code_push.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Safe Firebase initialization: ignore duplicate error
+  // Safe Firebase initialization
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
@@ -27,16 +28,27 @@ void main() async {
     }
   } catch (e) {
     print('Firebase init error (ignored): $e');
-    // If duplicate, we can still continue because it's already initialized.
   }
 
   // Initialize OneSignal
   OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
-    // Enable verbose logging for debugging
   OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
   OneSignal.Notifications.requestPermission(true);
-  final shorebirdCodePush = ShorebirdCodePush();
 
+  // ✅ Auto-update OneSignal ID for already logged-in user
+  final user = FirebaseAuth.instance.currentUser;
+  if (user != null) {
+    final playerId = await OneSignal.User.getOnesignalId();
+    if (playerId != null && playerId.isNotEmpty) {
+      await FirebaseDatabase.instance.ref('users/${user.uid}').update({
+        'onesignalId': playerId,
+        'lastSeen': DateTime.now().toIso8601String(),
+      });
+      print('✅ Updated OneSignal ID for existing user: $playerId');
+    }
+  }
+
+  final shorebirdCodePush = ShorebirdCodePush();
 
   runApp(const AlertSysApp());
 }

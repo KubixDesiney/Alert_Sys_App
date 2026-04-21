@@ -14,6 +14,7 @@ class AlertModel {
   final String? helpRequestId;
   final String? helpRequesterId;
   final String? helpRequesterName;
+  final String? criticalNote;
   String status;
   String? superviseurId;
   String? superviseurName;
@@ -38,6 +39,7 @@ class AlertModel {
     this.helpRequesterId,
     this.helpRequesterName,
     this.isCritical = false,
+    this.criticalNote,
     this.status = 'disponible',
     this.superviseurId,
     this.superviseurName,
@@ -72,6 +74,7 @@ class AlertModel {
       comments: List<String>.from(data['comments'] ?? []),
       resolutionReason: data['resolutionReason'],
       resolvedAt: data['resolvedAt'] != null ? _parseDate(data['resolvedAt']) : null,
+      criticalNote: data['criticalNote'] as String?,
     );
   }
 
@@ -97,6 +100,7 @@ class AlertModel {
     'comments': comments,
     'resolutionReason': resolutionReason,
     'resolvedAt': resolvedAt?.toIso8601String(),
+    if (criticalNote != null) 'criticalNote': criticalNote,
   };
 
   static DateTime _parseDate(dynamic raw) {
@@ -121,6 +125,7 @@ class AlertModel {
     String? helpRequestId,
     String? helpRequesterId,
     String? helpRequesterName,
+    String? criticalNote,
     bool clearSuperviseur = false,
     bool clearTakenAt = false,
   }) => AlertModel(
@@ -146,5 +151,6 @@ class AlertModel {
     comments: comments ?? this.comments,
     resolutionReason: resolutionReason ?? this.resolutionReason,
     resolvedAt: resolvedAt ?? this.resolvedAt,
+    criticalNote: criticalNote ?? this.criticalNote,
   );
 }
