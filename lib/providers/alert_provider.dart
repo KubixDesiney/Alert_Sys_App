@@ -5,6 +5,8 @@ import '../models/alert_model.dart';
 import '../services/alert_service.dart';
 import '../services/ai_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:rxdart/rxdart.dart';
+
 
 
 class AlertProvider extends ChangeNotifier {
@@ -43,14 +45,17 @@ class AlertProvider extends ChangeNotifier {
     _startClock();
   }
 
-  void init(String usine) {
-    _alertsSubscription?.cancel();
-    _alerts = [];
-    _previousAlertIds.clear();
-    _lastProcessed.clear();
-    isLoading = true;
-    notifyListeners();
+void init(String usine) {
+  _alertsSubscription?.cancel();
+  _alerts = [];
+  _previousAlertIds.clear();
+  _lastProcessed.clear();
+  isLoading = true;
+  notifyListeners();
 
+  final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  if (currentUserId == null) {
+    // Fallback to just usine stream
     bool firstLoad = true;
     _alertsSubscription = _service.getAlertsForUsine(usine).listen((alerts) {
       if (firstLoad) {
@@ -64,7 +69,36 @@ class AlertProvider extends ChangeNotifier {
       notifyListeners();
     });
     _startClock();
+    return;
   }
+
+  final usineStream = _service.getAlertsForUsine(usine);
+  final assistantStream = _service.getAlertsWhereAssistant(currentUserId);
+
+  bool firstLoad = true;
+  _alertsSubscription = Rx.combineLatest2<List<AlertModel>, List<AlertModel>, List<AlertModel>>(
+    usineStream,
+    assistantStream,
+    (usineAlerts, assistantAlerts) {
+      final combined = [...usineAlerts, ...assistantAlerts];
+      // Remove duplicates by id
+      final seen = <String>{};
+      final unique = combined.where((a) => seen.add(a.id)).toList();
+      return unique;
+    },
+  ).listen((alerts) {
+    if (firstLoad) {
+      _previousAlertIds = alerts.map((a) => a.id).toSet();
+      firstLoad = false;
+    } else {
+      _checkNewAlerts(alerts);
+    }
+    _alerts = alerts;
+    isLoading = false;
+    notifyListeners();
+  });
+  _startClock();
+}
 
   void reset() {
     _clockTimer?.cancel();
