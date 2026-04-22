@@ -1,8 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';  // ✅ Add this import
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 
 class AuthService {
@@ -17,20 +17,17 @@ Future<String?> login(String email, String password) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
-      // Get FCM token for push notifications (web requires VAPID key)
-      String? fcmToken;
       final updates = {
         'status': 'active',
         'lastSeen': DateTime.now().toIso8601String(),
       };
-      if (fcmToken != null) {
-        updates['fcmToken'] = fcmToken;
+      // Only get OneSignal ID on mobile
+      if (!kIsWeb) {
+        String? playerId = await OneSignal.User.getOnesignalId();
+        if (playerId != null && playerId.isNotEmpty) {
+          updates['onesignalId'] = playerId;
+        }
       }
-      String? playerId = await OneSignal.User.getOnesignalId();
-if (playerId != null && playerId.isNotEmpty) {
-  updates['onesignalId'] = playerId;
-  print('Saved OneSignal player ID: $playerId');
-}
       await _db.child('users/$uid').update(updates);
     }
     return null;
