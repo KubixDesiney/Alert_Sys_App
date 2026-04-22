@@ -172,7 +172,7 @@ Future<void> approveCollaborationRequestWithDetails({
   );
 
   if (isPMApproval) {
-    // Assign the first target supervisor as assistant to the collaboration alert
+    // 1. Assign assistant to the collaboration alert
     final assistantId = request.targetSupervisorIds.isNotEmpty ? request.targetSupervisorIds.first : null;
     final assistantName = request.targetSupervisorNames.isNotEmpty ? request.targetSupervisorNames.first : null;
 
@@ -181,19 +181,11 @@ Future<void> approveCollaborationRequestWithDetails({
         'assistantId': assistantId,
         'assistantName': assistantName,
       });
+      print('Assigned assistant $assistantName to alert ${request.alertId}');
     }
 
-    // Cancel the original alert if requested (the one being collaborated on)
-    if (confirmCancelOriginal) {
-      await _db.child('alerts/${request.alertId}').update({
-        'status': 'cancelled',
-        'cancelledReason': 'Replaced by collaboration request $requestId',
-        'cancelledAt': DateTime.now().toIso8601String(),
-      });
-    }
-
-    // Return the assistant's existing alerts to the unclaimed queue
-    if (cancelExistingAlertIds != null && cancelExistingAlertIds.isNotEmpty) {
+    // 2. Return assistant's existing alerts to unclaimed (do NOT cancel them)
+    if (confirmCancelOriginal && cancelExistingAlertIds != null && cancelExistingAlertIds.isNotEmpty) {
       for (final alertId in cancelExistingAlertIds) {
         await _db.child('alerts/$alertId').update({
           'status': 'disponible',
@@ -203,11 +195,11 @@ Future<void> approveCollaborationRequestWithDetails({
           'assistantName': null,
           'takenAtTimestamp': null,
         });
-        print('Returned existing alert to unclaimed: $alertId');
+        print('Returned assistant\'s alert $alertId to unclaimed queue');
       }
     }
 
-    // Update collaboration request
+    // 3. Mark collaboration request as approved
     await _db.child('collaboration_requests/$requestId').update({
       'pmApproved': true,
       'status': 'approved',
@@ -215,7 +207,7 @@ Future<void> approveCollaborationRequestWithDetails({
       'approvedAt': DateTime.now().toIso8601String(),
     });
 
-    // Notifications
+    // 4. Send notifications
     final notification = {
       'type': 'collaboration_approved',
       'collabRequestId': requestId,
@@ -238,7 +230,7 @@ Future<void> approveCollaborationRequestWithDetails({
       await _db.child('notifications/$targetId').push().set(notif);
     }
   } else {
-    // Supervisor approval (not PM)
+    // Supervisor approval (not PM) – keep simple
     await _db.child('collaboration_requests/$requestId').update({
       'status': 'approved',
       'approvedBy': approverId,
