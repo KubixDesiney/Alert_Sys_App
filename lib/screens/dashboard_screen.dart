@@ -1510,43 +1510,57 @@ class _HoldToCollabBarState extends State<_HoldToCollabBar> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _startHold(),
-      onTapUp: (_) => _cancelHold(),
-      onTapCancel: _cancelHold,
-      child: Container(
-        height: 20,
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => _startHold(),
+      onPointerUp: (_) => _cancelHold(),
+      onPointerCancel: (_) => _cancelHold(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        height: 28,
         decoration: BoxDecoration(
           color: const Color(0xFFF3E8FF),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFD8B4FE)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _progress > 0 ? const Color(0xFF9333EA) : const Color(0xFFD8B4FE),
+            width: 1.2,
+          ),
         ),
-        child: Stack(
-          children: [
-            FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: _progress,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFA855F7), Color(0xFF7E22CE)],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            children: [
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: _progress,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFFA855F7), Color(0xFF7E22CE)],
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(14),
                 ),
               ),
-            ),
-            const Center(
-              child: Text(
-                'Hold for collab...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.deepPurple,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w600,
+              const Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.touch_app, size: 15, color: Colors.deepPurple),
+                    SizedBox(width: 6),
+                    Text(
+                      'Hold for collab...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.deepPurple,
+                        fontStyle: FontStyle.italic,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
