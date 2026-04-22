@@ -16,7 +16,6 @@ import '../models/alert_model.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../providers/alert_provider.dart';
-import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'package:http/http.dart' as http;
 import 'admin_escalation_screen.dart';
@@ -969,7 +968,10 @@ Widget _buildContent() {
     case 1:
       return _SupervisorsTab(
         supervisors: _supervisors, alerts: _alerts,
-        onAdd: _showCreateSheet, onDelete: _confirmDelete);
+        onAdd: _showCreateSheet,
+        onDelete: _confirmDelete,
+        onRefresh: _loadSupervisors,
+      );
     case 2:
   return AlertTreeVisualization(alerts: _alerts);
     case 3:
@@ -2568,11 +2570,13 @@ class _SupervisorsTab extends StatefulWidget {
   final List<AlertModel> alerts;
   final VoidCallback onAdd;
   final void Function(UserModel) onDelete;
+  final Future<void> Function() onRefresh;
   const _SupervisorsTab({
     required this.supervisors,
     required this.alerts,
     required this.onAdd,
     required this.onDelete,
+    required this.onRefresh,
   });
   @override State<_SupervisorsTab> createState() => _SupervisorsTabState();
 }
@@ -2580,6 +2584,8 @@ class _SupervisorsTab extends StatefulWidget {
 class _SupervisorsTabState extends State<_SupervisorsTab>
     with SingleTickerProviderStateMixin {
   late TabController _sub;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -2589,10 +2595,21 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
   }
 
   @override
-  void dispose() { _sub.dispose(); super.dispose(); }
+  void dispose() {
+    _searchCtrl.dispose();
+    _sub.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final q = _searchQuery.trim().toLowerCase();
+    final filteredSupervisors = q.isEmpty
+        ? widget.supervisors
+        : widget.supervisors
+            .where((s) => s.fullName.toLowerCase().contains(q))
+            .toList();
+
     return Column(children: [
       Container(
         color: _white,
@@ -2616,10 +2633,15 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
           controller: _sub,
           children: [
             _ManagementSubTab(
-              supervisors: widget.supervisors,
+              supervisors: filteredSupervisors,
+              totalSupervisors: widget.supervisors.length,
               alerts:      widget.alerts,
               onAdd:       widget.onAdd,
               onDelete:    widget.onDelete,
+              onRefresh:   widget.onRefresh,
+              searchCtrl:  _searchCtrl,
+              searchQuery: _searchQuery,
+              onSearchChanged: (v) => setState(() => _searchQuery = v),
             ),
             _PerformanceSubTab(
               supervisors: widget.supervisors,
@@ -2682,11 +2704,18 @@ class _SubPillState extends State<_SubPill> {
 
 class _ManagementSubTab extends StatelessWidget {
   final List<UserModel>  supervisors;
+  final int totalSupervisors;
   final List<AlertModel> alerts;
   final VoidCallback     onAdd;
   final void Function(UserModel) onDelete;
+  final Future<void> Function() onRefresh;
+  final TextEditingController searchCtrl;
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
   const _ManagementSubTab({required this.supervisors, required this.alerts,
-      required this.onAdd, required this.onDelete});
+      required this.onAdd, required this.onDelete, required this.onRefresh,
+      required this.totalSupervisors, required this.searchCtrl,
+      required this.searchQuery, required this.onSearchChanged});
 
   @override
   Widget build(BuildContext context) => Column(children: [
@@ -2710,15 +2739,58 @@ class _ManagementSubTab extends StatelessWidget {
         ),
       ]),
     ),
+    Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: TextField(
+        controller: searchCtrl,
+        onChanged: onSearchChanged,
+        decoration: InputDecoration(
+          hintText: 'Search supervisor by name...',
+          prefixIcon: const Icon(Icons.search, color: _muted),
+          suffixIcon: searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: _muted),
+                  onPressed: () {
+                    searchCtrl.clear();
+                    onSearchChanged('');
+                  },
+                ),
+          filled: true,
+          fillColor: _white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: _border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: _border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: _navy, width: 1.4),
+          ),
+        ),
+      ),
+    ),
     Expanded(
       child: supervisors.isEmpty
-          ? _emptySups()
+          ? (totalSupervisors == 0
+              ? _emptySups()
+              : Center(
+                  child: Text(
+                    'No supervisors match "$searchQuery"',
+                    style: const TextStyle(fontSize: 13, color: _muted),
+                  ),
+                ))
           : ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               itemCount: supervisors.length,
               itemBuilder: (_, i) => _SupervisorCard(
                   supervisor: supervisors[i],
                   alerts:     alerts,
+                  onRefresh:  onRefresh,
                   onDelete:   () => onDelete(supervisors[i]))),
     ),
   ]);
@@ -3455,16 +3527,157 @@ Widget _emptySups() => Center(child: Column(
 class _SupervisorCard extends StatefulWidget {
   final UserModel supervisor;
   final List<AlertModel> alerts;
+  final Future<void> Function() onRefresh;
   final VoidCallback onDelete;
   const _SupervisorCard({required this.supervisor, required this.alerts,
-      required this.onDelete});
+      required this.onDelete, required this.onRefresh});
   @override State<_SupervisorCard> createState() => _SupervisorCardState();
 }
 
 class _SupervisorCardState extends State<_SupervisorCard> {
   bool _expanded = false;
   Future<void> _showModifyDialog(BuildContext context) async {
-    // (original modify dialog logic)
+    final sup = widget.supervisor;
+    final firstCtrl = TextEditingController(text: sup.firstName);
+    final lastCtrl = TextEditingController(text: sup.lastName);
+    final phoneCtrl = TextEditingController(text: sup.phone);
+    final usineChoices = <String>{
+      sup.usine,
+      ...widget.alerts.map((a) => a.usine),
+    }.toList()
+      ..sort();
+    var selectedUsine = sup.usine;
+    var saving = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('Modify Supervisor'),
+              content: SizedBox(
+                width: 380,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SheetLabel('First Name'),
+                      TextField(
+                        controller: firstCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'First name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _SheetLabel('Last Name'),
+                      TextField(
+                        controller: lastCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Last name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _SheetLabel('Phone'),
+                      TextField(
+                        controller: phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          hintText: 'Phone number',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _SheetLabel('Assigned Plant'),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedUsine,
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: usineChoices
+                            .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (v) {
+                                if (v == null) return;
+                                setDialogState(() => selectedUsine = v);
+                              },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final first = firstCtrl.text.trim();
+                          final last = lastCtrl.text.trim();
+                          final phone = phoneCtrl.text.trim();
+                          if (first.isEmpty || last.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('First and last name are required')),
+                            );
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          try {
+                            await AuthService().updateSupervisorProfile(
+                              userId: sup.id,
+                              firstName: first,
+                              lastName: last,
+                              phone: phone,
+                              usine: selectedUsine,
+                            );
+                            await widget.onRefresh();
+                            if (!mounted) return;
+                            Navigator.pop(dialogCtx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Supervisor updated successfully'),
+                                backgroundColor: _green,
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            setDialogState(() => saving = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Update failed: $e')),
+                            );
+                          }
+                        },
+                  child: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    firstCtrl.dispose();
+    lastCtrl.dispose();
+    phoneCtrl.dispose();
   }
 
   @override
