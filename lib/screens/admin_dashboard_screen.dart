@@ -19,6 +19,7 @@ import '../providers/alert_provider.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'package:http/http.dart' as http;
+import 'admin_escalation_screen.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy    = Color(0xFF0D4A75);
@@ -853,6 +854,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return _SupervisorsTab(
           supervisors: _supervisors, alerts: _alerts,
           onAdd: _showCreateSheet, onDelete: _confirmDelete);
+      case 3:
+      return const AdminEscalationScreen(); // <-- NEW
       default:
         return _AlertsTab(
           alerts: _alerts,
@@ -1167,6 +1170,7 @@ class _PillTabBar extends StatelessWidget {
       {'icon': Icons.bar_chart_outlined,      'label': 'Overview'},
       {'icon': Icons.people_alt_outlined,     'label': 'Supervisors'},
       {'icon': Icons.notifications_outlined,  'label': 'Alerts'},
+      {'icon': Icons.warning_amber,           'label': 'Escalations'}, // <-- NEW
     ];
     return Container(
       color: _white,

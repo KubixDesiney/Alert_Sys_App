@@ -1,8 +1,8 @@
-
 class AlertModel {
   final String id;
   final String type;
   final bool isCritical;
+  final String? criticalNote;          // ✅ NEW
   final String usine;
   final int convoyeur;
   final int poste;
@@ -14,7 +14,7 @@ class AlertModel {
   final String? helpRequestId;
   final String? helpRequesterId;
   final String? helpRequesterName;
-  final String? criticalNote;
+  final String? collaborationRequestId; // ✅ NEW
   String status;
   String? superviseurId;
   String? superviseurName;
@@ -38,6 +38,7 @@ class AlertModel {
     this.helpRequestId,
     this.helpRequesterId,
     this.helpRequesterName,
+    this.collaborationRequestId,
     this.isCritical = false,
     this.criticalNote,
     this.status = 'disponible',
@@ -55,6 +56,7 @@ class AlertModel {
       id: id,
       type: data['type'] ?? 'qualite',
       isCritical: data['isCritical'] ?? false,
+      criticalNote: data['criticalNote'],
       usine: data['usine'] ?? 'Usine A',
       convoyeur: (data['convoyeur'] as num?)?.toInt() ?? 1,
       poste: (data['poste'] as num?)?.toInt() ?? 1,
@@ -66,6 +68,7 @@ class AlertModel {
       helpRequestId: data['helpRequestId'],
       helpRequesterId: data['helpRequesterId'],
       helpRequesterName: data['helpRequesterName'],
+      collaborationRequestId: data['collaborationRequestId'],
       status: data['status'] ?? 'disponible',
       superviseurId: data['superviseurId'],
       superviseurName: data['superviseurName'],
@@ -74,13 +77,13 @@ class AlertModel {
       comments: List<String>.from(data['comments'] ?? []),
       resolutionReason: data['resolutionReason'],
       resolvedAt: data['resolvedAt'] != null ? _parseDate(data['resolvedAt']) : null,
-      criticalNote: data['criticalNote'] as String?,
     );
   }
 
   Map<String, dynamic> toMap() => {
     'type': type,
     'isCritical': isCritical,
+    'criticalNote': criticalNote,
     'usine': usine,
     'convoyeur': convoyeur,
     'poste': poste,
@@ -92,6 +95,7 @@ class AlertModel {
     'helpRequestId': helpRequestId,
     'helpRequesterId': helpRequesterId,
     'helpRequesterName': helpRequesterName,
+    'collaborationRequestId': collaborationRequestId,
     'status': status,
     'superviseurId': superviseurId,
     'superviseurName': superviseurName,
@@ -100,7 +104,6 @@ class AlertModel {
     'comments': comments,
     'resolutionReason': resolutionReason,
     'resolvedAt': resolvedAt?.toIso8601String(),
-    if (criticalNote != null) 'criticalNote': criticalNote,
   };
 
   static DateTime _parseDate(dynamic raw) {
@@ -113,6 +116,7 @@ class AlertModel {
   AlertModel copyWith({
     String? status,
     bool? isCritical,
+    String? criticalNote,
     String? superviseurId,
     String? superviseurName,
     DateTime? takenAtTimestamp,
@@ -125,13 +129,14 @@ class AlertModel {
     String? helpRequestId,
     String? helpRequesterId,
     String? helpRequesterName,
-    String? criticalNote,
+    String? collaborationRequestId,
     bool clearSuperviseur = false,
     bool clearTakenAt = false,
   }) => AlertModel(
     id: id,
     type: type,
     isCritical: isCritical ?? this.isCritical,
+    criticalNote: criticalNote ?? this.criticalNote,
     usine: usine,
     convoyeur: convoyeur,
     poste: poste,
@@ -143,6 +148,7 @@ class AlertModel {
     helpRequestId: helpRequestId ?? this.helpRequestId,
     helpRequesterId: helpRequesterId ?? this.helpRequesterId,
     helpRequesterName: helpRequesterName ?? this.helpRequesterName,
+    collaborationRequestId: collaborationRequestId ?? this.collaborationRequestId,
     status: status ?? this.status,
     superviseurId: clearSuperviseur ? null : (superviseurId ?? this.superviseurId),
     superviseurName: clearSuperviseur ? null : (superviseurName ?? this.superviseurName),
@@ -151,6 +157,5 @@ class AlertModel {
     comments: comments ?? this.comments,
     resolutionReason: resolutionReason ?? this.resolutionReason,
     resolvedAt: resolvedAt ?? this.resolvedAt,
-    criticalNote: criticalNote ?? this.criticalNote,
   );
 }
