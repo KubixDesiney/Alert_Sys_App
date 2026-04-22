@@ -20,6 +20,12 @@ import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'package:http/http.dart' as http;
 import 'admin_escalation_screen.dart';
+import 'hierarchy_screen.dart';
+import '../models/hierarchy_model.dart';
+import '../services/hierarchy_service.dart';
+import '../services/alert_service.dart';
+
+
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy    = Color(0xFF0D4A75);
@@ -207,15 +213,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ── Alert creation methods (added) ────────────────────────────────────
-  Future<void> _simulateAlert({
-    required String type,
-    required String usine,
-    required int convoyeur,
-    required int poste,
-    required String description,
-    required bool isCritical,
-  }) async {
-    await _createSimulatedAlert(
+  // Add an instance of AlertService at the top of the state class
+final AlertService _alertService = AlertService();
+
+Future<void> _simulateAlert({
+  required String type,
+  required String usine,
+  required int convoyeur,
+  required int poste,
+  required String description,
+  required bool isCritical,
+}) async {
+  try {
+    await _alertService.createAlertWithHierarchy(
       type: type,
       usine: usine,
       convoyeur: convoyeur,
@@ -231,55 +241,70 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
       );
     }
-  }
-
-  Future<void> _createSimulatedAlert({
-    required String type,
-    required String usine,
-    required int convoyeur,
-    required int poste,
-    required String description,
-    bool isCritical = false,
-  }) async {
-    final ref = _db.ref('alerts').push();
-    final now = DateTime.now();
-    final alertId = ref.key;
-    await ref.set({
-      'type': type,
-      'usine': usine,
-      'convoyeur': convoyeur,
-      'poste': poste,
-      'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
-      'timestamp': now.toIso8601String(),
-      'description': description,
-      'status': 'disponible',
-      'comments': [],
-      'isCritical': isCritical,
-      'push_sent': false,   // ⬅️ critical for Cloudflare Worker
-      'superviseurId': null,
-      'superviseurName': null,
-      'assistantId': null,
-      'assistantName': null,
-      'resolutionReason': null,
-      'resolvedAt': null,
-      'elapsedTime': null,
-    });
-
-    // Optional: trigger Cloudflare Worker manually (not needed if cron works)
-    try {
-      await http.post(
-        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'type': type,
-          'description': description,
-          'alertId': alertId,
-        }),
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Failed: ${e.toString()}'), backgroundColor: _red),
       );
-    } catch (e) {
-      debugPrint('Manual worker trigger failed: $e');
     }
   }
+}
+
+ Future<void> _createSimulatedAlert({
+  required String type,
+  required String usine,
+  required int convoyeur,
+  required int poste,
+  required String description,
+  bool isCritical = false,
+}) async {
+  // ✅ 1. Validate against hierarchy before anything else
+  final hierarchyService = HierarchyService();
+  final isValid = await hierarchyService.validateLocation(usine, convoyeur, poste);
+  if (!isValid) {
+    throw Exception('Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
+  }
+
+  // ✅ 2. Original alert creation (unchanged)
+  final ref = _db.ref('alerts').push();
+  final now = DateTime.now();
+  final alertId = ref.key;
+  await ref.set({
+    'type': type,
+    'usine': usine,
+    'convoyeur': convoyeur,
+    'poste': poste,
+    'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
+    'timestamp': now.toIso8601String(),
+    'description': description,
+    'status': 'disponible',
+    'comments': [],
+    'isCritical': isCritical,
+    'push_sent': false,   // ⬅️ critical for Cloudflare Worker
+    'superviseurId': null,
+    'superviseurName': null,
+    'assistantId': null,
+    'assistantName': null,
+    'resolutionReason': null,
+    'resolvedAt': null,
+    'elapsedTime': null,
+  });
+
+  // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
+  try {
+    await http.post(
+      Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'type': type,
+        'description': description,
+        'alertId': alertId,
+      }),
+    );
+  } catch (e) {
+    debugPrint('Manual worker trigger failed: $e');
+  }
+}
 
   // ── Export methods (cross‑platform) ────────────────────────────────────
   Future<void> _exportToCsv() async {
@@ -401,374 +426,463 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _assignSupervisor(AlertModel alert) async {
-    final supervisors = await _auth.getActiveSupervisors();
-    if (supervisors.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('👷 No active supervisors available')));
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('👷 Assign Supervisor'),
-        content: SizedBox(
-          width: 300,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: supervisors.length,
-            itemBuilder: (_, i) => ListTile(
-              leading: const Icon(Icons.person, color: _navy),
-              title: Text(supervisors[i].fullName),
-              subtitle: Text(supervisors[i].email),
-              onTap: () async {
-                Navigator.pop(_);
-                await _auth.assignSupervisorToAlert(
-                    alert.id, supervisors[i].id, supervisors[i].fullName);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('✅ Assigned to ${supervisors[i].fullName}'),
-                    backgroundColor: _green));
-              },
-            ),
+  final supervisors = await _auth.getActiveSupervisors();
+  // Filter by alert's factory
+  final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
+  if (filtered.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('👷 No active supervisors available for this factory')),
+    );
+    return;
+  }
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('👷 Assign Supervisor'),
+      content: SizedBox(
+        width: 300,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: filtered.length,
+          itemBuilder: (_, i) => ListTile(
+            leading: const Icon(Icons.person, color: _navy),
+            title: Text(filtered[i].fullName),
+            subtitle: Text(filtered[i].email),
+            onTap: () async {
+              Navigator.pop(_);
+              await _auth.assignSupervisorToAlert(alert.id, filtered[i].id, filtered[i].fullName);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('✅ Assigned to ${filtered[i].fullName}'), backgroundColor: _green),
+              );
+            },
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(_),
-              child: const Text('Cancel'))
-        ],
       ),
-    );
-  }
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+      ],
+    ),
+  );
+}
 
-  Future<void> _assignAssistant(AlertModel alert) async {
-    final supervisors = await _auth.getActiveSupervisors();
-    if (supervisors.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('👷 No active supervisors available')),
-      );
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('👷 Assign Assistant'),
-        content: SizedBox(
-          width: 300,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: supervisors.length,
-            itemBuilder: (_, i) => ListTile(
-              leading: const Icon(Icons.person_add, color: _navy),
-              title: Text(supervisors[i].fullName),
-              subtitle: Text(supervisors[i].email),
-              onTap: () async {
-                Navigator.pop(_);
-                await _auth.assignAssistantToAlert(alert.id, supervisors[i].id, supervisors[i].fullName);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('✅ Assigned ${supervisors[i].fullName} as assistant'), backgroundColor: _green),
-                );
-              },
-            ),
+Future<void> _assignAssistant(AlertModel alert) async {
+  final supervisors = await _auth.getActiveSupervisors();
+  // Filter by alert's factory
+  final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
+  if (filtered.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('👷 No active supervisors available for this factory')),
+    );
+    return;
+  }
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('👷 Assign Assistant'),
+      content: SizedBox(
+        width: 300,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: filtered.length,
+          itemBuilder: (_, i) => ListTile(
+            leading: const Icon(Icons.person_add, color: _navy),
+            title: Text(filtered[i].fullName),
+            subtitle: Text(filtered[i].email),
+            onTap: () async {
+              Navigator.pop(_);
+              await _auth.assignAssistantToAlert(alert.id, filtered[i].id, filtered[i].fullName);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('✅ Assigned ${filtered[i].fullName} as assistant'), backgroundColor: _green),
+              );
+            },
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
-        ],
       ),
-    );
-  }
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+      ],
+    ),
+  );
+}
 
-  void _showSimulateDialog() {
-    String selectedType = 'qualite';
-    String selectedUsine = 'Usine A';
-    int selectedConvoyeur = 1;
-    int selectedPoste = 1;
-    String description = '';
-    bool isCritical = false;
+void _showSimulateDialog() {
+  String? selectedFactoryId;
+  String? selectedFactoryName;
+  String? selectedConveyorId;
+  int? selectedConveyorNumber;
+  String? selectedStationId;
+  int? selectedStationNumber;
+  String selectedType = 'qualite';
+  String description = '';
+  bool isCritical = false;
 
-    final List<String> usines = ['Usine A', 'Usine B', 'Usine C', 'Usine D'];
-    final List<int> convoyeurs = List.generate(10, (i) => i + 1);
-    final List<int> postes = List.generate(10, (i) => i + 1);
+  List<Factory> factories = [];
+  List<Conveyor> conveyors = [];
+  List<Station> stations = [];
 
-    final Map<String, String> typeLabels = {
-      'qualite': '⚠️ Quality',
-      'maintenance': '🔧 Maintenance',
-      'defaut_produit': '🔨 Damaged Product',
-      'manque_ressource': '📦 Resource Shortage',
-    };
+  showDialog(
+    context: context,
+    builder: (_) => StatefulBuilder(
+      builder: (context, setState) {
+        // Define updateStations FIRST (before it's called)
+        void updateStations() {
+          final factory = factories.firstWhere((f) => f.id == selectedFactoryId);
+          final conveyor = factory.conveyors[selectedConveyorId];
+          if (conveyor != null) {
+            stations = conveyor.stations.values.toList();
+            if (stations.isNotEmpty && selectedStationId == null) {
+              selectedStationId = stations.first.id;
+              selectedStationNumber = int.tryParse(selectedStationId!.replaceAll('station_', ''));
+            }
+          } else {
+            stations = [];
+          }
+        }
 
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('🚨 Simulate Custom Alert', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Alert Type', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    value: selectedType,
-                    items: typeLabels.entries.map((e) => DropdownMenuItem(
-                      value: e.key,
-                      child: Text(e.value),
-                    )).toList(),
-                    onChanged: (val) => setState(() => selectedType = val!),
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Plant (Usine)', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    value: selectedUsine,
-                    items: usines.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                    onChanged: (val) => setState(() => selectedUsine = val!),
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Conveyor Number', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<int>(
-                    value: selectedConvoyeur,
-                    items: convoyeurs.map((c) => DropdownMenuItem(value: c, child: Text('Conveyor $c'))).toList(),
-                    onChanged: (val) => setState(() => selectedConvoyeur = val!),
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Poste (Workstation)', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<int>(
-                    value: selectedPoste,
-                    items: postes.map((p) => DropdownMenuItem(value: p, child: Text('Post $p'))).toList(),
-                    onChanged: (val) => setState(() => selectedPoste = val!),
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Description (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  TextField(
-                    onChanged: (val) => description = val,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g., Motor overheating (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Text('Mark as Critical', style: TextStyle(fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 12),
-                      Switch(
-                        value: isCritical,
-                        onChanged: (val) => setState(() => isCritical = val),
-                        activeColor: Colors.red,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _simulateAlert(
-                    type: selectedType,
-                    usine: selectedUsine,
-                    convoyeur: selectedConvoyeur,
-                    poste: selectedPoste,
-                    description: description.trim(),
-                    isCritical: isCritical,
-                  );
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: _navy),
-                child: const Text('Create Alert', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+        // Define updateConveyors (which calls updateStations)
+        void updateConveyors() {
+          final factory = factories.firstWhere((f) => f.id == selectedFactoryId);
+          conveyors = factory.conveyors.values.toList();
+          if (conveyors.isNotEmpty && selectedConveyorId == null) {
+            selectedConveyorId = conveyors.first.id;
+            selectedConveyorNumber = conveyors.first.number;
+            updateStations(); // now safe
+          } else if (conveyors.isEmpty) {
+            stations = [];
+            selectedStationId = null;
+          }
+        }
 
-  void _showCreateSheet() {
-    // Original create supervisor sheet (unchanged)
-    final first = TextEditingController();
-    final last  = TextEditingController();
-    final email = TextEditingController();
-    final pass  = TextEditingController();
-    final phone = TextEditingController();
-    String usine   = 'Usine A';
-    DateTime hired = DateTime.now();
-    String? error;
-    bool loading   = false;
+        // Load factories on first build
+        if (factories.isEmpty) {
+          final hierarchyService = HierarchyService();
+          hierarchyService.getFactories().listen((factoriesList) {
+            setState(() {
+              factories = factoriesList;
+              if (factories.isNotEmpty) {
+                selectedFactoryId = factories.first.id;
+                selectedFactoryName = factories.first.name;
+                updateConveyors();
+              }
+            });
+          });
+        }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: _white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.only(
-              left: 20, right: 20, top: 16,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: SingleChildScrollView(
+        return AlertDialog(
+          title: const Text('🚨 Simulate Custom Alert', style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(child: Container(width: 40, height: 4,
-                    margin: const EdgeInsets.only(bottom: 18),
-                    decoration: BoxDecoration(color: _border,
-                        borderRadius: BorderRadius.circular(99)))),
-                Row(children: [
-                  Container(width: 38, height: 38,
-                      decoration: BoxDecoration(color: _navyLt,
-                          borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.person_add_outlined,
-                          color: _navy, size: 20)),
-                  const SizedBox(width: 12),
-                  const Text('New Supervisor Account',
-                      style: TextStyle(fontSize: 18,
-                          fontWeight: FontWeight.w700, color: _navy)),
-                ]),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Expanded(child: _SheetField('First Name', first, 'Ahmed')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _SheetField('Last Name',  last,  'Benali')),
-                ]),
-                _SheetField('Phone', phone, '+213 XX XX XX XX',
-                    keyboard: TextInputType.phone),
-                _SheetField('Email', email, 'ahmed@sagem.com',
-                    keyboard: TextInputType.emailAddress),
-                _SheetField('Password', pass, 'Min 6 characters',
-                    obscure: true),
-                _SheetLabel('Assigned Plant'),
-                Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(color: _bg,
-                      border: Border.all(color: _border),
-                      borderRadius: BorderRadius.circular(9)),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: usine, isExpanded: true,
-                      items: ['Usine A','Usine B','Usine C','Usine D']
-                          .map((u) => DropdownMenuItem(value: u, child: Text(u)))
-                          .toList(),
-                      onChanged: (v) => setS(() => usine = v!),
-                    ),
-                  ),
+                const Text('Alert Type', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String>(
+                  value: selectedType,
+                  items: const [
+                    DropdownMenuItem(value: 'qualite', child: Text('⚠️ Quality')),
+                    DropdownMenuItem(value: 'maintenance', child: Text('🔧 Maintenance')),
+                    DropdownMenuItem(value: 'defaut_produit', child: Text('🔨 Damaged Product')),
+                    DropdownMenuItem(value: 'manque_ressource', child: Text('📦 Resource Shortage')),
+                  ],
+                  onChanged: (val) => setState(() => selectedType = val!),
+                  decoration: const InputDecoration(border: OutlineInputBorder()),
                 ),
-                _SheetLabel('Hire Date'),
-                GestureDetector(
-                  onTap: () async {
-                    final p = await showDatePicker(
-                      context: ctx,
-                      initialDate: hired,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime.now(),
-                      builder: (c, child) => Theme(
-                        data: ThemeData.light().copyWith(
-                            colorScheme: const ColorScheme.light(primary: _navy)),
-                        child: child!),
-                    );
-                    if (p != null) setS(() => hired = p);
+                const SizedBox(height: 12),
+                const Text('Factory (Usine)', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String>(
+                  value: selectedFactoryName,
+                  items: factories.map((f) => DropdownMenuItem(value: f.name, child: Text(f.name))).toList(),
+                  onChanged: (val) {
+                    setState(() {
+                      selectedFactoryName = val;
+                      selectedFactoryId = factories.firstWhere((f) => f.name == val).id;
+                      selectedConveyorId = null;
+                      selectedStationId = null;
+                      updateConveyors();
+                    });
                   },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 13),
-                    decoration: BoxDecoration(color: _bg,
-                        border: Border.all(color: _border),
-                        borderRadius: BorderRadius.circular(9)),
-                    child: Row(children: [
-                      const Icon(Icons.calendar_today_outlined,
-                          size: 16, color: _muted),
-                      const SizedBox(width: 8),
-                      Text(_fmtDate(hired),
-                          style: const TextStyle(fontSize: 14)),
-                    ]),
+                  decoration: const InputDecoration(border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                const Text('Conveyor', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String>(
+                  value: selectedConveyorId != null ? 'Conveyor ${selectedConveyorNumber}' : null,
+                  items: conveyors.map((c) => DropdownMenuItem(value: 'Conveyor ${c.number}', child: Text('Conveyor ${c.number}'))).toList(),
+                  onChanged: conveyors.isEmpty ? null : (val) {
+                    setState(() {
+                      final index = conveyors.indexWhere((c) => 'Conveyor ${c.number}' == val);
+                      selectedConveyorId = conveyors[index].id;
+                      selectedConveyorNumber = conveyors[index].number;
+                      selectedStationId = null;
+                      updateStations();
+                    });
+                  },
+                  decoration: const InputDecoration(border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                const Text('Workstation (Poste)', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                DropdownButtonFormField<String>(
+                  value: selectedStationId != null ? 'Station ${selectedStationNumber}' : null,
+                  items: stations.map((s) => DropdownMenuItem(value: s.name, child: Text(s.name))).toList(),
+                  onChanged: stations.isEmpty ? null : (val) {
+                    setState(() {
+                      final station = stations.firstWhere((s) => s.name == val);
+                      selectedStationId = station.id;
+                      selectedStationNumber = int.tryParse(selectedStationId!.replaceAll('station_', ''));
+                    });
+                  },
+                  decoration: const InputDecoration(border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                const Text('Description (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                TextField(
+                  onChanged: (val) => description = val,
+                  decoration: const InputDecoration(
+                    hintText: 'e.g., Motor overheating (optional)',
+                    border: OutlineInputBorder(),
                   ),
                 ),
-                if (error != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        border: Border.all(color: _red),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text(error!,
-                        style: const TextStyle(color: _red, fontSize: 13)),
-                  ),
-                Row(children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: loading ? null : () async {
-                        if ([first, last, email, pass]
-                            .any((c) => c.text.trim().isEmpty)) {
-                          setS(() => error = 'All fields are required.');
-                          return;
-                        }
-                        setS(() { loading = true; error = null; });
-                        final err = await _auth.createSupervisor(
-                          firstName: first.text.trim(),
-                          lastName:  last.text.trim(),
-                          email:     email.text.trim(),
-                          password:  pass.text.trim(),
-                          phone:     phone.text.trim(),
-                          usine:     usine,
-                          hiredDate: hired,
-                        );
-                        if (!ctx.mounted) return;
-                        if (err != null) {
-                          setS(() { error = err; loading = false; });
-                        } else {
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          await _loadSupervisors();
-                          if (mounted) ScaffoldMessenger.of(context)
-                              .showSnackBar(const SnackBar(
-                              content: Text('✅ Supervisor created'),
-                              backgroundColor: _green));
-                        }
-                      },
-                      icon: loading
-                          ? const SizedBox(width: 16, height: 16,
-                              child: CircularProgressIndicator(
-                                  color: _white, strokeWidth: 2))
-                          : const Icon(Icons.check, size: 18),
-                      label: Text(loading ? 'Creating…' : 'Create Account',
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: _navy, foregroundColor: _white,
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9))),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text('Mark as Critical', style: TextStyle(fontWeight: FontWeight.w600)),
+                    const SizedBox(width: 12),
+                    Switch(
+                      value: isCritical,
+                      onChanged: (val) => setState(() => isCritical = val),
+                      activeColor: Colors.red,
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel',
-                          style: TextStyle(color: _muted))),
-                ]),
+                  ],
+                ),
               ],
             ),
           ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () {
+                if (selectedFactoryId == null || selectedConveyorId == null || selectedStationId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please select factory, conveyor, and workstation'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+                Navigator.pop(context);
+                _simulateAlert(
+                  type: selectedType,
+                  usine: selectedFactoryName!,
+                  convoyeur: selectedConveyorNumber!,
+                  poste: selectedStationNumber!,
+                  description: description.trim(),
+                  isCritical: isCritical,
+                );
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: _navy),
+              child: const Text('Create Alert', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+  void _showCreateSheet() {
+  final first = TextEditingController();
+  final last  = TextEditingController();
+  final email = TextEditingController();
+  final pass  = TextEditingController();
+  final phone = TextEditingController();
+  String usine   = '';
+  DateTime hired = DateTime.now();
+  String? error;
+  bool loading   = false;
+
+  List<String> factoryNames = [];
+  bool factoriesLoaded = false;
+
+  // Load factories from hierarchy
+  final hierarchyService = HierarchyService();
+  hierarchyService.getFactories().listen((factories) {
+    if (mounted && !factoriesLoaded) {
+      factoryNames = factories.map((f) => f.name).toList();
+      if (factoryNames.isNotEmpty && usine.isEmpty) {
+        usine = factoryNames.first;
+      }
+      factoriesLoaded = true;
+      // Force rebuild of the bottom sheet
+      if (mounted) setState(() {});
+    }
+  });
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: _white,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setS) => Padding(
+        padding: EdgeInsets.only(
+            left: 20, right: 20, top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(child: Container(width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 18),
+                  decoration: BoxDecoration(color: _border,
+                      borderRadius: BorderRadius.circular(99)))),
+              Row(children: [
+                Container(width: 38, height: 38,
+                    decoration: BoxDecoration(color: _navyLt,
+                        borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.person_add_outlined,
+                        color: _navy, size: 20)),
+                const SizedBox(width: 12),
+                const Text('New Supervisor Account',
+                    style: TextStyle(fontSize: 18,
+                        fontWeight: FontWeight.w700, color: _navy)),
+              ]),
+              const SizedBox(height: 20),
+              Row(children: [
+                Expanded(child: _SheetField('First Name', first, 'Ahmed')),
+                const SizedBox(width: 10),
+                Expanded(child: _SheetField('Last Name',  last,  'Benali')),
+              ]),
+              _SheetField('Phone', phone, '+213 XX XX XX XX',
+                  keyboard: TextInputType.phone),
+              _SheetField('Email', email, 'ahmed@sagem.com',
+                  keyboard: TextInputType.emailAddress),
+              _SheetField('Password', pass, 'Min 6 characters',
+                  obscure: true),
+              _SheetLabel('Assigned Plant'),
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: _bg,
+                    border: Border.all(color: _border),
+                    borderRadius: BorderRadius.circular(9)),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: usine.isEmpty ? null : usine,
+                    isExpanded: true,
+                    hint: const Text('Select a factory'),
+                    items: factoryNames.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                    onChanged: (v) => setS(() => usine = v!),
+                  ),
+                ),
+              ),
+              _SheetLabel('Hire Date'),
+              GestureDetector(
+                onTap: () async {
+                  final p = await showDatePicker(
+                    context: ctx,
+                    initialDate: hired,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime.now(),
+                    builder: (c, child) => Theme(
+                      data: ThemeData.light().copyWith(
+                          colorScheme: const ColorScheme.light(primary: _navy)),
+                      child: child!),
+                  );
+                  if (p != null) setS(() => hired = p);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 13),
+                  decoration: BoxDecoration(color: _bg,
+                      border: Border.all(color: _border),
+                      borderRadius: BorderRadius.circular(9)),
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today_outlined,
+                        size: 16, color: _muted),
+                    const SizedBox(width: 8),
+                    Text(_fmtDate(hired),
+                        style: const TextStyle(fontSize: 14)),
+                  ]),
+                ),
+              ),
+              if (error != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      border: Border.all(color: _red),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(error!,
+                      style: const TextStyle(color: _red, fontSize: 13)),
+                ),
+              Row(children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: loading ? null : () async {
+                      if ([first, last, email, pass]
+                          .any((c) => c.text.trim().isEmpty)) {
+                        setS(() => error = 'All fields are required.');
+                        return;
+                      }
+                      if (usine.isEmpty) {
+                        setS(() => error = 'Please select a factory.');
+                        return;
+                      }
+                      setS(() { loading = true; error = null; });
+                      final err = await _auth.createSupervisor(
+                        firstName: first.text.trim(),
+                        lastName:  last.text.trim(),
+                        email:     email.text.trim(),
+                        password:  pass.text.trim(),
+                        phone:     phone.text.trim(),
+                        usine:     usine,
+                        hiredDate: hired,
+                      );
+                      if (!ctx.mounted) return;
+                      if (err != null) {
+                        setS(() { error = err; loading = false; });
+                      } else {
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        await _loadSupervisors();
+                        if (mounted) ScaffoldMessenger.of(context)
+                            .showSnackBar(const SnackBar(
+                            content: Text('✅ Supervisor created'),
+                            backgroundColor: _green));
+                      }
+                    },
+                    icon: loading
+                        ? const SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(
+                                color: _white, strokeWidth: 2))
+                        : const Icon(Icons.check, size: 18),
+                    label: Text(loading ? 'Creating…' : 'Create Account',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: _navy, foregroundColor: _white,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9))),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: _muted))),
+              ]),
+            ],
+          ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Future<void> _confirmDelete(UserModel sup) async {
     await _auth.deleteSupervisor(sup.id);
@@ -797,73 +911,77 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildContent() {
-    switch (_tab) {
-      case 0:
-        return _OverviewTab(
-          total: _total, solved: _solved,
-          inProgress: _inProgress, pending: _pending,
-          alerts: _filteredAlerts,
-          timeRange: _timeRange,
-          timeRangeLabel: _timeRangeLabel,
-          timeRangeSubtitle: _timeRangeSubtitle,
-          selectedUsine: _selectedUsine,
-          filterConvoyeur: _filterConvoyeur,
-          filterPoste: _filterPoste,
-          filterType: _filterType,
-          filterStatus: _filterStatus,
-          onTimeRangeChange: (v) {
-            setState(() => _timeRange = v);
-            if (v == 'custom') _showDateRangePicker();
-            else { _applyFilters(); _saveFilters(); }
-          },
-          onUsineChange: (v) {
-            setState(() => _selectedUsine = v);
-            _applyFilters(); _saveFilters();
-          },
-          onConvoyeurChange: (v) {
-            setState(() => _filterConvoyeur = v);
-            _applyFilters();
-          },
-          onPosteChange: (v) {
-            setState(() => _filterPoste = v);
-            _applyFilters();
-          },
-          onTypeChange: (v) {
-            setState(() => _filterType = v);
-            _applyFilters();
-          },
-          onStatusChange: (v) {
-            setState(() => _filterStatus = v);
-            _applyFilters();
-          },
-          onReset: () {
-            setState(() {
-              _timeRange = 'week'; _selectedUsine = 'all';
-              _filterConvoyeur = 'all'; _filterPoste = 'all';
-              _filterType = 'all'; _filterStatus = 'all';
-              _customStartDate = null; _customEndDate = null;
-            });
-            _applyFilters(); _saveFilters();
-          },
-          onExportCsv: _exportToCsv,
-          onExportExcel: _exportToExcel,
-          allAlerts: _alerts,
-        );
-      case 1:
-        return _SupervisorsTab(
-          supervisors: _supervisors, alerts: _alerts,
-          onAdd: _showCreateSheet, onDelete: _confirmDelete);
-      case 3:
-      return const AdminEscalationScreen(); // <-- NEW
-      default:
-        return _AlertsTab(
-          alerts: _alerts,
-          onAssign: _assignSupervisor,
-          onAssignAssistant: _assignAssistant,
-        );
-    }
+Widget _buildContent() {
+  switch (_tab) {
+    case 0:
+      return _OverviewTab(
+        total: _total, solved: _solved,
+        inProgress: _inProgress, pending: _pending,
+        alerts: _filteredAlerts,
+        timeRange: _timeRange,
+        timeRangeLabel: _timeRangeLabel,
+        timeRangeSubtitle: _timeRangeSubtitle,
+        selectedUsine: _selectedUsine,
+        filterConvoyeur: _filterConvoyeur,
+        filterPoste: _filterPoste,
+        filterType: _filterType,
+        filterStatus: _filterStatus,
+        onTimeRangeChange: (v) {
+          setState(() => _timeRange = v);
+          if (v == 'custom') _showDateRangePicker();
+          else { _applyFilters(); _saveFilters(); }
+        },
+        onUsineChange: (v) {
+          setState(() => _selectedUsine = v);
+          _applyFilters(); _saveFilters();
+        },
+        onConvoyeurChange: (v) {
+          setState(() => _filterConvoyeur = v);
+          _applyFilters();
+        },
+        onPosteChange: (v) {
+          setState(() => _filterPoste = v);
+          _applyFilters();
+        },
+        onTypeChange: (v) {
+          setState(() => _filterType = v);
+          _applyFilters();
+        },
+        onStatusChange: (v) {
+          setState(() => _filterStatus = v);
+          _applyFilters();
+        },
+        onReset: () {
+          setState(() {
+            _timeRange = 'week'; _selectedUsine = 'all';
+            _filterConvoyeur = 'all'; _filterPoste = 'all';
+            _filterType = 'all'; _filterStatus = 'all';
+            _customStartDate = null; _customEndDate = null;
+          });
+          _applyFilters(); _saveFilters();
+        },
+        onExportCsv: _exportToCsv,
+        onExportExcel: _exportToExcel,
+        allAlerts: _alerts,
+      );
+    case 1:
+      return _SupervisorsTab(
+        supervisors: _supervisors, alerts: _alerts,
+        onAdd: _showCreateSheet, onDelete: _confirmDelete);
+    case 2:
+      return _AlertsTab(
+        alerts: _alerts,
+        onAssign: _assignSupervisor,
+        onAssignAssistant: _assignAssistant,
+      );
+    case 3:
+      return const AdminEscalationScreen();
+    case 4:
+      return const HierarchyScreen();
+    default:
+      return const SizedBox.shrink();
   }
+}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1171,6 +1289,7 @@ class _PillTabBar extends StatelessWidget {
       {'icon': Icons.people_alt_outlined,     'label': 'Supervisors'},
       {'icon': Icons.notifications_outlined,  'label': 'Alerts'},
       {'icon': Icons.warning_amber,           'label': 'Escalations'}, // <-- NEW
+      {'icon': Icons.account_tree_outlined,   'label': 'Hierarchy'}, // NEW
     ];
     return Container(
       color: _white,
@@ -2993,36 +3112,64 @@ class _LineChartPainter extends CustomPainter {
       old.points != points;
 }
 
-class _AssignmentsSubTab extends StatelessWidget {
+class _AssignmentsSubTab extends StatefulWidget {
   final List<UserModel> supervisors;
   const _AssignmentsSubTab({required this.supervisors});
 
-  Map<String, List<UserModel>> _byUsine() {
-    final usines = ['Usine A', 'Usine B', 'Usine C', 'Usine D'];
-    final m = { for (var u in usines) u : <UserModel>[] };
-    for (var s in supervisors) {
-      m.putIfAbsent(s.usine, () => []).add(s);
-    }
-    return m;
+  @override
+  State<_AssignmentsSubTab> createState() => _AssignmentsSubTabState();
+}
+
+class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
+  List<Factory> _factories = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFactories();
   }
 
-  static const _cities = {
-    'Usine A': 'Plant A',
-    'Usine B': 'Plant B',
-    'Usine C': 'Plant C',
-    'Usine D': 'Plant D',
-  };
+  Future<void> _loadFactories() async {
+    final hierarchyService = HierarchyService();
+    hierarchyService.getFactories().listen((factories) {
+      if (mounted) {
+        setState(() {
+          _factories = factories;
+          _loading = false;
+        });
+      }
+    });
+  }
+
+  Map<String, List<UserModel>> _groupByFactory() {
+    final map = <String, List<UserModel>>{};
+    for (var factory in _factories) {
+      map[factory.name] = widget.supervisors.where((s) => s.usine == factory.name).toList();
+    }
+    return map;
+  }
+
+  String? _getLocationForFactory(String factoryName) {
+    for (var factory in _factories) {
+      if (factory.name == factoryName) return factory.location;
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final grouped = _byUsine();
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final grouped = _groupByFactory();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Supervisor Assignments',
-            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800,
-                color: _text)),
+            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: _text)),
         const SizedBox(height: 2),
         const Text('Assign supervisors to plants for alert monitoring',
             style: TextStyle(fontSize: 13, color: _muted)),
@@ -3033,15 +3180,13 @@ class _AssignmentsSubTab extends StatelessWidget {
           decoration: BoxDecoration(color: _white,
               border: Border.all(color: _border),
               borderRadius: BorderRadius.circular(14),
-              boxShadow: const [BoxShadow(color: Color(0x06000000),
-                  blurRadius: 4, offset: Offset(0, 2))]),
+              boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))]),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               const Icon(Icons.bar_chart_outlined, size: 16, color: _navy),
               const SizedBox(width: 8),
               const Text('Assignments by Plant',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
-                      color: _text)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _text)),
             ]),
             const SizedBox(height: 4),
             const Text('See supervisors assigned to each plant',
@@ -3049,8 +3194,8 @@ class _AssignmentsSubTab extends StatelessWidget {
             const SizedBox(height: 16),
 
             ...grouped.entries.map((e) {
-              final usine = e.key;
-              final sups  = e.value;
+              final factoryName = e.key;
+              final sups = e.value;
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
@@ -3064,37 +3209,28 @@ class _AssignmentsSubTab extends StatelessWidget {
                     Expanded(child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text(usine,
+                      Text(factoryName,
                           style: const TextStyle(fontSize: 15,
                               fontWeight: FontWeight.w700, color: _text)),
                       const SizedBox(height: 2),
-                      Text(_cities[usine] ?? '',
-                          style: const TextStyle(
-                              fontSize: 12, color: _muted)),
+                      Text(_getLocationForFactory(factoryName) ?? '',
+                          style: const TextStyle(fontSize: 12, color: _muted)),
                     ])),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                       decoration: BoxDecoration(
-                          color: sups.isEmpty
-                              ? const Color(0xFFF1F5F9)
-                              : _navyLt,
+                          color: sups.isEmpty ? const Color(0xFFF1F5F9) : _navyLt,
                           borderRadius: BorderRadius.circular(99)),
                       child: Text(
-                          sups.isEmpty
-                              ? '0 supervisors'
-                              : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w600,
+                          sups.isEmpty ? '0 supervisors' : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                               color: sups.isEmpty ? _muted : _navy)),
                     ),
                   ]),
                   const SizedBox(height: 10),
                   if (sups.isEmpty)
                     const Text('No supervisor assigned',
-                        style: TextStyle(
-                            fontSize: 12, color: _muted,
-                            fontStyle: FontStyle.italic))
+                        style: TextStyle(fontSize: 12, color: _muted, fontStyle: FontStyle.italic))
                   else
                     Wrap(spacing: 8, runSpacing: 8,
                         children: sups.map((s) => _SupChip(sup: s)).toList()),

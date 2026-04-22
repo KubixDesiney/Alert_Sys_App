@@ -379,14 +379,16 @@ class _RequestCollaborationDialogState
         'Hi team! I need help with this ${widget.alert.type} alert at ${widget.alert.usine} (Line ${widget.alert.convoyeur}, Workstation ${widget.alert.poste}). Can you collaborate with me on this?\n\nIssue: ${widget.alert.description}\n\nThanks for your support!';
   }
 
-  Future<void> _loadSupervisors() async {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    final sups = await _authService.getActiveSupervisors();
-    setState(() {
-      _supervisors = sups.where((s) => s.id != currentUserId).toList();
-      _loading = false;
-    });
-  }
+Future<void> _loadSupervisors() async {
+  final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  final sups = await _authService.getActiveSupervisors();
+  // Filter: same factory as the alert, and not the current user
+  final filtered = sups.where((s) => s.usine == widget.alert.usine && s.id != currentUserId).toList();
+  setState(() {
+    _supervisors = filtered;
+    _loading = false;
+  });
+}
 
   @override
   Widget build(BuildContext context) {
