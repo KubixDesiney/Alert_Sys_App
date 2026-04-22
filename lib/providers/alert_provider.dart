@@ -207,14 +207,17 @@ class AlertProvider extends ChangeNotifier {
   await _service.takeAlert(alertId, superviseurId, superviseurName);
 }
 
-  Future<void> returnToQueue(String alertId) async {
-    _updateLocal(alertId, (a) => a.copyWith(
-      status: 'disponible',
-      clearSuperviseur: true,
-      clearTakenAt: true,
-    ));
-    await _service.returnToQueue(alertId);
-  }
+Future<void> returnToQueue(String alertId, {String? reason}) async {
+  final alert = _alerts.firstWhere((a) => a.id == alertId);
+  final supervisorName = alert.superviseurName ?? 'A supervisor';
+  _updateLocal(alertId, (a) => a.copyWith(
+    status: 'disponible',
+    clearSuperviseur: true,
+    clearTakenAt: true,
+  ));
+  await _service.returnToQueue(alertId, reason: reason);
+  await _service.notifyAdminsAboutSuspend(alertId, supervisorName, reason);
+}
 
   Future<void> resolveAlert(String alertId, String reason) async {
     final alert = _alerts.firstWhere((a) => a.id == alertId);
