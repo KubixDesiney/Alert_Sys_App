@@ -24,6 +24,8 @@ import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
+import 'alert_tree_visualization.dart';
+
 
 
 
@@ -969,11 +971,7 @@ Widget _buildContent() {
         supervisors: _supervisors, alerts: _alerts,
         onAdd: _showCreateSheet, onDelete: _confirmDelete);
     case 2:
-      return _AlertsTab(
-        alerts: _alerts,
-        onAssign: _assignSupervisor,
-        onAssignAssistant: _assignAssistant,
-      );
+  return AlertTreeVisualization(alerts: _alerts);
     case 3:
       return const AdminEscalationScreen();
     case 4:
