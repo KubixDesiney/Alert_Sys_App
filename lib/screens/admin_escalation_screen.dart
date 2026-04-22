@@ -417,99 +417,50 @@ class _CollaborationRequestCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header
           Row(
             children: [
               Text(
                 request.requesterName,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: _navy,
-                ),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
               ),
               const SizedBox(width: 8),
               Text(
                 'Alert #${request.alertId.substring(0, 8)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: _muted,
-                  fontFamily: 'monospace',
-                ),
+                style: const TextStyle(fontSize: 12, color: _muted, fontFamily: 'monospace'),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _orange,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'Pending',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: _white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                decoration: BoxDecoration(color: _orange, borderRadius: BorderRadius.circular(12)),
+                child: const Text('Pending', style: TextStyle(fontSize: 10, color: _white, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            '⏰ ${_formatTime(request.timestamp)}',
-            style: const TextStyle(fontSize: 11, color: _muted),
-          ),
+          Text('⏰ ${_formatTime(request.timestamp)}', style: const TextStyle(fontSize: 11, color: _muted)),
           const SizedBox(height: 12),
-          const Text(
-            'Requesting collaboration with:',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _muted,
-            ),
-          ),
+          const Text('Requesting collaboration with:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _muted)),
           const SizedBox(height: 6),
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: request.targetSupervisorNames.map((name) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _purple,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  '@$name',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: _white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              );
-            }).toList(),
+            children: request.targetSupervisorNames.map((name) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: _purple, borderRadius: BorderRadius.circular(16)),
+              child: Text('@$name', style: const TextStyle(fontSize: 11, color: _white, fontWeight: FontWeight.w600)),
+            )).toList(),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _border),
-            ),
+            decoration: BoxDecoration(color: _white, borderRadius: BorderRadius.circular(8), border: Border.all(color: _border)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  request.message,
-                  style: const TextStyle(fontSize: 12, color: _navy),
-                ),
+                Text(request.message, style: const TextStyle(fontSize: 12, color: _navy)),
                 const SizedBox(height: 8),
-                Text(
-                  'Issue: ${request.alertDescription}',
-                  style: const TextStyle(fontSize: 11, color: _muted, fontStyle: FontStyle.italic),
-                ),
+                Text('Issue: ${request.alertDescription}', style: const TextStyle(fontSize: 11, color: _muted, fontStyle: FontStyle.italic)),
               ],
             ),
           ),
@@ -520,17 +471,12 @@ class _CollaborationRequestCard extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () => _handleApprove(context, request),
                   icon: const Icon(Icons.check_circle, size: 16),
-                  label: const Text(
-                    'Approve',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
+                  label: const Text('Approve', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _green,
                     foregroundColor: _white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
@@ -538,32 +484,20 @@ class _CollaborationRequestCard extends StatelessWidget {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    await service.rejectCollaborationRequest(
-                      request.id,
-                      currentUserId,
-                      '',
-                    );
+                    await CollaborationService().rejectCollaborationRequest(request.id, currentUserId, '');
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Collaboration rejected'),
-                          backgroundColor: _red,
-                        ),
+                        const SnackBar(content: Text('Collaboration rejected'), backgroundColor: _red),
                       );
                     }
                   },
                   icon: const Icon(Icons.cancel, size: 16),
-                  label: const Text(
-                    'Reject',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
+                  label: const Text('Reject', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _red,
                     side: const BorderSide(color: _red),
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
@@ -579,9 +513,7 @@ class _CollaborationRequestCard extends StatelessWidget {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final alertSnapshot = await FirebaseDatabase.instance.ref('alerts/${request.alertId}').get();
     if (!alertSnapshot.exists) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Alert not found'), backgroundColor: _red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alert not found'), backgroundColor: _red));
       return;
     }
     final alertData = Map<String, dynamic>.from(alertSnapshot.value as Map);
@@ -621,13 +553,13 @@ class _CollaborationRequestCard extends StatelessWidget {
       }
     }
 
-    // Helper to continue approval after dialogs
+    // Helper to approve after dialogs
     Future<void> proceedApproval({bool confirmTransfer = false, bool confirmCancel = false}) async {
       await service.approveCollaborationRequestWithDetails(
-        request.id,
-        currentUserId,
-        'Production Manager',
-        true,
+        requestId: request.id,
+        approverId: currentUserId,
+        approverName: 'Production Manager',
+        isPMApproval: true,
         confirmTransfer: confirmTransfer,
         confirmCancelOriginal: confirmCancel,
         cancelExistingAlertIds: confirmCancel ? existingAlertIds : null,
@@ -639,7 +571,7 @@ class _CollaborationRequestCard extends StatelessWidget {
       }
     }
 
-    // Show cross-factory dialog if needed
+    // Show cross-factory dialog
     if (crossFactorySupervisors.isNotEmpty) {
       final bool? confirmed = await showDialog<bool>(
         context: context,
@@ -655,33 +587,20 @@ class _CollaborationRequestCard extends StatelessWidget {
               ...crossFactorySupervisors.map((name) => Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _orangeLt,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _orange.withOpacity(0.3)),
-                ),
+                decoration: BoxDecoration(color: _orangeLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _orange.withOpacity(0.3))),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    // Removed 'const' because string interpolation is used
-                    Text('Will be transferred from their current factory to $alertUsine',
-                        style: const TextStyle(fontSize: 12)),
+                    Text('Will be transferred from their current factory to $alertUsine', style: const TextStyle(fontSize: 12)),
                   ],
                 ),
               )),
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: _green),
-              child: const Text('Confirm Transfer & Approve'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm Transfer & Approve')),
           ],
         ),
       );
@@ -690,69 +609,58 @@ class _CollaborationRequestCard extends StatelessWidget {
       return;
     }
 
-   // Show cancel original alert dialog if needed
-if (existingAlertIds.isNotEmpty) {
-  // Fetch details of the existing alerts
-  List<Map<String, dynamic>> existingAlertsData = [];
-  for (final alertId in existingAlertIds) {
-    final alertSnap = await FirebaseDatabase.instance.ref('alerts/$alertId').get();
-    if (alertSnap.exists) {
-      existingAlertsData.add(Map<String, dynamic>.from(alertSnap.value as Map));
-    }
-  }
+    // Show cancel original alert dialog
+    if (existingAlertIds.isNotEmpty) {
+      // Fetch details of the existing alerts
+      List<Map<String, dynamic>> existingAlertsData = [];
+      for (final alertId in existingAlertIds) {
+        final alertSnap = await FirebaseDatabase.instance.ref('alerts/$alertId').get();
+        if (alertSnap.exists) {
+          existingAlertsData.add(Map<String, dynamic>.from(alertSnap.value as Map));
+        }
+      }
 
-  final bool? confirmed = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => AlertDialog(
-      title: const Text('Cancel Original Alert?'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Approving this collaboration will cancel the original alert(s) that the assistant(s) are currently working on.'),
-          const SizedBox(height: 12),
-          ...existingAlertsData.map((alert) => Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _redLt,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _red.withOpacity(0.3)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('⚠️ Alert: ${alert['description'] ?? 'No description'}',
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('Factory: ${alert['usine'] ?? 'Unknown'}',
-                    style: const TextStyle(fontSize: 12)),
-                Text('Status: ${alert['status'] ?? 'unknown'}',
-                    style: const TextStyle(fontSize: 12)),
-              ],
-            ),
-          )),
-          const SizedBox(height: 8),
-          const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Cancel Original Alert?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Approving this collaboration will cancel the original alert(s) that the assistant(s) are currently working on.'),
+              const SizedBox(height: 12),
+              ...existingAlertsData.map((alert) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _red.withOpacity(0.3))),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('⚠️ Alert: ${alert['description'] ?? 'No description'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text('Factory: ${alert['usine'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12)),
+                    Text('Status: ${alert['status'] ?? 'unknown'}', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              )),
+              const SizedBox(height: 8),
+              const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm & Approve')),
+          ],
         ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, true),
-          style: ElevatedButton.styleFrom(backgroundColor: _green),
-          child: const Text('Confirm & Approve'),
-        ),
-      ],
-    ),
-  );
-  if (confirmed != true) return;
-  await proceedApproval(confirmCancel: true);
-  return;
-}
+      );
+      if (confirmed != true) return;
+      await proceedApproval(confirmCancel: true);
+      return;
+    }
+
+    // No warnings, approve directly
+    await proceedApproval();
   }
 
   String _formatTime(DateTime dt) {
