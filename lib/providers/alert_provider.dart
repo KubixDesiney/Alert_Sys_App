@@ -180,8 +180,9 @@ class AlertProvider extends ChangeNotifier {
   List<AlertModel> get allFixedAlerts =>
       _alerts.where((a) => a.status == 'validee').toList();
 
-  List<AlertModel> inProgressAlerts(String superviseurId) =>
-      _alerts.where((a) => a.status == 'en_cours' && a.superviseurId == superviseurId).toList();
+List<AlertModel> inProgressAlerts(String superviseurId) =>
+    _alerts.where((a) => a.status == 'en_cours' && 
+        (a.superviseurId == superviseurId || a.assistantId == superviseurId)).toList();
 
   List<AlertModel> validatedAlerts(String superviseurId) =>
       _alerts.where((a) => a.status == 'validee' && a.superviseurId == superviseurId).toList();
