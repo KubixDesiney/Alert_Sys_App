@@ -17,7 +17,6 @@ const _navy = Color(0xFF0D4A75);
 const _red = Color(0xFFE31E24);
 const _bgPage = Color(0xFFF8FAFC);
 const _white = Colors.white;
-const _green = Color(0xFF16A34A);
 const _muted = Color(0xFF6B7280);
 
 Color _typeColor(String type) => switch (type) {
@@ -1078,6 +1077,98 @@ class _ClaimedView extends StatelessWidget {
   final AlertProvider provider;
   const _ClaimedView({required this.alerts, required this.provider});
 
+  Future<void> _showHoldCollabPrompt(BuildContext context, AlertModel alert) async {
+    final shouldOpen = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        title: Row(
+          children: [
+            const Icon(Icons.people_alt_outlined, color: Colors.deepPurple, size: 22),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Request Collaboration',
+                style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.w700),
+              ),
+            ),
+            IconButton(
+              onPressed: () => Navigator.pop(context, false),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Hold detected! Would you like to request collaboration for this alert?',
+              style: TextStyle(fontSize: 13, color: _muted),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                border: Border.all(color: const Color(0xFFFED7AA)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _typeLabel(alert.type),
+                    style: const TextStyle(
+                      color: Color(0xFF9A3412),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${alert.usine} - Line ${alert.convoyeur} - WS ${alert.poste}',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFFEA580C)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    alert.description,
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF7C2D12)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.people_outline),
+            label: const Text('Collab'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.deepPurple),
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldOpen == true && context.mounted) {
+      showDialog(
+        context: context,
+        builder: (_) => collab.RequestCollaborationDialog(alert: alert),
+      );
+    }
+  }
+
   void _resolveWithDialog(BuildContext context, AlertModel alert) {
     final reasonController = TextEditingController();
     showDialog(
@@ -1183,14 +1274,9 @@ class _ClaimedView extends StatelessWidget {
         pulseDot: !isMine,
         extraContent: _ElapsedTimer(alert: a, provider: provider),
         onCriticalToggle: isMine ? () => _toggleCritical(a, context) : null,
-        // The "Request Assistance" button now opens the collaboration dialog
+        // Hold gesture opens collaboration flow while preserving existing logic.
         onRequestAssistance: showRequestAssistance
-            ? () {
-                showDialog(
-                  context: context,
-                  builder: (_) => collab.RequestCollaborationDialog(alert: a),
-                );
-              }
+            ? () => _showHoldCollabPrompt(context, a)
             : null,
         onOfferAssistance: showOfferAssistance ? () => _offerAssistance(context, a) : null,
         trailing: isMine
@@ -1326,7 +1412,6 @@ class _AlertRow extends StatelessWidget {
 
     final List<Widget> rightWidgets = [];
     if (trailing != null) rightWidgets.add(trailing!);
-    if (onRequestAssistance != null) rightWidgets.add(ElevatedButton.icon(onPressed: onRequestAssistance, icon: const Icon(Icons.help_outline, size: 16), label: const Text('Request Assistance', style: TextStyle(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), textStyle: const TextStyle(fontWeight: FontWeight.w600), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))));
     if (onOfferAssistance != null) rightWidgets.add(ElevatedButton.icon(onPressed: onOfferAssistance, icon: const Icon(Icons.handshake, size: 16), label: const Text('Assist', style: TextStyle(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), textStyle: const TextStyle(fontWeight: FontWeight.w600), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))));
 
     return Container(
@@ -1358,11 +1443,111 @@ class _AlertRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text('Address: ${alert.adresse}  ·  ${_formatTimestamp(alert.timestamp)}', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontFamily: 'monospace')),
                 if (extraContent != null) extraContent!,
+                if (onRequestAssistance != null) ...[
+                  const SizedBox(height: 10),
+                  _HoldToCollabBar(onCompleted: onRequestAssistance!),
+                ],
               ],
             ),
           ),
           if (rightWidgets.isNotEmpty) Flexible(child: ConstrainedBox(constraints: const BoxConstraints(minWidth: 100), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: rightWidgets))),
         ],
+      ),
+    );
+  }
+}
+
+class _HoldToCollabBar extends StatefulWidget {
+  final VoidCallback onCompleted;
+  const _HoldToCollabBar({required this.onCompleted});
+
+  @override
+  State<_HoldToCollabBar> createState() => _HoldToCollabBarState();
+}
+
+class _HoldToCollabBarState extends State<_HoldToCollabBar> {
+  Timer? _timer;
+  double _progress = 0;
+  bool _triggered = false;
+  DateTime? _start;
+  static const _holdDuration = Duration(milliseconds: 900);
+
+  void _startHold() {
+    _timer?.cancel();
+    _start = DateTime.now();
+    _triggered = false;
+    _timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (!mounted || _start == null) return;
+      final elapsed = DateTime.now().difference(_start!);
+      final next = (elapsed.inMilliseconds / _holdDuration.inMilliseconds).clamp(0.0, 1.0);
+      setState(() => _progress = next);
+      if (next >= 1 && !_triggered) {
+        _triggered = true;
+        timer.cancel();
+        widget.onCompleted();
+        setState(() {
+          _progress = 0;
+          _start = null;
+        });
+      }
+    });
+  }
+
+  void _cancelHold() {
+    _timer?.cancel();
+    _timer = null;
+    _start = null;
+    if (_progress != 0) {
+      setState(() => _progress = 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _startHold(),
+      onTapUp: (_) => _cancelHold(),
+      onTapCancel: _cancelHold,
+      child: Container(
+        height: 20,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3E8FF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFD8B4FE)),
+        ),
+        child: Stack(
+          children: [
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: _progress,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFA855F7), Color(0xFF7E22CE)],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const Center(
+              child: Text(
+                'Hold for collab...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.deepPurple,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
