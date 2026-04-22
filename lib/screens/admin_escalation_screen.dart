@@ -508,7 +508,7 @@ class _CollaborationRequestCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   'Issue: ${request.alertDescription}',
-                  style: TextStyle(fontSize: 11, color: _muted, fontStyle: FontStyle.italic),
+                  style: const TextStyle(fontSize: 11, color: _muted, fontStyle: FontStyle.italic),
                 ),
               ],
             ),
@@ -518,22 +518,7 @@ class _CollaborationRequestCard extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () async {
-                    await service.approveCollaborationRequest(
-                      request.id,
-                      currentUserId,
-                      'Production Manager',
-                      true,
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Collaboration approved'),
-                          backgroundColor: _green,
-                        ),
-                      );
-                    }
-                  },
+                  onPressed: () => _handleApprove(context, request),
                   icon: const Icon(Icons.check_circle, size: 16),
                   label: const Text(
                     'Approve',
@@ -589,6 +574,176 @@ class _CollaborationRequestCard extends StatelessWidget {
     );
   }
 
+  Future<void> _handleApprove(BuildContext context, CollaborationRequest request) async {
+    final service = CollaborationService();
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final alertSnapshot = await FirebaseDatabase.instance.ref('alerts/${request.alertId}').get();
+    if (!alertSnapshot.exists) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alert not found'), backgroundColor: _red),
+      );
+      return;
+    }
+    final alertData = Map<String, dynamic>.from(alertSnapshot.value as Map);
+    final alertUsine = alertData['usine'] ?? '';
+
+    // 1. Check cross-factory transfers
+    final List<String> crossFactorySupervisors = [];
+    for (int i = 0; i < request.targetSupervisorIds.length; i++) {
+      final supId = request.targetSupervisorIds[i];
+      final supName = request.targetSupervisorNames[i];
+      final supSnapshot = await FirebaseDatabase.instance.ref('users/$supId').get();
+      if (supSnapshot.exists) {
+        final supData = Map<String, dynamic>.from(supSnapshot.value as Map);
+        final supUsine = supData['usine'] ?? '';
+        if (supUsine != alertUsine) {
+          crossFactorySupervisors.add(supName);
+        }
+      }
+    }
+
+    // 2. Check if any target supervisor already has an in-progress alert
+    final List<String> existingAlertIds = [];
+    for (final supId in request.targetSupervisorIds) {
+      final alertsSnapshot = await FirebaseDatabase.instance
+          .ref('alerts')
+          .orderByChild('superviseurId')
+          .equalTo(supId)
+          .once();
+      if (alertsSnapshot.snapshot.exists) {
+        final alertsMap = Map<String, dynamic>.from(alertsSnapshot.snapshot.value as Map);
+        for (final entry in alertsMap.entries) {
+          final alert = Map<String, dynamic>.from(entry.value);
+          if (alert['status'] == 'en_cours') {
+            existingAlertIds.add(entry.key);
+          }
+        }
+      }
+    }
+
+    // Helper to continue approval after dialogs
+    Future<void> proceedApproval({bool confirmTransfer = false, bool confirmCancel = false}) async {
+      await service.approveCollaborationRequestWithDetails(
+        request.id,
+        currentUserId,
+        'Production Manager',
+        true,
+        confirmTransfer: confirmTransfer,
+        confirmCancelOriginal: confirmCancel,
+        cancelExistingAlertIds: confirmCancel ? existingAlertIds : null,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Collaboration approved'), backgroundColor: _green),
+        );
+      }
+    }
+
+    // Show cross-factory dialog if needed
+    if (crossFactorySupervisors.isNotEmpty) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Cross-Factory Transfer Required'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Approving this collaboration will require supervisor(s) to be transferred to work on an alert in a different factory.'),
+              const SizedBox(height: 16),
+              ...crossFactorySupervisors.map((name) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _orangeLt,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _orange.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    // Removed 'const' because string interpolation is used
+                    Text('Will be transferred from their current factory to $alertUsine',
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              )),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: _green),
+              child: const Text('Confirm Transfer & Approve'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await proceedApproval(confirmTransfer: true);
+      return;
+    }
+
+    // Show cancel original alert dialog if needed
+    if (existingAlertIds.isNotEmpty) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Cancel Original Alert?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Approving this collaboration will cancel the original alert.'),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _redLt,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _red.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('⚠️ Alert: ${request.alertDescription}'),
+                    Text('Factory: ${request.usine ?? alertUsine}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text('The original alert will be canceled and replaced by this collaboration.'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: _green),
+              child: const Text('Confirm & Approve'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await proceedApproval(confirmCancel: true);
+      return;
+    }
+
+    // No warnings, approve directly
+    await proceedApproval();
+  }
+
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
@@ -598,6 +753,8 @@ class _CollaborationRequestCard extends StatelessWidget {
     return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
   }
 }
+
+
 
 // ============================================================================
 // SETTINGS TAB
