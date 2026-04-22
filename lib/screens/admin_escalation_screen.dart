@@ -690,58 +690,69 @@ class _CollaborationRequestCard extends StatelessWidget {
       return;
     }
 
-    // Show cancel original alert dialog if needed
-    if (existingAlertIds.isNotEmpty) {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: const Text('Cancel Original Alert?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Approving this collaboration will cancel the original alert.'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _redLt,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _red.withOpacity(0.3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('⚠️ Alert: ${request.alertDescription}'),
-                    Text('Factory: ${request.usine ?? alertUsine}'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text('The original alert will be canceled and replaced by this collaboration.'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: _green),
-              child: const Text('Confirm & Approve'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
-      await proceedApproval(confirmCancel: true);
-      return;
+   // Show cancel original alert dialog if needed
+if (existingAlertIds.isNotEmpty) {
+  // Fetch details of the existing alerts
+  List<Map<String, dynamic>> existingAlertsData = [];
+  for (final alertId in existingAlertIds) {
+    final alertSnap = await FirebaseDatabase.instance.ref('alerts/$alertId').get();
+    if (alertSnap.exists) {
+      existingAlertsData.add(Map<String, dynamic>.from(alertSnap.value as Map));
     }
+  }
 
-    // No warnings, approve directly
-    await proceedApproval();
+  final bool? confirmed = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      title: const Text('Cancel Original Alert?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Approving this collaboration will cancel the original alert(s) that the assistant(s) are currently working on.'),
+          const SizedBox(height: 12),
+          ...existingAlertsData.map((alert) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _redLt,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _red.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('⚠️ Alert: ${alert['description'] ?? 'No description'}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('Factory: ${alert['usine'] ?? 'Unknown'}',
+                    style: const TextStyle(fontSize: 12)),
+                Text('Status: ${alert['status'] ?? 'unknown'}',
+                    style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          )),
+          const SizedBox(height: 8),
+          const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: ElevatedButton.styleFrom(backgroundColor: _green),
+          child: const Text('Confirm & Approve'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  await proceedApproval(confirmCancel: true);
+  return;
+}
   }
 
   String _formatTime(DateTime dt) {
