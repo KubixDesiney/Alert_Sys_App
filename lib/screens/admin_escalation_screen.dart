@@ -507,7 +507,6 @@ class _CollaborationRequestCard extends StatelessWidget {
       ),
     );
   }
-
 Future<void> _handleApprove(BuildContext context, CollaborationRequest request) async {
   final service = CollaborationService();
   final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -537,8 +536,6 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
   // 2. Find existing alerts for target supervisors (as claimant OR assistant)
   final List<String> existingAlertIds = [];
   for (final supId in request.targetSupervisorIds) {
-    print('Checking alerts for supervisor: $supId');
-    
     // As claimant
     final claimantSnapshot = await FirebaseDatabase.instance
         .ref('alerts')
@@ -549,13 +546,11 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
       final alertsMap = Map<String, dynamic>.from(claimantSnapshot.snapshot.value as Map);
       for (final entry in alertsMap.entries) {
         final alert = Map<String, dynamic>.from(entry.value);
-        print('Claimant alert: ${entry.key}, status: ${alert['status']}');
         if (alert['status'] == 'en_cours' || alert['status'] == 'disponible') {
           existingAlertIds.add(entry.key);
         }
       }
     }
-    
     // As assistant
     final assistantSnapshot = await FirebaseDatabase.instance
         .ref('alerts')
@@ -566,25 +561,26 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
       final alertsMap = Map<String, dynamic>.from(assistantSnapshot.snapshot.value as Map);
       for (final entry in alertsMap.entries) {
         final alert = Map<String, dynamic>.from(entry.value);
-        print('Assistant alert: ${entry.key}, status: ${alert['status']}');
         if (alert['status'] == 'en_cours' || alert['status'] == 'disponible') {
           existingAlertIds.add(entry.key);
         }
       }
     }
   }
-  print('Existing alerts to cancel: $existingAlertIds');
 
-  // Helper to approve after dialogs
-  Future<void> proceedApproval({bool confirmTransfer = false, bool confirmCancel = false}) async {
+  bool transferConfirmed = false;
+  bool cancelConfirmed = false;
+
+  // Helper to approve after all dialogs
+  Future<void> doApproval() async {
     await service.approveCollaborationRequestWithDetails(
       requestId: request.id,
       approverId: currentUserId,
       approverName: 'Production Manager',
       isPMApproval: true,
-      confirmTransfer: confirmTransfer,
-      confirmCancelOriginal: confirmCancel,
-      cancelExistingAlertIds: confirmCancel ? existingAlertIds : null,
+      confirmTransfer: transferConfirmed,
+      confirmCancelOriginal: cancelConfirmed,
+      cancelExistingAlertIds: cancelConfirmed ? existingAlertIds : null,
     );
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -595,7 +591,6 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
 
   // --- Cross-factory dialog ---
   if (crossFactorySupervisors.isNotEmpty) {
-    print('Showing cross-factory dialog');
     final bool? confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -628,14 +623,12 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
       ),
     );
     if (confirmed != true) return;
-    await proceedApproval(confirmTransfer: true);
-    return;
+    transferConfirmed = true;
+    // Continue to next dialog
   }
 
   // --- Cancel original alert dialog ---
   if (existingAlertIds.isNotEmpty) {
-    print('Entering cancel dialog block. Found ${existingAlertIds.length} alerts.');
-    
     // Fetch details of existing alerts
     List<Map<String, dynamic>> existingAlertsData = [];
     for (final alertId in existingAlertIds) {
@@ -645,59 +638,46 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
       }
     }
 
-    try {
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: const Text('Cancel Original Alert(s)?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('The assistant(s) already have an active alert. Approving this collaboration will cancel their current alert(s).'),
-              const SizedBox(height: 12),
-              ...existingAlertsData.map((alert) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _red.withOpacity(0.3))),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('⚠️ Alert: ${alert['description'] ?? 'No description'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    Text('Factory: ${alert['usine'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12)),
-                    Text('Status: ${alert['status'] ?? 'unknown'}', style: const TextStyle(fontSize: 12)),
-                  ],
-                ),
-              )),
-              const SizedBox(height: 8),
-              const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm & Approve')),
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Cancel Original Alert(s)?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('The assistant(s) already have an active alert. Approving this collaboration will cancel their current alert(s).'),
+            const SizedBox(height: 12),
+            ...existingAlertsData.map((alert) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _red.withOpacity(0.3))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('⚠️ Alert: ${alert['description'] ?? 'No description'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('Factory: ${alert['usine'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12)),
+                  Text('Status: ${alert['status'] ?? 'unknown'}', style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            )),
+            const SizedBox(height: 8),
+            const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
           ],
         ),
-      );
-      print('Dialog result: $confirmed');
-      if (confirmed != true) return;
-      await proceedApproval(confirmCancel: true);
-      return;
-    } catch (e) {
-      print('Dialog error: $e');
-      // Fallback: show a simple snackbar and continue without cancellation
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not show cancel dialog, approving without cancellation'), backgroundColor: Colors.orange),
-      );
-      await proceedApproval(confirmCancel: false);
-      return;
-    }
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm & Approve')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    cancelConfirmed = true;
   }
 
-  // No warnings, approve directly
-  print('No warnings, approving directly');
-  await proceedApproval();
+  // Finally approve
+  await doApproval();
 }
 
   String _formatTime(DateTime dt) {
