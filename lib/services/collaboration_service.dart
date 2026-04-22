@@ -154,6 +154,95 @@ class CollaborationService {
       }
     }
   }
+  // Approve collaboration request with additional options
+Future<void> approveCollaborationRequestWithDetails(
+  String requestId,
+  String approverId,
+  String approverName,
+  bool isPMApproval, {
+  bool confirmTransfer = false,
+  bool confirmCancelOriginal = false,
+  List<String>? cancelExistingAlertIds, // assistants' existing alerts to cancel
+}) async {
+  final snapshot = await _db.child('collaboration_requests/$requestId').get();
+  if (!snapshot.exists) return;
+
+  final request = CollaborationRequest.fromMap(
+    requestId,
+    Map<String, dynamic>.from(snapshot.value as Map),
+  );
+
+  if (isPMApproval) {
+    // 1. Assign the first target supervisor as assistant
+    final assistantId = request.targetSupervisorIds.isNotEmpty ? request.targetSupervisorIds.first : null;
+    final assistantName = request.targetSupervisorNames.isNotEmpty ? request.targetSupervisorNames.first : null;
+
+    if (assistantId != null && assistantName != null) {
+      await _db.child('alerts/${request.alertId}').update({
+        'assistantId': assistantId,
+        'assistantName': assistantName,
+      });
+    }
+
+    // 2. Cancel original alert if requested
+    if (confirmCancelOriginal) {
+      await _db.child('alerts/${request.alertId}').update({
+        'status': 'cancelled',
+        'cancelledReason': 'Replaced by collaboration request $requestId',
+        'cancelledAt': DateTime.now().toIso8601String(),
+      });
+    }
+
+    // 3. Cancel any existing alerts of assistants (if they were working on other alerts)
+    if (cancelExistingAlertIds != null) {
+      for (final alertId in cancelExistingAlertIds) {
+        await _db.child('alerts/$alertId').update({
+          'status': 'cancelled',
+          'cancelledReason': 'Supervisor reassigned via collaboration',
+          'cancelledAt': DateTime.now().toIso8601String(),
+        });
+      }
+    }
+
+    // 4. Update collaboration request status
+    await _db.child('collaboration_requests/$requestId').update({
+      'pmApproved': true,
+      'status': 'approved',
+      'approvedBy': approverId,
+      'approvedAt': DateTime.now().toIso8601String(),
+    });
+
+    // 5. Notify requester and target supervisors
+    final notification = {
+      'type': 'collaboration_approved',
+      'collabRequestId': requestId,
+      'alertId': request.alertId,
+      'message': 'Your collaboration request has been approved by Production Manager',
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'pending',
+    };
+    await _db.child('notifications/${request.requesterId}').push().set(notification);
+
+    for (final targetId in request.targetSupervisorIds) {
+      final notif = {
+        'type': 'collaboration_approved',
+        'collabRequestId': requestId,
+        'alertId': request.alertId,
+        'message': 'Collaboration request approved. You are now assisting on this alert.',
+        'timestamp': DateTime.now().toIso8601String(),
+        'status': 'pending',
+      };
+      await _db.child('notifications/$targetId').push().set(notif);
+    }
+  } else {
+    // Supervisor approval (not PM) – keep original simple approval
+    await _db.child('collaboration_requests/$requestId').update({
+      'status': 'approved',
+      'approvedBy': approverId,
+      'approvedAt': DateTime.now().toIso8601String(),
+    });
+  }
+}
 
   // Reject collaboration request
   Future<void> rejectCollaborationRequest(
