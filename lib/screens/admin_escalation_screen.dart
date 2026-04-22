@@ -294,104 +294,93 @@ class _CollaborationsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final service = CollaborationService();
 
-    return StreamBuilder<List<CollaborationRequest>>(
-      stream: service.getPendingCollaborationRequests(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: _white,
+              border: Border(bottom: BorderSide(color: _border)),
+            ),
+            child: const TabBar(
+              labelColor: _navy,
+              unselectedLabelColor: _muted,
+              indicatorColor: _navy,
+              tabs: [
+                Tab(text: 'Pending', icon: Icon(Icons.pending_actions, size: 18)),
+                Tab(text: 'History', icon: Icon(Icons.history, size: 18)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _purple.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.groups, size: 48, color: _purple),
+                // Pending requests (original)
+                StreamBuilder<List<CollaborationRequest>>(
+                  stream: service.getPendingCollaborationRequests(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return _buildEmpty('No pending requests', Icons.pending_actions);
+                    }
+                    final requests = snapshot.data!;
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: requests.length,
+                      itemBuilder: (context, index) {
+                        return _CollaborationRequestCard(request: requests[index]);
+                      },
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'No Pending Collaborations',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Collaboration requests will appear here',
-                  style: TextStyle(fontSize: 13, color: _muted),
+                // History (approved/rejected)
+                StreamBuilder<List<CollaborationRequest>>(
+                  stream: service.getAllCollaborationRequests(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return _buildEmpty('No request history', Icons.history);
+                    }
+                    final history = snapshot.data!
+                        .where((r) => r.status != 'pending')
+                        .toList();
+                    if (history.isEmpty) {
+                      return _buildEmpty('No request history', Icons.history);
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: history.length,
+                      itemBuilder: (context, index) {
+                        final request = history[index];
+                        return _HistoryRequestCard(request: request);
+                      },
+                    );
+                  },
                 ),
               ],
             ),
-          );
-        }
+          ),
+        ],
+      ),
+    );
+  }
 
-        final requests = snapshot.data!;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.people, color: _purple, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Pending Collaboration Requests',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: _navy,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _red,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${requests.length} Pending',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: _white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Approve or reject collaboration requests from supervisors',
-                style: TextStyle(fontSize: 12, color: _muted),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: requests.length,
-                itemBuilder: (context, index) {
-                  final request = requests[index];
-                  return _CollaborationRequestCard(request: request);
-                },
-              ),
-            ),
-          ],
-        );
-      },
+  Widget _buildEmpty(String text, IconData icon) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 48, color: _muted),
+          const SizedBox(height: 12),
+          Text(text, style: TextStyle(fontSize: 14, color: _muted)),
+        ],
+      ),
     );
   }
 }
@@ -680,6 +669,7 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
   await doApproval();
 }
 
+
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
@@ -689,7 +679,100 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
     return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
   }
 }
+class _HistoryRequestCard extends StatelessWidget {
+  final CollaborationRequest request;
 
+  const _HistoryRequestCard({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1))],
+      ),
+      child: Row(
+        children: [
+          // Avatar / icon
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: request.status == 'approved' ? _greenLt : _redLt,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              request.status == 'approved' ? Icons.check_circle : Icons.cancel,
+              color: request.status == 'approved' ? _green : _red,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Content
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.requesterName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _navy,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Requested: ${request.targetSupervisorNames.join(", ")}',
+                  style: const TextStyle(fontSize: 12, color: _muted),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.access_time, size: 12, color: _muted),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatRelativeTime(request.timestamp),
+                      style: const TextStyle(fontSize: 11, color: _muted),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: request.status == 'approved' ? _greenLt : _redLt,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        request.status == 'approved' ? 'Approved' : 'Rejected',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: request.status == 'approved' ? _green : _red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  String _formatRelativeTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
+    return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
+  }
+}
 
 
 // ============================================================================
