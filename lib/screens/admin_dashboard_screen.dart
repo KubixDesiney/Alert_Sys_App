@@ -1372,25 +1372,87 @@ class _OverviewTab extends StatefulWidget {
 }
 
 class _OverviewTabState extends State<_OverviewTab> {
+  List<Factory> _factories = [];
   String? _historyFilter;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadFactories();
+  }
+
+  void _loadFactories() {
+    final hierarchyService = HierarchyService();
+    hierarchyService.getFactories().listen((factories) {
+      if (mounted) {
+        setState(() {
+          _factories = factories;
+        });
+      }
+    });
+  }
+
+List<String> _convoyeurs() {
+  if (widget.selectedUsine == 'all') return ['all'];
+  Factory? factory;
+  for (var f in _factories) {
+    if (f.name == widget.selectedUsine) {
+      factory = f;
+      break;
+    }
+  }
+  if (factory == null) return ['all'];
+  return ['all', ...factory.conveyors.values.map((c) => c.number.toString())];
+}
+
+List<String> _postes() {
+  if (widget.selectedUsine == 'all') return ['all'];
+  Factory? factory;
+  for (var f in _factories) {
+    if (f.name == widget.selectedUsine) {
+      factory = f;
+      break;
+    }
+  }
+  if (factory == null) return ['all'];
+  if (widget.filterConvoyeur == 'all') return ['all'];
+  Conveyor? conveyor;
+  for (var c in factory.conveyors.values) {
+    if (c.number.toString() == widget.filterConvoyeur) {
+      conveyor = c;
+      break;
+    }
+  }
+  if (conveyor == null) return ['all'];
+  return ['all', ...conveyor.stations.values.map((s) => s.id.replaceAll('station_', ''))];
+}
   List<AlertModel> get _criticalUnclaimedAlerts {
     return widget.allAlerts.where((a) => a.isCritical && a.status == 'disponible').toList();
   }
+
   int get _criticalUnclaimedCount => _criticalUnclaimedAlerts.length;
 
   List<AlertModel> get _displayedAlerts {
     if (_historyFilter == null) return widget.alerts;
     switch (_historyFilter) {
-      case 'total': return widget.alerts;
-      case 'validated': return widget.alerts.where((a) => a.status == 'validee').toList();
-      case 'pending': return widget.alerts.where((a) => a.status != 'validee').toList();
-      case 'qualite': return widget.alerts.where((a) => a.type == 'qualite').toList();
-      case 'critical': return widget.alerts.where((a) => a.isCritical).toList();   // ← new
-      case 'maintenance': return widget.alerts.where((a) => a.type == 'maintenance').toList();
-      case 'defaut_produit': return widget.alerts.where((a) => a.type == 'defaut_produit').toList();
-      case 'manque_ressource': return widget.alerts.where((a) => a.type == 'manque_ressource').toList();
-      default: return widget.alerts;
+      case 'total':
+        return widget.alerts;
+      case 'validated':
+        return widget.alerts.where((a) => a.status == 'validee').toList();
+      case 'pending':
+        return widget.alerts.where((a) => a.status != 'validee').toList();
+      case 'qualite':
+        return widget.alerts.where((a) => a.type == 'qualite').toList();
+      case 'critical':
+        return widget.alerts.where((a) => a.isCritical).toList();
+      case 'maintenance':
+        return widget.alerts.where((a) => a.type == 'maintenance').toList();
+      case 'defaut_produit':
+        return widget.alerts.where((a) => a.type == 'defaut_produit').toList();
+      case 'manque_ressource':
+        return widget.alerts.where((a) => a.type == 'manque_ressource').toList();
+      default:
+        return widget.alerts;
     }
   }
 
@@ -1406,30 +1468,41 @@ class _OverviewTabState extends State<_OverviewTab> {
 
   Map<String, Map<String, int>> _typeStats() {
     final keys = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
-    return { for (var k in keys) k: {
-      'total': widget.alerts.where((a) => a.type == k).length,
-      'solved': widget.alerts.where((a) => a.type == k && a.status == 'validee').length,
-      'pending': widget.alerts.where((a) => a.type == k && a.status != 'validee').length,
-    }};
+    return {
+      for (var k in keys)
+        k: {
+          'total': widget.alerts.where((a) => a.type == k).length,
+          'solved': widget.alerts.where((a) => a.type == k && a.status == 'validee').length,
+          'pending': widget.alerts.where((a) => a.type == k && a.status != 'validee').length,
+        }
+    };
   }
 
   List<String> _usines() => ['all', ...widget.allAlerts.map((a) => a.usine).toSet().toList()..sort()];
-  List<String> _convoyeurs() => ['all', ...widget.allAlerts.map((a) => a.convoyeur.toString()).toSet().toList()..sort()];
-  List<String> _postes() => ['all', ...widget.allAlerts.map((a) => a.poste.toString()).toSet().toList()..sort()];
+
+  // Use hierarchy-based convoyeurs and postes
+  List<String> _convoyeursForFilter() => _convoyeurs();
+  List<String> _postesForFilter() => _postes();
 
   String _getAlertDisplayDescription(AlertModel alert) {
     if (alert.description.trim().isNotEmpty) return alert.description;
     switch (alert.type) {
-      case 'qualite': return 'Quality issue detected on production line';
-      case 'maintenance': return 'Maintenance required on equipment';
-      case 'defaut_produit': return 'Damaged product detected';
-      case 'manque_ressource': return 'Resource shortage - missing raw materials';
-      default: return 'Alert detected';
+      case 'qualite':
+        return 'Quality issue detected on production line';
+      case 'maintenance':
+        return 'Maintenance required on equipment';
+      case 'defaut_produit':
+        return 'Damaged product detected';
+      case 'manque_ressource':
+        return 'Resource shortage - missing raw materials';
+      default:
+        return 'Alert detected';
     }
   }
+
   int get _criticalInProgressCount {
-  return widget.allAlerts.where((a) => a.status == 'en_cours' && a.isCritical).length;
-}
+    return widget.allAlerts.where((a) => a.status == 'en_cours' && a.isCritical).length;
+  }
 
   void _exportFilteredAlerts(List<AlertModel> alertsToExport) async {
     if (alertsToExport.isEmpty) {
@@ -1439,7 +1512,22 @@ class _OverviewTabState extends State<_OverviewTab> {
       return;
     }
     List<List<dynamic>> csvData = [
-      ['ID', 'Type', 'Usine', 'Convoyeur', 'Poste', 'Adresse', 'Timestamp', 'Description', 'Status', 'Superviseur', 'Assistant', 'Resolution Reason', 'Elapsed Time (min)', 'Critical']
+      [
+        'ID',
+        'Type',
+        'Usine',
+        'Convoyeur',
+        'Poste',
+        'Adresse',
+        'Timestamp',
+        'Description',
+        'Status',
+        'Superviseur',
+        'Assistant',
+        'Resolution Reason',
+        'Elapsed Time (min)',
+        'Critical'
+      ]
     ];
     for (var alert in alertsToExport) {
       csvData.add([
@@ -1486,11 +1574,20 @@ class _OverviewTabState extends State<_OverviewTab> {
     var excelFile = excel.Excel.createExcel();
     var sheet = excelFile['Alerts'];
     sheet.appendRow([
-      excel.TextCellValue('ID'), excel.TextCellValue('Type'), excel.TextCellValue('Usine'),
-      excel.TextCellValue('Convoyeur'), excel.TextCellValue('Poste'), excel.TextCellValue('Adresse'),
-      excel.TextCellValue('Timestamp'), excel.TextCellValue('Description'), excel.TextCellValue('Status'),
-      excel.TextCellValue('Superviseur'), excel.TextCellValue('Assistant'), excel.TextCellValue('Resolution Reason'),
-      excel.TextCellValue('Elapsed Time (min)'), excel.TextCellValue('Critical'),
+      excel.TextCellValue('ID'),
+      excel.TextCellValue('Type'),
+      excel.TextCellValue('Usine'),
+      excel.TextCellValue('Convoyeur'),
+      excel.TextCellValue('Poste'),
+      excel.TextCellValue('Adresse'),
+      excel.TextCellValue('Timestamp'),
+      excel.TextCellValue('Description'),
+      excel.TextCellValue('Status'),
+      excel.TextCellValue('Superviseur'),
+      excel.TextCellValue('Assistant'),
+      excel.TextCellValue('Resolution Reason'),
+      excel.TextCellValue('Elapsed Time (min)'),
+      excel.TextCellValue('Critical'),
     ]);
     for (var alert in alertsToExport) {
       sheet.appendRow([
@@ -1528,429 +1625,509 @@ class _OverviewTabState extends State<_OverviewTab> {
   }
 
   @override
-Widget build(BuildContext context) {
-  final ts = _typeStats();
-  print('Critical unclaimed alerts count: $_criticalUnclaimedCount');
-  return SingleChildScrollView(
-    padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header row (unchanged)
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text('Alert Dashboard VV2',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800,
-                          color: _text)),
-                  SizedBox(height: 2),
-                  Text('Overview and detailed analysis of alerts',
-                      style: TextStyle(fontSize: 13, color: _muted)),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                  color: _white, border: Border.all(color: _border),
-                  borderRadius: BorderRadius.circular(20)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.filter_alt_outlined, size: 13, color: _navy),
-                  const SizedBox(width: 4),
-                  Text(widget.timeRangeLabel,
-                      style: const TextStyle(fontSize: 11,
-                          fontWeight: FontWeight.w600, color: _navy)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-
-        // Active filter banner (unchanged)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
-              borderRadius: BorderRadius.circular(10)),
-          child: Row(
+  Widget build(BuildContext context) {
+    final ts = _typeStats();
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.filter_alt_outlined, size: 15, color: _blue),
-              const SizedBox(width: 6),
-              const Text('Active filter:  ',
-                  style: TextStyle(fontSize: 12, color: _muted)),
-              _FilterChip(label: widget.timeRangeLabel, onRemove: null),
-              const SizedBox(width: 6),
-              _FilterChip(
-                  label: widget.selectedUsine == 'all' ? 'Default' : widget.selectedUsine,
-                  onRemove: widget.selectedUsine == 'all' ? null : () => widget.onUsineChange('all')),
-              const Spacer(),
-              Text(widget.timeRangeSubtitle,
-                  style: const TextStyle(fontSize: 11, color: _muted)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Alert Dashboard VV2',
+                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: _text),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Overview and detailed analysis of alerts',
+                      style: TextStyle(fontSize: 13, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _white,
+                  border: Border.all(color: _border),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.filter_alt_outlined, size: 13, color: _navy),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.timeRangeLabel,
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _navy),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
-        ),
-        const SizedBox(height: 20),
+          const SizedBox(height: 14),
 
-// ── 4 cards in a single horizontal row (no wrapping) ──
-Row(
-  children: [
-    Expanded(
-      child: _UnclaimedStatCard(
-        unclaimedCount: widget.pending,
-        criticalCount: _criticalUnclaimedCount,
-        isActive: _historyFilter == 'pending',
-        onTap: () => _setHistoryFilter('pending'),
-        onCriticalTap: () => _setHistoryFilter('critical'),
-      ),
-    ),
-    const SizedBox(width: 12),
-    Expanded(
-      child: _ProgressStatCard(
-        inProgressCount: widget.inProgress,
-        criticalCount: _criticalInProgressCount,
-        isActive: _historyFilter == 'en_cours',
-        onTap: () => _setHistoryFilter('en_cours'),
-        onCriticalTap: () => _setHistoryFilter('critical'),
-      ),
-    ),
-    const SizedBox(width: 12),
-    Expanded(
-      child: _ClickableStatCard(
-        label: 'Validated',
-        value: widget.solved,
-        color: _green,
-        icon: Icons.check_circle_outline,
-        iconBg: _greenLt,
-        isActive: _historyFilter == 'validated',
-        onTap: () => _setHistoryFilter('validated'),
-        showHistoryHint: true,
-      ),
-    ),
-    const SizedBox(width: 12),
-    Expanded(
-      child: _ClickableStatCard(
-        label: 'Total Alerts',
-        value: widget.total,
-        color: _navy,
-        icon: Icons.notifications_outlined,
-        iconBg: _navyLt,
-        isActive: _historyFilter == 'total',
-        onTap: () => _setHistoryFilter('total'),
-        showHistoryHint: true,
-      ),
-    ),
-  ],
-),
-        // Critical unclaimed alerts (optional, keep as is)
-        if (_criticalUnclaimedCount > 0) ...[
+          // Active filter banner
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              border: Border.all(color: Colors.red.shade300),
+              color: const Color(0xFFEFF6FF),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.filter_alt_outlined, size: 15, color: _blue),
+                const SizedBox(width: 6),
+                const Text(
+                  'Active filter:  ',
+                  style: TextStyle(fontSize: 12, color: _muted),
+                ),
+                _FilterChip(label: widget.timeRangeLabel, onRemove: null),
+                const SizedBox(width: 6),
+                _FilterChip(
+                  label: widget.selectedUsine == 'all' ? 'Default' : widget.selectedUsine,
+                  onRemove: widget.selectedUsine == 'all' ? null : () => widget.onUsineChange('all'),
+                ),
+                const Spacer(),
+                Text(
+                  widget.timeRangeSubtitle,
+                  style: const TextStyle(fontSize: 11, color: _muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // 4 stat cards
+          Row(
+            children: [
+              Expanded(
+                child: _UnclaimedStatCard(
+                  unclaimedCount: widget.pending,
+                  criticalCount: _criticalUnclaimedCount,
+                  isActive: _historyFilter == 'pending',
+                  onTap: () => _setHistoryFilter('pending'),
+                  onCriticalTap: () => _setHistoryFilter('critical'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ProgressStatCard(
+                  inProgressCount: widget.inProgress,
+                  criticalCount: _criticalInProgressCount,
+                  isActive: _historyFilter == 'en_cours',
+                  onTap: () => _setHistoryFilter('en_cours'),
+                  onCriticalTap: () => _setHistoryFilter('critical'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ClickableStatCard(
+                  label: 'Validated',
+                  value: widget.solved,
+                  color: _green,
+                  icon: Icons.check_circle_outline,
+                  iconBg: _greenLt,
+                  isActive: _historyFilter == 'validated',
+                  onTap: () => _setHistoryFilter('validated'),
+                  showHistoryHint: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _ClickableStatCard(
+                  label: 'Total Alerts',
+                  value: widget.total,
+                  color: _navy,
+                  icon: Icons.notifications_outlined,
+                  iconBg: _navyLt,
+                  isActive: _historyFilter == 'total',
+                  onTap: () => _setHistoryFilter('total'),
+                  showHistoryHint: true,
+                ),
+              ),
+            ],
+          ),
+
+          // Critical unclaimed alerts
+          if (_criticalUnclaimedCount > 0) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                border: Border.all(color: Colors.red.shade300),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        '⚠️ Critical Unclaimed Alerts ($_criticalUnclaimedCount)',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.red),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'These alerts have been waiting for more than 10 minutes',
+                        style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ..._criticalUnclaimedAlerts.map((alert) {
+                    final elapsedMinutes = DateTime.now().difference(alert.timestamp).inMinutes;
+                    final elapsedText = elapsedMinutes < 60
+                        ? '$elapsedMinutes min'
+                        : '${elapsedMinutes ~/ 60}h ${elapsedMinutes % 60}m';
+                    final displayDescription = _getAlertDisplayDescription(alert);
+                    return GestureDetector(
+                      onTap: () => _setHistoryFilter(alert.type),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.red.shade200),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _typeColor(alert.type),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${_typeLabel(alert.type)} — $displayDescription',
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _text),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${alert.usine} - Line ${alert.convoyeur} - WS ${alert.poste}',
+                                    style: const TextStyle(fontSize: 11, color: _muted),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.red.shade200),
+                              ),
+                              child: Text(
+                                elapsedText,
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.red),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_right, color: _muted, size: 18),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // 4 type breakdown cards
+          Row(
+            children: [
+              Expanded(
+                child: _ClickableTypeCard(
+                  type: 'qualite',
+                  total: ts['qualite']!['total']!,
+                  solved: ts['qualite']!['solved']!,
+                  pending: ts['qualite']!['pending']!,
+                  isActive: _historyFilter == 'qualite',
+                  onTap: () => _setHistoryFilter('qualite'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ClickableTypeCard(
+                  type: 'maintenance',
+                  total: ts['maintenance']!['total']!,
+                  solved: ts['maintenance']!['solved']!,
+                  pending: ts['maintenance']!['pending']!,
+                  isActive: _historyFilter == 'maintenance',
+                  onTap: () => _setHistoryFilter('maintenance'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ClickableTypeCard(
+                  type: 'defaut_produit',
+                  total: ts['defaut_produit']!['total']!,
+                  solved: ts['defaut_produit']!['solved']!,
+                  pending: ts['defaut_produit']!['pending']!,
+                  isActive: _historyFilter == 'defaut_produit',
+                  onTap: () => _setHistoryFilter('defaut_produit'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ClickableTypeCard(
+                  type: 'manque_ressource',
+                  total: ts['manque_ressource']!['total']!,
+                  solved: ts['manque_ressource']!['solved']!,
+                  pending: ts['manque_ressource']!['pending']!,
+                  isActive: _historyFilter == 'manque_ressource',
+                  onTap: () => _setHistoryFilter('manque_ressource'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Alert history section
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_today_outlined, size: 16, color: _navy),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Alert History (${_displayedAlerts.length})',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _text),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                _ExportBtn(
+                  label: '📄 Export CSV',
+                  onTap: () {
+                    _exportFilteredAlerts(_displayedAlerts);
+                  },
+                ),
+                const SizedBox(width: 8),
+                _ExportBtn(
+                  label: '📊 Export Excel',
+                  onTap: () {
+                    _exportFilteredAlertsExcel(_displayedAlerts);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Full alert list with filters',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          const SizedBox(height: 14),
+
+          // Filter row
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _white,
+              border: Border.all(color: _border),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                const Row(
                   children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
-                    const SizedBox(width: 8),
+                    Icon(Icons.filter_list_outlined, size: 16, color: _navy),
+                    SizedBox(width: 6),
                     Text(
-                      '⚠️ Critical Unclaimed Alerts ($_criticalUnclaimedCount)',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.red,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'These alerts have been waiting for more than 10 minutes',
-                      style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                      'Filter History',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _text),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ..._criticalUnclaimedAlerts.map((alert) {
-                  final elapsedMinutes = DateTime.now().difference(alert.timestamp).inMinutes;
-                  final elapsedText = elapsedMinutes < 60
-                      ? '$elapsedMinutes min'
-                      : '${elapsedMinutes ~/ 60}h ${elapsedMinutes % 60}m';
-                  final displayDescription = _getAlertDisplayDescription(alert);
-                  return GestureDetector(
-                    onTap: () => _setHistoryFilter(alert.type),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: Colors.red.shade200),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _typeColor(alert.type),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${_typeLabel(alert.type)} — $displayDescription',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: _text,
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FilterDropdown(
+                        label: 'Plant',
+                        value: widget.selectedUsine,
+                        items: _usines()
+                            .map((v) => DropdownMenuItem(
+                                  value: v,
+                                  child: Text(
+                                    v == 'all' ? 'All Plants' : v,
+                                    style: const TextStyle(fontSize: 13),
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${alert.usine} - Line ${alert.convoyeur} - WS ${alert.poste}',
-                                  style: const TextStyle(fontSize: 11, color: _muted),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.shade200),
-                            ),
-                            child: Text(
-                              elapsedText,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.chevron_right, color: _muted, size: 18),
-                        ],
+                                ))
+                            .toList(),
+                        onChanged: widget.onUsineChange,
                       ),
                     ),
-                  );
-                }).toList(),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _FilterDropdown(
+                        label: 'Conveyor',
+                        value: widget.filterConvoyeur,
+                        items: _convoyeursForFilter()
+                            .map((v) => DropdownMenuItem(
+                                  value: v,
+                                  child: Text(
+                                    v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: widget.onConvoyeurChange,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _FilterDropdown(
+                        label: 'Post',
+                        value: widget.filterPoste,
+                        items: _postesForFilter()
+                            .map((v) => DropdownMenuItem(
+                                  value: v,
+                                  child: Text(
+                                    v == 'all' ? 'All Posts' : 'Post $v',
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ))
+                            .toList(),
+                        onChanged: widget.onPosteChange,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _FilterDropdown(
+                        label: 'Alert Type',
+                        value: widget.filterType,
+                        items: [
+                          const DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All Types', style: TextStyle(fontSize: 13)),
+                          ),
+                          ...['qualite', 'maintenance', 'defaut_produit', 'manque_ressource']
+                              .map((t) => DropdownMenuItem(
+                                    value: t,
+                                    child: Text(
+                                      _typeLabel(t),
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ))
+                        ],
+                        onChanged: widget.onTypeChange,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _FilterDropdown(
+                        label: 'Status',
+                        value: widget.filterStatus,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All Statuses', style: TextStyle(fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'disponible',
+                            child: Text('Available', style: TextStyle(fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'en_cours',
+                            child: Text('In Progress', style: TextStyle(fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'validee',
+                            child: Text('Validated', style: TextStyle(fontSize: 13)),
+                          ),
+                        ],
+                        onChanged: widget.onStatusChange,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _FilterDropdown(
+                        label: 'Time Range',
+                        value: widget.timeRange,
+                        items: const [
+                          DropdownMenuItem(value: 'today', child: Text('Today', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(value: 'week', child: Text('Last Week', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(value: 'month', child: Text('This Month', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(value: 'year', child: Text('This Year', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(value: 'custom', child: Text('Custom', style: TextStyle(fontSize: 13))),
+                        ],
+                        onChanged: widget.onTimeRangeChange,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        widget.onReset();
+                        setState(() => _historyFilter = null);
+                      },
+                      icon: const Icon(Icons.refresh_outlined, size: 15),
+                      label: const Text('Reset', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _navy,
+                        side: const BorderSide(color: _border),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-        ],
+          const SizedBox(height: 14),
 
-        // 4 type breakdown cards (unchanged)
-        Row(children: [
-          Expanded(child: _ClickableTypeCard(
-              type: 'qualite',
-              total: ts['qualite']!['total']!,
-              solved: ts['qualite']!['solved']!,
-              pending: ts['qualite']!['pending']!,
-              isActive: _historyFilter == 'qualite',
-              onTap: () => _setHistoryFilter('qualite'),
-          )),
-          const SizedBox(width: 10),
-          Expanded(child: _ClickableTypeCard(
-              type: 'maintenance',
-              total: ts['maintenance']!['total']!,
-              solved: ts['maintenance']!['solved']!,
-              pending: ts['maintenance']!['pending']!,
-              isActive: _historyFilter == 'maintenance',
-              onTap: () => _setHistoryFilter('maintenance'),
-          )),
-          const SizedBox(width: 10),
-          Expanded(child: _ClickableTypeCard(
-              type: 'defaut_produit',
-              total: ts['defaut_produit']!['total']!,
-              solved: ts['defaut_produit']!['solved']!,
-              pending: ts['defaut_produit']!['pending']!,
-              isActive: _historyFilter == 'defaut_produit',
-              onTap: () => _setHistoryFilter('defaut_produit'),
-          )),
-          const SizedBox(width: 10),
-          Expanded(child: _ClickableTypeCard(
-              type: 'manque_ressource',
-              total: ts['manque_ressource']!['total']!,
-              solved: ts['manque_ressource']!['solved']!,
-              pending: ts['manque_ressource']!['pending']!,
-              isActive: _historyFilter == 'manque_ressource',
-              onTap: () => _setHistoryFilter('manque_ressource'),
-          )),
-        ]),
-        const SizedBox(height: 24),
-
-        // Alert history section (unchanged)
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today_outlined, size: 16, color: _navy),
-                  const SizedBox(width: 8),
-                  Text('Alert History (${_displayedAlerts.length})',
-                      style: const TextStyle(fontSize: 16,
-                          fontWeight: FontWeight.w700, color: _text)),
+          // Alert list
+          if (_displayedAlerts.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              alignment: Alignment.center,
+              child: Column(
+                children: const [
+                  Icon(Icons.check_circle_outline, size: 48, color: _green),
+                  SizedBox(height: 12),
+                  Text(
+                    'No alerts match your filters',
+                    style: TextStyle(fontSize: 15, color: _muted),
+                  ),
                 ],
               ),
-              const SizedBox(width: 16),
-              _ExportBtn(label: '📄 Export CSV', onTap: () {
-                _exportFilteredAlerts(_displayedAlerts);
-              }),
-              const SizedBox(width: 8),
-              _ExportBtn(label: '📊 Export Excel', onTap: () {
-                _exportFilteredAlertsExcel(_displayedAlerts);
-              }),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text('Full alert list with filters',
-            style: TextStyle(fontSize: 12, color: _muted)),
-        const SizedBox(height: 14),
-
-        // Filter row (unchanged)
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-              color: _white, border: Border.all(color: _border),
-              borderRadius: BorderRadius.circular(12)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Row(children: [
-              Icon(Icons.filter_list_outlined, size: 16, color: _navy),
-              SizedBox(width: 6),
-              Text('Filter History',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
-                      color: _text)),
-            ]),
-            const SizedBox(height: 14),
-            Row(children: [
-              Expanded(child: _FilterDropdown(
-                  label: 'Plant',
-                  value: widget.selectedUsine,
-                  items: _usines().map((v) => DropdownMenuItem(
-                      value: v,
-                      child: Text(v == 'all' ? 'All Plants' : v,
-                          style: const TextStyle(fontSize: 13)))).toList(),
-                  onChanged: widget.onUsineChange)),
-              const SizedBox(width: 10),
-              Expanded(child: _FilterDropdown(
-                  label: 'Conveyor',
-                  value: widget.filterConvoyeur,
-                  items: _convoyeurs().map((v) => DropdownMenuItem(
-                      value: v,
-                      child: Text(v == 'all' ? 'All Conveyors' : 'Conv. $v',
-                          style: const TextStyle(fontSize: 13)))).toList(),
-                  onChanged: widget.onConvoyeurChange)),
-              const SizedBox(width: 10),
-              Expanded(child: _FilterDropdown(
-                  label: 'Post',
-                  value: widget.filterPoste,
-                  items: _postes().map((v) => DropdownMenuItem(
-                      value: v,
-                      child: Text(v == 'all' ? 'All Posts' : 'Post $v',
-                          style: const TextStyle(fontSize: 13)))).toList(),
-                  onChanged: widget.onPosteChange)),
-              const SizedBox(width: 10),
-              Expanded(child: _FilterDropdown(
-                  label: 'Alert Type',
-                  value: widget.filterType,
-                  items: [
-                    const DropdownMenuItem(value: 'all',
-                        child: Text('All Types', style: TextStyle(fontSize: 13))),
-                    ...['qualite','maintenance','defaut_produit','manque_ressource']
-                        .map((t) => DropdownMenuItem(value: t,
-                            child: Text(_typeLabel(t),
-                                style: const TextStyle(fontSize: 13))))
-                  ],
-                  onChanged: widget.onTypeChange)),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(child: _FilterDropdown(
-                  label: 'Status',
-                  value: widget.filterStatus,
-                  items: [
-                    const DropdownMenuItem(value: 'all',
-                        child: Text('All Statuses', style: TextStyle(fontSize: 13))),
-                    const DropdownMenuItem(value: 'disponible',
-                        child: Text('Available', style: TextStyle(fontSize: 13))),
-                    const DropdownMenuItem(value: 'en_cours',
-                        child: Text('In Progress', style: TextStyle(fontSize: 13))),
-                    const DropdownMenuItem(value: 'validee',
-                        child: Text('Validated', style: TextStyle(fontSize: 13))),
-                  ],
-                  onChanged: widget.onStatusChange)),
-              const SizedBox(width: 10),
-              Expanded(child: _FilterDropdown(
-                  label: 'Time Range',
-                  value: widget.timeRange,
-                  items: const [
-                    DropdownMenuItem(value: 'today',  child: Text('Today',      style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'week',   child: Text('Last Week',  style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'month',  child: Text('This Month', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'year',   child: Text('This Year',  style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'custom', child: Text('Custom',     style: TextStyle(fontSize: 13))),
-                  ],
-                  onChanged: widget.onTimeRangeChange)),
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: () {
-                  widget.onReset();
-                  setState(() => _historyFilter = null);
-                },
-                icon: const Icon(Icons.refresh_outlined, size: 15),
-                label: const Text('Reset',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                style: OutlinedButton.styleFrom(
-                    foregroundColor: _navy,
-                    side: const BorderSide(color: _border),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 13),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8))),
-              ),
-            ]),
-          ]),
-        ),
-        const SizedBox(height: 14),
-
-        // Alert list (unchanged)
-        if (_displayedAlerts.isEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 40),
-            alignment: Alignment.center,
-            child: Column(children: const [
-              Icon(Icons.check_circle_outline, size: 48, color: _green),
-              SizedBox(height: 12),
-              Text('No alerts match your filters',
-                  style: TextStyle(fontSize: 15, color: _muted)),
-            ]),
-          )
-        else
-          ..._displayedAlerts.map((a) => _AlertHistoryRow(alert: a)),
-      ],
-    ),
-  );
-}
+            )
+          else
+            ..._displayedAlerts.map((a) => _AlertHistoryRow(alert: a)),
+        ],
+      ),
+    );
+  }
 }
 class _ProgressStatCard extends StatelessWidget {
   final int inProgressCount;
@@ -2409,6 +2586,7 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
   @override
   void initState() {
     super.initState();
+    
     _sub = TabController(length: 3, vsync: this);
   }
 
