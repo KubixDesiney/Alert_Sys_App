@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/alert_model.dart';
 import '../services/alert_service.dart';
 import '../services/ai_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 
 class AlertProvider extends ChangeNotifier {
   final AlertService _service = AlertService();
@@ -81,30 +83,30 @@ class AlertProvider extends ChangeNotifier {
   // New alert detection with debug prints
   // ----------------------------------------------------------------------
   void _checkNewAlerts(List<AlertModel> newAlerts) {
-    final newIds = newAlerts.map((a) => a.id).toSet();
-    final addedIds = newIds.difference(_previousAlertIds);
-    final now = DateTime.now();
+  final newIds = newAlerts.map((a) => a.id).toSet();
+  final addedIds = newIds.difference(_previousAlertIds);
+  final now = DateTime.now();
 
-    for (var id in addedIds) {
-      // Deduplication guard
-      if (_lastProcessed.containsKey(id)) {
-        final last = _lastProcessed[id]!;
-        if (now.difference(last) < const Duration(seconds: 2)) {
-          print('⏩ Skipping duplicate alert $id (already processed)');
-          continue;
-        }
+  for (var id in addedIds) {
+    if (_lastProcessed.containsKey(id)) {
+      final last = _lastProcessed[id]!;
+      if (now.difference(last) < const Duration(seconds: 2)) {
+        print('⏩ Skipping duplicate alert $id (already processed)');
+        continue;
       }
-      _lastProcessed[id] = now;
-      final alert = newAlerts.firstWhere((a) => a.id == id);
+    }
+    _lastProcessed[id] = now;
+    final alert = newAlerts.firstWhere((a) => a.id == id);
 
-      // ✅ Debug print – new alert detected
-      print('📢 New alert detected: ${alert.id} (${alert.type}) – calling sendNewAlertNotification');
+    print('📢 New alert detected: ${alert.id} (${alert.type}) – calling sendNewAlertNotification');
 
-      // Send push notification (OneSignal)
+    // ✅ Only send push on mobile (Android/iOS)
+    if (!kIsWeb) {
       _service.sendNewAlertNotification(alert.id, alert.type, alert.description);
     }
-    _previousAlertIds = newIds;
   }
+  _previousAlertIds = newIds;
+}
 
   Future<List<String>> getPastResolutionsForType(String type, int limit) async {
     final similar = _alerts
@@ -245,7 +247,7 @@ Future<void> toggleCritical(String alertId, bool isCritical, {String? note}) asy
   _updateLocal(alertId, (a) => a.copyWith(isCritical: isCritical, criticalNote: note));
   await _service.toggleCritical(alertId, isCritical);
   if (note != null) {
-    await _service.setCriticalNote(alertId, note);
+    await _service.setCriticalNote(alertId, note); // you need to add this method in AlertService
   }
   await _notifyAllUsers(alertId, isCritical);
 }
