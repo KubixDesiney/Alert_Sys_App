@@ -42,6 +42,14 @@ class AlertService {
       'takenAtTimestamp': DateTime.now().toIso8601String(),
     });
   }
+  Stream<List<AlertModel>> getAlertsWhereAssistant(String assistantId) {
+  return _db
+      .child('alerts')
+      .orderByChild('assistantId')
+      .equalTo(assistantId)
+      .onValue
+      .map((event) => _toAlertList(event.snapshot));
+}
 
 // Modify existing returnToQueue
 Future<void> returnToQueue(String alertId, {String? reason}) async {
