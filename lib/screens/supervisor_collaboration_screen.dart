@@ -382,8 +382,10 @@ class _RequestCollaborationDialogState
 Future<void> _loadSupervisors() async {
   final currentUserId = FirebaseAuth.instance.currentUser?.uid;
   final sups = await _authService.getActiveSupervisors();
-  // Filter: same factory as the alert, and not the current user
+  print('All active supervisors: ${sups.map((s) => '${s.fullName} (${s.usine})')}');
+  print('Alert usine: ${widget.alert.usine}');
   final filtered = sups.where((s) => s.usine == widget.alert.usine && s.id != currentUserId).toList();
+  print('Filtered count: ${filtered.length}');
   setState(() {
     _supervisors = filtered;
     _loading = false;
