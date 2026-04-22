@@ -294,91 +294,113 @@ class _CollaborationsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final service = CollaborationService();
 
-    return DefaultTabController(
-      length: 2,
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: _white,
-              border: Border(bottom: BorderSide(color: _border)),
-            ),
-            child: const TabBar(
-              labelColor: _navy,
-              unselectedLabelColor: _muted,
-              indicatorColor: _navy,
-              tabs: [
-                Tab(text: 'Pending', icon: Icon(Icons.pending_actions, size: 18)),
-                Tab(text: 'History', icon: Icon(Icons.history, size: 18)),
-              ],
-            ),
+          // Pending section header
+          Row(
+            children: [
+              Icon(Icons.pending_actions, color: _orange, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Pending Collaboration Requests',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _navy),
+              ),
+            ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                // Pending requests (original)
-                StreamBuilder<List<CollaborationRequest>>(
-                  stream: service.getPendingCollaborationRequests(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return _buildEmpty('No pending requests', Icons.pending_actions);
-                    }
-                    final requests = snapshot.data!;
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: requests.length,
-                      itemBuilder: (context, index) {
-                        return _CollaborationRequestCard(request: requests[index]);
-                      },
-                    );
-                  },
-                ),
-                // History (approved/rejected)
-                StreamBuilder<List<CollaborationRequest>>(
-                  stream: service.getAllCollaborationRequests(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return _buildEmpty('No request history', Icons.history);
-                    }
-                    final history = snapshot.data!
-                        .where((r) => r.status != 'pending')
-                        .toList();
-                    if (history.isEmpty) {
-                      return _buildEmpty('No request history', Icons.history);
-                    }
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: history.length,
-                      itemBuilder: (context, index) {
-                        final request = history[index];
-                        return _HistoryRequestCard(request: request);
-                      },
-                    );
-                  },
-                ),
-              ],
-            ),
+          const SizedBox(height: 4),
+          const Text(
+            'Approve or reject collaboration requests from supervisors',
+            style: TextStyle(fontSize: 12, color: _muted),
           ),
-        ],
-      ),
-    );
-  }
+          const SizedBox(height: 16),
 
-  Widget _buildEmpty(String text, IconData icon) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 48, color: _muted),
-          const SizedBox(height: 12),
-          Text(text, style: TextStyle(fontSize: 14, color: _muted)),
+          // Pending requests stream
+          StreamBuilder<List<CollaborationRequest>>(
+            stream: service.getPendingCollaborationRequests(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  alignment: Alignment.center,
+                  child: Column(
+                    children: [
+                      Icon(Icons.check_circle_outline, size: 48, color: _green.withOpacity(0.5)),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No pending collaboration requests',
+                        style: TextStyle(fontSize: 13, color: _muted),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return Column(
+                children: snapshot.data!.map((request) => _CollaborationRequestCard(request: request)).toList(),
+              );
+            },
+          ),
+
+          const SizedBox(height: 32),
+
+          // History section header
+          Row(
+            children: [
+              Icon(Icons.history, color: _navy, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Request History',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _navy),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Recently processed collaboration requests',
+            style: TextStyle(fontSize: 12, color: _muted),
+          ),
+          const SizedBox(height: 16),
+
+          // History requests stream
+          StreamBuilder<List<CollaborationRequest>>(
+            stream: service.getAllCollaborationRequests(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'No request history',
+                    style: TextStyle(fontSize: 13, color: _muted),
+                  ),
+                );
+              }
+              final history = snapshot.data!
+                  .where((r) => r.status != 'pending')
+                  .toList();
+              if (history.isEmpty) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  alignment: Alignment.center,
+                  child: Text(
+                    'No request history',
+                    style: TextStyle(fontSize: 13, color: _muted),
+                  ),
+                );
+              }
+              return Column(
+                children: history.map((request) => _HistoryRequestCard(request: request)).toList(),
+              );
+            },
+          ),
         ],
       ),
     );
