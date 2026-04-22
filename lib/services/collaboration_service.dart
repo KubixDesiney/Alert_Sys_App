@@ -155,14 +155,14 @@ class CollaborationService {
     }
   }
   // Approve collaboration request with additional options
-Future<void> approveCollaborationRequestWithDetails(
-  String requestId,
-  String approverId,
-  String approverName,
-  bool isPMApproval, {
+Future<void> approveCollaborationRequestWithDetails({
+  required String requestId,
+  required String approverId,
+  required String approverName,
+  required bool isPMApproval,
   bool confirmTransfer = false,
   bool confirmCancelOriginal = false,
-  List<String>? cancelExistingAlertIds, // assistants' existing alerts to cancel
+  List<String>? cancelExistingAlertIds,
 }) async {
   final snapshot = await _db.child('collaboration_requests/$requestId').get();
   if (!snapshot.exists) return;
@@ -173,7 +173,7 @@ Future<void> approveCollaborationRequestWithDetails(
   );
 
   if (isPMApproval) {
-    // 1. Assign the first target supervisor as assistant
+    // Assign assistant
     final assistantId = request.targetSupervisorIds.isNotEmpty ? request.targetSupervisorIds.first : null;
     final assistantName = request.targetSupervisorNames.isNotEmpty ? request.targetSupervisorNames.first : null;
 
@@ -184,7 +184,7 @@ Future<void> approveCollaborationRequestWithDetails(
       });
     }
 
-    // 2. Cancel original alert if requested
+    // Cancel the original alert (the one being collaborated on) if requested
     if (confirmCancelOriginal) {
       await _db.child('alerts/${request.alertId}').update({
         'status': 'cancelled',
@@ -193,18 +193,18 @@ Future<void> approveCollaborationRequestWithDetails(
       });
     }
 
-    // 3. Cancel any existing alerts of assistants (if they were working on other alerts)
-    if (cancelExistingAlertIds != null) {
+    // Cancel existing alerts of the assistant(s) (other alerts they were working on)
+    if (cancelExistingAlertIds != null && cancelExistingAlertIds.isNotEmpty) {
       for (final alertId in cancelExistingAlertIds) {
         await _db.child('alerts/$alertId').update({
           'status': 'cancelled',
-          'cancelledReason': 'Supervisor reassigned via collaboration',
+          'cancelledReason': 'Supervisor reassigned via collaboration request $requestId',
           'cancelledAt': DateTime.now().toIso8601String(),
         });
       }
     }
 
-    // 4. Update collaboration request status
+    // Update collaboration request status
     await _db.child('collaboration_requests/$requestId').update({
       'pmApproved': true,
       'status': 'approved',
@@ -212,7 +212,7 @@ Future<void> approveCollaborationRequestWithDetails(
       'approvedAt': DateTime.now().toIso8601String(),
     });
 
-    // 5. Notify requester and target supervisors
+    // Notifications
     final notification = {
       'type': 'collaboration_approved',
       'collabRequestId': requestId,
@@ -235,7 +235,7 @@ Future<void> approveCollaborationRequestWithDetails(
       await _db.child('notifications/$targetId').push().set(notif);
     }
   } else {
-    // Supervisor approval (not PM) – keep original simple approval
+    // Supervisor approval
     await _db.child('collaboration_requests/$requestId').update({
       'status': 'approved',
       'approvedBy': approverId,
