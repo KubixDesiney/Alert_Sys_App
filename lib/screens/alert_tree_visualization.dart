@@ -1,8 +1,7 @@
 // lib/screens/alert_tree_visualization.dart
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import '../services/hierarchy_service.dart';
-import '../models/hierarchy_model.dart';
+import '../services/auth_service.dart';
 import '../models/alert_model.dart';
 
 // Color palette matching the app theme
@@ -55,10 +54,13 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Offset? _popupPosition;
 
   late AnimationController _zoomController;
+  late AnimationController _detailController;
   late AnimationController _pulseController;
   late Animation<double> _zoomAnimation;
+  late Animation<double> _detailAnimation;
 
   final HierarchyService _hierarchyService = HierarchyService();
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
@@ -70,6 +72,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       vsync: this,
     );
 
+    _detailController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -78,6 +85,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     _zoomAnimation = CurvedAnimation(
       parent: _zoomController,
       curve: Curves.easeInOutCubic,
+    );
+
+    _detailAnimation = CurvedAnimation(
+      parent: _detailController,
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -150,11 +162,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     return {
       'id': alert.id,
       'type': alert.type,
+      'status': alert.status,
       'description': alert.description,
       'usine': alert.usine,
       'convoyeur': alert.convoyeur,
       'poste': alert.poste,
-      'status': alert.status,
+      'superviseurId': alert.superviseurId,
+      'superviseurName': alert.superviseurName,
+      'assistantId': alert.assistantId,
+      'assistantName': alert.assistantName,
       'timestamp': alert.timestamp.toString(),
       'isCritical': alert.isCritical,
     };
@@ -167,13 +183,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         _selectedConveyor = null;
         _selectedWorkstation = null;
         _popupAlertData = null;
+        _detailController.reverse();
         _zoomController.reverse();
       } else {
         _selectedUsine = usine;
         _selectedConveyor = null;
         _selectedWorkstation = null;
         _popupAlertData = null;
-        _zoomController.forward();
+        _detailController.reverse();
+        _zoomController.forward(from: 0);
       }
     });
   }
@@ -184,10 +202,12 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         _selectedConveyor = null;
         _selectedWorkstation = null;
         _popupAlertData = null;
+        _detailController.reverse();
       } else {
         _selectedConveyor = conveyor;
         _selectedWorkstation = null;
         _popupAlertData = null;
+        _detailController.forward(from: 0);
       }
     });
   }
@@ -213,6 +233,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   @override
   void dispose() {
     _zoomController.dispose();
+    _detailController.dispose();
     _pulseController.dispose();
     super.dispose();
   }
@@ -246,15 +267,18 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 _buildHeader(),
                 Expanded(
                   child: AnimatedBuilder(
-                    animation: _zoomAnimation,
+                    animation: Listenable.merge([_zoomAnimation, _detailAnimation]),
                     builder: (context, child) {
-                      if (_selectedUsine == null) {
-                        return _buildUsineLevel();
-                      } else if (_selectedConveyor == null) {
-                        return _buildConveyorLevel();
-                      } else {
-                        return _buildWorkstationLevel();
-                      }
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _buildUsineLayer(_zoomAnimation.value),
+                          if (_selectedUsine != null && _selectedConveyor == null)
+                            _buildConveyorLayer(_zoomAnimation.value),
+                          if (_selectedConveyor != null)
+                            _buildWorkstationLayer(_detailAnimation.value),
+                        ],
+                      );
                     },
                   ),
                 ),
@@ -349,102 +373,164 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     return Row(children: parts);
   }
 
-  Widget _buildUsineLevel() {
+  Widget _buildUsineLayer(double progress) {
+    final layerOpacity = _selectedUsine == null ? 1.0 : (1.0 - progress).clamp(0.0, 1.0);
     return LayoutBuilder(
       builder: (context, constraints) {
         final spacing = constraints.maxWidth / (_usines.length + 1);
-        return CustomPaint(
-          painter: _UsineTreePainter(
-            usines: _usines,
-            spacing: spacing,
-            animation: _pulseController,
-          ),
-          child: Stack(
-            children: _usines.asMap().entries.map((entry) {
-              final index = entry.key;
-              final usine = entry.value;
-              final x = spacing * (index + 1);
-              return Positioned(
-                left: x - 40,
-                top: 100,
-                child: _buildUsineNode(usine),
-              );
-            }).toList(),
+        return Opacity(
+          opacity: layerOpacity,
+          child: IgnorePointer(
+            ignoring: _selectedUsine != null,
+            child: Transform.scale(
+              scale: 1 - (progress * 0.04),
+              alignment: Alignment.topCenter,
+              child: Transform.translate(
+                offset: Offset(0, -progress * 8),
+                child: CustomPaint(
+                  painter: _UsineTreePainter(
+                    usines: _usines,
+                    spacing: spacing,
+                    animation: _pulseController,
+                  ),
+                  child: Stack(
+                    children: _usines.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final usine = entry.value;
+                      final x = spacing * (index + 1);
+                      final isSelected = _selectedUsine?.id == usine.id;
+                      return Positioned(
+                        left: x - 40,
+                        top: 100,
+                        child: AnimatedScale(
+                          scale: isSelected ? 0.94 : 1,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutBack,
+                          child: _buildUsineNode(usine),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildConveyorLevel() {
+  Widget _buildConveyorLayer(double progress) {
     if (_selectedUsine == null) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
         final conveyors = _selectedUsine!.children;
         final spacing = constraints.maxWidth / (conveyors.length + 1);
-        return CustomPaint(
-          painter: _ConveyorTreePainter(
-            conveyors: conveyors,
-            spacing: spacing,
-            animation: _pulseController,
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                left: constraints.maxWidth / 2 - 40,
-                top: 40,
-                child: _buildUsineNodeSmall(_selectedUsine!),
+        return Opacity(
+          opacity: progress,
+          child: Transform.translate(
+            offset: Offset(0, 14 * (1 - progress)),
+            child: CustomPaint(
+              painter: _ConveyorTreePainter(
+                conveyors: conveyors,
+                spacing: spacing,
+                animation: _detailAnimation,
               ),
-              ...conveyors.asMap().entries.map((entry) {
-                final index = entry.key;
-                final conveyor = entry.value;
-                final x = spacing * (index + 1);
-                return Positioned(
-                  left: x - 35,
-                  top: 180,
-                  child: _buildConveyorNode(conveyor),
-                );
-              }).toList(),
-            ],
+              child: Stack(
+                children: [
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 40),
+                      child: _buildUsineNodeSmall(_selectedUsine!),
+                    ),
+                  ),
+                  ...conveyors.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final conveyor = entry.value;
+                    final x = spacing * (index + 1);
+                    return Positioned(
+                      left: x - 35,
+                      top: 180,
+                      child: _buildConveyorNode(conveyor),
+                    );
+                  }),
+                ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildWorkstationLevel() {
+  Widget _buildWorkstationLayer(double progress) {
     if (_selectedConveyor == null) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
         final workstations = _selectedConveyor!.children;
         final spacing = constraints.maxWidth / (workstations.length + 1);
-        return CustomPaint(
-          painter: _WorkstationTreePainter(
-            workstations: workstations,
-            spacing: spacing,
-            animation: _pulseController,
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                left: constraints.maxWidth / 2 - 35,
-                top: 40,
-                child: _buildConveyorNodeSmall(_selectedConveyor!),
+        return Opacity(
+          opacity: progress,
+          child: Transform.translate(
+            offset: Offset(0, 14 * (1 - progress)),
+            child: CustomPaint(
+              painter: _WorkstationTreePainter(
+                workstations: workstations,
+                spacing: spacing,
+                animation: _detailAnimation,
               ),
-              ...workstations.asMap().entries.map((entry) {
-                final index = entry.key;
-                final workstation = entry.value;
-                final x = spacing * (index + 1);
-                return Positioned(
-                  left: x - 30,
-                  top: 180,
-                  child: _buildWorkstationNode(workstation),
-                );
-              }).toList(),
-            ],
+              child: Stack(
+                children: [
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 40),
+                      child: _buildConveyorNodeSmall(_selectedConveyor!),
+                    ),
+                  ),
+                  ...workstations.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final workstation = entry.value;
+                    final x = spacing * (index + 1);
+                    return Positioned(
+                      left: x - 30,
+                      top: 180,
+                      child: _buildWorkstationNode(workstation),
+                    );
+                  }),
+                ],
+              ),
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildUsineNodeSmall(AlertNode usine) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: _white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: usine.hasError ? _red : _navy, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.factory_outlined, size: 20, color: usine.hasError ? _red : _navy),
+          const SizedBox(width: 8),
+          Text(
+            usine.label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: usine.hasError ? _red : _navy,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -544,32 +630,6 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildUsineNodeSmall(AlertNode usine) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: _white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: usine.hasError ? _red : _navy, width: 2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.factory_outlined, size: 20, color: usine.hasError ? _red : _navy),
-          const SizedBox(width: 8),
-          Text(
-            usine.label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: usine.hasError ? _red : _navy,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -786,6 +846,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Widget _buildAlertPopup() {
     final alert = _popupAlertData!;
     final screenSize = MediaQuery.of(context).size;
+    final status = (alert['status'] as String?) ?? 'disponible';
+    final claimedBy = alert['superviseurName'] as String?;
+    final assistantName = alert['assistantName'] as String?;
 
     double left = _popupPosition!.dx + 20;
     double top = _popupPosition!.dy - 100;
@@ -945,6 +1008,32 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           ),
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      _buildInfoRow('Claim status', _statusSummary(status, claimedBy, assistantName)),
+                      if (claimedBy != null)
+                        _buildInfoRow('Claimed by', claimedBy),
+                      if (assistantName != null && assistantName.isNotEmpty)
+                        _buildInfoRow('Assisted by', assistantName),
+                      if (status == 'disponible')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _showAssignSupervisorDialog(alert),
+                              icon: const Icon(Icons.person_add_alt_1, size: 18),
+                              label: const Text('Assign Supervisor'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _navy,
+                                foregroundColor: _white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -977,6 +1066,79 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               color: _navy,
               fontWeight: FontWeight.w600,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _statusSummary(String status, String? claimedBy, String? assistantName) {
+    if (status == 'disponible') {
+      return 'Unclaimed';
+    }
+    if (claimedBy != null && assistantName != null && assistantName.isNotEmpty) {
+      return 'Claimed by $claimedBy and assisted by $assistantName';
+    }
+    if (claimedBy != null) {
+      return 'Claimed by $claimedBy';
+    }
+    return 'In progress';
+  }
+
+  Future<void> _showAssignSupervisorDialog(Map<String, dynamic> alert) async {
+    final supervisors = await _authService.getActiveSupervisors();
+    final filtered = supervisors.where((supervisor) => supervisor.usine == alert['usine']).toList();
+
+    if (!mounted) return;
+
+    if (filtered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active supervisors available for this factory')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Assign Supervisor'),
+        content: SizedBox(
+          width: 320,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: filtered.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, index) {
+              final supervisor = filtered[index];
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person, color: _navy),
+                title: Text(supervisor.fullName),
+                subtitle: Text(supervisor.email),
+                onTap: () async {
+                  Navigator.of(dialogContext).pop();
+                  await _authService.assignSupervisorToAlert(
+                    alert['id'] as String,
+                    supervisor.id,
+                    supervisor.fullName,
+                  );
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Assigned to ${supervisor.fullName}'),
+                      backgroundColor: _green,
+                    ),
+                  );
+                  _closePopup();
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
           ),
         ],
       ),
@@ -1026,7 +1188,24 @@ class _UsineTreePainter extends CustomPainter {
   final double spacing;
   final Animation<double> animation;
   _UsineTreePainter({required this.usines, required this.spacing, required this.animation}) : super(repaint: animation);
-  @override void paint(Canvas canvas, Size size) {}
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF111827).withOpacity(0.55 + (animation.value * 0.25))
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    const parentY = 38.0;
+    const childY = 84.0;
+    for (var i = 0; i < usines.length; i++) {
+      final childX = spacing * (i + 1);
+      final path = Path()
+        ..moveTo(childX, parentY)
+        ..cubicTo(childX, parentY + 12, childX, childY - 16, childX, childY);
+      final metric = path.computeMetrics().first;
+      canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
+    }
+  }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
@@ -1038,18 +1217,20 @@ class _ConveyorTreePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = _border
-      ..strokeWidth = 2
+      ..color = const Color(0xFF111827).withOpacity(0.88)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     final parentX = size.width / 2;
-    const parentY = 80.0;
+    const parentY = 58.0;
     for (var i = 0; i < conveyors.length; i++) {
       final childX = spacing * (i + 1);
       const childY = 215.0;
       final path = Path();
       path.moveTo(parentX, parentY);
       path.cubicTo(parentX, parentY + 50, childX, childY - 50, childX, childY);
-      canvas.drawPath(path, paint);
+      final metric = path.computeMetrics().first;
+      canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
     }
   }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
@@ -1063,18 +1244,20 @@ class _WorkstationTreePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = _border
-      ..strokeWidth = 2
+      ..color = const Color(0xFF111827).withOpacity(0.88)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     final parentX = size.width / 2;
-    const parentY = 75.0;
+    const parentY = 58.0;
     for (var i = 0; i < workstations.length; i++) {
       final childX = spacing * (i + 1);
       const childY = 210.0;
       final path = Path();
       path.moveTo(parentX, parentY);
       path.cubicTo(parentX, parentY + 40, childX, childY - 40, childX, childY);
-      canvas.drawPath(path, paint);
+      final metric = path.computeMetrics().first;
+      canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
     }
   }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
