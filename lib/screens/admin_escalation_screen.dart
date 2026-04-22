@@ -417,7 +417,7 @@ class _CollaborationRequestCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // Header (unchanged)
           Row(
             children: [
               Text(
@@ -534,9 +534,10 @@ class _CollaborationRequestCard extends StatelessWidget {
       }
     }
 
-    // 2. Check if any target supervisor already has an in-progress alert
+    // 2. Check if any target supervisor already has an in-progress alert (where they are the supervisor)
     final List<String> existingAlertIds = [];
     for (final supId in request.targetSupervisorIds) {
+      print('Checking alerts for supervisor: $supId');
       final alertsSnapshot = await FirebaseDatabase.instance
           .ref('alerts')
           .orderByChild('superviseurId')
@@ -546,12 +547,15 @@ class _CollaborationRequestCard extends StatelessWidget {
         final alertsMap = Map<String, dynamic>.from(alertsSnapshot.snapshot.value as Map);
         for (final entry in alertsMap.entries) {
           final alert = Map<String, dynamic>.from(entry.value);
-          if (alert['status'] == 'en_cours') {
+          print('Found alert: ${entry.key}, status: ${alert['status']}');
+          // Only consider alerts that are not already resolved or cancelled
+          if (alert['status'] == 'en_cours' || alert['status'] == 'disponible') {
             existingAlertIds.add(entry.key);
           }
         }
       }
     }
+    print('Existing alert IDs to cancel: $existingAlertIds');
 
     // Helper to approve after dialogs
     Future<void> proceedApproval({bool confirmTransfer = false, bool confirmCancel = false}) async {
@@ -609,7 +613,7 @@ class _CollaborationRequestCard extends StatelessWidget {
       return;
     }
 
-    // Show cancel original alert dialog
+    // Show cancel original alert dialog if there are existing alerts
     if (existingAlertIds.isNotEmpty) {
       // Fetch details of the existing alerts
       List<Map<String, dynamic>> existingAlertsData = [];
