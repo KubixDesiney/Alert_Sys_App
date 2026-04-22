@@ -5,67 +5,92 @@ import '../models/collaboration_model.dart';
 class CollaborationService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
-  // Create a new collaboration request
-  Future<String> createCollaborationRequest({
-    required String alertId,
-    required String requesterId,
-    required String requesterName,
-    required List<String> targetSupervisorIds,
-    required List<String> targetSupervisorNames,
-    required String message,
-    required String usine,
-    required int convoyeur,
-    required int poste,
-    required String alertType,
-    required String alertDescription,
-  }) async {
-    final requestId = _db.child('collaboration_requests').push().key!;
-    
-    final request = CollaborationRequest(
-      id: requestId,
-      alertId: alertId,
-      requesterId: requesterId,
-      requesterName: requesterName,
-      targetSupervisorIds: targetSupervisorIds,
-      targetSupervisorNames: targetSupervisorNames,
-      message: message,
-      status: 'pending',
-      timestamp: DateTime.now(),
-      requiresPMApproval: true,
-      pmApproved: false,
-      usine: usine,
-      convoyeur: convoyeur,
-      poste: poste,
-      alertType: alertType,
-      alertDescription: alertDescription,
-    );
+  // In collaboration_service.dart
 
-    await _db.child('collaboration_requests/$requestId').set(request.toMap());
-    
-    // Update alert with collaboration request ID
-    await _db.child('alerts/$alertId').update({
-      'collaborationRequestId': requestId,
-    });
-
-    // Notify target supervisors
-    for (final targetId in targetSupervisorIds) {
-      final notification = {
-        'type': 'collaboration_request',
-        'collabRequestId': requestId,
-        'alertId': alertId,
-        'requesterName': requesterName,
-        'message': '$requesterName is requesting collaboration on alert: $alertType',
-        'timestamp': DateTime.now().toIso8601String(),
-        'status': 'pending',
-      };
-      await _db.child('notifications/$targetId').push().set(notification);
-    }
-
-    // Notify admin/PM
-    await _notifyAdminsAboutCollabRequest(request);
-
-    return requestId;
+Future<String> createCollaborationRequest({
+  required String alertId,
+  required String requesterId,
+  required String requesterName,
+  required List<String> targetSupervisorIds,
+  required List<String> targetSupervisorNames,
+  required String message,
+  required String usine,
+  required int convoyeur,
+  required int poste,
+  required String alertType,
+  required String alertDescription,
+}) async {
+  // 1. Verify that all target supervisors belong to the same factory as the alert
+  final alertSnapshot = await _db.child('alerts/$alertId').get();
+  if (!alertSnapshot.exists) {
+    throw Exception('Alert not found');
   }
+  final alertUsine = alertSnapshot.child('usine').value as String?;
+  if (alertUsine == null) {
+    throw Exception('Alert has no factory assigned');
+  }
+
+  // Fetch each target supervisor's usine
+  for (int i = 0; i < targetSupervisorIds.length; i++) {
+    final supId = targetSupervisorIds[i];
+    final supName = targetSupervisorNames[i];
+    final supSnapshot = await _db.child('users/$supId').get();
+    if (!supSnapshot.exists) {
+      throw Exception('Supervisor $supName not found');
+    }
+    final supUsine = supSnapshot.child('usine').value as String?;
+    if (supUsine != alertUsine) {
+      throw Exception('Supervisor $supName is from factory "$supUsine", but alert is from "$alertUsine". Collaboration only allowed within same factory.');
+    }
+  }
+
+  // 2. Original request creation (unchanged)
+  final requestId = _db.child('collaboration_requests').push().key!;
+  final request = CollaborationRequest(
+    id: requestId,
+    alertId: alertId,
+    requesterId: requesterId,
+    requesterName: requesterName,
+    targetSupervisorIds: targetSupervisorIds,
+    targetSupervisorNames: targetSupervisorNames,
+    message: message,
+    status: 'pending',
+    timestamp: DateTime.now(),
+    requiresPMApproval: true,
+    pmApproved: false,
+    usine: usine,
+    convoyeur: convoyeur,
+    poste: poste,
+    alertType: alertType,
+    alertDescription: alertDescription,
+  );
+
+  await _db.child('collaboration_requests/$requestId').set(request.toMap());
+
+  // Update alert with collaboration request ID
+  await _db.child('alerts/$alertId').update({
+    'collaborationRequestId': requestId,
+  });
+
+  // Notify target supervisors
+  for (final targetId in targetSupervisorIds) {
+    final notification = {
+      'type': 'collaboration_request',
+      'collabRequestId': requestId,
+      'alertId': alertId,
+      'requesterName': requesterName,
+      'message': '$requesterName is requesting collaboration on alert: $alertType',
+      'timestamp': DateTime.now().toIso8601String(),
+      'status': 'pending',
+    };
+    await _db.child('notifications/$targetId').push().set(notification);
+  }
+
+  // Notify admin/PM
+  await _notifyAdminsAboutCollabRequest(request);
+
+  return requestId;
+}
 
   // Get all collaboration requests (for admin)
   Stream<List<CollaborationRequest>> getAllCollaborationRequests() {

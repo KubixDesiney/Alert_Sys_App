@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import '../models/alert_model.dart';
+import '../services/hierarchy_service.dart';
 
 class AlertService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -33,6 +34,50 @@ class AlertService {
         .map((e) => AlertModel.fromMap(e.key, Map<String, dynamic>.from(e.value)))
         .toList();
   }
+  /// Creates an alert only if the location exists in the hierarchy.
+Future<String?> createAlertWithHierarchy({
+  required String type,
+  required String usine,
+  required int convoyeur,
+  required int poste,
+  required String description,
+  bool isCritical = false,
+}) async {
+  // Validate against the hierarchy
+  final hierarchyService = HierarchyService();
+  final isValid = await hierarchyService.validateLocation(usine, convoyeur, poste);
+  if (!isValid) {
+    throw Exception('Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
+  }
+
+  // Create the alert (same as before)
+  final ref = _db.child('alerts').push();
+  final now = DateTime.now().toUtc();
+  final alertId = ref.key;
+  final alertData = {
+    'type': type,
+    'usine': usine,
+    'convoyeur': convoyeur,
+    'poste': poste,
+    'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
+    'timestamp': now.toIso8601String(),
+    'description': description,
+    'status': 'disponible',
+    'comments': [],
+    'isCritical': isCritical,
+    'push_sent': false,
+    'superviseurId': null,
+    'superviseurName': null,
+    'assistantId': null,
+    'assistantName': null,
+    'resolutionReason': null,
+    'resolvedAt': null,
+    'elapsedTime': null,
+  };
+  await ref.set(alertData);
+  return alertId;
+}
+
 
   Future<void> takeAlert(String alertId, String superviseurId, String superviseurName) async {
     await _db.child('alerts/$alertId').update({
