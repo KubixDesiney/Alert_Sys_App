@@ -252,35 +252,109 @@ class _EscalatedAlertsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final database = FirebaseDatabase.instance.ref();
+    return StreamBuilder(
+      stream: database.child('alerts').onValue,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final alertsMap = snapshot.data!.snapshot.value;
+        if (alertsMap == null) {
+          return _buildEmpty();
+        }
+        final List<MapEntry<String, dynamic>> entries =
+            Map<String, dynamic>.from(alertsMap as Map).entries.toList();
+        final escalated = entries
+            .where((entry) => entry.value['isEscalated'] == true)
+            .map((entry) => AlertModel.fromMap(entry.key, Map.from(entry.value)))
+            .toList()
+          ..sort((a, b) => b.escalatedAt!.compareTo(a.escalatedAt!));
+
+        if (escalated.isEmpty) {
+          return _buildEmpty();
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: escalated.length,
+          itemBuilder: (context, index) {
+            final alert = escalated[index];
+            return _EscalatedAlertCard(alert: alert);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildEmpty() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _orangeLt,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.warning_amber, size: 48, color: _orange),
-          ),
+          Icon(Icons.warning_amber, size: 48, color: _orange),
           const SizedBox(height: 16),
           const Text(
             'No Escalated Alerts',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
           Text(
-            'Escalated alerts will appear here',
+            'Alerts that exceed time thresholds will appear here',
             style: TextStyle(fontSize: 13, color: _muted),
           ),
         ],
       ),
     );
+  }
+}
+
+// Helper widget for each escalated alert
+class _EscalatedAlertCard extends StatelessWidget {
+  final AlertModel alert;
+  const _EscalatedAlertCard({required this.alert});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _redLt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _red.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber, color: _red, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${_typeLabel(alert.type)} - ${alert.description}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('📍 ${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
+          Text('⏰ Escalated at: ${_formatDateTime(alert.escalatedAt!)}'),
+          if (alert.status == 'disponible')
+            const Text('⚠️ Unclaimed alert exceeded threshold',
+                style: TextStyle(color: _red, fontSize: 12))
+          else if (alert.status == 'en_cours')
+            const Text('⚠️ Claimed but not resolved in time',
+                style: TextStyle(color: _red, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }
 
