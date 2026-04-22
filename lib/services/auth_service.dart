@@ -103,7 +103,7 @@ Future<void> assignAssistantToAlert(String alertId, String assistantId, String a
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
     };
-    await _db.child('notifications/$claimantId').push().set(assistantNotification);
+    await _db.child('notifications/$claimantId').push().set(claimantNotification);
   }
 }
 
@@ -139,7 +139,7 @@ Future<void> assignSupervisorToAlert(String alertId, String supervisorId, String
     await _auth.signOut();
   }
 
-  Future<String> getUserRole(String uid) async {
+  Future<String?> getUserRole(String uid) async {
     debugPrint('getUserRole called for uid: $uid');
     try {
       final snapshot = await _db.child('users/$uid/role').get();
@@ -148,12 +148,12 @@ Future<void> assignSupervisorToAlert(String alertId, String supervisorId, String
         debugPrint('Role found in DB: $role');
         return role;
       } else {
-        debugPrint('No role node for $uid, defaulting to supervisor');
-        return 'supervisor';
+        debugPrint('No role node for $uid, treating as invalid account');
+        return null;
       }
     } catch (e) {
       debugPrint('Error reading role: $e');
-      return 'supervisor';
+      return null;
     }
   }
 

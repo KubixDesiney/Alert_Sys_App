@@ -1,58 +1,68 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'firebase_options.dart';
 import 'providers/alert_provider.dart';
-import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-
-
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Safe Firebase initialization
-  try {
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-      print('Firebase initialized successfully');
-    } else {
-      print('Firebase already initialized');
-    }
-  } catch (e) {
-    print('Firebase init error (ignored): $e');
-  }
+  await _safeInitFirebase();
 
-if (!kIsWeb) {
-    OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
-    OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
-    OneSignal.Notifications.requestPermission(true);
-  }
-
-  // Only update OneSignal ID on mobile
-  final user = FirebaseAuth.instance.currentUser;
-  if (user != null && !kIsWeb) {
-    final playerId = await OneSignal.User.getOnesignalId();
-    if (playerId != null && playerId.isNotEmpty) {
-      await FirebaseDatabase.instance.ref('users/${user.uid}').update({
-        'onesignalId': playerId,
-        'lastSeen': DateTime.now().toIso8601String(),
-      });
-    }
-  }
-
-  final shorebirdCodePush = ShorebirdCodePush();
+  // Keep startup path light; post-launch SDK setup runs in background.
+  ShorebirdCodePush();
 
   runApp(const AlertSysApp());
+
+  _initOneSignalPostLaunch();
+}
+
+Future<void> _safeInitFirebase() async {
+  try {
+    if (Firebase.apps.isNotEmpty) return;
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    // Duplicate app can happen on hot restart/background isolate startup.
+    debugPrint('Firebase init skipped: $e');
+  }
+}
+
+Future<void> _initOneSignalPostLaunch() async {
+  if (kIsWeb) return;
+  try {
+    OneSignal.Debug.setLogLevel(OSLogLevel.none);
+    OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
+
+    // Prevent heavy restoration backlog from blocking first frames.
+    OneSignal.Notifications.clearAll();
+
+    // Avoid forcing permission popup immediately at app boot.
+    await OneSignal.Notifications.requestPermission(false);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final playerId = await OneSignal.User.getOnesignalId();
+    if (playerId == null || playerId.isEmpty) return;
+
+    await FirebaseDatabase.instance.ref('users/${user.uid}').update({
+      'onesignalId': playerId,
+      'lastSeen': DateTime.now().toIso8601String(),
+    });
+  } catch (e) {
+    debugPrint('OneSignal init skipped: $e');
+  }
 }
 
 class AlertSysApp extends StatelessWidget {
@@ -119,6 +129,7 @@ class RoleRouter extends StatefulWidget {
 class _RoleRouterState extends State<RoleRouter> {
   String? _role;
   bool _loading = true;
+  static const _accountLoadTimeout = Duration(seconds: 8);
 
   @override
   void initState() {
@@ -128,15 +139,48 @@ class _RoleRouterState extends State<RoleRouter> {
 
   Future<void> _loadRole() async {
     try {
-      final role = await AuthService().getUserRole(widget.uid);
+      final accountSnapshot = await FirebaseDatabase.instance
+          .ref('users/${widget.uid}')
+          .get()
+          .timeout(_accountLoadTimeout, onTimeout: () {
+        debugPrint('Account load timed out. Treating as invalid account.');
+        throw TimeoutException('Account load timed out');
+      });
+      if (!mounted) return;
+      if (!accountSnapshot.exists || accountSnapshot.value == null) {
+        debugPrint('Account record missing. Signing out.');
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _role = null;
+        });
+        return;
+      }
+
+      final data = Map<String, dynamic>.from(accountSnapshot.value as Map);
+      final role = data['role']?.toString();
+      if (role == null || (role != 'admin' && role != 'supervisor')) {
+        debugPrint('Invalid role value for account. Signing out.');
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _role = null;
+        });
+        return;
+      }
       setState(() {
         _role = role;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
       setState(() {
         _loading = false;
-        _role = 'supervisor';
+        _role = null;
       });
     }
   }
@@ -145,6 +189,9 @@ class _RoleRouterState extends State<RoleRouter> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_role == null) {
+      return const LoginScreen();
     }
     if (_role == 'admin') {
       return const AdminDashboardScreen();
