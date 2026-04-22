@@ -2585,17 +2585,31 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
     with SingleTickerProviderStateMixin {
   late TabController _sub;
   final TextEditingController _searchCtrl = TextEditingController();
+  final HierarchyService _hierarchyService = HierarchyService();
+  StreamSubscription<List<Factory>>? _factoriesSubscription;
+  List<Factory> _factories = [];
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    
     _sub = TabController(length: 3, vsync: this);
+    _loadFactories();
+  }
+
+  void _loadFactories() {
+    _factoriesSubscription?.cancel();
+    _factoriesSubscription = _hierarchyService.getFactories().listen((factories) {
+      if (!mounted) return;
+      setState(() {
+        _factories = factories;
+      });
+    });
   }
 
   @override
   void dispose() {
+    _factoriesSubscription?.cancel();
     _searchCtrl.dispose();
     _sub.dispose();
     super.dispose();
@@ -2636,6 +2650,7 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
               supervisors: filteredSupervisors,
               totalSupervisors: widget.supervisors.length,
               alerts:      widget.alerts,
+              factories:   _factories,
               onAdd:       widget.onAdd,
               onDelete:    widget.onDelete,
               onRefresh:   widget.onRefresh,
@@ -2706,6 +2721,7 @@ class _ManagementSubTab extends StatelessWidget {
   final List<UserModel>  supervisors;
   final int totalSupervisors;
   final List<AlertModel> alerts;
+  final List<Factory> factories;
   final VoidCallback     onAdd;
   final void Function(UserModel) onDelete;
   final Future<void> Function() onRefresh;
@@ -2713,6 +2729,7 @@ class _ManagementSubTab extends StatelessWidget {
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
   const _ManagementSubTab({required this.supervisors, required this.alerts,
+      required this.factories,
       required this.onAdd, required this.onDelete, required this.onRefresh,
       required this.totalSupervisors, required this.searchCtrl,
       required this.searchQuery, required this.onSearchChanged});
@@ -2790,6 +2807,7 @@ class _ManagementSubTab extends StatelessWidget {
               itemBuilder: (_, i) => _SupervisorCard(
                   supervisor: supervisors[i],
                   alerts:     alerts,
+                  factories:  factories,
                   onRefresh:  onRefresh,
                   onDelete:   () => onDelete(supervisors[i]))),
     ),
@@ -3527,9 +3545,11 @@ Widget _emptySups() => Center(child: Column(
 class _SupervisorCard extends StatefulWidget {
   final UserModel supervisor;
   final List<AlertModel> alerts;
+  final List<Factory> factories;
   final Future<void> Function() onRefresh;
   final VoidCallback onDelete;
   const _SupervisorCard({required this.supervisor, required this.alerts,
+      required this.factories,
       required this.onDelete, required this.onRefresh});
   @override State<_SupervisorCard> createState() => _SupervisorCardState();
 }
@@ -3543,7 +3563,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
     final phoneCtrl = TextEditingController(text: sup.phone);
     final usineChoices = <String>{
       sup.usine,
-      ...widget.alerts.map((a) => a.usine),
+      ...widget.factories.map((f) => f.name),
     }.toList()
       ..sort();
     var selectedUsine = sup.usine;
