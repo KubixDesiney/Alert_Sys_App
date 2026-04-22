@@ -43,14 +43,39 @@ class AlertService {
     });
   }
 
-  Future<void> returnToQueue(String alertId) async {
-    await _db.child('alerts/$alertId').update({
-      'status': 'disponible',
-      'superviseurId': null,
-      'superviseurName': null,
-      'takenAtTimestamp': null,
-    });
+// Modify existing returnToQueue
+Future<void> returnToQueue(String alertId, {String? reason}) async {
+  final updates = {
+    'status': 'disponible',
+    'superviseurId': null,
+    'superviseurName': null,
+    'takenAtTimestamp': null,
+  };
+  if (reason != null && reason.isNotEmpty) {
+    updates['suspendReason'] = reason;
   }
+  await _db.child('alerts/$alertId').update(updates);
+}
+
+// Add this new method
+Future<void> notifyAdminsAboutSuspend(String alertId, String supervisorName, String? reason) async {
+  final users = await getAllUsers();
+  for (var entry in users.entries) {
+    final role = entry.value['role'] ?? 'supervisor';
+    if (role == 'admin') {
+      final notification = {
+        'type': 'alert_suspended',
+        'alertId': alertId,
+        'supervisorName': supervisorName,
+        'reason': reason ?? 'No reason provided',
+        'message': '⚠️ Supervisor $supervisorName suspended an alert. ${reason != null ? "Reason: $reason" : ""}',
+        'timestamp': DateTime.now().toIso8601String(),
+        'status': 'pending',
+      };
+      await _db.child('notifications/${entry.key}').push().set(notification);
+    }
+  }
+}
 
   Future<void> resolveAlert(String alertId, String reason, int elapsedMinutes) async {
     await _db.child('alerts/$alertId').update({

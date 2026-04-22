@@ -1519,20 +1519,45 @@ Future<void> _toggleCritical(AlertModel alert, BuildContext context) async {
                           borderRadius: BorderRadius.circular(8))),
                 ),
                 const SizedBox(height: 6),
-                OutlinedButton.icon(
-                  onPressed: () => provider.returnToQueue(a.id),
-                  icon: const Icon(Icons.rotate_left, size: 16),
-                  label: const Text('Suspend'),
-                  style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.orange,
-                      side: const BorderSide(color: Colors.orange),
-                      minimumSize: const Size(110, 36),
-                      textStyle: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8))),
-                ),
-                const SizedBox(height: 6),
+OutlinedButton.icon(
+  onPressed: () async {
+    String? reason;
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Suspend Alert'),
+        content: TextField(
+          decoration: const InputDecoration(
+            hintText: 'Optional reason for suspension',
+          ),
+          onChanged: (value) => reason = value,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              provider.returnToQueue(a.id, reason: reason?.trim().isEmpty == true ? null : reason);
+            },
+            child: const Text('Suspend'),
+          ),
+        ],
+      ),
+    );
+  },
+  icon: const Icon(Icons.rotate_left, size: 16),
+  label: const Text('Suspend'),
+  style: OutlinedButton.styleFrom(
+    foregroundColor: Colors.orange,
+    side: const BorderSide(color: Colors.orange),
+    minimumSize: const Size(110, 36),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  ),
+),
                 OutlinedButton.icon(
                   onPressed: () => _getAiAssist(context, a),
                   icon: const Icon(Icons.auto_awesome, size: 16),
