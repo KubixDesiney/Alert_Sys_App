@@ -172,7 +172,7 @@ Future<void> approveCollaborationRequestWithDetails({
   );
 
   if (isPMApproval) {
-    // Assign the first target supervisor as assistant
+    // Assign the first target supervisor as assistant to the main alert
     final assistantId = request.targetSupervisorIds.isNotEmpty ? request.targetSupervisorIds.first : null;
     final assistantName = request.targetSupervisorNames.isNotEmpty ? request.targetSupervisorNames.first : null;
 
@@ -180,20 +180,12 @@ Future<void> approveCollaborationRequestWithDetails({
       await _db.child('alerts/${request.alertId}').update({
         'assistantId': assistantId,
         'assistantName': assistantName,
+        // Do NOT change status – keep as en_cours
       });
     }
 
-    // Cancel original alert if requested (mark as cancelled)
-    if (confirmCancelOriginal) {
-      await _db.child('alerts/${request.alertId}').update({
-        'status': 'cancelled',
-        'cancelledReason': 'Replaced by collaboration request $requestId',
-        'cancelledAt': DateTime.now().toIso8601String(),
-      });
-    }
-
-    // Cancel any existing alerts of assistants (they are working on other alerts)
-    if (cancelExistingAlertIds != null && cancelExistingAlertIds.isNotEmpty) {
+    // Cancel the assistant's existing alerts (if any) – these are separate alerts
+    if (confirmCancelOriginal && cancelExistingAlertIds != null && cancelExistingAlertIds.isNotEmpty) {
       for (final alertId in cancelExistingAlertIds) {
         await _db.child('alerts/$alertId').update({
           'status': 'cancelled',
@@ -204,7 +196,7 @@ Future<void> approveCollaborationRequestWithDetails({
       }
     }
 
-    // Update collaboration request
+    // Update collaboration request status
     await _db.child('collaboration_requests/$requestId').update({
       'pmApproved': true,
       'status': 'approved',
@@ -235,7 +227,7 @@ Future<void> approveCollaborationRequestWithDetails({
       await _db.child('notifications/$targetId').push().set(notif);
     }
   } else {
-    // Supervisor approval (not PM)
+    // Supervisor approval (not PM) – simple approval
     await _db.child('collaboration_requests/$requestId').update({
       'status': 'approved',
       'approvedBy': approverId,
