@@ -176,7 +176,7 @@ Future<void> notifyAdminsAboutSuspend(String alertId, String supervisorName, Str
   // ✅ Fixed sendNewAlertNotification method
 Future<void> sendNewAlertNotification(String alertId, String alertType, String description) async {
   const String onesignalAppId = "322abcb7-c4e5-4630-811f-ccea86a6f481";
-  const String onesignalRestKey = "os_v2_app_givlzn6e4vddbai7ztvinjxuqgulgf5q6bbu3zvlgakoljwepgg5te3w2xelv7655notgsajp3tapx7qmbuqhpu2q4yupcw2isbp7ui";
+  const String onesignalRestKey = "os_v2_app_givlzn6e4vddbai7ztvinjxuqfm2cefnwzsexcvofk6yrjfmzv4roisac6ijuysakqyjr6uygif2oudib3qe274bswy65payfyzb54y";
 
   final alertSnap = await _db.child('alerts/$alertId').get();
   if (alertSnap.exists && alertSnap.child('notificationSent').value == true) return;
