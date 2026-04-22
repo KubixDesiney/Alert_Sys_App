@@ -519,7 +519,7 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
   final alertData = Map<String, dynamic>.from(alertSnapshot.value as Map);
   final alertUsine = alertData['usine'] ?? '';
 
-  // 1. Cross-factory detection (unchanged)
+  // 1. Cross-factory detection
   final List<String> crossFactorySupervisors = [];
   for (int i = 0; i < request.targetSupervisorIds.length; i++) {
     final supId = request.targetSupervisorIds[i];
@@ -593,8 +593,9 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
     }
   }
 
-  // Cross-factory dialog
+  // --- Cross-factory dialog ---
   if (crossFactorySupervisors.isNotEmpty) {
+    print('Showing cross-factory dialog');
     final bool? confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -631,8 +632,10 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
     return;
   }
 
-  // Cancel original alert dialog
+  // --- Cancel original alert dialog ---
   if (existingAlertIds.isNotEmpty) {
+    print('Entering cancel dialog block. Found ${existingAlertIds.length} alerts.');
+    
     // Fetch details of existing alerts
     List<Map<String, dynamic>> existingAlertsData = [];
     for (final alertId in existingAlertIds) {
@@ -642,46 +645,58 @@ Future<void> _handleApprove(BuildContext context, CollaborationRequest request) 
       }
     }
 
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancel Original Alert(s)?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('The assistant(s) already have an active alert. Approving this collaboration will cancel their current alert(s).'),
-            const SizedBox(height: 12),
-            ...existingAlertsData.map((alert) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _red.withOpacity(0.3))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('⚠️ Alert: ${alert['description'] ?? 'No description'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Factory: ${alert['usine'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12)),
-                  Text('Status: ${alert['status'] ?? 'unknown'}', style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-            )),
-            const SizedBox(height: 8),
-            const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Cancel Original Alert(s)?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('The assistant(s) already have an active alert. Approving this collaboration will cancel their current alert(s).'),
+              const SizedBox(height: 12),
+              ...existingAlertsData.map((alert) => Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _red.withOpacity(0.3))),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('⚠️ Alert: ${alert['description'] ?? 'No description'}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Text('Factory: ${alert['usine'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12)),
+                    Text('Status: ${alert['status'] ?? 'unknown'}', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              )),
+              const SizedBox(height: 8),
+              const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm & Approve')),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm & Approve')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await proceedApproval(confirmCancel: true);
-    return;
+      );
+      print('Dialog result: $confirmed');
+      if (confirmed != true) return;
+      await proceedApproval(confirmCancel: true);
+      return;
+    } catch (e) {
+      print('Dialog error: $e');
+      // Fallback: show a simple snackbar and continue without cancellation
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not show cancel dialog, approving without cancellation'), backgroundColor: Colors.orange),
+      );
+      await proceedApproval(confirmCancel: false);
+      return;
+    }
   }
 
   // No warnings, approve directly
+  print('No warnings, approving directly');
   await proceedApproval();
 }
 
