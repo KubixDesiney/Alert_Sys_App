@@ -11,6 +11,8 @@ import 'screens/dashboard_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 
 
 void main() async {
@@ -30,21 +32,21 @@ void main() async {
     print('Firebase init error (ignored): $e');
   }
 
-  // Initialize OneSignal
-  OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
-  OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
-  OneSignal.Notifications.requestPermission(true);
+if (!kIsWeb) {
+    OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
+    OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+    OneSignal.Notifications.requestPermission(true);
+  }
 
-  // ✅ Auto-update OneSignal ID for already logged-in user
+  // Only update OneSignal ID on mobile
   final user = FirebaseAuth.instance.currentUser;
-  if (user != null) {
+  if (user != null && !kIsWeb) {
     final playerId = await OneSignal.User.getOnesignalId();
     if (playerId != null && playerId.isNotEmpty) {
       await FirebaseDatabase.instance.ref('users/${user.uid}').update({
         'onesignalId': playerId,
         'lastSeen': DateTime.now().toIso8601String(),
       });
-      print('✅ Updated OneSignal ID for existing user: $playerId');
     }
   }
 
