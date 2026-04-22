@@ -15,6 +15,8 @@ class AlertModel {
   final String? helpRequesterId;
   final String? helpRequesterName;
   final String? collaborationRequestId; // ✅ NEW
+  final bool isEscalated;
+  final DateTime? escalatedAt;
   String status;
   String? superviseurId;
   String? superviseurName;
@@ -33,6 +35,8 @@ class AlertModel {
     required this.adresse,
     required this.timestamp,
     required this.description,
+    this.isEscalated = false,
+    this.escalatedAt,
     this.assistantId,
     this.assistantName,
     this.helpRequestId,
@@ -77,6 +81,8 @@ class AlertModel {
       comments: List<String>.from(data['comments'] ?? []),
       resolutionReason: data['resolutionReason'],
       resolvedAt: data['resolvedAt'] != null ? _parseDate(data['resolvedAt']) : null,
+      isEscalated: data['isEscalated'] ?? false,
+      escalatedAt: data['escalatedAt'] != null ? _parseDate(data['escalatedAt']) : null,
     );
   }
 
@@ -104,6 +110,8 @@ class AlertModel {
     'comments': comments,
     'resolutionReason': resolutionReason,
     'resolvedAt': resolvedAt?.toIso8601String(),
+        'isEscalated': isEscalated,
+    'escalatedAt': escalatedAt?.toIso8601String(),
   };
 
   static DateTime _parseDate(dynamic raw) {
@@ -132,6 +140,8 @@ class AlertModel {
     String? collaborationRequestId,
     bool clearSuperviseur = false,
     bool clearTakenAt = false,
+        bool? isEscalated,
+    DateTime? escalatedAt,
   }) => AlertModel(
     id: id,
     type: type,
@@ -157,5 +167,7 @@ class AlertModel {
     comments: comments ?? this.comments,
     resolutionReason: resolutionReason ?? this.resolutionReason,
     resolvedAt: resolvedAt ?? this.resolvedAt,
+        isEscalated: isEscalated ?? this.isEscalated,
+    escalatedAt: escalatedAt ?? this.escalatedAt,
   );
 }
