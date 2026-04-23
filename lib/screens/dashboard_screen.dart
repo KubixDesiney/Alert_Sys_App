@@ -1828,118 +1828,169 @@ class _AlertRow extends StatelessWidget {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)))));
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            final card = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
           color: effectiveRowColor,
           border: Border.all(
               color: effectiveBorderColor, width: borderColor != null ? 2 : 1),
           borderRadius: BorderRadius.circular(10)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 520 && rightWidgets.isNotEmpty;
+
+          final leftPanel = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                if (alert.isCritical)
+                  const Icon(Icons.warning_amber_rounded,
+                      color: Colors.red, size: 16),
+                if (alert.isCritical) const SizedBox(width: 4),
+                pulseDot
+                    ? _PulseDot(color: _typeColor(alert.type))
+                    : Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                            color: _typeColor(alert.type),
+                            shape: BoxShape.circle)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(_typeLabel(alert.type),
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _navy))),
+                if (alert.status == 'en_cours' &&
+                    alert.superviseurId == currentUserId &&
+                    onCriticalToggle != null)
+                  IconButton(
+                      onPressed: onCriticalToggle,
+                      icon: Icon(
+                          alert.isCritical
+                              ? Icons.warning_rounded
+                              : Icons.warning_amber_outlined,
+                          color:
+                              alert.isCritical ? Colors.red : Colors.orange,
+                          size: 20),
+                      tooltip: alert.isCritical
+                          ? 'Remove critical flag'
+                          : 'Mark as critical',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints()),
+              ]),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, runSpacing: 4, children: [
+                _OutlineBadge(
+                    '${alert.usine} — Line ${alert.convoyeur} — Workstation ${alert.poste}'),
+                _FilledBadge(
+                    label: statusLabel, color: statusColor, icon: statusIcon),
+              ]),
+              const SizedBox(height: 6),
+              Text(alert.description,
+                  style: const TextStyle(
+                      fontSize: 12, color: Color(0xFF6B7280))),
+              const SizedBox(height: 4),
+              Text(
+                  'Address: ${alert.adresse}  ·  ${_formatTimestamp(alert.timestamp)}',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF9CA3AF),
+                      fontFamily: 'monospace')),
+              if (extraContent != null) extraContent!,
+            ],
+          );
+
+          if (isCompact) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  if (alert.isCritical)
-                    const Icon(Icons.warning_amber_rounded,
-                        color: Colors.red, size: 16),
-                  if (alert.isCritical) const SizedBox(width: 4),
-                  pulseDot
-                      ? _PulseDot(color: _typeColor(alert.type))
-                      : Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                              color: _typeColor(alert.type),
-                              shape: BoxShape.circle)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: Text(_typeLabel(alert.type),
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: _navy))),
-                  if (alert.status == 'en_cours' &&
-                      alert.superviseurId == currentUserId &&
-                      onCriticalToggle != null)
-                    IconButton(
-                        onPressed: onCriticalToggle,
-                        icon: Icon(
-                            alert.isCritical
-                                ? Icons.warning_rounded
-                                : Icons.warning_amber_outlined,
-                            color:
-                                alert.isCritical ? Colors.red : Colors.orange,
-                            size: 20),
-                        tooltip: alert.isCritical
-                            ? 'Remove critical flag'
-                            : 'Mark as critical',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints()),
-                ]),
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  _OutlineBadge(
-                      '${alert.usine} — Line ${alert.convoyeur} — Workstation ${alert.poste}'),
-                  _FilledBadge(
-                      label: statusLabel, color: statusColor, icon: statusIcon),
-                ]),
-                const SizedBox(height: 6),
-                Text(alert.description,
-                    style: const TextStyle(
-                        fontSize: 12, color: Color(0xFF6B7280))),
-                const SizedBox(height: 4),
-                Text(
-                    'Address: ${alert.adresse}  ·  ${_formatTimestamp(alert.timestamp)}',
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF9CA3AF),
-                        fontFamily: 'monospace')),
-                if (extraContent != null) extraContent!,
-                if (onRequestAssistance != null) ...[
-                  const SizedBox(height: 10),
-                  _HoldToCollabBar(onCompleted: onRequestAssistance!),
-                ],
-              ],
-            ),
-          ),
-          if (rightWidgets.isNotEmpty)
-            Flexible(
-                child: ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 100),
+                leftPanel,
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 110),
                     child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: rightWidgets))),
-        ],
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: rightWidgets,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: leftPanel),
+              if (rightWidgets.isNotEmpty)
+                Flexible(
+                    child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 100),
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: rightWidgets))),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (onRequestAssistance == null) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: card,
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: _HoldToCollabCard(
+        onCompleted: onRequestAssistance!,
+        child: card,
       ),
     );
   }
 }
 
-class _HoldToCollabBar extends StatefulWidget {
+class _HoldToCollabCard extends StatefulWidget {
   final VoidCallback onCompleted;
-  const _HoldToCollabBar({required this.onCompleted});
+  final Widget child;
+
+  const _HoldToCollabCard({required this.onCompleted, required this.child});
 
   @override
-  State<_HoldToCollabBar> createState() => _HoldToCollabBarState();
+  State<_HoldToCollabCard> createState() => _HoldToCollabCardState();
 }
 
-class _HoldToCollabBarState extends State<_HoldToCollabBar> {
+class _HoldToCollabCardState extends State<_HoldToCollabCard>
+    with SingleTickerProviderStateMixin {
   Timer? _timer;
   double _progress = 0;
   bool _triggered = false;
   DateTime? _start;
-  static const _holdDuration = Duration(milliseconds: 900);
+  AnimationController? _pulseController;
+  static const _holdDuration = Duration(seconds: 2);
+
+  bool get _isHolding => _progress > 0;
+
+  AnimationController _ensurePulseController() {
+    return _pulseController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+  }
 
   void _startHold() {
     _timer?.cancel();
     _start = DateTime.now();
     _triggered = false;
+    _ensurePulseController().repeat(reverse: true);
     _timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted || _start == null) return;
       final elapsed = DateTime.now().difference(_start!);
@@ -1962,6 +2013,7 @@ class _HoldToCollabBarState extends State<_HoldToCollabBar> {
     _timer?.cancel();
     _timer = null;
     _start = null;
+    _pulseController?.stop();
     if (_progress != 0) {
       setState(() => _progress = 0);
     }
@@ -1970,64 +2022,136 @@ class _HoldToCollabBarState extends State<_HoldToCollabBar> {
   @override
   void dispose() {
     _timer?.cancel();
+    _pulseController?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final pulse = _pulseController;
+
     return Listener(
-      behavior: HitTestBehavior.opaque,
+      behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => _startHold(),
       onPointerUp: (_) => _cancelHold(),
       onPointerCancel: (_) => _cancelHold(),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        height: 28,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3E8FF),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _progress > 0
-                ? const Color(0xFF9333EA)
-                : const Color(0xFFD8B4FE),
-            width: 1.2,
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            children: [
-              FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: _progress,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFFA855F7), Color(0xFF7E22CE)],
-                    ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          children: [
+            widget.child,
+            if (_isHolding && pulse != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Stack(
+                    children: [
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: _progress,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                              colors: [
+                                Color(0x33C084FC),
+                                Color(0x55A855F7),
+                                Color(0x447E22CE),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: Center(
+                          child: ScaleTransition(
+                            scale: Tween<double>(begin: 0.96, end: 1.04)
+                                .animate(CurvedAnimation(
+                              parent: pulse,
+                              curve: Curves.easeInOut,
+                            )),
+                            child: FadeTransition(
+                              opacity: Tween<double>(begin: 0.75, end: 1.0)
+                                  .animate(CurvedAnimation(
+                                parent: pulse,
+                                curve: Curves.easeInOut,
+                              )),
+                              child: SizedBox(
+                                width: 210,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF3E8FF)
+                                        .withOpacity(0.96),
+                                    borderRadius: BorderRadius.circular(99),
+                                    border: Border.all(
+                                      color: const Color(0xFFD8B4FE),
+                                    ),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(99),
+                                    child: Stack(
+                                      children: [
+                                        FractionallySizedBox(
+                                          alignment: Alignment.centerLeft,
+                                          widthFactor: _progress,
+                                          child: Container(
+                                            height: 24,
+                                            decoration: const BoxDecoration(
+                                              gradient: LinearGradient(
+                                                begin: Alignment.centerLeft,
+                                                end: Alignment.centerRight,
+                                                colors: [
+                                                  Color(0xFFC084FC),
+                                                  Color(0xFFA855F7),
+                                                  Color(0xFF7E22CE),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 5),
+                                          child: Text(
+                                            'Holding to collab...',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF7E22CE),
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.touch_app, size: 15, color: Colors.deepPurple),
-                    SizedBox(width: 6),
-                    Text(
-                      'Hold for collab...',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.deepPurple,
-                        fontStyle: FontStyle.italic,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 10,
+              child: Text(
+                '💡 Hold to collab this alert',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _isHolding
+                      ? const Color(0xFF7C3AED)
+                      : const Color(0xFF8B5CF6),
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
