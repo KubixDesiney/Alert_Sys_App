@@ -46,12 +46,17 @@ class AlertTreeVisualization extends StatefulWidget {
 
 class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     with TickerProviderStateMixin {
+  static const double _minTreeScale = 0.7;
+  static const double _maxTreeScale = 1.8;
+  static const double _treeScaleStep = 0.1;
+
   List<AlertNode> _usines = [];
   AlertNode? _selectedUsine;
   AlertNode? _selectedConveyor;
   AlertNode? _selectedWorkstation;
   Map<String, dynamic>? _popupAlertData;
   Offset? _popupPosition;
+  double _treeScale = 1.0;
 
   late AnimationController _zoomController;
   late AnimationController _detailController;
@@ -120,7 +125,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       final usineNodes = factories.map((factory) {
         final conveyorNodes = factory.conveyors.values.map((conveyor) {
           final stationNodes = conveyor.stations.values.map((station) {
-            final stationNumber = int.tryParse(station.id.replaceAll('station_', '')) ?? 0;
+            final stationNumber =
+                int.tryParse(station.id.replaceAll('station_', '')) ?? 0;
             final key = '${factory.name}|${conveyor.number}|$stationNumber';
             final errorCount = alertCounts[key] ?? 0;
             return AlertNode(
@@ -132,7 +138,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             );
           }).toList();
 
-          final conveyorErrorCount = stationNodes.fold<int>(0, (sum, s) => sum + s.errorCount);
+          final conveyorErrorCount =
+              stationNodes.fold<int>(0, (sum, s) => sum + s.errorCount);
           return AlertNode(
             id: '${factory.id}|${conveyor.id}',
             label: 'Conveyor ${conveyor.number}',
@@ -142,7 +149,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           );
         }).toList();
 
-        final factoryErrorCount = conveyorNodes.fold<int>(0, (sum, c) => sum + c.errorCount);
+        final factoryErrorCount =
+            conveyorNodes.fold<int>(0, (sum, c) => sum + c.errorCount);
         return AlertNode(
           id: factory.id,
           label: factory.name,
@@ -230,6 +238,18 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     });
   }
 
+  void _zoomInTree() {
+    setState(() {
+      _treeScale = (_treeScale + _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
+    });
+  }
+
+  void _zoomOutTree() {
+    setState(() {
+      _treeScale = (_treeScale - _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
+    });
+  }
+
   @override
   void dispose() {
     _zoomController.dispose();
@@ -267,27 +287,36 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 _buildHeader(),
                 Expanded(
                   child: AnimatedBuilder(
-                    animation: Listenable.merge([_zoomAnimation, _detailAnimation]),
+                    animation:
+                        Listenable.merge([_zoomAnimation, _detailAnimation]),
                     builder: (context, child) {
                       return SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Level 1: Factories
-                            if (_selectedUsine == null)
-                              _buildUsineLayer(_zoomAnimation.value)
-                            else
-                              _buildConveyorLayerWithParent(_zoomAnimation.value),
-                            // Level 3: Workstations (visible when conveyor selected)
-                            if (_selectedConveyor != null)
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _buildInterLayerConnector(height: 42),
-                                  _buildWorkstationLayerWithParent(_detailAnimation.value),
-                                ],
-                              ),
-                          ],
+                        child: Center(
+                          child: Transform.scale(
+                            scale: _treeScale,
+                            alignment: Alignment.topCenter,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Level 1: Factories
+                                if (_selectedUsine == null)
+                                  _buildUsineLayer(_zoomAnimation.value)
+                                else
+                                  _buildConveyorLayerWithParent(
+                                      _zoomAnimation.value),
+                                // Level 3: Workstations (visible when conveyor selected)
+                                if (_selectedConveyor != null)
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _buildInterLayerConnector(height: 42),
+                                      _buildWorkstationLayerWithParent(
+                                          _detailAnimation.value),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -297,9 +326,50 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             ),
           ),
         ),
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: _buildZoomControls(),
+        ),
         if (_popupAlertData != null && _popupPosition != null)
           _buildAlertPopup(),
       ],
+    );
+  }
+
+  Widget _buildZoomControls() {
+    return Material(
+      elevation: 6,
+      borderRadius: BorderRadius.circular(14),
+      color: _white,
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: _white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _border),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Zoom in',
+              onPressed: _treeScale < _maxTreeScale ? _zoomInTree : null,
+              icon: const Icon(Icons.add, color: _navy),
+            ),
+            Container(
+              width: 24,
+              height: 1,
+              color: _border,
+            ),
+            IconButton(
+              tooltip: 'Zoom out',
+              onPressed: _treeScale > _minTreeScale ? _zoomOutTree : null,
+              icon: const Icon(Icons.remove, color: _navy),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -341,7 +411,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         'All Plants',
         style: TextStyle(
           fontSize: 16,
-          fontWeight: _selectedUsine == null ? FontWeight.bold : FontWeight.w500,
+          fontWeight:
+              _selectedUsine == null ? FontWeight.bold : FontWeight.w500,
           color: _selectedUsine == null ? _navy : _muted,
         ),
       ),
@@ -357,7 +428,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           _selectedUsine!.label,
           style: TextStyle(
             fontSize: 16,
-            fontWeight: _selectedConveyor == null ? FontWeight.bold : FontWeight.w500,
+            fontWeight:
+                _selectedConveyor == null ? FontWeight.bold : FontWeight.w500,
             color: _selectedConveyor == null ? _navy : _muted,
           ),
         ),
@@ -390,8 +462,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       builder: (context, constraints) {
         final conveyors = _selectedUsine!.children;
         final spacing = constraints.maxWidth / (conveyors.length + 1);
-        final selectedIndex = conveyors.indexWhere((c) => c.id == _selectedConveyor?.id);
-        final selectedX = selectedIndex >= 0 ? spacing * (selectedIndex + 1) : null;
+        final selectedIndex =
+            conveyors.indexWhere((c) => c.id == _selectedConveyor?.id);
+        final selectedX =
+            selectedIndex >= 0 ? spacing * (selectedIndex + 1) : null;
         return Padding(
           padding: EdgeInsets.only(bottom: _selectedConveyor != null ? 0 : 16),
           child: SizedBox(
@@ -448,7 +522,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       builder: (context, constraints) {
         final workstations = _selectedConveyor!.children;
         final parentConveyors = _selectedUsine?.children ?? const <AlertNode>[];
-        final selectedParentIndex = parentConveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
+        final selectedParentIndex =
+            parentConveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
         final parentSpacing = parentConveyors.isEmpty
             ? constraints.maxWidth / 2
             : constraints.maxWidth / (parentConveyors.length + 1);
@@ -478,7 +553,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                       left: x - 30,
                       top: 50,
                       child: GestureDetector(
-                        onTap: () => _onWorkstationClick(workstation, Offset(x, 50)),
+                        onTap: () =>
+                            _onWorkstationClick(workstation, Offset(x, 50)),
                         child: _buildWorkstationNode(workstation),
                       ),
                     );
@@ -500,7 +576,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     return LayoutBuilder(
       builder: (context, constraints) {
         final conveyors = _selectedUsine!.children;
-        final selectedIndex = conveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
+        final selectedIndex =
+            conveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
         if (selectedIndex < 0 || conveyors.isEmpty) {
           return SizedBox(height: height);
         }
@@ -586,7 +663,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.factory_outlined, size: 20, color: usine.hasError ? _red : _navy),
+          Icon(Icons.factory_outlined,
+              size: 20, color: usine.hasError ? _red : _navy),
           const SizedBox(width: 8),
           Text(
             usine.label,
@@ -616,7 +694,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: usine.hasError ? _red.withOpacity(0.1) : _navy.withOpacity(0.1),
+                color: usine.hasError
+                    ? _red.withOpacity(0.1)
+                    : _navy.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: usine.hasError ? _red : _navy,
@@ -716,7 +796,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               width: 70,
               height: 70,
               decoration: BoxDecoration(
-                color: conveyor.hasError ? _orange.withOpacity(0.1) : _blue.withOpacity(0.1),
+                color: conveyor.hasError
+                    ? _orange.withOpacity(0.1)
+                    : _blue.withOpacity(0.1),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: conveyor.hasError ? _orange : _blue,
@@ -724,7 +806,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: (conveyor.hasError ? _orange : _blue).withOpacity(0.3),
+                    color:
+                        (conveyor.hasError ? _orange : _blue).withOpacity(0.3),
                     blurRadius: 8,
                   ),
                 ],
@@ -809,7 +892,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         }
       },
       child: MouseRegion(
-        cursor: workstation.hasError ? SystemMouseCursors.click : MouseCursor.defer,
+        cursor:
+            workstation.hasError ? SystemMouseCursors.click : MouseCursor.defer,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -854,7 +938,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: _red.withOpacity(0.3 * (1 - _pulseController.value)),
+                              color: _red.withOpacity(
+                                  0.3 * (1 - _pulseController.value)),
                               width: 2,
                             ),
                           ),
@@ -919,7 +1004,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           decoration: BoxDecoration(
             color: _white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: alert['isCritical'] ? _red : _border, width: 2),
+            border: Border.all(
+                color: alert['isCritical'] ? _red : _border, width: 2),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1037,11 +1123,13 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                       ),
                       const SizedBox(height: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: _statusColor(alert['status']).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _statusColor(alert['status'])),
+                          border:
+                              Border.all(color: _statusColor(alert['status'])),
                         ),
                         child: Text(
                           _statusLabel(alert['status']),
@@ -1053,7 +1141,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         ),
                       ),
                       const SizedBox(height: 10),
-                      _buildInfoRow('Claim status', _statusSummary(status, claimedBy, assistantName)),
+                      _buildInfoRow('Claim status',
+                          _statusSummary(status, claimedBy, assistantName)),
                       if (claimedBy != null)
                         _buildInfoRow('Claimed by', claimedBy),
                       if (assistantName != null && assistantName.isNotEmpty)
@@ -1064,13 +1153,16 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           child: SizedBox(
                             width: double.infinity,
                             child: ElevatedButton.icon(
-                              onPressed: () => _showAssignSupervisorDialog(alert),
-                              icon: const Icon(Icons.person_add_alt_1, size: 18),
+                              onPressed: () =>
+                                  _showAssignSupervisorDialog(alert),
+                              icon:
+                                  const Icon(Icons.person_add_alt_1, size: 18),
                               label: const Text('Assign Supervisor'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _navy,
                                 foregroundColor: _white,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -1116,11 +1208,14 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     );
   }
 
-  String _statusSummary(String status, String? claimedBy, String? assistantName) {
+  String _statusSummary(
+      String status, String? claimedBy, String? assistantName) {
     if (status == 'disponible') {
       return 'Unclaimed';
     }
-    if (claimedBy != null && assistantName != null && assistantName.isNotEmpty) {
+    if (claimedBy != null &&
+        assistantName != null &&
+        assistantName.isNotEmpty) {
       return 'Claimed by $claimedBy and assisted by $assistantName';
     }
     if (claimedBy != null) {
@@ -1131,13 +1226,16 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   Future<void> _showAssignSupervisorDialog(Map<String, dynamic> alert) async {
     final supervisors = await _authService.getActiveSupervisors();
-    final filtered = supervisors.where((supervisor) => supervisor.usine == alert['usine']).toList();
+    final filtered = supervisors
+        .where((supervisor) => supervisor.usine == alert['usine'])
+        .toList();
 
     if (!mounted) return;
 
     if (filtered.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active supervisors available for this factory')),
+        const SnackBar(
+            content: Text('No active supervisors available for this factory')),
       );
       return;
     }
@@ -1190,40 +1288,40 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Color _typeColor(String type) => switch (type) {
-    'qualite' => _red,
-    'maintenance' => _blue,
-    'defaut_produit' => _green,
-    'manque_ressource' => _orange,
-    _ => _muted,
-  };
+        'qualite' => _red,
+        'maintenance' => _blue,
+        'defaut_produit' => _green,
+        'manque_ressource' => _orange,
+        _ => _muted,
+      };
 
   IconData _typeIcon(String type) => switch (type) {
-    'qualite' => Icons.warning_amber_rounded,
-    'maintenance' => Icons.build_outlined,
-    'defaut_produit' => Icons.cancel_outlined,
-    'manque_ressource' => Icons.inventory_2_outlined,
-    _ => Icons.notifications_outlined,
-  };
+        'qualite' => Icons.warning_amber_rounded,
+        'maintenance' => Icons.build_outlined,
+        'defaut_produit' => Icons.cancel_outlined,
+        'manque_ressource' => Icons.inventory_2_outlined,
+        _ => Icons.notifications_outlined,
+      };
 
   String _typeLabel(String type) => switch (type) {
-    'qualite' => 'Quality Issues',
-    'maintenance' => 'Maintenance',
-    'defaut_produit' => 'Damaged Product',
-    'manque_ressource' => 'Resource Deficiency',
-    _ => type,
-  };
+        'qualite' => 'Quality Issues',
+        'maintenance' => 'Maintenance',
+        'defaut_produit' => 'Damaged Product',
+        'manque_ressource' => 'Resource Deficiency',
+        _ => type,
+      };
 
   Color _statusColor(String status) => switch (status) {
-    'validee' => _green,
-    'en_cours' => _blue,
-    _ => _orange,
-  };
+        'validee' => _green,
+        'en_cours' => _blue,
+        _ => _orange,
+      };
 
   String _statusLabel(String status) => switch (status) {
-    'validee' => 'Fixed',
-    'en_cours' => 'In Progress',
-    _ => 'Available',
-  };
+        'validee' => 'Fixed',
+        'en_cours' => 'In Progress',
+        _ => 'Available',
+      };
 }
 
 // Custom painters for connecting lines (same as original)
@@ -1231,11 +1329,14 @@ class _UsineTreePainter extends CustomPainter {
   final List<AlertNode> usines;
   final double spacing;
   final Animation<double> animation;
-  _UsineTreePainter({required this.usines, required this.spacing, required this.animation}) : super(repaint: animation);
+  _UsineTreePainter(
+      {required this.usines, required this.spacing, required this.animation})
+      : super(repaint: animation);
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF111827).withOpacity(0.55 + (animation.value * 0.25))
+      ..color =
+          const Color(0xFF111827).withOpacity(0.55 + (animation.value * 0.25))
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
@@ -1247,10 +1348,13 @@ class _UsineTreePainter extends CustomPainter {
         ..moveTo(childX, parentY)
         ..cubicTo(childX, parentY + 10, childX, childY - 10, childX, childY);
       final metric = path.computeMetrics().first;
-      canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
+      canvas.drawPath(
+          metric.extractPath(0, metric.length * animation.value), paint);
     }
   }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 class _ConveyorTreePainter extends CustomPainter {
@@ -1280,7 +1384,8 @@ class _ConveyorTreePainter extends CustomPainter {
       path.moveTo(parentX, parentY);
       path.cubicTo(parentX, parentY + 6, childX, childY - 6, childX, childY);
       final metric = path.computeMetrics().first;
-      canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
+      canvas.drawPath(
+          metric.extractPath(0, metric.length * animation.value), paint);
     }
 
     if (selectedX != null) {
@@ -1289,10 +1394,14 @@ class _ConveyorTreePainter extends CustomPainter {
         ..moveTo(selectedX!, selectedNodeBottomY)
         ..lineTo(selectedX!, size.height);
       final bridgeMetric = bridgePath.computeMetrics().first;
-      canvas.drawPath(bridgeMetric.extractPath(0, bridgeMetric.length * animation.value), paint);
+      canvas.drawPath(
+          bridgeMetric.extractPath(0, bridgeMetric.length * animation.value),
+          paint);
     }
   }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 class _WorkstationTreePainter extends CustomPainter {
@@ -1322,8 +1431,11 @@ class _WorkstationTreePainter extends CustomPainter {
       path.moveTo(parentX, parentY);
       path.cubicTo(parentX, parentY + 14, childX, childY - 10, childX, childY);
       final metric = path.computeMetrics().first;
-      canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
+      canvas.drawPath(
+          metric.extractPath(0, metric.length * animation.value), paint);
     }
   }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
