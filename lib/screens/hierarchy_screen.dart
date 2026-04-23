@@ -46,11 +46,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             _selectedFactory = null;
             _selectedConveyor = null;
           } else {
-            _selectedFactory = _factories.firstWhere((f) => f.id == _selectedFactory!.id);
-            if (_selectedConveyor != null && !_selectedFactory!.conveyors.containsKey(_selectedConveyor!.id)) {
+            _selectedFactory =
+                _factories.firstWhere((f) => f.id == _selectedFactory!.id);
+            if (_selectedConveyor != null &&
+                !_selectedFactory!.conveyors
+                    .containsKey(_selectedConveyor!.id)) {
               _selectedConveyor = null;
             } else if (_selectedConveyor != null) {
-              _selectedConveyor = _selectedFactory!.conveyors[_selectedConveyor!.id];
+              _selectedConveyor =
+                  _selectedFactory!.conveyors[_selectedConveyor!.id];
             }
           }
         }
@@ -84,7 +88,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Add a new factory for Sagem'),
+                  const Text('Add a new factory'),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nameController,
@@ -116,34 +120,42 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   if (error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(error!, style: const TextStyle(color: _red, fontSize: 12)),
+                      child: Text(error!,
+                          style: const TextStyle(color: _red, fontSize: 12)),
                     ),
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel')),
               ElevatedButton(
                 onPressed: () async {
                   final name = nameController.text.trim();
                   final location = locationController.text.trim();
-                  final numConveyors = int.tryParse(conveyorsController.text.trim());
+                  final numConveyors =
+                      int.tryParse(conveyorsController.text.trim());
                   if (name.isEmpty) {
                     setStateDialog(() => error = 'Factory name is required');
                     return;
                   }
                   if (numConveyors == null || numConveyors < 1) {
-                    setStateDialog(() => error = 'Enter a valid number of conveyors (≥1)');
+                    setStateDialog(
+                        () => error = 'Enter a valid number of conveyors (≥1)');
                     return;
                   }
                   final id = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
                   try {
-                    await _service.addFactoryWithConveyors(id, name, location, numConveyors);
+                    await _service.addFactoryWithConveyors(
+                        id, name, location, numConveyors);
                     if (context.mounted) Navigator.pop(context);
                     _loadFactories(); // force refresh
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Factory added'), backgroundColor: _green),
+                        const SnackBar(
+                            content: Text('Factory added'),
+                            backgroundColor: _green),
                       );
                     }
                   } catch (e) {
@@ -180,7 +192,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(_, int.tryParse(controller.text)),
             child: const Text('Add'),
@@ -194,7 +207,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         _loadFactories();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Conveyor $newNumber added'), backgroundColor: _green),
+            SnackBar(
+                content: Text('Conveyor $newNumber added'),
+                backgroundColor: _green),
           );
         }
       } catch (e) {
@@ -210,7 +225,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
   // ------------------- Edit Conveyor Dialog -------------------
   Future<void> _showEditConveyorDialog() async {
     if (_selectedConveyor == null || _selectedFactory == null) return;
-    final controller = TextEditingController(text: _selectedConveyor!.number.toString());
+    final controller =
+        TextEditingController(text: _selectedConveyor!.number.toString());
     final newNumber = await showDialog<int>(
       context: context,
       builder: (_) => AlertDialog(
@@ -228,7 +244,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(_, int.tryParse(controller.text)),
             child: const Text('Save'),
@@ -237,11 +254,13 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       ),
     );
     if (newNumber != null && newNumber != _selectedConveyor!.number) {
-      await _service.updateConveyorNumber(_selectedFactory!.id, _selectedConveyor!.id, newNumber);
+      await _service.updateConveyorNumber(
+          _selectedFactory!.id, _selectedConveyor!.id, newNumber);
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Conveyor updated'), backgroundColor: _green),
+          const SnackBar(
+              content: Text('Conveyor updated'), backgroundColor: _green),
         );
       }
     }
@@ -272,11 +291,13 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(hintText: 'Ex: 2'),
             ),
-            Text('Maximum: $remaining station(s)', style: const TextStyle(fontSize: 12, color: _muted)),
+            Text('Maximum: $remaining station(s)',
+                style: const TextStyle(fontSize: 12, color: _muted)),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               final int? count = int.tryParse(controller.text);
@@ -284,7 +305,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                 Navigator.pop(_, count);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid number'), backgroundColor: _red),
+                  const SnackBar(
+                      content: Text('Invalid number'), backgroundColor: _red),
                 );
               }
             },
@@ -297,12 +319,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       final startIndex = currentCount + 1;
       for (int i = 0; i < toAdd; i++) {
         final stationNumber = startIndex + i;
-        await _service.addStation(_selectedFactory!.id, _selectedConveyor!.id, stationNumber);
+        await _service.addStation(
+            _selectedFactory!.id, _selectedConveyor!.id, stationNumber);
       }
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added $toAdd station(s)'), backgroundColor: _green),
+          SnackBar(
+              content: Text('Added $toAdd station(s)'),
+              backgroundColor: _green),
         );
       }
     }
@@ -314,10 +339,16 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Factory'),
-        content: Text('Delete "${factory.name}" and all its conveyors/stations?'),
+        content:
+            Text('Delete "${factory.name}" and all its conveyors/stations?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(_, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(_, true), style: ElevatedButton.styleFrom(backgroundColor: _red), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(_, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(_, true),
+              style: ElevatedButton.styleFrom(backgroundColor: _red),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -326,7 +357,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Factory deleted'), backgroundColor: _red),
+          const SnackBar(
+              content: Text('Factory deleted'), backgroundColor: _red),
         );
       }
     }
@@ -339,10 +371,16 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Conveyor'),
-        content: Text('Delete Conveyor ${conveyor.number} and all its stations?'),
+        content:
+            Text('Delete Conveyor ${conveyor.number} and all its stations?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(_, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(_, true), style: ElevatedButton.styleFrom(backgroundColor: _red), child: const Text('Delete')),
+          TextButton(
+              onPressed: () => Navigator.pop(_, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(_, true),
+              style: ElevatedButton.styleFrom(backgroundColor: _red),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -351,7 +389,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Conveyor deleted'), backgroundColor: _red),
+          const SnackBar(
+              content: Text('Conveyor deleted'), backgroundColor: _red),
         );
       }
     }
@@ -382,10 +421,11 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
           children: [
             const Text(
               'Modify Hierarchy',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _navy),
+              style: TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.bold, color: _navy),
             ),
             const Text(
-              'Factory → Conveyor → Station — Sagem',
+              'Factory → Conveyor → Station',
               style: TextStyle(fontSize: 13, color: _muted),
             ),
             const SizedBox(height: 24),
@@ -412,10 +452,14 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                               children: [
                                 Text(
                                   'Factories (${_factories.length})',
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: _navy),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.add, size: 18, color: _green),
+                                  icon: const Icon(Icons.add,
+                                      size: 18, color: _green),
                                   onPressed: _showAddFactoryDialog,
                                   tooltip: 'Add Factory',
                                   padding: EdgeInsets.zero,
@@ -427,20 +471,29 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           const Divider(height: 1),
                           Expanded(
                             child: _factories.isEmpty
-                                ? const Center(child: Text('No factories', style: TextStyle(color: _muted)))
+                                ? const Center(
+                                    child: Text('No factories',
+                                        style: TextStyle(color: _muted)))
                                 : ListView.builder(
                                     itemCount: _factories.length,
                                     itemBuilder: (context, index) {
                                       final factory = _factories[index];
-                                      final isSelected = _selectedFactory?.id == factory.id;
+                                      final isSelected =
+                                          _selectedFactory?.id == factory.id;
                                       return ListTile(
                                         selected: isSelected,
-                                        selectedTileColor: _navy.withOpacity(0.1),
-                                        title: Text(factory.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                        subtitle: Text('${factory.location} · ${factory.conveyors.length} conveyor(s)'),
+                                        selectedTileColor:
+                                            _navy.withOpacity(0.1),
+                                        title: Text(factory.name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w600)),
+                                        subtitle: Text(
+                                            '${factory.location} · ${factory.conveyors.length} conveyor(s)'),
                                         trailing: IconButton(
-                                          icon: const Icon(Icons.delete_outline, size: 18, color: _red),
-                                          onPressed: () => _deleteFactory(factory),
+                                          icon: const Icon(Icons.delete_outline,
+                                              size: 18, color: _red),
+                                          onPressed: () =>
+                                              _deleteFactory(factory),
                                         ),
                                         onTap: () => setState(() {
                                           _selectedFactory = factory;
@@ -474,11 +527,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                               children: [
                                 Text(
                                   'Conveyors (${conveyors.length})',
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: _navy),
                                 ),
                                 if (_selectedFactory != null)
                                   IconButton(
-                                    icon: const Icon(Icons.add, size: 18, color: _green),
+                                    icon: const Icon(Icons.add,
+                                        size: 18, color: _green),
                                     onPressed: _showAddConveyorDialog,
                                     tooltip: 'Add Conveyor',
                                     padding: EdgeInsets.zero,
@@ -490,33 +547,49 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           const Divider(height: 1),
                           Expanded(
                             child: _selectedFactory == null
-                                ? const Center(child: Text('Select a factory first', style: TextStyle(color: _muted)))
+                                ? const Center(
+                                    child: Text('Select a factory first',
+                                        style: TextStyle(color: _muted)))
                                 : conveyors.isEmpty
-                                    ? const Center(child: Text('No conveyors', style: TextStyle(color: _muted)))
+                                    ? const Center(
+                                        child: Text('No conveyors',
+                                            style: TextStyle(color: _muted)))
                                     : ListView.builder(
                                         itemCount: conveyors.length,
                                         itemBuilder: (context, index) {
                                           final conveyor = conveyors[index];
-                                          final isSelected = _selectedConveyor?.id == conveyor.id;
+                                          final isSelected =
+                                              _selectedConveyor?.id ==
+                                                  conveyor.id;
                                           return ListTile(
                                             selected: isSelected,
-                                            selectedTileColor: _navy.withOpacity(0.1),
-                                            title: Text('Conveyor ${conveyor.number}'),
-                                            subtitle: Text('${conveyor.stations.length}/${_service.maxStations} stations'),
+                                            selectedTileColor:
+                                                _navy.withOpacity(0.1),
+                                            title: Text(
+                                                'Conveyor ${conveyor.number}'),
+                                            subtitle: Text(
+                                                '${conveyor.stations.length}/${_service.maxStations} stations'),
                                             trailing: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 IconButton(
-                                                  icon: const Icon(Icons.edit, size: 18),
-                                                  onPressed: _showEditConveyorDialog,
+                                                  icon: const Icon(Icons.edit,
+                                                      size: 18),
+                                                  onPressed:
+                                                      _showEditConveyorDialog,
                                                 ),
                                                 IconButton(
-                                                  icon: const Icon(Icons.delete_outline, size: 18, color: _red),
-                                                  onPressed: () => _deleteConveyor(conveyor),
+                                                  icon: const Icon(
+                                                      Icons.delete_outline,
+                                                      size: 18,
+                                                      color: _red),
+                                                  onPressed: () =>
+                                                      _deleteConveyor(conveyor),
                                                 ),
                                               ],
                                             ),
-                                            onTap: () => setState(() => _selectedConveyor = conveyor),
+                                            onTap: () => setState(() =>
+                                                _selectedConveyor = conveyor),
                                           );
                                         },
                                       ),
@@ -545,11 +618,16 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                               children: [
                                 Text(
                                   'Stations (${stations.length}/${_service.maxStations})',
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: _navy),
                                 ),
-                                if (_selectedConveyor != null && stations.length < _service.maxStations)
+                                if (_selectedConveyor != null &&
+                                    stations.length < _service.maxStations)
                                   IconButton(
-                                    icon: const Icon(Icons.add, size: 18, color: _green),
+                                    icon: const Icon(Icons.add,
+                                        size: 18, color: _green),
                                     onPressed: _showAddStationsDialog,
                                     tooltip: 'Add Stations',
                                     padding: EdgeInsets.zero,
@@ -561,16 +639,23 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           const Divider(height: 1),
                           Expanded(
                             child: _selectedConveyor == null
-                                ? const Center(child: Text('Select a conveyor first', style: TextStyle(color: _muted)))
+                                ? const Center(
+                                    child: Text('Select a conveyor first',
+                                        style: TextStyle(color: _muted)))
                                 : stations.isEmpty
-                                    ? const Center(child: Text('No stations', style: TextStyle(color: _muted)))
+                                    ? const Center(
+                                        child: Text('No stations',
+                                            style: TextStyle(color: _muted)))
                                     : ListView.builder(
                                         itemCount: stations.length,
                                         itemBuilder: (context, index) {
                                           final station = stations[index];
                                           return ListTile(
                                             title: Text(station.name),
-                                            subtitle: Text(station.address, style: const TextStyle(fontSize: 11, color: _muted)),
+                                            subtitle: Text(station.address,
+                                                style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: _muted)),
                                           );
                                         },
                                       ),
