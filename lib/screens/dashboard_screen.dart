@@ -10,7 +10,7 @@ import '../models/alert_model.dart';
 import '../services/auth_service.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
-import 'supervisor_collaboration_screen.dart';  // new
+import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
 
 const _navy = Color(0xFF0D4A75);
@@ -77,9 +77,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<String> _fetchSupervisorUsine() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return 'Usine A';
-    final snapshot = await FirebaseDatabase.instance
-        .ref('users/${user.uid}/usine')
-        .once();
+    final snapshot =
+        await FirebaseDatabase.instance.ref('users/${user.uid}/usine').once();
     final value = snapshot.snapshot.value;
     return (value as String?) ?? 'Usine A';
   }
@@ -146,7 +145,8 @@ class _OriginalDashboardContent extends StatefulWidget {
   });
 
   @override
-  State<_OriginalDashboardContent> createState() => _OriginalDashboardContentState();
+  State<_OriginalDashboardContent> createState() =>
+      _OriginalDashboardContentState();
 }
 
 class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
@@ -195,7 +195,8 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.info_outline, color: _navy, size: 20),
+                          const Icon(Icons.info_outline,
+                              color: _navy, size: 20),
                           const SizedBox(width: 8),
                           const Text(
                             'Dashboard',
@@ -350,10 +351,14 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       _db.child('notifications/$uid').remove();
       _db.child('pm_actions/$uid').remove();
 
-      _notifSubscription = _db.child('notifications/$uid').onValue.listen((event) async {
+      _notifSubscription =
+          _db.child('notifications/$uid').onValue.listen((event) async {
         final data = event.snapshot.value;
         if (data == null) {
-          setState(() { _notificationCount = 0; _notifications = []; });
+          setState(() {
+            _notificationCount = 0;
+            _notifications = [];
+          });
           return;
         }
         final map = Map<String, dynamic>.from(data as Map);
@@ -385,7 +390,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 bool shouldBuzz = false;
                 if (userRole == 'admin') {
                   shouldBuzz = true;
-                } else if (userRole == 'supervisor' && alertUsine == userUsine) {
+                } else if (userRole == 'supervisor' &&
+                    alertUsine == userUsine) {
                   shouldBuzz = true;
                 }
                 if (shouldBuzz) {
@@ -488,25 +494,36 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: const [
                               Text('All Notifications',
-                                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87)),
+                                  style: TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87)),
                               SizedBox(height: 4),
                               Text('View and manage your alerts and PM actions',
-                                  style: TextStyle(fontSize: 14, color: Colors.grey)),
+                                  style: TextStyle(
+                                      fontSize: 14, color: Colors.grey)),
                             ],
                           ),
                         ),
                         Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(color: _red, borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                  color: _red,
+                                  borderRadius: BorderRadius.circular(12)),
                               child: Text('$_notificationCount unread',
-                                  style: const TextStyle(color: _white, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  style: const TextStyle(
+                                      color: _white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12)),
                             ),
                             const SizedBox(width: 8),
                             GestureDetector(
                               onTap: () => Navigator.pop(context),
-                              child: const Icon(Icons.close, color: Colors.black54),
+                              child: const Icon(Icons.close,
+                                  color: Colors.black54),
                             ),
                           ],
                         ),
@@ -516,16 +533,26 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   Container(
                     margin: const EdgeInsets.symmetric(horizontal: 20),
                     padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(30)),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(30)),
                     child: TabBar(
                       controller: _tabController,
-                      indicator: BoxDecoration(color: _white, borderRadius: BorderRadius.circular(30), boxShadow: const [
-                        BoxShadow(color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 2))
-                      ]),
+                      indicator: BoxDecoration(
+                          color: _white,
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: const [
+                            BoxShadow(
+                                color: Color(0x0A000000),
+                                blurRadius: 4,
+                                offset: Offset(0, 2))
+                          ]),
                       labelColor: _navy,
                       unselectedLabelColor: Colors.black54,
-                      labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                      labelStyle: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
+                      unselectedLabelStyle: const TextStyle(
+                          fontWeight: FontWeight.w500, fontSize: 13),
                       tabs: [
                         Tab(
                           child: Row(
@@ -535,9 +562,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(color: _red, shape: BoxShape.circle),
+                                decoration: const BoxDecoration(
+                                    color: _red, shape: BoxShape.circle),
                                 child: Text('${_notifications.length}',
-                                    style: const TextStyle(color: _white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    style: const TextStyle(
+                                        color: _white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
@@ -550,9 +581,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(color: _red, shape: BoxShape.circle),
+                                decoration: const BoxDecoration(
+                                    color: _red, shape: BoxShape.circle),
                                 child: Text('${_pmActions.length}',
-                                    style: const TextStyle(color: _white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                    style: const TextStyle(
+                                        color: _white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
@@ -569,19 +604,24 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         _notifications.isEmpty
                             ? const Center(child: Text('No alerts'))
                             : ListView.builder(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 20),
                                 itemCount: _notifications.length,
                                 itemBuilder: (context, index) {
                                   final n = _notifications[index];
                                   final isHelp = n['type'] == 'help_request';
-                                  final isAssistance = n['type'] == 'assistance_request';
+                                  final isAssistance =
+                                      n['type'] == 'assistance_request';
                                   final isUnread = n['status'] != 'read';
                                   if (isHelp) {
-                                    return _buildHelpRequestItem(n, isUnread, setModalState, context);
+                                    return _buildHelpRequestItem(
+                                        n, isUnread, setModalState, context);
                                   } else if (isAssistance) {
-                                    return _buildAssistanceRequestItem(n, isUnread, setModalState, context);
+                                    return _buildAssistanceRequestItem(
+                                        n, isUnread, setModalState, context);
                                   } else {
-                                    return _buildDefaultNotificationItem(n, isUnread, setModalState, context);
+                                    return _buildDefaultNotificationItem(
+                                        n, isUnread, setModalState, context);
                                   }
                                 },
                               ),
@@ -589,12 +629,14 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         _pmActions.isEmpty
                             ? const Center(child: Text('No PM actions'))
                             : ListView.builder(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 20),
                                 itemCount: _pmActions.length,
                                 itemBuilder: (context, index) {
                                   final action = _pmActions[index];
                                   final isUnread = action['status'] != 'read';
-                                  return _buildPmActionItem(action, isUnread, setModalState, context);
+                                  return _buildPmActionItem(
+                                      action, isUnread, setModalState, context);
                                 },
                               ),
                       ],
@@ -609,12 +651,16 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _buildHelpRequestItem(Map<String, dynamic> n, bool isUnread, StateSetter setModalState, BuildContext context) {
+  Widget _buildHelpRequestItem(Map<String, dynamic> n, bool isUnread,
+      StateSetter setModalState, BuildContext context) {
     final isBuzzingForThis = _isBuzzing && _buzzingNotificationId == n['id'];
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: const Color(0xFFF0F9FF), border: Border.all(color: const Color(0xFFBAE6FD)), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF0F9FF),
+          border: Border.all(color: const Color(0xFFBAE6FD)),
+          borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -627,29 +673,46 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(n['message'] ?? 'Help request', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    Text(n['message'] ?? 'Help request',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
-                    Text(n['alertDescription'] ?? 'Action required', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                    Text(n['alertDescription'] ?? 'Action required',
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.access_time, size: 14, color: Colors.grey.shade500),
+                        Icon(Icons.access_time,
+                            size: 14, color: Colors.grey.shade500),
                         const SizedBox(width: 4),
-                        Text(_formatTimestamp(DateTime.parse(n['timestamp'] ?? DateTime.now().toIso8601String())),
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                        Text(
+                            _formatTimestamp(DateTime.parse(n['timestamp'] ??
+                                DateTime.now().toIso8601String())),
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 12)),
                         if (isBuzzingForThis) ...[
                           const SizedBox(width: 12),
-                          const Icon(Icons.vibration, size: 14, color: Colors.red),
+                          const Icon(Icons.vibration,
+                              size: 14, color: Colors.red),
                           const SizedBox(width: 4),
                           const Text('Phone is buzzing',
-                              style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.w500)),
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w500)),
                         ],
                       ],
                     ),
                   ],
                 ),
               ),
-              if (isUnread) Container(width: 10, height: 10, decoration: const BoxDecoration(color: _red, shape: BoxShape.circle)),
+              if (isUnread)
+                Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                        color: _red, shape: BoxShape.circle)),
             ],
           ),
           const SizedBox(height: 16),
@@ -657,60 +720,101 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             children: [
               OutlinedButton.icon(
                 onPressed: () async {
-                  await Provider.of<AlertProvider>(context, listen: false).acceptHelp(n['alertId'], n['helpRequestId']);
-                  final alertSnapshot = await FirebaseDatabase.instance.ref('alerts/${n['alertId']}').once();
+                  await Provider.of<AlertProvider>(context, listen: false)
+                      .acceptHelp(n['alertId'], n['helpRequestId']);
+                  final alertSnapshot = await FirebaseDatabase.instance
+                      .ref('alerts/${n['alertId']}')
+                      .once();
                   final alertData = alertSnapshot.snapshot.value as Map?;
                   final originalSupervisorId = alertData?['superviseurId'];
-                  if (originalSupervisorId != null && originalSupervisorId != FirebaseAuth.instance.currentUser!.uid) {
-                    final pmRef = FirebaseDatabase.instance.ref('pm_actions/$originalSupervisorId').push();
+                  if (originalSupervisorId != null &&
+                      originalSupervisorId !=
+                          FirebaseAuth.instance.currentUser!.uid) {
+                    final pmRef = FirebaseDatabase.instance
+                        .ref('pm_actions/$originalSupervisorId')
+                        .push();
                     await pmRef.set({
                       'title': 'Assistant Assigned',
-                      'description': '${FirebaseAuth.instance.currentUser?.displayName ?? 'A supervisor'} accepted your assistance request',
+                      'description':
+                          '${FirebaseAuth.instance.currentUser?.displayName ?? 'A supervisor'} accepted your assistance request',
                       'timestamp': DateTime.now().toIso8601String(),
                       'status': 'unread',
                       'alertId': n['alertId'],
                       'type': 'assistant_assigned',
                     });
                   }
-                  await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                  await _db
+                      .child(
+                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                      .remove();
                   if (context.mounted) {
                     setModalState(() {
-                      _notifications.removeWhere((item) => item['id'] == n['id']);
-                      _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                      _notifications
+                          .removeWhere((item) => item['id'] == n['id']);
+                      _notificationCount = _notifications
+                          .where((x) => x['status'] != 'read')
+                          .length;
                     });
                     if (_buzzingNotificationId == n['id']) _stopBuzzing();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Help request accepted'), backgroundColor: Colors.green));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Help request accepted'),
+                        backgroundColor: Colors.green));
                   }
                 },
                 icon: const Icon(Icons.check, size: 16, color: Colors.green),
-                label: const Text('Accept', style: TextStyle(color: Colors.green)),
-                style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.green), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                label:
+                    const Text('Accept', style: TextStyle(color: Colors.green)),
+                style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.green),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8))),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: () async {
-                  await Provider.of<AlertProvider>(context, listen: false).refuseHelp(n['alertId'], n['helpRequestId']);
-                  await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                  await Provider.of<AlertProvider>(context, listen: false)
+                      .refuseHelp(n['alertId'], n['helpRequestId']);
+                  await _db
+                      .child(
+                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                      .remove();
                   if (context.mounted) {
                     setModalState(() {
-                      _notifications.removeWhere((item) => item['id'] == n['id']);
-                      _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                      _notifications
+                          .removeWhere((item) => item['id'] == n['id']);
+                      _notificationCount = _notifications
+                          .where((x) => x['status'] != 'read')
+                          .length;
                     });
                     if (_buzzingNotificationId == n['id']) _stopBuzzing();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Help request refused'), backgroundColor: Colors.orange));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Help request refused'),
+                        backgroundColor: Colors.orange));
                   }
                 },
                 icon: const Icon(Icons.close, size: 16, color: Colors.red),
-                label: const Text('Decline', style: TextStyle(color: Colors.red)),
-                style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                label:
+                    const Text('Decline', style: TextStyle(color: Colors.red)),
+                style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8))),
               ),
               if (isUnread) ...[
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
-                  onPressed: () async { await _stopBuzzing(); setModalState(() {}); },
-                  icon: const Icon(Icons.vibration, size: 16, color: Colors.red),
-                  label: const Text('Stop Buzzing', style: TextStyle(color: Colors.red)),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.red), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                  onPressed: () async {
+                    await _stopBuzzing();
+                    setModalState(() {});
+                  },
+                  icon:
+                      const Icon(Icons.vibration, size: 16, color: Colors.red),
+                  label: const Text('Stop Buzzing',
+                      style: TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8))),
                 ),
               ],
             ],
@@ -720,11 +824,15 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
-  Widget _buildAssistanceRequestItem(Map<String, dynamic> n, bool isUnread, StateSetter setModalState, BuildContext context) {
+  Widget _buildAssistanceRequestItem(Map<String, dynamic> n, bool isUnread,
+      StateSetter setModalState, BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: const Color(0xFFFFF7ED), border: Border.all(color: const Color(0xFFFED7AA)), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          border: Border.all(color: const Color(0xFFFED7AA)),
+          borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -737,22 +845,35 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(n['message'] ?? 'Assistance request', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    Text(n['message'] ?? 'Assistance request',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
-                    Text(n['alertDescription'] ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                    Text(n['alertDescription'] ?? '',
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.access_time, size: 14, color: Colors.grey.shade500),
+                        Icon(Icons.access_time,
+                            size: 14, color: Colors.grey.shade500),
                         const SizedBox(width: 4),
-                        Text(_formatTimestamp(DateTime.parse(n['timestamp'] ?? DateTime.now().toIso8601String())),
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                        Text(
+                            _formatTimestamp(DateTime.parse(n['timestamp'] ??
+                                DateTime.now().toIso8601String())),
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 12)),
                       ],
                     ),
                   ],
                 ),
               ),
-              if (isUnread) Container(width: 10, height: 10, decoration: const BoxDecoration(color: _red, shape: BoxShape.circle)),
+              if (isUnread)
+                Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                        color: _red, shape: BoxShape.circle)),
             ],
           ),
           const SizedBox(height: 16),
@@ -760,7 +881,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             onPressed: () async {
               final supervisors = await AuthService().getActiveSupervisors();
               if (supervisors.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No active supervisors available')));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('No active supervisors available')));
                 return;
               }
               showDialog(
@@ -778,39 +900,65 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         subtitle: Text(supervisors[i].email),
                         onTap: () async {
                           Navigator.pop(_);
-                          await AuthService().assignAssistantToAlert(n['alertId'], supervisors[i].id, supervisors[i].fullName);
-                          await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                          await AuthService().assignAssistantToAlert(
+                              n['alertId'],
+                              supervisors[i].id,
+                              supervisors[i].fullName);
+                          await _db
+                              .child(
+                                  'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                              .remove();
                           if (context.mounted) {
                             setModalState(() {
-                              _notifications.removeWhere((item) => item['id'] == n['id']);
-                              _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                              _notifications
+                                  .removeWhere((item) => item['id'] == n['id']);
+                              _notificationCount = _notifications
+                                  .where((x) => x['status'] != 'read')
+                                  .length;
                             });
                           }
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ Assigned ${supervisors[i].fullName} as assistant'), backgroundColor: Colors.green));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(
+                                  '✅ Assigned ${supervisors[i].fullName} as assistant'),
+                              backgroundColor: Colors.green));
                         },
                       ),
                     ),
                   ),
-                  actions: [TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel'))],
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(_),
+                        child: const Text('Cancel'))
+                  ],
                 ),
               );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            child: const Text('Assign Assistant', style: TextStyle(fontSize: 12)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8))),
+            child:
+                const Text('Assign Assistant', style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDefaultNotificationItem(Map<String, dynamic> n, bool isUnread, StateSetter setModalState, BuildContext context) {
+  Widget _buildDefaultNotificationItem(Map<String, dynamic> n, bool isUnread,
+      StateSetter setModalState, BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: _white, border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+          color: _white,
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         contentPadding: EdgeInsets.zero,
-        title: Text(n['message'] ?? 'Notification', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(n['message'] ?? 'Notification',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(n['alertDescription'] ?? ''),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -818,17 +966,27 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             if (isUnread && _buzzingNotificationId == n['id'])
               IconButton(
                 icon: const Icon(Icons.vibration, size: 18, color: Colors.red),
-                onPressed: () async { await _stopBuzzing(); setModalState(() {}); },
+                onPressed: () async {
+                  await _stopBuzzing();
+                  setModalState(() {});
+                },
               ),
             if (isUnread)
               IconButton(
-                icon: const Icon(Icons.visibility, size: 18, color: Colors.blue),
+                icon:
+                    const Icon(Icons.visibility, size: 18, color: Colors.blue),
                 onPressed: () async {
-                  await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                  await _db
+                      .child(
+                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                      .remove();
                   if (context.mounted) {
                     setModalState(() {
-                      _notifications.removeWhere((item) => item['id'] == n['id']);
-                      _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                      _notifications
+                          .removeWhere((item) => item['id'] == n['id']);
+                      _notificationCount = _notifications
+                          .where((x) => x['status'] != 'read')
+                          .length;
                     });
                   }
                 },
@@ -836,73 +994,120 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             IconButton(
               icon: const Icon(Icons.open_in_new, size: 18, color: _navy),
               onPressed: () async {
-                if (isUnread) await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                if (isUnread)
+                  await _db
+                      .child(
+                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                      .remove();
                 if (context.mounted) {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => AlertDetailScreen(alertId: n['alertId'])));
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              AlertDetailScreen(alertId: n['alertId'])));
                 }
               },
             ),
           ],
         ),
         onTap: () async {
-          if (isUnread) await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+          if (isUnread)
+            await _db
+                .child(
+                    'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                .remove();
           if (context.mounted) {
             Navigator.pop(context);
-            Navigator.push(context, MaterialPageRoute(builder: (_) => AlertDetailScreen(alertId: n['alertId'])));
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => AlertDetailScreen(alertId: n['alertId'])));
           }
         },
       ),
     );
   }
 
-  Widget _buildPmActionItem(Map<String, dynamic> action, bool isUnread, StateSetter setModalState, BuildContext context) {
+  Widget _buildPmActionItem(Map<String, dynamic> action, bool isUnread,
+      StateSetter setModalState, BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: const Color(0xFFF0FDF4), border: Border.all(color: const Color(0xFFBBF7D0)), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFF0FDF4),
+          border: Border.all(color: const Color(0xFFBBF7D0)),
+          borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.assignment_turned_in, color: Colors.green, size: 24),
+              const Icon(Icons.assignment_turned_in,
+                  color: Colors.green, size: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(action['title'] ?? 'PM Action', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    Text(action['title'] ?? 'PM Action',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 4),
-                    Text(action['description'] ?? '', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                    Text(action['description'] ?? '',
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.access_time, size: 14, color: Colors.grey.shade500),
+                        Icon(Icons.access_time,
+                            size: 14, color: Colors.grey.shade500),
                         const SizedBox(width: 4),
-                        Text(_formatTimestamp(DateTime.parse(action['timestamp'] ?? DateTime.now().toIso8601String())),
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                        Text(
+                            _formatTimestamp(DateTime.parse(
+                                action['timestamp'] ??
+                                    DateTime.now().toIso8601String())),
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 12)),
                       ],
                     ),
                   ],
                 ),
               ),
-              if (isUnread) Container(width: 10, height: 10, decoration: const BoxDecoration(color: _red, shape: BoxShape.circle)),
+              if (isUnread)
+                Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                        color: _red, shape: BoxShape.circle)),
             ],
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: () async {
-              await _db.child('pm_actions/${FirebaseAuth.instance.currentUser!.uid}/${action['id']}').remove();
+              await _db
+                  .child(
+                      'pm_actions/${FirebaseAuth.instance.currentUser!.uid}/${action['id']}')
+                  .remove();
               if (context.mounted) {
-                setModalState(() { _pmActions.removeWhere((item) => item['id'] == action['id']); });
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PM action marked as read'), backgroundColor: Colors.green));
+                setModalState(() {
+                  _pmActions.removeWhere((item) => item['id'] == action['id']);
+                });
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('PM action marked as read'),
+                    backgroundColor: Colors.green));
               }
             },
-            icon: const Icon(Icons.check_circle_outline, size: 16, color: Colors.black87),
-            label: const Text('Mark as read', style: TextStyle(color: Colors.black87)),
-            style: OutlinedButton.styleFrom(backgroundColor: _white, side: BorderSide(color: Colors.grey.shade300), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            icon: const Icon(Icons.check_circle_outline,
+                size: 16, color: Colors.black87),
+            label: const Text('Mark as read',
+                style: TextStyle(color: Colors.black87)),
+            style: OutlinedButton.styleFrom(
+                backgroundColor: _white,
+                side: BorderSide(color: Colors.grey.shade300),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8))),
           ),
         ],
       ),
@@ -912,7 +1117,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(color: _white, border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1))),
+      decoration: const BoxDecoration(
+          color: _white,
+          border:
+              Border(bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1))),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(children: [
         Row(
@@ -922,9 +1130,11 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               children: [
                 Icon(Icons.factory, size: 28, color: _navy.withOpacity(0.8)),
                 Positioned(
-                  bottom: 0, right: 0,
+                  bottom: 0,
+                  right: 0,
                   child: Container(
-                    decoration: const BoxDecoration(color: _white, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(
+                        color: _white, shape: BoxShape.circle),
                     child: const Icon(Icons.warning, color: _red, size: 14),
                   ),
                 )
@@ -932,19 +1142,35 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             ),
             const SizedBox(width: 12),
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Supervisor', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _navy)),
-              Text(widget.userName, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              const Text('Supervisor',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700, color: _navy)),
+              Text(widget.userName,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
             ]),
           ],
         ),
         const Spacer(),
         Stack(clipBehavior: Clip.none, children: [
-          IconButton(icon: const Icon(Icons.notifications_none, color: _navy, size: 28), onPressed: _showNotifications),
+          IconButton(
+              icon:
+                  const Icon(Icons.notifications_none, color: _navy, size: 28),
+              onPressed: _showNotifications),
           if (_notificationCount > 0)
             Positioned(
-              top: 6, right: 6,
-              child: Container(width: 18, height: 18, decoration: const BoxDecoration(color: _red, shape: BoxShape.circle),
-                child: Center(child: Text('$_notificationCount', style: const TextStyle(color: _white, fontSize: 10, fontWeight: FontWeight.w700))),
+              top: 6,
+              right: 6,
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration:
+                    const BoxDecoration(color: _red, shape: BoxShape.circle),
+                child: Center(
+                    child: Text('$_notificationCount',
+                        style: const TextStyle(
+                            color: _white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700))),
               ),
             ),
         ]),
@@ -953,7 +1179,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           onTap: widget.onLogout,
           child: Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(border: Border.all(color: _red), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+                border: Border.all(color: _red),
+                borderRadius: BorderRadius.circular(8)),
             child: const Icon(Icons.logout, size: 20, color: _red),
           ),
         ),
@@ -970,7 +1198,14 @@ class _SummaryCard extends StatelessWidget {
   final IconData icon;
   final bool active;
   final VoidCallback onTap;
-  const _SummaryCard({required this.label, required this.count, required this.color, required this.bgColor, required this.icon, required this.active, required this.onTap});
+  const _SummaryCard(
+      {required this.label,
+      required this.count,
+      required this.color,
+      required this.bgColor,
+      required this.icon,
+      required this.active,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -982,20 +1217,43 @@ class _SummaryCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: _white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: active ? color : const Color(0xFFE5E7EB), width: active ? 2 : 1),
-            boxShadow: active ? [BoxShadow(color: color.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 2))] : [],
+            border: Border.all(
+                color: active ? color : const Color(0xFFE5E7EB),
+                width: active ? 2 : 1),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                        color: color.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2))
+                  ]
+                : [],
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w500)),
                 const SizedBox(height: 4),
-                Text('$count', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: color)),
+                Text('$count',
+                    style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: color)),
                 const SizedBox(height: 8),
-                const Text('Click to see details', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                const Text('Click to see details',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
               ]),
-              Container(width: 48, height: 48, decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle), child: Icon(icon, color: color, size: 24)),
+              Container(
+                  width: 48,
+                  height: 48,
+                  decoration:
+                      BoxDecoration(color: bgColor, shape: BoxShape.circle),
+                  child: Icon(icon, color: color, size: 24)),
             ],
           ),
         ),
@@ -1008,24 +1266,51 @@ class _DetailPanel extends StatelessWidget {
   final List<AlertModel> available, allInProgress, validated;
   final AlertProvider provider;
   final String superviseurId, superviseurName;
-  const _DetailPanel({required this.activeView, required this.available, required this.allInProgress, required this.validated, required this.provider, required this.superviseurId, required this.superviseurName});
+  const _DetailPanel(
+      {required this.activeView,
+      required this.available,
+      required this.allInProgress,
+      required this.validated,
+      required this.provider,
+      required this.superviseurId,
+      required this.superviseurName});
 
-  String get _title => switch (activeView) { 'received' => 'Manage Alerts Received', 'claimed' => 'Claimed Alerts', _ => 'Fixed Alerts' };
+  String get _title => switch (activeView) {
+        'received' => 'Manage Alerts Received',
+        'claimed' => 'Claimed Alerts',
+        _ => 'Fixed Alerts'
+      };
 
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        decoration: BoxDecoration(color: _white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE5E7EB))),
+        decoration: BoxDecoration(
+            color: _white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE5E7EB))),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            child: Row(children: [const Icon(Icons.info_outline, color: _navy, size: 20), const SizedBox(width: 8), Text(_title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _navy))]),
+            child: Row(children: [
+              const Icon(Icons.info_outline, color: _navy, size: 20),
+              const SizedBox(width: 8),
+              Text(_title,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold, color: _navy))
+            ]),
           ),
           const Divider(height: 1, color: Color(0xFFE5E7EB)),
           const SizedBox(height: 16),
-          if (activeView == 'received') _ReceivedView(alerts: available, provider: provider, superviseurId: superviseurId, superviseurName: superviseurName),
-          if (activeView == 'claimed') _ClaimedView(alerts: allInProgress, provider: provider),
-          if (activeView == 'fixed') _FixedView(alerts: validated, provider: provider),
+          if (activeView == 'received')
+            _ReceivedView(
+                alerts: available,
+                provider: provider,
+                superviseurId: superviseurId,
+                superviseurName: superviseurName),
+          if (activeView == 'claimed')
+            _ClaimedView(alerts: allInProgress, provider: provider),
+          if (activeView == 'fixed')
+            _FixedView(alerts: validated, provider: provider),
           const SizedBox(height: 8),
         ]),
       );
@@ -1036,38 +1321,60 @@ class _ReceivedView extends StatelessWidget {
   final List<AlertModel> alerts;
   final AlertProvider provider;
   final String superviseurId, superviseurName;
-  const _ReceivedView({required this.alerts, required this.provider, required this.superviseurId, required this.superviseurName});
+  const _ReceivedView(
+      {required this.alerts,
+      required this.provider,
+      required this.superviseurId,
+      required this.superviseurName});
 
   @override
   Widget build(BuildContext context) {
-    if (alerts.isEmpty) return _empty(Icons.notifications_off_outlined, Colors.orange, 'No alerts available', 'All alerts are being handled');
-    return Column(children: alerts.map((a) => _AlertRow(
-      alert: a,
-      rowColor: const Color(0xFFFFF7ED),
-      statusLabel: 'Available',
-      statusColor: Colors.orange,
-      trailing: ElevatedButton.icon(
-        onPressed: () async {
-          try {
-            await provider.takeAlert(a.id, superviseurId, superviseurName);
-            final pmRef = FirebaseDatabase.instance.ref('pm_actions/$superviseurId').push();
-            await pmRef.set({
-              'title': 'Alert Assigned',
-              'description': 'You claimed alert: ${a.description}',
-              'timestamp': DateTime.now().toIso8601String(),
-              'status': 'unread',
-              'alertId': a.id,
-              'type': 'alert_assigned',
-            });
-          } catch (e) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
-          }
-        },
-        icon: const Icon(Icons.play_circle_outline, size: 16),
-        label: const Text('Claim'),
-        style: ElevatedButton.styleFrom(backgroundColor: _navy, foregroundColor: _white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-      ),
-    )).toList());
+    if (alerts.isEmpty)
+      return _empty(Icons.notifications_off_outlined, Colors.orange,
+          'No alerts available', 'All alerts are being handled');
+    return Column(
+        children: alerts
+            .map((a) => _AlertRow(
+                  alert: a,
+                  rowColor: const Color(0xFFFFF7ED),
+                  statusLabel: 'Available',
+                  statusColor: Colors.orange,
+                  trailing: ElevatedButton.icon(
+                    onPressed: () async {
+                      try {
+                        await provider.takeAlert(
+                            a.id, superviseurId, superviseurName);
+                        final pmRef = FirebaseDatabase.instance
+                            .ref('pm_actions/$superviseurId')
+                            .push();
+                        await pmRef.set({
+                          'title': 'Alert Assigned',
+                          'description': 'You claimed alert: ${a.description}',
+                          'timestamp': DateTime.now().toIso8601String(),
+                          'status': 'unread',
+                          'alertId': a.id,
+                          'type': 'alert_assigned',
+                        });
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(e.toString()),
+                            backgroundColor: Colors.red));
+                      }
+                    },
+                    icon: const Icon(Icons.play_circle_outline, size: 16),
+                    label: const Text('Claim'),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: _navy,
+                        foregroundColor: _white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        textStyle: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8))),
+                  ),
+                ))
+            .toList());
   }
 }
 
@@ -1077,7 +1384,8 @@ class _ClaimedView extends StatelessWidget {
   final AlertProvider provider;
   const _ClaimedView({required this.alerts, required this.provider});
 
-  Future<void> _showHoldCollabPrompt(BuildContext context, AlertModel alert) async {
+  Future<void> _showHoldCollabPrompt(
+      BuildContext context, AlertModel alert) async {
     final shouldOpen = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1086,12 +1394,14 @@ class _ClaimedView extends StatelessWidget {
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         title: Row(
           children: [
-            const Icon(Icons.people_alt_outlined, color: Colors.deepPurple, size: 22),
+            const Icon(Icons.people_alt_outlined,
+                color: Colors.deepPurple, size: 22),
             const SizedBox(width: 8),
             const Expanded(
               child: Text(
                 'Request Collaboration',
-                style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                    color: Colors.deepPurple, fontWeight: FontWeight.w700),
               ),
             ),
             IconButton(
@@ -1131,12 +1441,14 @@ class _ClaimedView extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${alert.usine} - Line ${alert.convoyeur} - WS ${alert.poste}',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFFEA580C)),
+                    style:
+                        const TextStyle(fontSize: 12, color: Color(0xFFEA580C)),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     alert.description,
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF7C2D12)),
+                    style:
+                        const TextStyle(fontSize: 13, color: Color(0xFF7C2D12)),
                   ),
                 ],
               ),
@@ -1175,13 +1487,19 @@ class _ClaimedView extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Resolve Alert'),
-        content: TextField(controller: reasonController, decoration: const InputDecoration(hintText: 'Resolution reason'), maxLines: 3),
+        content: TextField(
+            controller: reasonController,
+            decoration: const InputDecoration(hintText: 'Resolution reason'),
+            maxLines: 3),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () async {
               if (reasonController.text.trim().isEmpty) return;
-              await provider.resolveAlert(alert.id, reasonController.text.trim());
+              await provider.resolveAlert(
+                  alert.id, reasonController.text.trim());
               if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Resolve'),
@@ -1192,8 +1510,12 @@ class _ClaimedView extends StatelessWidget {
   }
 
   Future<void> _getAiAssist(BuildContext context, AlertModel alert) async {
-    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-    final pastResolutions = await provider.getPastResolutionsForType(alert.type, 3);
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()));
+    final pastResolutions =
+        await provider.getPastResolutionsForType(alert.type, 3);
     final aiService = AIService();
     final suggestion = await aiService.getResolutionSuggestion(
       alertType: alert.type,
@@ -1210,7 +1532,11 @@ class _ClaimedView extends StatelessWidget {
         builder: (_) => AlertDialog(
           title: const Text('🤖 AI Suggestion'),
           content: SingleChildScrollView(child: Text(suggestion)),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'))
+          ],
         ),
       );
     }
@@ -1224,34 +1550,47 @@ class _ClaimedView extends StatelessWidget {
         builder: (_) => AlertDialog(
           title: const Text('Mark as Critical'),
           content: TextField(
-            decoration: const InputDecoration(hintText: 'Optional note (reason, impact, etc.)'),
+            decoration: const InputDecoration(
+                hintText: 'Optional note (reason, impact, etc.)'),
             maxLines: 3,
             onChanged: (value) => note = value,
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
-            ElevatedButton(onPressed: () => Navigator.pop(context, note ?? ''), child: const Text('Mark Critical')),
+            TextButton(
+                onPressed: () => Navigator.pop(context, null),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(context, note ?? ''),
+                child: const Text('Mark Critical')),
           ],
         ),
       );
       if (note == null) return;
     }
-    await provider.toggleCritical(alert.id, !alert.isCritical, note: note?.isNotEmpty == true ? note : null);
+    await provider.toggleCritical(alert.id, !alert.isCritical,
+        note: note?.isNotEmpty == true ? note : null);
   }
 
   // The old _requestAssistance method is removed – its action is now handled by the collaboration dialog.
 
   Future<void> _offerAssistance(BuildContext context, AlertModel alert) async {
-    await provider.requestHelp(alert.id, FirebaseAuth.instance.currentUser!.uid, FirebaseAuth.instance.currentUser!.email!.split('@').first);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Assistance offered. The claimant will be notified.'), backgroundColor: Colors.purple));
+    await provider.requestHelp(alert.id, FirebaseAuth.instance.currentUser!.uid,
+        FirebaseAuth.instance.currentUser!.email!.split('@').first);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Assistance offered. The claimant will be notified.'),
+        backgroundColor: Colors.purple));
   }
 
   String _getStatusLabel(AlertModel alert, bool isMine, String currentUserId) {
-    final hasValidAssistant = alert.assistantId != null && alert.assistantId != alert.superviseurId;
+    final hasValidAssistant =
+        alert.assistantId != null && alert.assistantId != alert.superviseurId;
     if (hasValidAssistant) {
-      if (alert.assistantId == currentUserId) return 'Assisting ${alert.superviseurName}';
-      else if (isMine) return 'My Claim (assisted by ${alert.assistantName ?? 'someone'})';
-      else return 'Claimed by ${alert.superviseurName} (assisted by ${alert.assistantName ?? 'someone'})';
+      if (alert.assistantId == currentUserId)
+        return 'Assisting ${alert.superviseurName}';
+      else if (isMine)
+        return 'My Claim (assisted by ${alert.assistantName ?? 'someone'})';
+      else
+        return 'Claimed by ${alert.superviseurName} (assisted by ${alert.assistantName ?? 'someone'})';
     }
     if (isMine) return 'My Claim';
     return 'Claimed by ${alert.superviseurName ?? 'other'}';
@@ -1259,9 +1598,12 @@ class _ClaimedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (alerts.isEmpty) return _empty(Icons.error_outline, const Color(0xFF94A3B8), 'No alerts in progress', 'Claim an alert to start');
+    if (alerts.isEmpty)
+      return _empty(Icons.error_outline, const Color(0xFF94A3B8),
+          'No alerts in progress', 'Claim an alert to start');
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
-    return Column(children: alerts.map((a) {
+    return Column(
+        children: alerts.map((a) {
       final isMine = a.superviseurId == currentUserId;
       final showRequestAssistance = isMine && a.assistantId == null;
       final showOfferAssistance = !isMine && a.assistantId == null;
@@ -1278,7 +1620,8 @@ class _ClaimedView extends StatelessWidget {
         onRequestAssistance: showRequestAssistance
             ? () => _showHoldCollabPrompt(context, a)
             : null,
-        onOfferAssistance: showOfferAssistance ? () => _offerAssistance(context, a) : null,
+        onOfferAssistance:
+            showOfferAssistance ? () => _offerAssistance(context, a) : null,
         trailing: isMine
             ? Column(mainAxisSize: MainAxisSize.min, children: [
                 ElevatedButton.icon(
@@ -1289,8 +1632,10 @@ class _ClaimedView extends StatelessWidget {
                     backgroundColor: const Color(0xFF16A34A),
                     foregroundColor: _white,
                     minimumSize: const Size(110, 36),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    textStyle: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1302,15 +1647,21 @@ class _ClaimedView extends StatelessWidget {
                       builder: (_) => AlertDialog(
                         title: const Text('Suspend Alert'),
                         content: TextField(
-                          decoration: const InputDecoration(hintText: 'Optional reason for suspension'),
+                          decoration: const InputDecoration(
+                              hintText: 'Optional reason for suspension'),
                           onChanged: (value) => reason = value,
                         ),
                         actions: [
-                          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                          TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel')),
                           ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context);
-                              provider.returnToQueue(a.id, reason: reason?.trim().isEmpty == true ? null : reason);
+                              provider.returnToQueue(a.id,
+                                  reason: reason?.trim().isEmpty == true
+                                      ? null
+                                      : reason);
                             },
                             child: const Text('Suspend'),
                           ),
@@ -1324,21 +1675,26 @@ class _ClaimedView extends StatelessWidget {
                     foregroundColor: Colors.orange,
                     side: const BorderSide(color: Colors.orange),
                     minimumSize: const Size(110, 36),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    textStyle: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
                 const SizedBox(height: 6),
                 OutlinedButton.icon(
                   onPressed: () => _getAiAssist(context, a),
                   icon: const Icon(Icons.auto_awesome, size: 16),
-                  label: const Text('AI Assist', style: TextStyle(fontSize: 11)),
+                  label:
+                      const Text('AI Assist', style: TextStyle(fontSize: 11)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.purple,
                     side: const BorderSide(color: Colors.purple),
                     minimumSize: const Size(110, 36),
-                    textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    textStyle: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w600),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ])
@@ -1356,34 +1712,67 @@ class _FixedView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (alerts.isEmpty) return _empty(Icons.check_circle_outline, Colors.green, 'No fixed alerts', 'Fixed alerts will appear here');
-    return Column(children: alerts.map((a) => _AlertRow(
-      alert: a,
-      rowColor: const Color(0xFFF0FDF4),
-      statusLabel: 'Fixed',
-      statusColor: const Color(0xFF16A34A),
-      statusIcon: Icons.check_circle_outline,
-      extraContent: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(color: const Color(0xFFDCFCE7), border: Border.all(color: const Color(0xFF86EFAC)), borderRadius: BorderRadius.circular(7)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.timer_outlined, size: 15, color: Color(0xFF16A34A)), const SizedBox(width: 6), Text('Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF16A34A)))]),
-          ),
-          if (a.superviseurName != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text.rich(TextSpan(children: [
-                const TextSpan(text: 'Fixed by: ', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                TextSpan(text: a.superviseurName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _navy)),
-                if (a.assistantName != null) TextSpan(text: ' (assisted by ${a.assistantName})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: _muted)),
-              ])),
-            ),
-        ],
-      ),
-    )).toList());
+    if (alerts.isEmpty)
+      return _empty(Icons.check_circle_outline, Colors.green, 'No fixed alerts',
+          'Fixed alerts will appear here');
+    return Column(
+        children: alerts
+            .map((a) => _AlertRow(
+                  alert: a,
+                  rowColor: const Color(0xFFF0FDF4),
+                  statusLabel: 'Fixed',
+                  statusColor: const Color(0xFF16A34A),
+                  statusIcon: Icons.check_circle_outline,
+                  extraContent: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
+                            borderRadius: BorderRadius.circular(7)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.timer_outlined,
+                              size: 15, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 6),
+                          Text(
+                              'Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF16A34A)))
+                        ]),
+                      ),
+                      if (a.superviseurName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text.rich(TextSpan(children: [
+                            const TextSpan(
+                                text: 'Fixed by: ',
+                                style: TextStyle(
+                                    fontSize: 12, color: Color(0xFF6B7280))),
+                            TextSpan(
+                                text: a.superviseurName,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: _navy)),
+                            if (a.assistantName != null)
+                              TextSpan(
+                                  text: ' (assisted by ${a.assistantName})',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w400,
+                                      color: _muted)),
+                          ])),
+                        ),
+                    ],
+                  ),
+                ))
+            .toList());
   }
 }
 
@@ -1402,22 +1791,51 @@ class _AlertRow extends StatelessWidget {
   final VoidCallback? onRequestAssistance;
   final VoidCallback? onOfferAssistance;
 
-  const _AlertRow({required this.alert, required this.rowColor, required this.statusLabel, required this.statusColor, this.borderColor, this.statusIcon, this.pulseDot = false, this.trailing, this.extraContent, this.onCriticalToggle, this.onRequestAssistance, this.onOfferAssistance});
+  const _AlertRow(
+      {required this.alert,
+      required this.rowColor,
+      required this.statusLabel,
+      required this.statusColor,
+      this.borderColor,
+      this.statusIcon,
+      this.pulseDot = false,
+      this.trailing,
+      this.extraContent,
+      this.onCriticalToggle,
+      this.onRequestAssistance,
+      this.onOfferAssistance});
 
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final effectiveRowColor = alert.isCritical ? Colors.red.shade50 : rowColor;
-    final effectiveBorderColor = alert.isCritical ? Colors.red.shade300 : (borderColor ?? const Color(0xFFE5E7EB));
+    final effectiveBorderColor = alert.isCritical
+        ? Colors.red.shade300
+        : (borderColor ?? const Color(0xFFE5E7EB));
 
     final List<Widget> rightWidgets = [];
     if (trailing != null) rightWidgets.add(trailing!);
-    if (onOfferAssistance != null) rightWidgets.add(ElevatedButton.icon(onPressed: onOfferAssistance, icon: const Icon(Icons.handshake, size: 16), label: const Text('Assist', style: TextStyle(fontSize: 12)), style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), textStyle: const TextStyle(fontWeight: FontWeight.w600), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)))));
+    if (onOfferAssistance != null)
+      rightWidgets.add(ElevatedButton.icon(
+          onPressed: onOfferAssistance,
+          icon: const Icon(Icons.handshake, size: 16),
+          label: const Text('Assist', style: TextStyle(fontSize: 12)),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)))));
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: effectiveRowColor, border: Border.all(color: effectiveBorderColor, width: borderColor != null ? 2 : 1), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+          color: effectiveRowColor,
+          border: Border.all(
+              color: effectiveBorderColor, width: borderColor != null ? 2 : 1),
+          borderRadius: BorderRadius.circular(10)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1426,22 +1844,61 @@ class _AlertRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  if (alert.isCritical) const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 16),
+                  if (alert.isCritical)
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Colors.red, size: 16),
                   if (alert.isCritical) const SizedBox(width: 4),
-                  pulseDot ? _PulseDot(color: _typeColor(alert.type)) : Container(width: 10, height: 10, decoration: BoxDecoration(color: _typeColor(alert.type), shape: BoxShape.circle)),
+                  pulseDot
+                      ? _PulseDot(color: _typeColor(alert.type))
+                      : Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                              color: _typeColor(alert.type),
+                              shape: BoxShape.circle)),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(_typeLabel(alert.type), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _navy))),
-                  if (alert.status == 'en_cours' && alert.superviseurId == currentUserId && onCriticalToggle != null) IconButton(onPressed: onCriticalToggle, icon: Icon(alert.isCritical ? Icons.warning_rounded : Icons.warning_amber_outlined, color: alert.isCritical ? Colors.red : Colors.orange, size: 20), tooltip: alert.isCritical ? 'Remove critical flag' : 'Mark as critical', padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  Expanded(
+                      child: Text(_typeLabel(alert.type),
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _navy))),
+                  if (alert.status == 'en_cours' &&
+                      alert.superviseurId == currentUserId &&
+                      onCriticalToggle != null)
+                    IconButton(
+                        onPressed: onCriticalToggle,
+                        icon: Icon(
+                            alert.isCritical
+                                ? Icons.warning_rounded
+                                : Icons.warning_amber_outlined,
+                            color:
+                                alert.isCritical ? Colors.red : Colors.orange,
+                            size: 20),
+                        tooltip: alert.isCritical
+                            ? 'Remove critical flag'
+                            : 'Mark as critical',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints()),
                 ]),
                 const SizedBox(height: 6),
                 Wrap(spacing: 6, runSpacing: 4, children: [
-                  _OutlineBadge('${alert.usine} — Line ${alert.convoyeur} — Workstation ${alert.poste}'),
-                  _FilledBadge(label: statusLabel, color: statusColor, icon: statusIcon),
+                  _OutlineBadge(
+                      '${alert.usine} — Line ${alert.convoyeur} — Workstation ${alert.poste}'),
+                  _FilledBadge(
+                      label: statusLabel, color: statusColor, icon: statusIcon),
                 ]),
                 const SizedBox(height: 6),
-                Text(alert.description, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                Text(alert.description,
+                    style: const TextStyle(
+                        fontSize: 12, color: Color(0xFF6B7280))),
                 const SizedBox(height: 4),
-                Text('Address: ${alert.adresse}  ·  ${_formatTimestamp(alert.timestamp)}', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontFamily: 'monospace')),
+                Text(
+                    'Address: ${alert.adresse}  ·  ${_formatTimestamp(alert.timestamp)}',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF9CA3AF),
+                        fontFamily: 'monospace')),
                 if (extraContent != null) extraContent!,
                 if (onRequestAssistance != null) ...[
                   const SizedBox(height: 10),
@@ -1450,7 +1907,14 @@ class _AlertRow extends StatelessWidget {
               ],
             ),
           ),
-          if (rightWidgets.isNotEmpty) Flexible(child: ConstrainedBox(constraints: const BoxConstraints(minWidth: 100), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: rightWidgets))),
+          if (rightWidgets.isNotEmpty)
+            Flexible(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 100),
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: rightWidgets))),
         ],
       ),
     );
@@ -1479,7 +1943,8 @@ class _HoldToCollabBarState extends State<_HoldToCollabBar> {
     _timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted || _start == null) return;
       final elapsed = DateTime.now().difference(_start!);
-      final next = (elapsed.inMilliseconds / _holdDuration.inMilliseconds).clamp(0.0, 1.0);
+      final next = (elapsed.inMilliseconds / _holdDuration.inMilliseconds)
+          .clamp(0.0, 1.0);
       setState(() => _progress = next);
       if (next >= 1 && !_triggered) {
         _triggered = true;
@@ -1522,7 +1987,9 @@ class _HoldToCollabBarState extends State<_HoldToCollabBar> {
           color: const Color(0xFFF3E8FF),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: _progress > 0 ? const Color(0xFF9333EA) : const Color(0xFFD8B4FE),
+            color: _progress > 0
+                ? const Color(0xFF9333EA)
+                : const Color(0xFFD8B4FE),
             width: 1.2,
           ),
         ),
@@ -1579,11 +2046,21 @@ class _ElapsedTimer extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: const Color(0xFFDBEAFE), border: Border.all(color: const Color(0xFF93C5FD)), borderRadius: BorderRadius.circular(7)),
+      decoration: BoxDecoration(
+          color: const Color(0xFFDBEAFE),
+          border: Border.all(color: const Color(0xFF93C5FD)),
+          borderRadius: BorderRadius.circular(7)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.timer_outlined, size: 15, color: Color(0xFF1D4ED8)),
         const SizedBox(width: 6),
-        Flexible(child: Text('Elapsed time: $elapsed', style: const TextStyle(fontFamily: 'monospace', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)), overflow: TextOverflow.ellipsis)),
+        Flexible(
+            child: Text('Elapsed time: $elapsed',
+                style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1D4ED8)),
+                overflow: TextOverflow.ellipsis)),
       ]),
     );
   }
@@ -1592,21 +2069,50 @@ class _ElapsedTimer extends StatelessWidget {
 class _PulseDot extends StatefulWidget {
   final Color color;
   const _PulseDot({required this.color});
-  @override State<_PulseDot> createState() => _PulseDotState();
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
 }
 
-class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _anim;
-  @override void initState() { super.initState(); _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true); _anim = Tween(begin: 0.3, end: 1.0).animate(_ctrl); }
-  @override void dispose() { _ctrl.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => FadeTransition(opacity: _anim, child: Container(width: 10, height: 10, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)));
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+    _anim = Tween(begin: 0.3, end: 1.0).animate(_ctrl);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+      opacity: _anim,
+      child: Container(
+          width: 10,
+          height: 10,
+          decoration:
+              BoxDecoration(color: widget.color, shape: BoxShape.circle)));
 }
 
 class _OutlineBadge extends StatelessWidget {
   final String text;
   const _OutlineBadge(this.text);
-  @override Widget build(BuildContext context) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(border: Border.all(color: const Color(0xFFD1D5DB)), borderRadius: BorderRadius.circular(99)), child: Text(text, style: const TextStyle(fontSize: 10, color: Color(0xFF374151))));
+  @override
+  Widget build(BuildContext context) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFD1D5DB)),
+          borderRadius: BorderRadius.circular(99)),
+      child: Text(text,
+          style: const TextStyle(fontSize: 10, color: Color(0xFF374151))));
 }
 
 class _FilledBadge extends StatelessWidget {
@@ -1614,25 +2120,44 @@ class _FilledBadge extends StatelessWidget {
   final Color color;
   final IconData? icon;
   const _FilledBadge({required this.label, required this.color, this.icon});
-  @override Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(99)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      if (icon != null) ...[Icon(icon, size: 11, color: _white), const SizedBox(width: 3)],
-      Flexible(child: Text(label, style: const TextStyle(fontSize: 10, color: _white, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis, maxLines: 1)),
-    ]),
-  );
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color, borderRadius: BorderRadius.circular(99)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: _white),
+            const SizedBox(width: 3)
+          ],
+          Flexible(
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 10, color: _white, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1)),
+        ]),
+      );
 }
 
 Widget _empty(IconData icon, Color color, String title, String sub) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 36),
       child: Center(
         child: Column(children: [
-          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, size: 36, color: color)),
+          Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.1), shape: BoxShape.circle),
+              child: Icon(icon, size: 36, color: color)),
           const SizedBox(height: 12),
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87)),
           const SizedBox(height: 4),
-          Text(sub, style: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
+          Text(sub,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
         ]),
       ),
     );

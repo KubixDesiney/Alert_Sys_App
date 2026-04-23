@@ -25,58 +25,54 @@ import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
 import 'alert_tree_visualization.dart';
 
-
-
-
 // ── Palette ─────────────────────────────────────────────────────────────
-const _navy    = Color(0xFF0D4A75);
-const _navyLt  = Color(0xFFE8F0F8);
-const _red     = Color(0xFFDC2626);
-const _white   = Colors.white;
-const _bg      = Color(0xFFF8FAFC);
-const _border  = Color(0xFFE2E8F0);
-const _muted   = Color(0xFF94A3B8);
-const _text    = Color(0xFF1E293B);
-const _green   = Color(0xFF16A34A);
+const _navy = Color(0xFF0D4A75);
+const _navyLt = Color(0xFFE8F0F8);
+const _red = Color(0xFFDC2626);
+const _white = Colors.white;
+const _bg = Color(0xFFF8FAFC);
+const _border = Color(0xFFE2E8F0);
+const _muted = Color(0xFF94A3B8);
+const _text = Color(0xFF1E293B);
+const _green = Color(0xFF16A34A);
 const _greenLt = Color(0xFFDCFCE7);
-const _orange  = Color(0xFFEA580C);
-const _orangeLt= Color(0xFFFFF7ED);
-const _blue    = Color(0xFF2563EB);
-const _blueLt  = Color(0xFFEFF6FF);
+const _orange = Color(0xFFEA580C);
+const _orangeLt = Color(0xFFFFF7ED);
+const _blue = Color(0xFF2563EB);
+const _blueLt = Color(0xFFEFF6FF);
 
 Color _typeColor(String t) => switch (t) {
-  'qualite'          => const Color(0xFFDC2626),
-  'maintenance'      => const Color(0xFF2563EB),
-  'defaut_produit'   => const Color(0xFF16A34A),
-  'manque_ressource' => const Color(0xFFD97706),
-  _                  => const Color(0xFF64748B),
-};
+      'qualite' => const Color(0xFFDC2626),
+      'maintenance' => const Color(0xFF2563EB),
+      'defaut_produit' => const Color(0xFF16A34A),
+      'manque_ressource' => const Color(0xFFD97706),
+      _ => const Color(0xFF64748B),
+    };
 
 String _typeLabel(String t) => switch (t) {
-  'qualite'          => 'Quality',
-  'maintenance'      => 'Maintenance',
-  'defaut_produit'   => 'Damaged Product',
-  'manque_ressource' => 'Resources Deficiency',
-  _                  => t,
-};
+      'qualite' => 'Quality',
+      'maintenance' => 'Maintenance',
+      'defaut_produit' => 'Damaged Product',
+      'manque_ressource' => 'Resources Deficiency',
+      _ => t,
+    };
 
 IconData _typeIcon(String t) => switch (t) {
-  'qualite'          => Icons.warning_amber_rounded,
-  'maintenance'      => Icons.build_outlined,
-  'defaut_produit'   => Icons.cancel_outlined,
-  'manque_ressource' => Icons.inventory_2_outlined,
-  _                  => Icons.notifications_outlined,
-};
+      'qualite' => Icons.warning_amber_rounded,
+      'maintenance' => Icons.build_outlined,
+      'defaut_produit' => Icons.cancel_outlined,
+      'manque_ressource' => Icons.inventory_2_outlined,
+      _ => Icons.notifications_outlined,
+    };
 
 String _fmtDate(DateTime d) =>
-    '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')}/${d.year}';
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
 String _fmtTs(DateTime d) =>
-    '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')} '
-    '${d.hour.toString().padLeft(2,'0')}:${d.minute.toString().padLeft(2,'0')}';
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')} '
+    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
-String _fmtMin(int min) =>
-    min < 60 ? '${min}m' : '${min ~/ 60}h ${min % 60}m';
+String _fmtMin(int min) => min < 60 ? '${min}m' : '${min ~/ 60}h ${min % 60}m';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SCREEN
@@ -88,27 +84,27 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  int    _tab        = 0;   // 0=Overview  1=Supervisors  2=Alerts
-  List<UserModel>  _supervisors = [];
-  List<AlertModel> _alerts      = [];
+  int _tab = 0; // 0=Overview  1=Supervisors  2=Alerts
+  List<UserModel> _supervisors = [];
+  List<AlertModel> _alerts = [];
   bool _loading = true;
 
-  final _db   = FirebaseDatabase.instance;
+  final _db = FirebaseDatabase.instance;
   final _auth = AuthService();
 
   // Filter state
-  String _timeRange      = 'week';
-  String _selectedUsine  = 'all';
-  String _filterConvoyeur= 'all';
-  String _filterPoste    = 'all';
-  String _filterType     = 'all';
-  String _filterStatus   = 'all';
+  String _timeRange = 'week';
+  String _selectedUsine = 'all';
+  String _filterConvoyeur = 'all';
+  String _filterPoste = 'all';
+  String _filterType = 'all';
+  String _filterStatus = 'all';
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   List<AlertModel> _filteredAlerts = [];
 
   static const String _prefTimeRange = 'overview_time_range';
-  static const String _prefUsine     = 'overview_usine';
+  static const String _prefUsine = 'overview_usine';
 
   @override
   void initState() {
@@ -121,8 +117,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _loadSavedFilters() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _timeRange     = prefs.getString(_prefTimeRange) ?? 'week';
-      _selectedUsine = prefs.getString(_prefUsine)     ?? 'all';
+      _timeRange = prefs.getString(_prefTimeRange) ?? 'week';
+      _selectedUsine = prefs.getString(_prefUsine) ?? 'all';
     });
     _applyFilters();
   }
@@ -130,34 +126,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _saveFilters() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefTimeRange, _timeRange);
-    await prefs.setString(_prefUsine,     _selectedUsine);
+    await prefs.setString(_prefUsine, _selectedUsine);
   }
 
   void _applyFilters() {
-    if (_alerts.isEmpty) { setState(() => _filteredAlerts = []); return; }
+    if (_alerts.isEmpty) {
+      setState(() => _filteredAlerts = []);
+      return;
+    }
     final now = DateTime.now();
     final filtered = _alerts.where((a) {
       bool timeOk = switch (_timeRange) {
-        'today'  => a.timestamp.year  == now.year  &&
-                    a.timestamp.month == now.month &&
-                    a.timestamp.day   == now.day,
-        'week'   => a.timestamp.isAfter(now.subtract(Duration(days: now.weekday - 1))) &&
-                    a.timestamp.isBefore(now.subtract(Duration(days: now.weekday - 1))
-                        .add(const Duration(days: 7))),
-        'month'  => a.timestamp.year  == now.year && a.timestamp.month == now.month,
-        'year'   => a.timestamp.year  == now.year,
+        'today' => a.timestamp.year == now.year &&
+            a.timestamp.month == now.month &&
+            a.timestamp.day == now.day,
+        'week' =>
+          a.timestamp.isAfter(now.subtract(Duration(days: now.weekday - 1))) &&
+              a.timestamp.isBefore(now
+                  .subtract(Duration(days: now.weekday - 1))
+                  .add(const Duration(days: 7))),
+        'month' =>
+          a.timestamp.year == now.year && a.timestamp.month == now.month,
+        'year' => a.timestamp.year == now.year,
         'custom' => (_customStartDate != null && _customEndDate != null)
-                    ? a.timestamp.isAfter(_customStartDate!) &&
-                      a.timestamp.isBefore(_customEndDate!)
-                    : true,
-        _        => true,
+            ? a.timestamp.isAfter(_customStartDate!) &&
+                a.timestamp.isBefore(_customEndDate!)
+            : true,
+        _ => true,
       };
       if (!timeOk) return false;
-      if (_selectedUsine   != 'all' && a.usine                          != _selectedUsine)    return false;
-      if (_filterConvoyeur != 'all' && a.convoyeur.toString()           != _filterConvoyeur)  return false;
-      if (_filterPoste     != 'all' && a.poste.toString()               != _filterPoste)      return false;
-      if (_filterType      != 'all' && a.type                           != _filterType)       return false;
-      if (_filterStatus    != 'all' && a.status                         != _filterStatus)     return false;
+      if (_selectedUsine != 'all' && a.usine != _selectedUsine) return false;
+      if (_filterConvoyeur != 'all' &&
+          a.convoyeur.toString() != _filterConvoyeur) return false;
+      if (_filterPoste != 'all' && a.poste.toString() != _filterPoste)
+        return false;
+      if (_filterType != 'all' && a.type != _filterType) return false;
+      if (_filterStatus != 'all' && a.status != _filterStatus) return false;
       return true;
     }).toList();
     setState(() => _filteredAlerts = filtered);
@@ -165,17 +169,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _loadSupervisors() async {
     final list = await _auth.fetchSupervisors();
-    if (mounted) setState(() { _supervisors = list; _loading = false; });
+    if (mounted)
+      setState(() {
+        _supervisors = list;
+        _loading = false;
+      });
   }
 
   void _loadAlerts() {
     _db.ref('alerts').onValue.listen((event) {
       if (!mounted) return;
       final data = event.snapshot.value;
-      if (data == null) { setState(() { _alerts = []; _filteredAlerts = []; }); return; }
-      final map  = Map<String, dynamic>.from(data as Map);
+      if (data == null) {
+        setState(() {
+          _alerts = [];
+          _filteredAlerts = [];
+        });
+        return;
+      }
+      final map = Map<String, dynamic>.from(data as Map);
       final list = map.entries
-          .map((e) => AlertModel.fromMap(e.key, Map<String, dynamic>.from(e.value as Map)))
+          .map((e) => AlertModel.fromMap(
+              e.key, Map<String, dynamic>.from(e.value as Map)))
           .toList()
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
       setState(() => _alerts = list);
@@ -183,31 +198,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     });
   }
 
-  int get _total      => _filteredAlerts.length;
-  int get _solved     => _filteredAlerts.where((a) => a.status == 'validee').length;
-  int get _inProgress => _filteredAlerts.where((a) => a.status == 'en_cours').length;
-  int get _pending    => _filteredAlerts.where((a) => a.status == 'disponible').length;
+  int get _total => _filteredAlerts.length;
+  int get _solved => _filteredAlerts.where((a) => a.status == 'validee').length;
+  int get _inProgress =>
+      _filteredAlerts.where((a) => a.status == 'en_cours').length;
+  int get _pending =>
+      _filteredAlerts.where((a) => a.status == 'disponible').length;
   int get _activeSups => _supervisors.where((s) => s.isActive).length;
 
   String get _timeRangeLabel => switch (_timeRange) {
-    'today'  => 'Today',
-    'week'   => 'Last Week',
-    'month'  => 'This Month',
-    'year'   => 'This Year',
-    'custom' => _customStartDate != null && _customEndDate != null
-        ? '${_customStartDate!.day}/${_customStartDate!.month} – '
-          '${_customEndDate!.day}/${_customEndDate!.month}'
-        : 'Custom',
-    _        => 'All time',
-  };
+        'today' => 'Today',
+        'week' => 'Last Week',
+        'month' => 'This Month',
+        'year' => 'This Year',
+        'custom' => _customStartDate != null && _customEndDate != null
+            ? '${_customStartDate!.day}/${_customStartDate!.month} – '
+                '${_customEndDate!.day}/${_customEndDate!.month}'
+            : 'Custom',
+        _ => 'All time',
+      };
 
   String get _timeRangeSubtitle => switch (_timeRange) {
-    'today'  => 'Showing today\'s data',
-    'week'   => 'Showing last 7 days',
-    'month'  => 'Showing this month',
-    'year'   => 'Showing this year',
-    _        => 'Filtered view',
-  };
+        'today' => 'Showing today\'s data',
+        'week' => 'Showing last 7 days',
+        'month' => 'Showing this month',
+        'year' => 'Showing this year',
+        _ => 'Filtered view',
+      };
 
   Future<void> _logout() async {
     await _auth.logout();
@@ -215,109 +232,131 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // ── Alert creation methods (added) ────────────────────────────────────
   // Add an instance of AlertService at the top of the state class
-final AlertService _alertService = AlertService();
+  final AlertService _alertService = AlertService();
 
-Future<void> _simulateAlert({
-  required String type,
-  required String usine,
-  required int convoyeur,
-  required int poste,
-  required String description,
-  required bool isCritical,
-}) async {
-  try {
-    await _alertService.createAlertWithHierarchy(
-      type: type,
-      usine: usine,
-      convoyeur: convoyeur,
-      poste: poste,
-      description: description,
-      isCritical: isCritical,
-    );
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ Simulated ${_typeLabel(type)} alert on $usine, Conv $convoyeur, Post $poste'),
-          backgroundColor: _green,
-        ),
+  Future<void> _simulateAlert({
+    required String type,
+    required String usine,
+    required int convoyeur,
+    required int poste,
+    required String description,
+    required bool isCritical,
+  }) async {
+    try {
+      await _alertService.createAlertWithHierarchy(
+        type: type,
+        usine: usine,
+        convoyeur: convoyeur,
+        poste: poste,
+        description: description,
+        isCritical: isCritical,
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '✅ Simulated ${_typeLabel(type)} alert on $usine, Conv $convoyeur, Post $poste'),
+            backgroundColor: _green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('❌ Failed: ${e.toString()}'),
+              backgroundColor: _red),
+        );
+      }
     }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Failed: ${e.toString()}'), backgroundColor: _red),
+  }
+
+  Future<void> _createSimulatedAlert({
+    required String type,
+    required String usine,
+    required int convoyeur,
+    required int poste,
+    required String description,
+    bool isCritical = false,
+  }) async {
+    // ✅ 1. Validate against hierarchy before anything else
+    final hierarchyService = HierarchyService();
+    final isValid =
+        await hierarchyService.validateLocation(usine, convoyeur, poste);
+    if (!isValid) {
+      throw Exception(
+          'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
+    }
+
+    // ✅ 2. Original alert creation (unchanged)
+    final ref = _db.ref('alerts').push();
+    final now = DateTime.now();
+    final alertId = ref.key;
+    await ref.set({
+      'type': type,
+      'usine': usine,
+      'convoyeur': convoyeur,
+      'poste': poste,
+      'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
+      'timestamp': now.toIso8601String(),
+      'description': description,
+      'status': 'disponible',
+      'comments': [],
+      'isCritical': isCritical,
+      'push_sent': false, // ⬅️ critical for Cloudflare Worker
+      'superviseurId': null,
+      'superviseurName': null,
+      'assistantId': null,
+      'assistantName': null,
+      'resolutionReason': null,
+      'resolvedAt': null,
+      'elapsedTime': null,
+    });
+
+    // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
+    try {
+      await http.post(
+        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'type': type,
+          'description': description,
+          'alertId': alertId,
+        }),
       );
+    } catch (e) {
+      debugPrint('Manual worker trigger failed: $e');
     }
   }
-}
-
- Future<void> _createSimulatedAlert({
-  required String type,
-  required String usine,
-  required int convoyeur,
-  required int poste,
-  required String description,
-  bool isCritical = false,
-}) async {
-  // ✅ 1. Validate against hierarchy before anything else
-  final hierarchyService = HierarchyService();
-  final isValid = await hierarchyService.validateLocation(usine, convoyeur, poste);
-  if (!isValid) {
-    throw Exception('Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
-  }
-
-  // ✅ 2. Original alert creation (unchanged)
-  final ref = _db.ref('alerts').push();
-  final now = DateTime.now();
-  final alertId = ref.key;
-  await ref.set({
-    'type': type,
-    'usine': usine,
-    'convoyeur': convoyeur,
-    'poste': poste,
-    'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
-    'timestamp': now.toIso8601String(),
-    'description': description,
-    'status': 'disponible',
-    'comments': [],
-    'isCritical': isCritical,
-    'push_sent': false,   // ⬅️ critical for Cloudflare Worker
-    'superviseurId': null,
-    'superviseurName': null,
-    'assistantId': null,
-    'assistantName': null,
-    'resolutionReason': null,
-    'resolvedAt': null,
-    'elapsedTime': null,
-  });
-
-  // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
-  try {
-    await http.post(
-      Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'type': type,
-        'description': description,
-        'alertId': alertId,
-      }),
-    );
-  } catch (e) {
-    debugPrint('Manual worker trigger failed: $e');
-  }
-}
 
   // ── Export methods (cross‑platform) ────────────────────────────────────
   Future<void> _exportToCsv() async {
     if (_filteredAlerts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No alerts to export'), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text('No alerts to export'),
+            backgroundColor: Colors.orange),
       );
       return;
     }
 
     List<List<dynamic>> csvData = [
-      ['ID', 'Type', 'Usine', 'Convoyeur', 'Poste', 'Adresse', 'Timestamp', 'Description', 'Status', 'Superviseur', 'Assistant', 'Resolution Reason', 'Elapsed Time (min)', 'Critical']
+      [
+        'ID',
+        'Type',
+        'Usine',
+        'Convoyeur',
+        'Poste',
+        'Adresse',
+        'Timestamp',
+        'Description',
+        'Status',
+        'Superviseur',
+        'Assistant',
+        'Resolution Reason',
+        'Elapsed Time (min)',
+        'Critical'
+      ]
     ];
     for (var alert in _filteredAlerts) {
       csvData.add([
@@ -344,12 +383,14 @@ Future<void> _simulateAlert({
       final blob = html.Blob([bytes], 'text/csv');
       final url = html.Url.createObjectUrlFromBlob(blob);
       final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv')
+        ..setAttribute('download',
+            'alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv')
         ..click();
       html.Url.revokeObjectUrl(url);
     } else {
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv');
+      final file = File(
+          '${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv');
       await file.writeAsBytes(bytes);
       await Share.shareXFiles([XFile(file.path)], text: 'Alert export');
     }
@@ -358,7 +399,9 @@ Future<void> _simulateAlert({
   Future<void> _exportToExcel() async {
     if (_filteredAlerts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No alerts to export'), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text('No alerts to export'),
+            backgroundColor: Colors.orange),
       );
       return;
     }
@@ -366,11 +409,20 @@ Future<void> _simulateAlert({
     var excelFile = excel.Excel.createExcel();
     var sheet = excelFile['Alerts'];
     sheet.appendRow([
-      excel.TextCellValue('ID'), excel.TextCellValue('Type'), excel.TextCellValue('Usine'),
-      excel.TextCellValue('Convoyeur'), excel.TextCellValue('Poste'), excel.TextCellValue('Adresse'),
-      excel.TextCellValue('Timestamp'), excel.TextCellValue('Description'), excel.TextCellValue('Status'),
-      excel.TextCellValue('Superviseur'), excel.TextCellValue('Assistant'), excel.TextCellValue('Resolution Reason'),
-      excel.TextCellValue('Elapsed Time (min)'), excel.TextCellValue('Critical'),
+      excel.TextCellValue('ID'),
+      excel.TextCellValue('Type'),
+      excel.TextCellValue('Usine'),
+      excel.TextCellValue('Convoyeur'),
+      excel.TextCellValue('Poste'),
+      excel.TextCellValue('Adresse'),
+      excel.TextCellValue('Timestamp'),
+      excel.TextCellValue('Description'),
+      excel.TextCellValue('Status'),
+      excel.TextCellValue('Superviseur'),
+      excel.TextCellValue('Assistant'),
+      excel.TextCellValue('Resolution Reason'),
+      excel.TextCellValue('Elapsed Time (min)'),
+      excel.TextCellValue('Critical'),
     ]);
     for (var alert in _filteredAlerts) {
       sheet.appendRow([
@@ -394,15 +446,18 @@ Future<void> _simulateAlert({
     if (fileBytes == null) return;
 
     if (kIsWeb) {
-      final blob = html.Blob([fileBytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final blob = html.Blob([fileBytes],
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       final url = html.Url.createObjectUrlFromBlob(blob);
       final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx')
+        ..setAttribute('download',
+            'alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx')
         ..click();
       html.Url.revokeObjectUrl(url);
     } else {
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx');
+      final file = File(
+          '${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx');
       await file.writeAsBytes(fileBytes);
       await Share.shareXFiles([XFile(file.path)], text: 'Alert export');
     }
@@ -414,494 +469,596 @@ Future<void> _simulateAlert({
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(
-        start: _customStartDate ?? DateTime.now().subtract(const Duration(days: 7)),
-        end:   _customEndDate   ?? DateTime.now(),
+        start: _customStartDate ??
+            DateTime.now().subtract(const Duration(days: 7)),
+        end: _customEndDate ?? DateTime.now(),
       ),
     );
     if (picked != null) {
-      setState(() { _customStartDate = picked.start; _customEndDate = picked.end; });
-      _applyFilters(); _saveFilters();
+      setState(() {
+        _customStartDate = picked.start;
+        _customEndDate = picked.end;
+      });
+      _applyFilters();
+      _saveFilters();
     } else {
       setState(() => _timeRange = 'week');
     }
   }
 
   Future<void> _assignSupervisor(AlertModel alert) async {
-  final supervisors = await _auth.getActiveSupervisors();
-  // Filter by alert's factory
-  final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
-  if (filtered.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('👷 No active supervisors available for this factory')),
-    );
-    return;
-  }
-  showDialog(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('👷 Assign Supervisor'),
-      content: SizedBox(
-        width: 300,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: filtered.length,
-          itemBuilder: (_, i) => ListTile(
-            leading: const Icon(Icons.person, color: _navy),
-            title: Text(filtered[i].fullName),
-            subtitle: Text(filtered[i].email),
-            onTap: () async {
-              Navigator.pop(_);
-              await _auth.assignSupervisorToAlert(alert.id, filtered[i].id, filtered[i].fullName);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('✅ Assigned to ${filtered[i].fullName}'), backgroundColor: _green),
-              );
-            },
+    final supervisors = await _auth.getActiveSupervisors();
+    // Filter by alert's factory
+    final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
+    if (filtered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('👷 No active supervisors available for this factory')),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('👷 Assign Supervisor'),
+        content: SizedBox(
+          width: 300,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: filtered.length,
+            itemBuilder: (_, i) => ListTile(
+              leading: const Icon(Icons.person, color: _navy),
+              title: Text(filtered[i].fullName),
+              subtitle: Text(filtered[i].email),
+              onTap: () async {
+                Navigator.pop(_);
+                await _auth.assignSupervisorToAlert(
+                    alert.id, filtered[i].id, filtered[i].fullName);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text('✅ Assigned to ${filtered[i].fullName}'),
+                      backgroundColor: _green),
+                );
+              },
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
-      ],
-    ),
-  );
-}
-
-Future<void> _assignAssistant(AlertModel alert) async {
-  final supervisors = await _auth.getActiveSupervisors();
-  // Filter by alert's factory
-  final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
-  if (filtered.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('👷 No active supervisors available for this factory')),
     );
-    return;
   }
-  showDialog(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('👷 Assign Assistant'),
-      content: SizedBox(
-        width: 300,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: filtered.length,
-          itemBuilder: (_, i) => ListTile(
-            leading: const Icon(Icons.person_add, color: _navy),
-            title: Text(filtered[i].fullName),
-            subtitle: Text(filtered[i].email),
-            onTap: () async {
-              Navigator.pop(_);
-              await _auth.assignAssistantToAlert(alert.id, filtered[i].id, filtered[i].fullName);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('✅ Assigned ${filtered[i].fullName} as assistant'), backgroundColor: _green),
-              );
-            },
+
+  Future<void> _assignAssistant(AlertModel alert) async {
+    final supervisors = await _auth.getActiveSupervisors();
+    // Filter by alert's factory
+    final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
+    if (filtered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('👷 No active supervisors available for this factory')),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('👷 Assign Assistant'),
+        content: SizedBox(
+          width: 300,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: filtered.length,
+            itemBuilder: (_, i) => ListTile(
+              leading: const Icon(Icons.person_add, color: _navy),
+              title: Text(filtered[i].fullName),
+              subtitle: Text(filtered[i].email),
+              onTap: () async {
+                Navigator.pop(_);
+                await _auth.assignAssistantToAlert(
+                    alert.id, filtered[i].id, filtered[i].fullName);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text(
+                          '✅ Assigned ${filtered[i].fullName} as assistant'),
+                      backgroundColor: _green),
+                );
+              },
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
-      ],
-    ),
-  );
-}
+    );
+  }
 
-void _showSimulateDialog() {
-  String? selectedFactoryId;
-  String? selectedFactoryName;
-  String? selectedConveyorId;
-  int? selectedConveyorNumber;
-  String? selectedStationId;
-  int? selectedStationNumber;
-  String selectedType = 'qualite';
-  String description = '';
-  bool isCritical = false;
+  void _showSimulateDialog() {
+    String? selectedFactoryId;
+    String? selectedFactoryName;
+    String? selectedConveyorId;
+    int? selectedConveyorNumber;
+    String? selectedStationId;
+    int? selectedStationNumber;
+    String selectedType = 'qualite';
+    String description = '';
+    bool isCritical = false;
 
-  List<Factory> factories = [];
-  List<Conveyor> conveyors = [];
-  List<Station> stations = [];
+    List<Factory> factories = [];
+    List<Conveyor> conveyors = [];
+    List<Station> stations = [];
 
-  showDialog(
-    context: context,
-    builder: (_) => StatefulBuilder(
-      builder: (context, setState) {
-        // Define updateStations FIRST (before it's called)
-        void updateStations() {
-          final factory = factories.firstWhere((f) => f.id == selectedFactoryId);
-          final conveyor = factory.conveyors[selectedConveyorId];
-          if (conveyor != null) {
-            stations = conveyor.stations.values.toList();
-            if (stations.isNotEmpty && selectedStationId == null) {
-              selectedStationId = stations.first.id;
-              selectedStationNumber = int.tryParse(selectedStationId!.replaceAll('station_', ''));
-            }
-          } else {
-            stations = [];
-          }
-        }
-
-        // Define updateConveyors (which calls updateStations)
-        void updateConveyors() {
-          final factory = factories.firstWhere((f) => f.id == selectedFactoryId);
-          conveyors = factory.conveyors.values.toList();
-          if (conveyors.isNotEmpty && selectedConveyorId == null) {
-            selectedConveyorId = conveyors.first.id;
-            selectedConveyorNumber = conveyors.first.number;
-            updateStations(); // now safe
-          } else if (conveyors.isEmpty) {
-            stations = [];
-            selectedStationId = null;
-          }
-        }
-
-        // Load factories on first build
-        if (factories.isEmpty) {
-          final hierarchyService = HierarchyService();
-          hierarchyService.getFactories().listen((factoriesList) {
-            setState(() {
-              factories = factoriesList;
-              if (factories.isNotEmpty) {
-                selectedFactoryId = factories.first.id;
-                selectedFactoryName = factories.first.name;
-                updateConveyors();
+    showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setState) {
+          // Define updateStations FIRST (before it's called)
+          void updateStations() {
+            final factory =
+                factories.firstWhere((f) => f.id == selectedFactoryId);
+            final conveyor = factory.conveyors[selectedConveyorId];
+            if (conveyor != null) {
+              stations = conveyor.stations.values.toList();
+              if (stations.isNotEmpty && selectedStationId == null) {
+                selectedStationId = stations.first.id;
+                selectedStationNumber =
+                    int.tryParse(selectedStationId!.replaceAll('station_', ''));
               }
-            });
-          });
-        }
+            } else {
+              stations = [];
+            }
+          }
 
-        return AlertDialog(
-          title: const Text('🚨 Simulate Custom Alert', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
+          // Define updateConveyors (which calls updateStations)
+          void updateConveyors() {
+            final factory =
+                factories.firstWhere((f) => f.id == selectedFactoryId);
+            conveyors = factory.conveyors.values.toList();
+            if (conveyors.isNotEmpty && selectedConveyorId == null) {
+              selectedConveyorId = conveyors.first.id;
+              selectedConveyorNumber = conveyors.first.number;
+              updateStations(); // now safe
+            } else if (conveyors.isEmpty) {
+              stations = [];
+              selectedStationId = null;
+            }
+          }
+
+          // Load factories on first build
+          if (factories.isEmpty) {
+            final hierarchyService = HierarchyService();
+            hierarchyService.getFactories().listen((factoriesList) {
+              setState(() {
+                factories = factoriesList;
+                if (factories.isNotEmpty) {
+                  selectedFactoryId = factories.first.id;
+                  selectedFactoryName = factories.first.name;
+                  updateConveyors();
+                }
+              });
+            });
+          }
+
+          return AlertDialog(
+            title: const Text('🚨 Simulate Custom Alert',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Alert Type',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedType,
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'qualite', child: Text('⚠️ Quality')),
+                      DropdownMenuItem(
+                          value: 'maintenance', child: Text('🔧 Maintenance')),
+                      DropdownMenuItem(
+                          value: 'defaut_produit',
+                          child: Text('🔨 Damaged Product')),
+                      DropdownMenuItem(
+                          value: 'manque_ressource',
+                          child: Text('📦 Resource Shortage')),
+                    ],
+                    onChanged: (val) => setState(() => selectedType = val!),
+                    decoration:
+                        const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Factory (Usine)',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedFactoryName,
+                    items: factories
+                        .map((f) => DropdownMenuItem(
+                            value: f.name, child: Text(f.name)))
+                        .toList(),
+                    onChanged: (val) {
+                      setState(() {
+                        selectedFactoryName = val;
+                        selectedFactoryId =
+                            factories.firstWhere((f) => f.name == val).id;
+                        selectedConveyorId = null;
+                        selectedStationId = null;
+                        updateConveyors();
+                      });
+                    },
+                    decoration:
+                        const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Conveyor',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedConveyorId != null
+                        ? 'Conveyor ${selectedConveyorNumber}'
+                        : null,
+                    items: conveyors
+                        .map((c) => DropdownMenuItem(
+                            value: 'Conveyor ${c.number}',
+                            child: Text('Conveyor ${c.number}')))
+                        .toList(),
+                    onChanged: conveyors.isEmpty
+                        ? null
+                        : (val) {
+                            setState(() {
+                              final index = conveyors.indexWhere(
+                                  (c) => 'Conveyor ${c.number}' == val);
+                              selectedConveyorId = conveyors[index].id;
+                              selectedConveyorNumber = conveyors[index].number;
+                              selectedStationId = null;
+                              updateStations();
+                            });
+                          },
+                    decoration:
+                        const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Workstation (Poste)',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedStationId != null
+                        ? 'Station ${selectedStationNumber}'
+                        : null,
+                    items: stations
+                        .map((s) => DropdownMenuItem(
+                            value: s.name, child: Text(s.name)))
+                        .toList(),
+                    onChanged: stations.isEmpty
+                        ? null
+                        : (val) {
+                            setState(() {
+                              final station =
+                                  stations.firstWhere((s) => s.name == val);
+                              selectedStationId = station.id;
+                              selectedStationNumber = int.tryParse(
+                                  selectedStationId!
+                                      .replaceAll('station_', ''));
+                            });
+                          },
+                    decoration:
+                        const InputDecoration(border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Description (optional)',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  TextField(
+                    onChanged: (val) => description = val,
+                    decoration: const InputDecoration(
+                      hintText: 'e.g., Motor overheating (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text('Mark as Critical',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 12),
+                      Switch(
+                        value: isCritical,
+                        onChanged: (val) => setState(() => isCritical = val),
+                        activeThumbColor: Colors.red,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () {
+                  if (selectedFactoryId == null ||
+                      selectedConveyorId == null ||
+                      selectedStationId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Please select factory, conveyor, and workstation'),
+                          backgroundColor: Colors.red),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context);
+                  _simulateAlert(
+                    type: selectedType,
+                    usine: selectedFactoryName!,
+                    convoyeur: selectedConveyorNumber!,
+                    poste: selectedStationNumber!,
+                    description: description.trim(),
+                    isCritical: isCritical,
+                  );
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: _navy),
+                child: const Text('Create Alert',
+                    style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showCreateSheet() {
+    final first = TextEditingController();
+    final last = TextEditingController();
+    final email = TextEditingController();
+    final pass = TextEditingController();
+    final phone = TextEditingController();
+    String usine = '';
+    DateTime hired = DateTime.now();
+    String? error;
+    bool loading = false;
+
+    List<String> factoryNames = [];
+    bool factoriesLoaded = false;
+
+    // Load factories from hierarchy
+    final hierarchyService = HierarchyService();
+    hierarchyService.getFactories().listen((factories) {
+      if (mounted && !factoriesLoaded) {
+        factoryNames = factories.map((f) => f.name).toList();
+        if (factoryNames.isNotEmpty && usine.isEmpty) {
+          usine = factoryNames.first;
+        }
+        factoriesLoaded = true;
+        // Force rebuild of the bottom sheet
+        if (mounted) setState(() {});
+      }
+    });
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 16,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Alert Type', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedType,
-                  items: const [
-                    DropdownMenuItem(value: 'qualite', child: Text('⚠️ Quality')),
-                    DropdownMenuItem(value: 'maintenance', child: Text('🔧 Maintenance')),
-                    DropdownMenuItem(value: 'defaut_produit', child: Text('🔨 Damaged Product')),
-                    DropdownMenuItem(value: 'manque_ressource', child: Text('📦 Resource Shortage')),
-                  ],
-                  onChanged: (val) => setState(() => selectedType = val!),
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                const Text('Factory (Usine)', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedFactoryName,
-                  items: factories.map((f) => DropdownMenuItem(value: f.name, child: Text(f.name))).toList(),
-                  onChanged: (val) {
-                    setState(() {
-                      selectedFactoryName = val;
-                      selectedFactoryId = factories.firstWhere((f) => f.name == val).id;
-                      selectedConveyorId = null;
-                      selectedStationId = null;
-                      updateConveyors();
-                    });
-                  },
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                const Text('Conveyor', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedConveyorId != null ? 'Conveyor ${selectedConveyorNumber}' : null,
-                  items: conveyors.map((c) => DropdownMenuItem(value: 'Conveyor ${c.number}', child: Text('Conveyor ${c.number}'))).toList(),
-                  onChanged: conveyors.isEmpty ? null : (val) {
-                    setState(() {
-                      final index = conveyors.indexWhere((c) => 'Conveyor ${c.number}' == val);
-                      selectedConveyorId = conveyors[index].id;
-                      selectedConveyorNumber = conveyors[index].number;
-                      selectedStationId = null;
-                      updateStations();
-                    });
-                  },
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                const Text('Workstation (Poste)', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedStationId != null ? 'Station ${selectedStationNumber}' : null,
-                  items: stations.map((s) => DropdownMenuItem(value: s.name, child: Text(s.name))).toList(),
-                  onChanged: stations.isEmpty ? null : (val) {
-                    setState(() {
-                      final station = stations.firstWhere((s) => s.name == val);
-                      selectedStationId = station.id;
-                      selectedStationNumber = int.tryParse(selectedStationId!.replaceAll('station_', ''));
-                    });
-                  },
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                const Text('Description (optional)', style: TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                TextField(
-                  onChanged: (val) => description = val,
-                  decoration: const InputDecoration(
-                    hintText: 'e.g., Motor overheating (optional)',
-                    border: OutlineInputBorder(),
+                Center(
+                    child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 18),
+                        decoration: BoxDecoration(
+                            color: _border,
+                            borderRadius: BorderRadius.circular(99)))),
+                Row(children: [
+                  Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                          color: _navyLt,
+                          borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.person_add_outlined,
+                          color: _navy, size: 20)),
+                  const SizedBox(width: 12),
+                  const Text('New Supervisor Account',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: _navy)),
+                ]),
+                const SizedBox(height: 20),
+                Row(children: [
+                  Expanded(child: _SheetField('First Name', first, 'Ahmed')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _SheetField('Last Name', last, 'Benali')),
+                ]),
+                _SheetField('Phone', phone, '+213 XX XX XX XX',
+                    keyboard: TextInputType.phone),
+                _SheetField('Email', email, 'ahmed@sagem.com',
+                    keyboard: TextInputType.emailAddress),
+                _SheetField('Password', pass, 'Min 6 characters',
+                    obscure: true),
+                _SheetLabel('Assigned Plant'),
+                Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                      color: _bg,
+                      border: Border.all(color: _border),
+                      borderRadius: BorderRadius.circular(9)),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: usine.isEmpty ? null : usine,
+                      isExpanded: true,
+                      hint: const Text('Select a factory'),
+                      items: factoryNames
+                          .map(
+                              (u) => DropdownMenuItem(value: u, child: Text(u)))
+                          .toList(),
+                      onChanged: (v) => setS(() => usine = v!),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Text('Mark as Critical', style: TextStyle(fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 12),
-                    Switch(
-                      value: isCritical,
-                      onChanged: (val) => setState(() => isCritical = val),
-                      activeThumbColor: Colors.red,
-                    ),
-                  ],
+                _SheetLabel('Hire Date'),
+                GestureDetector(
+                  onTap: () async {
+                    final p = await showDatePicker(
+                      context: ctx,
+                      initialDate: hired,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime.now(),
+                      builder: (c, child) => Theme(
+                          data: ThemeData.light().copyWith(
+                              colorScheme:
+                                  const ColorScheme.light(primary: _navy)),
+                          child: child!),
+                    );
+                    if (p != null) setS(() => hired = p);
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 13),
+                    decoration: BoxDecoration(
+                        color: _bg,
+                        border: Border.all(color: _border),
+                        borderRadius: BorderRadius.circular(9)),
+                    child: Row(children: [
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 16, color: _muted),
+                      const SizedBox(width: 8),
+                      Text(_fmtDate(hired),
+                          style: const TextStyle(fontSize: 14)),
+                    ]),
+                  ),
                 ),
+                if (error != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        border: Border.all(color: _red),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Text(error!,
+                        style: const TextStyle(color: _red, fontSize: 13)),
+                  ),
+                Row(children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: loading
+                          ? null
+                          : () async {
+                              if ([first, last, email, pass]
+                                  .any((c) => c.text.trim().isEmpty)) {
+                                setS(() => error = 'All fields are required.');
+                                return;
+                              }
+                              if (usine.isEmpty) {
+                                setS(() => error = 'Please select a factory.');
+                                return;
+                              }
+                              setS(() {
+                                loading = true;
+                                error = null;
+                              });
+                              final err = await _auth.createSupervisor(
+                                firstName: first.text.trim(),
+                                lastName: last.text.trim(),
+                                email: email.text.trim(),
+                                password: pass.text.trim(),
+                                phone: phone.text.trim(),
+                                usine: usine,
+                                hiredDate: hired,
+                              );
+                              if (!ctx.mounted) return;
+                              if (err != null) {
+                                setS(() {
+                                  error = err;
+                                  loading = false;
+                                });
+                              } else {
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                await _loadSupervisors();
+                                if (mounted)
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('✅ Supervisor created'),
+                                          backgroundColor: _green));
+                              }
+                            },
+                      icon: loading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  color: _white, strokeWidth: 2))
+                          : const Icon(Icons.check, size: 18),
+                      label: Text(loading ? 'Creating…' : 'Create Account',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: _navy,
+                          foregroundColor: _white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(9))),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel',
+                          style: TextStyle(color: _muted))),
+                ]),
               ],
             ),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () {
-                if (selectedFactoryId == null || selectedConveyorId == null || selectedStationId == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please select factory, conveyor, and workstation'), backgroundColor: Colors.red),
-                  );
-                  return;
-                }
-                Navigator.pop(context);
-                _simulateAlert(
-                  type: selectedType,
-                  usine: selectedFactoryName!,
-                  convoyeur: selectedConveyorNumber!,
-                  poste: selectedStationNumber!,
-                  description: description.trim(),
-                  isCritical: isCritical,
-                );
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: _navy),
-              child: const Text('Create Alert', style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
-      },
-    ),
-  );
-}
-  void _showCreateSheet() {
-  final first = TextEditingController();
-  final last  = TextEditingController();
-  final email = TextEditingController();
-  final pass  = TextEditingController();
-  final phone = TextEditingController();
-  String usine   = '';
-  DateTime hired = DateTime.now();
-  String? error;
-  bool loading   = false;
-
-  List<String> factoryNames = [];
-  bool factoriesLoaded = false;
-
-  // Load factories from hierarchy
-  final hierarchyService = HierarchyService();
-  hierarchyService.getFactories().listen((factories) {
-    if (mounted && !factoriesLoaded) {
-      factoryNames = factories.map((f) => f.name).toList();
-      if (factoryNames.isNotEmpty && usine.isEmpty) {
-        usine = factoryNames.first;
-      }
-      factoriesLoaded = true;
-      // Force rebuild of the bottom sheet
-      if (mounted) setState(() {});
-    }
-  });
-
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: _white,
-    shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setS) => Padding(
-        padding: EdgeInsets.only(
-            left: 20, right: 20, top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(child: Container(width: 40, height: 4,
-                  margin: const EdgeInsets.only(bottom: 18),
-                  decoration: BoxDecoration(color: _border,
-                      borderRadius: BorderRadius.circular(99)))),
-              Row(children: [
-                Container(width: 38, height: 38,
-                    decoration: BoxDecoration(color: _navyLt,
-                        borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.person_add_outlined,
-                        color: _navy, size: 20)),
-                const SizedBox(width: 12),
-                const Text('New Supervisor Account',
-                    style: TextStyle(fontSize: 18,
-                        fontWeight: FontWeight.w700, color: _navy)),
-              ]),
-              const SizedBox(height: 20),
-              Row(children: [
-                Expanded(child: _SheetField('First Name', first, 'Ahmed')),
-                const SizedBox(width: 10),
-                Expanded(child: _SheetField('Last Name',  last,  'Benali')),
-              ]),
-              _SheetField('Phone', phone, '+213 XX XX XX XX',
-                  keyboard: TextInputType.phone),
-              _SheetField('Email', email, 'ahmed@sagem.com',
-                  keyboard: TextInputType.emailAddress),
-              _SheetField('Password', pass, 'Min 6 characters',
-                  obscure: true),
-              _SheetLabel('Assigned Plant'),
-              Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(color: _bg,
-                    border: Border.all(color: _border),
-                    borderRadius: BorderRadius.circular(9)),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: usine.isEmpty ? null : usine,
-                    isExpanded: true,
-                    hint: const Text('Select a factory'),
-                    items: factoryNames.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
-                    onChanged: (v) => setS(() => usine = v!),
-                  ),
-                ),
-              ),
-              _SheetLabel('Hire Date'),
-              GestureDetector(
-                onTap: () async {
-                  final p = await showDatePicker(
-                    context: ctx,
-                    initialDate: hired,
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime.now(),
-                    builder: (c, child) => Theme(
-                      data: ThemeData.light().copyWith(
-                          colorScheme: const ColorScheme.light(primary: _navy)),
-                      child: child!),
-                  );
-                  if (p != null) setS(() => hired = p);
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 13),
-                  decoration: BoxDecoration(color: _bg,
-                      border: Border.all(color: _border),
-                      borderRadius: BorderRadius.circular(9)),
-                  child: Row(children: [
-                    const Icon(Icons.calendar_today_outlined,
-                        size: 16, color: _muted),
-                    const SizedBox(width: 8),
-                    Text(_fmtDate(hired),
-                        style: const TextStyle(fontSize: 14)),
-                  ]),
-                ),
-              ),
-              if (error != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      border: Border.all(color: _red),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Text(error!,
-                      style: const TextStyle(color: _red, fontSize: 13)),
-                ),
-              Row(children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: loading ? null : () async {
-                      if ([first, last, email, pass]
-                          .any((c) => c.text.trim().isEmpty)) {
-                        setS(() => error = 'All fields are required.');
-                        return;
-                      }
-                      if (usine.isEmpty) {
-                        setS(() => error = 'Please select a factory.');
-                        return;
-                      }
-                      setS(() { loading = true; error = null; });
-                      final err = await _auth.createSupervisor(
-                        firstName: first.text.trim(),
-                        lastName:  last.text.trim(),
-                        email:     email.text.trim(),
-                        password:  pass.text.trim(),
-                        phone:     phone.text.trim(),
-                        usine:     usine,
-                        hiredDate: hired,
-                      );
-                      if (!ctx.mounted) return;
-                      if (err != null) {
-                        setS(() { error = err; loading = false; });
-                      } else {
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        await _loadSupervisors();
-                        if (mounted) ScaffoldMessenger.of(context)
-                            .showSnackBar(const SnackBar(
-                            content: Text('✅ Supervisor created'),
-                            backgroundColor: _green));
-                      }
-                    },
-                    icon: loading
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(
-                                color: _white, strokeWidth: 2))
-                        : const Icon(Icons.check, size: 18),
-                    label: Text(loading ? 'Creating…' : 'Create Account',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: _navy, foregroundColor: _white,
-                        padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(9))),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel',
-                        style: TextStyle(color: _muted))),
-              ]),
-            ],
-          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Future<void> _confirmDelete(UserModel sup) async {
     await _auth.deleteSupervisor(sup.id);
     await _loadSupervisors();
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('👷 Supervisor removed'), backgroundColor: _red));
+    if (mounted)
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('👷 Supervisor removed'), backgroundColor: _red));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: SafeArea(child: Column(children: [
+      body: SafeArea(
+          child: Column(children: [
         _Header(activeSups: _activeSups, onLogout: _logout),
         _PillTabBar(tab: _tab, onSelect: (i) => setState(() => _tab = i)),
-        Expanded(child: _loading
-            ? const Center(child: CircularProgressIndicator(color: _navy))
-            : _buildContent()),
+        Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _navy))
+                : _buildContent()),
       ])),
       floatingActionButton: FloatingActionButton(
         onPressed: _showSimulateDialog,
@@ -912,76 +1069,89 @@ void _showSimulateDialog() {
     );
   }
 
-Widget _buildContent() {
-  switch (_tab) {
-    case 0:
-      return _OverviewTab(
-        total: _total, solved: _solved,
-        inProgress: _inProgress, pending: _pending,
-        alerts: _filteredAlerts,
-        timeRange: _timeRange,
-        timeRangeLabel: _timeRangeLabel,
-        timeRangeSubtitle: _timeRangeSubtitle,
-        selectedUsine: _selectedUsine,
-        filterConvoyeur: _filterConvoyeur,
-        filterPoste: _filterPoste,
-        filterType: _filterType,
-        filterStatus: _filterStatus,
-        onTimeRangeChange: (v) {
-          setState(() => _timeRange = v);
-          if (v == 'custom') _showDateRangePicker();
-          else { _applyFilters(); _saveFilters(); }
-        },
-        onUsineChange: (v) {
-          setState(() => _selectedUsine = v);
-          _applyFilters(); _saveFilters();
-        },
-        onConvoyeurChange: (v) {
-          setState(() => _filterConvoyeur = v);
-          _applyFilters();
-        },
-        onPosteChange: (v) {
-          setState(() => _filterPoste = v);
-          _applyFilters();
-        },
-        onTypeChange: (v) {
-          setState(() => _filterType = v);
-          _applyFilters();
-        },
-        onStatusChange: (v) {
-          setState(() => _filterStatus = v);
-          _applyFilters();
-        },
-        onReset: () {
-          setState(() {
-            _timeRange = 'week'; _selectedUsine = 'all';
-            _filterConvoyeur = 'all'; _filterPoste = 'all';
-            _filterType = 'all'; _filterStatus = 'all';
-            _customStartDate = null; _customEndDate = null;
-          });
-          _applyFilters(); _saveFilters();
-        },
-        onExportCsv: _exportToCsv,
-        onExportExcel: _exportToExcel,
-        allAlerts: _alerts,
-      );
-    case 1:
-      return _SupervisorsTab(
-        supervisors: _supervisors, alerts: _alerts,
-        onAdd: _showCreateSheet,
-        onDelete: _confirmDelete,
-        onRefresh: _loadSupervisors,
-      );
-    case 2:
-  return AlertTreeVisualization(alerts: _alerts);
-    case 3:
-      return const AdminEscalationScreen();
-    case 4:
-      return const HierarchyScreen();
-    default:
-      return const SizedBox.shrink();
+  Widget _buildContent() {
+    switch (_tab) {
+      case 0:
+        return _OverviewTab(
+          total: _total,
+          solved: _solved,
+          inProgress: _inProgress,
+          pending: _pending,
+          alerts: _filteredAlerts,
+          timeRange: _timeRange,
+          timeRangeLabel: _timeRangeLabel,
+          timeRangeSubtitle: _timeRangeSubtitle,
+          selectedUsine: _selectedUsine,
+          filterConvoyeur: _filterConvoyeur,
+          filterPoste: _filterPoste,
+          filterType: _filterType,
+          filterStatus: _filterStatus,
+          onTimeRangeChange: (v) {
+            setState(() => _timeRange = v);
+            if (v == 'custom')
+              _showDateRangePicker();
+            else {
+              _applyFilters();
+              _saveFilters();
+            }
+          },
+          onUsineChange: (v) {
+            setState(() => _selectedUsine = v);
+            _applyFilters();
+            _saveFilters();
+          },
+          onConvoyeurChange: (v) {
+            setState(() => _filterConvoyeur = v);
+            _applyFilters();
+          },
+          onPosteChange: (v) {
+            setState(() => _filterPoste = v);
+            _applyFilters();
+          },
+          onTypeChange: (v) {
+            setState(() => _filterType = v);
+            _applyFilters();
+          },
+          onStatusChange: (v) {
+            setState(() => _filterStatus = v);
+            _applyFilters();
+          },
+          onReset: () {
+            setState(() {
+              _timeRange = 'week';
+              _selectedUsine = 'all';
+              _filterConvoyeur = 'all';
+              _filterPoste = 'all';
+              _filterType = 'all';
+              _filterStatus = 'all';
+              _customStartDate = null;
+              _customEndDate = null;
+            });
+            _applyFilters();
+            _saveFilters();
+          },
+          onExportCsv: _exportToCsv,
+          onExportExcel: _exportToExcel,
+          allAlerts: _alerts,
+        );
+      case 1:
+        return _SupervisorsTab(
+          supervisors: _supervisors,
+          alerts: _alerts,
+          onAdd: _showCreateSheet,
+          onDelete: _confirmDelete,
+          onRefresh: _loadSupervisors,
+        );
+      case 2:
+        return AlertTreeVisualization(alerts: _alerts);
+      case 3:
+        return const AdminEscalationScreen();
+      case 4:
+        return const HierarchyScreen();
+      default:
+        return const SizedBox.shrink();
+    }
   }
-}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -991,7 +1161,8 @@ class _Header extends StatefulWidget {
   final int activeSups;
   final VoidCallback onLogout;
   const _Header({required this.activeSups, required this.onLogout});
-  @override State<_Header> createState() => _HeaderState();
+  @override
+  State<_Header> createState() => _HeaderState();
 }
 
 class _HeaderState extends State<_Header> {
@@ -1009,22 +1180,32 @@ class _HeaderState extends State<_Header> {
       _notifSub = _db.child('notifications/$uid').onValue.listen((event) {
         final data = event.snapshot.value;
         if (data == null) {
-          setState(() { _notificationCount = 0; _notifications = []; });
+          setState(() {
+            _notificationCount = 0;
+            _notifications = [];
+          });
           return;
         }
-        final map  = Map<String, dynamic>.from(data as Map);
+        final map = Map<String, dynamic>.from(data as Map);
         final list = map.entries.map((e) {
           final m = Map<String, dynamic>.from(e.value as Map);
-          m['id'] = e.key; return m;
+          m['id'] = e.key;
+          return m;
         }).toList();
         final pending = list.where((n) => n['status'] != 'read').toList();
-        setState(() { _notifications = list; _notificationCount = pending.length; });
+        setState(() {
+          _notifications = list;
+          _notificationCount = pending.length;
+        });
       });
     }
   }
 
   @override
-  void dispose() { _notifSub?.cancel(); super.dispose(); }
+  void dispose() {
+    _notifSub?.cancel();
+    super.dispose();
+  }
 
   void _showNotifications() {
     showModalBottomSheet(
@@ -1037,7 +1218,9 @@ class _HeaderState extends State<_Header> {
               height: 400,
               child: Column(
                 children: [
-                  const Text('Notifications', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('Notifications',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const Divider(),
                   Expanded(
                     child: _notifications.isEmpty
@@ -1049,44 +1232,81 @@ class _HeaderState extends State<_Header> {
                               if (n['type'] == 'help_request') {
                                 return ListTile(
                                   title: Text(n['message'] ?? 'Help request'),
-                                  subtitle: const Text('Tap to accept or refuse'),
+                                  subtitle:
+                                      const Text('Tap to accept or refuse'),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
-                                        icon: const Icon(Icons.check_circle, color: Colors.green),
+                                        icon: const Icon(Icons.check_circle,
+                                            color: Colors.green),
                                         onPressed: () async {
-                                          await Provider.of<AlertProvider>(context, listen: false)
-                                              .acceptHelp(n['alertId'], n['helpRequestId']);
-                                          await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                                          await Provider.of<AlertProvider>(
+                                                  context,
+                                                  listen: false)
+                                              .acceptHelp(n['alertId'],
+                                                  n['helpRequestId']);
+                                          await _db
+                                              .child(
+                                                  'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                              .remove();
                                           if (context.mounted) {
                                             setModalState(() {
-                                              _notifications.removeWhere((item) => item['id'] == n['id']);
-                                              _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                                              _notifications.removeWhere(
+                                                  (item) =>
+                                                      item['id'] == n['id']);
+                                              _notificationCount =
+                                                  _notifications
+                                                      .where((x) =>
+                                                          x['status'] != 'read')
+                                                      .length;
                                             });
                                           }
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Help request accepted'), backgroundColor: Colors.green),
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                  content: Text(
+                                                      'Help request accepted'),
+                                                  backgroundColor:
+                                                      Colors.green),
                                             );
                                           }
                                         },
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.cancel, color: Colors.red),
+                                        icon: const Icon(Icons.cancel,
+                                            color: Colors.red),
                                         onPressed: () async {
-                                          await Provider.of<AlertProvider>(context, listen: false)
-                                              .refuseHelp(n['alertId'], n['helpRequestId']);
-                                          await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                                          await Provider.of<AlertProvider>(
+                                                  context,
+                                                  listen: false)
+                                              .refuseHelp(n['alertId'],
+                                                  n['helpRequestId']);
+                                          await _db
+                                              .child(
+                                                  'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                              .remove();
                                           if (context.mounted) {
                                             setModalState(() {
-                                              _notifications.removeWhere((item) => item['id'] == n['id']);
-                                              _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                                              _notifications.removeWhere(
+                                                  (item) =>
+                                                      item['id'] == n['id']);
+                                              _notificationCount =
+                                                  _notifications
+                                                      .where((x) =>
+                                                          x['status'] != 'read')
+                                                      .length;
                                             });
                                           }
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Help request refused'), backgroundColor: Colors.orange),
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              const SnackBar(
+                                                  content: Text(
+                                                      'Help request refused'),
+                                                  backgroundColor:
+                                                      Colors.orange),
                                             );
                                           }
                                         },
@@ -1096,14 +1316,19 @@ class _HeaderState extends State<_Header> {
                                 );
                               } else if (n['type'] == 'assistance_request') {
                                 return ListTile(
-                                  title: Text(n['message'] ?? 'Assistance request'),
+                                  title: Text(
+                                      n['message'] ?? 'Assistance request'),
                                   subtitle: Text(n['alertDescription'] ?? ''),
                                   trailing: ElevatedButton(
                                     onPressed: () async {
-                                      final supervisors = await AuthService().getActiveSupervisors();
+                                      final supervisors = await AuthService()
+                                          .getActiveSupervisors();
                                       if (supervisors.isEmpty) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('No active supervisors available')),
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                              content: Text(
+                                                  'No active supervisors available')),
                                         );
                                         return;
                                       }
@@ -1117,37 +1342,62 @@ class _HeaderState extends State<_Header> {
                                               shrinkWrap: true,
                                               itemCount: supervisors.length,
                                               itemBuilder: (_, i) => ListTile(
-                                                leading: const Icon(Icons.person, color: _navy),
-                                                title: Text(supervisors[i].fullName),
-                                                subtitle: Text(supervisors[i].email),
+                                                leading: const Icon(
+                                                    Icons.person,
+                                                    color: _navy),
+                                                title: Text(
+                                                    supervisors[i].fullName),
+                                                subtitle:
+                                                    Text(supervisors[i].email),
                                                 onTap: () async {
                                                   Navigator.pop(_);
-                                                  await AuthService().assignAssistantToAlert(
+                                                  await AuthService()
+                                                      .assignAssistantToAlert(
                                                     n['alertId'],
                                                     supervisors[i].id,
                                                     supervisors[i].fullName,
                                                   );
-                                                  await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                                                  await _db
+                                                      .child(
+                                                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                                      .remove();
                                                   if (context.mounted) {
                                                     setModalState(() {
-                                                      _notifications.removeWhere((item) => item['id'] == n['id']);
-                                                      _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                                                      _notifications
+                                                          .removeWhere((item) =>
+                                                              item['id'] ==
+                                                              n['id']);
+                                                      _notificationCount =
+                                                          _notifications
+                                                              .where((x) =>
+                                                                  x['status'] !=
+                                                                  'read')
+                                                              .length;
                                                     });
                                                   }
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    SnackBar(content: Text('✅ Assigned ${supervisors[i].fullName} as assistant'), backgroundColor: Colors.green),
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                        content: Text(
+                                                            '✅ Assigned ${supervisors[i].fullName} as assistant'),
+                                                        backgroundColor:
+                                                            Colors.green),
                                                   );
                                                 },
                                               ),
                                             ),
                                           ),
                                           actions: [
-                                            TextButton(onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+                                            TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(_),
+                                                child: const Text('Cancel')),
                                           ],
                                         ),
                                       );
                                     },
-                                    child: const Text('Assign Assistant', style: TextStyle(fontSize: 12)),
+                                    child: const Text('Assign Assistant',
+                                        style: TextStyle(fontSize: 12)),
                                   ),
                                 );
                               } else {
@@ -1159,29 +1409,46 @@ class _HeaderState extends State<_Header> {
                                     children: [
                                       if (n['status'] != 'read')
                                         IconButton(
-                                          icon: const Icon(Icons.visibility, size: 18, color: Colors.blue),
+                                          icon: const Icon(Icons.visibility,
+                                              size: 18, color: Colors.blue),
                                           onPressed: () async {
-                                            await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                                            await _db
+                                                .child(
+                                                    'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                                .remove();
                                             if (context.mounted) {
                                               setModalState(() {
-                                                _notifications.removeWhere((item) => item['id'] == n['id']);
-                                                _notificationCount = _notifications.where((x) => x['status'] != 'read').length;
+                                                _notifications.removeWhere(
+                                                    (item) =>
+                                                        item['id'] == n['id']);
+                                                _notificationCount =
+                                                    _notifications
+                                                        .where((x) =>
+                                                            x['status'] !=
+                                                            'read')
+                                                        .length;
                                               });
                                             }
                                           },
                                         ),
                                       IconButton(
-                                        icon: const Icon(Icons.open_in_new, size: 18, color: _navy),
+                                        icon: const Icon(Icons.open_in_new,
+                                            size: 18, color: _navy),
                                         onPressed: () async {
                                           if (n['status'] != 'read') {
-                                            await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                                            await _db
+                                                .child(
+                                                    'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                                .remove();
                                           }
                                           if (context.mounted) {
                                             Navigator.pop(context);
                                             Navigator.push(
                                               context,
                                               MaterialPageRoute(
-                                                builder: (_) => AlertDetailScreen(alertId: n['alertId']),
+                                                builder: (_) =>
+                                                    AlertDetailScreen(
+                                                        alertId: n['alertId']),
                                               ),
                                             );
                                           }
@@ -1191,14 +1458,18 @@ class _HeaderState extends State<_Header> {
                                   ),
                                   onTap: () async {
                                     if (n['status'] != 'read') {
-                                      await _db.child('notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}').remove();
+                                      await _db
+                                          .child(
+                                              'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                          .remove();
                                     }
                                     if (context.mounted) {
                                       Navigator.pop(context);
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => AlertDetailScreen(alertId: n['alertId']),
+                                          builder: (_) => AlertDetailScreen(
+                                              alertId: n['alertId']),
                                         ),
                                       );
                                     }
@@ -1224,18 +1495,23 @@ class _HeaderState extends State<_Header> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(children: [
         Container(
-          width: 42, height: 42,
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
               color: _navyLt,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: _border)),
-          child: const Center(child: Text('🏭', style: TextStyle(fontSize: 22))),
+          child:
+              const Center(child: Text('🏭', style: TextStyle(fontSize: 22))),
         ),
         const SizedBox(width: 12),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Production Manager',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
-                  color: _navy, letterSpacing: .2)),
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _navy,
+                  letterSpacing: .2)),
           const Text('admin — Sagem',
               style: TextStyle(fontSize: 11, color: _muted)),
         ]),
@@ -1247,22 +1523,29 @@ class _HeaderState extends State<_Header> {
             onPressed: _showNotifications,
           ),
           if (_notificationCount > 0)
-            Positioned(top: 6, right: 6,
-              child: Container(
-                width: 16, height: 16,
-                decoration: const BoxDecoration(color: _red, shape: BoxShape.circle),
-                child: Center(child: Text('$_notificationCount',
-                    style: const TextStyle(color: _white, fontSize: 9,
-                        fontWeight: FontWeight.w700))),
-              )),
+            Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration:
+                      const BoxDecoration(color: _red, shape: BoxShape.circle),
+                  child: Center(
+                      child: Text('$_notificationCount',
+                          style: const TextStyle(
+                              color: _white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700))),
+                )),
         ]),
         const SizedBox(width: 4),
         OutlinedButton.icon(
           onPressed: widget.onLogout,
           icon: const Icon(Icons.logout_outlined, size: 15, color: _red),
           label: const Text('Sign Out',
-              style: TextStyle(color: _red, fontSize: 13,
-                  fontWeight: FontWeight.w600)),
+              style: TextStyle(
+                  color: _red, fontSize: 13, fontWeight: FontWeight.w600)),
           style: OutlinedButton.styleFrom(
               side: const BorderSide(color: _red),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -1285,11 +1568,11 @@ class _PillTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const tabs = [
-      {'icon': Icons.bar_chart_outlined,      'label': 'Overview'},
-      {'icon': Icons.people_alt_outlined,     'label': 'Supervisors'},
-      {'icon': Icons.notifications_outlined,  'label': 'Alerts'},
-      {'icon': Icons.warning_amber,           'label': 'Escalations'}, // <-- NEW
-      {'icon': Icons.account_tree_outlined,   'label': 'Hierarchy'}, // NEW
+      {'icon': Icons.bar_chart_outlined, 'label': 'Overview'},
+      {'icon': Icons.people_alt_outlined, 'label': 'Supervisors'},
+      {'icon': Icons.notifications_outlined, 'label': 'Alerts'},
+      {'icon': Icons.warning_amber, 'label': 'Escalations'}, // <-- NEW
+      {'icon': Icons.account_tree_outlined, 'label': 'Hierarchy'}, // NEW
     ];
     return Container(
       color: _white,
@@ -1297,7 +1580,7 @@ class _PillTabBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: List.generate(tabs.length, (i) {
-          final sel  = tab == i;
+          final sel = tab == i;
           final item = tabs[i];
           return Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -1305,7 +1588,8 @@ class _PillTabBar extends StatelessWidget {
               onTap: () => onSelect(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: sel ? _navy : _white,
                   borderRadius: BorderRadius.circular(20),
@@ -1313,8 +1597,7 @@ class _PillTabBar extends StatelessWidget {
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(item['icon'] as IconData,
-                      size: 15,
-                      color: sel ? _white : _muted),
+                      size: 15, color: sel ? _white : _muted),
                   const SizedBox(width: 6),
                   Text(item['label'] as String,
                       style: TextStyle(
@@ -1339,7 +1622,11 @@ class _OverviewTab extends StatefulWidget {
   final List<AlertModel> alerts;
   final List<AlertModel> allAlerts;
   final String timeRange, timeRangeLabel, timeRangeSubtitle;
-  final String selectedUsine, filterConvoyeur, filterPoste, filterType, filterStatus;
+  final String selectedUsine,
+      filterConvoyeur,
+      filterPoste,
+      filterType,
+      filterStatus;
   final void Function(String) onTimeRangeChange;
   final void Function(String) onUsineChange;
   final void Function(String) onConvoyeurChange;
@@ -1353,17 +1640,26 @@ class _OverviewTab extends StatefulWidget {
   const _OverviewTab({
     required this.onExportCsv,
     required this.onExportExcel,
-    required this.total, required this.solved,
-    required this.inProgress, required this.pending,
-    required this.alerts, required this.allAlerts,
-    required this.timeRange, required this.timeRangeLabel,
+    required this.total,
+    required this.solved,
+    required this.inProgress,
+    required this.pending,
+    required this.alerts,
+    required this.allAlerts,
+    required this.timeRange,
+    required this.timeRangeLabel,
     required this.timeRangeSubtitle,
-    required this.selectedUsine, required this.filterConvoyeur,
-    required this.filterPoste, required this.filterType,
+    required this.selectedUsine,
+    required this.filterConvoyeur,
+    required this.filterPoste,
+    required this.filterType,
     required this.filterStatus,
-    required this.onTimeRangeChange, required this.onUsineChange,
-    required this.onConvoyeurChange, required this.onPosteChange,
-    required this.onTypeChange, required this.onStatusChange,
+    required this.onTimeRangeChange,
+    required this.onUsineChange,
+    required this.onConvoyeurChange,
+    required this.onPosteChange,
+    required this.onTypeChange,
+    required this.onStatusChange,
     required this.onReset,
   });
 
@@ -1392,42 +1688,48 @@ class _OverviewTabState extends State<_OverviewTab> {
     });
   }
 
-List<String> _convoyeurs() {
-  if (widget.selectedUsine == 'all') return ['all'];
-  Factory? factory;
-  for (var f in _factories) {
-    if (f.name == widget.selectedUsine) {
-      factory = f;
-      break;
+  List<String> _convoyeurs() {
+    if (widget.selectedUsine == 'all') return ['all'];
+    Factory? factory;
+    for (var f in _factories) {
+      if (f.name == widget.selectedUsine) {
+        factory = f;
+        break;
+      }
     }
+    if (factory == null) return ['all'];
+    return ['all', ...factory.conveyors.values.map((c) => c.number.toString())];
   }
-  if (factory == null) return ['all'];
-  return ['all', ...factory.conveyors.values.map((c) => c.number.toString())];
-}
 
-List<String> _postes() {
-  if (widget.selectedUsine == 'all') return ['all'];
-  Factory? factory;
-  for (var f in _factories) {
-    if (f.name == widget.selectedUsine) {
-      factory = f;
-      break;
+  List<String> _postes() {
+    if (widget.selectedUsine == 'all') return ['all'];
+    Factory? factory;
+    for (var f in _factories) {
+      if (f.name == widget.selectedUsine) {
+        factory = f;
+        break;
+      }
     }
-  }
-  if (factory == null) return ['all'];
-  if (widget.filterConvoyeur == 'all') return ['all'];
-  Conveyor? conveyor;
-  for (var c in factory.conveyors.values) {
-    if (c.number.toString() == widget.filterConvoyeur) {
-      conveyor = c;
-      break;
+    if (factory == null) return ['all'];
+    if (widget.filterConvoyeur == 'all') return ['all'];
+    Conveyor? conveyor;
+    for (var c in factory.conveyors.values) {
+      if (c.number.toString() == widget.filterConvoyeur) {
+        conveyor = c;
+        break;
+      }
     }
+    if (conveyor == null) return ['all'];
+    return [
+      'all',
+      ...conveyor.stations.values.map((s) => s.id.replaceAll('station_', ''))
+    ];
   }
-  if (conveyor == null) return ['all'];
-  return ['all', ...conveyor.stations.values.map((s) => s.id.replaceAll('station_', ''))];
-}
+
   List<AlertModel> get _criticalUnclaimedAlerts {
-    return widget.allAlerts.where((a) => a.isCritical && a.status == 'disponible').toList();
+    return widget.allAlerts
+        .where((a) => a.isCritical && a.status == 'disponible')
+        .toList();
   }
 
   int get _criticalUnclaimedCount => _criticalUnclaimedAlerts.length;
@@ -1450,7 +1752,9 @@ List<String> _postes() {
       case 'defaut_produit':
         return widget.alerts.where((a) => a.type == 'defaut_produit').toList();
       case 'manque_ressource':
-        return widget.alerts.where((a) => a.type == 'manque_ressource').toList();
+        return widget.alerts
+            .where((a) => a.type == 'manque_ressource')
+            .toList();
       default:
         return widget.alerts;
     }
@@ -1467,18 +1771,28 @@ List<String> _postes() {
   }
 
   Map<String, Map<String, int>> _typeStats() {
-    final keys = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
+    final keys = [
+      'qualite',
+      'maintenance',
+      'defaut_produit',
+      'manque_ressource'
+    ];
     return {
       for (var k in keys)
         k: {
           'total': widget.alerts.where((a) => a.type == k).length,
-          'solved': widget.alerts.where((a) => a.type == k && a.status == 'validee').length,
-          'pending': widget.alerts.where((a) => a.type == k && a.status != 'validee').length,
+          'solved': widget.alerts
+              .where((a) => a.type == k && a.status == 'validee')
+              .length,
+          'pending': widget.alerts
+              .where((a) => a.type == k && a.status != 'validee')
+              .length,
         }
     };
   }
 
-  List<String> _usines() => ['all', ...widget.allAlerts.map((a) => a.usine).toSet().toList()..sort()];
+  List<String> _usines() =>
+      ['all', ...widget.allAlerts.map((a) => a.usine).toSet().toList()..sort()];
 
   // Use hierarchy-based convoyeurs and postes
   List<String> _convoyeursForFilter() => _convoyeurs();
@@ -1501,13 +1815,17 @@ List<String> _postes() {
   }
 
   int get _criticalInProgressCount {
-    return widget.allAlerts.where((a) => a.status == 'en_cours' && a.isCritical).length;
+    return widget.allAlerts
+        .where((a) => a.status == 'en_cours' && a.isCritical)
+        .length;
   }
 
   void _exportFilteredAlerts(List<AlertModel> alertsToExport) async {
     if (alertsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No alerts to export'), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text('No alerts to export'),
+            backgroundColor: Colors.orange),
       );
       return;
     }
@@ -1553,12 +1871,14 @@ List<String> _postes() {
       final blob = html.Blob([bytes], 'text/csv');
       final url = html.Url.createObjectUrlFromBlob(blob);
       final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv')
+        ..setAttribute('download',
+            'alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv')
         ..click();
       html.Url.revokeObjectUrl(url);
     } else {
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv');
+      final file = File(
+          '${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.csv');
       await file.writeAsBytes(bytes);
       await Share.shareXFiles([XFile(file.path)], text: 'Alert export');
     }
@@ -1567,7 +1887,9 @@ List<String> _postes() {
   void _exportFilteredAlertsExcel(List<AlertModel> alertsToExport) async {
     if (alertsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No alerts to export'), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text('No alerts to export'),
+            backgroundColor: Colors.orange),
       );
       return;
     }
@@ -1610,15 +1932,18 @@ List<String> _postes() {
     final fileBytes = excelFile.encode();
     if (fileBytes == null) return;
     if (kIsWeb) {
-      final blob = html.Blob([fileBytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final blob = html.Blob([fileBytes],
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       final url = html.Url.createObjectUrlFromBlob(blob);
       final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx')
+        ..setAttribute('download',
+            'alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx')
         ..click();
       html.Url.revokeObjectUrl(url);
     } else {
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx');
+      final file = File(
+          '${dir.path}/alerts_export_${DateTime.now().millisecondsSinceEpoch}.xlsx');
       await file.writeAsBytes(fileBytes);
       await Share.shareXFiles([XFile(file.path)], text: 'Alert export');
     }
@@ -1642,7 +1967,10 @@ List<String> _postes() {
                   children: const [
                     Text(
                       'Alert Dashboard VV2',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: _text),
+                      style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: _text),
                     ),
                     SizedBox(height: 2),
                     Text(
@@ -1653,7 +1981,8 @@ List<String> _postes() {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: _white,
                   border: Border.all(color: _border),
@@ -1662,11 +1991,15 @@ List<String> _postes() {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.filter_alt_outlined, size: 13, color: _navy),
+                    const Icon(Icons.filter_alt_outlined,
+                        size: 13, color: _navy),
                     const SizedBox(width: 4),
                     Text(
                       widget.timeRangeLabel,
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _navy),
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: _navy),
                     ),
                   ],
                 ),
@@ -1694,8 +2027,12 @@ List<String> _postes() {
                 _FilterChip(label: widget.timeRangeLabel, onRemove: null),
                 const SizedBox(width: 6),
                 _FilterChip(
-                  label: widget.selectedUsine == 'all' ? 'Default' : widget.selectedUsine,
-                  onRemove: widget.selectedUsine == 'all' ? null : () => widget.onUsineChange('all'),
+                  label: widget.selectedUsine == 'all'
+                      ? 'Default'
+                      : widget.selectedUsine,
+                  onRemove: widget.selectedUsine == 'all'
+                      ? null
+                      : () => widget.onUsineChange('all'),
                 ),
                 const Spacer(),
                 Text(
@@ -1772,26 +2109,33 @@ List<String> _postes() {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                      const Icon(Icons.warning_amber_rounded,
+                          color: Colors.red, size: 20),
                       const SizedBox(width: 8),
                       Text(
                         '⚠️ Critical Unclaimed Alerts ($_criticalUnclaimedCount)',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.red),
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.red),
                       ),
                       const Spacer(),
                       Text(
                         'These alerts have been waiting for more than 10 minutes',
-                        style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                        style:
+                            TextStyle(fontSize: 11, color: Colors.red.shade700),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   ..._criticalUnclaimedAlerts.map((alert) {
-                    final elapsedMinutes = DateTime.now().difference(alert.timestamp).inMinutes;
+                    final elapsedMinutes =
+                        DateTime.now().difference(alert.timestamp).inMinutes;
                     final elapsedText = elapsedMinutes < 60
                         ? '$elapsedMinutes min'
                         : '${elapsedMinutes ~/ 60}h ${elapsedMinutes % 60}m';
-                    final displayDescription = _getAlertDisplayDescription(alert);
+                    final displayDescription =
+                        _getAlertDisplayDescription(alert);
                     return GestureDetector(
                       onTap: () => _setHistoryFilter(alert.type),
                       child: Container(
@@ -1819,18 +2163,23 @@ List<String> _postes() {
                                 children: [
                                   Text(
                                     '${_typeLabel(alert.type)} — $displayDescription',
-                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _text),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: _text),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
                                     '${alert.usine} - Line ${alert.convoyeur} - WS ${alert.poste}',
-                                    style: const TextStyle(fontSize: 11, color: _muted),
+                                    style: const TextStyle(
+                                        fontSize: 11, color: _muted),
                                   ),
                                 ],
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: Colors.red.shade50,
                                 borderRadius: BorderRadius.circular(12),
@@ -1838,11 +2187,15 @@ List<String> _postes() {
                               ),
                               child: Text(
                                 elapsedText,
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.red),
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.red),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            const Icon(Icons.chevron_right, color: _muted, size: 18),
+                            const Icon(Icons.chevron_right,
+                                color: _muted, size: 18),
                           ],
                         ),
                       ),
@@ -1911,11 +2264,15 @@ List<String> _postes() {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today_outlined, size: 16, color: _navy),
+                    const Icon(Icons.calendar_today_outlined,
+                        size: 16, color: _navy),
                     const SizedBox(width: 8),
                     Text(
                       'Alert History (${_displayedAlerts.length})',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _text),
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: _text),
                     ),
                   ],
                 ),
@@ -1960,7 +2317,10 @@ List<String> _postes() {
                     SizedBox(width: 6),
                     Text(
                       'Filter History',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _text),
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _text),
                     ),
                   ],
                 ),
@@ -2025,16 +2385,21 @@ List<String> _postes() {
                         items: [
                           const DropdownMenuItem(
                             value: 'all',
-                            child: Text('All Types', style: TextStyle(fontSize: 13)),
+                            child: Text('All Types',
+                                style: TextStyle(fontSize: 13)),
                           ),
-                          ...['qualite', 'maintenance', 'defaut_produit', 'manque_ressource']
-                              .map((t) => DropdownMenuItem(
-                                    value: t,
-                                    child: Text(
-                                      _typeLabel(t),
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ))
+                          ...[
+                            'qualite',
+                            'maintenance',
+                            'defaut_produit',
+                            'manque_ressource'
+                          ].map((t) => DropdownMenuItem(
+                                value: t,
+                                child: Text(
+                                  _typeLabel(t),
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ))
                         ],
                         onChanged: widget.onTypeChange,
                       ),
@@ -2051,19 +2416,23 @@ List<String> _postes() {
                         items: const [
                           DropdownMenuItem(
                             value: 'all',
-                            child: Text('All Statuses', style: TextStyle(fontSize: 13)),
+                            child: Text('All Statuses',
+                                style: TextStyle(fontSize: 13)),
                           ),
                           DropdownMenuItem(
                             value: 'disponible',
-                            child: Text('Available', style: TextStyle(fontSize: 13)),
+                            child: Text('Available',
+                                style: TextStyle(fontSize: 13)),
                           ),
                           DropdownMenuItem(
                             value: 'en_cours',
-                            child: Text('In Progress', style: TextStyle(fontSize: 13)),
+                            child: Text('In Progress',
+                                style: TextStyle(fontSize: 13)),
                           ),
                           DropdownMenuItem(
                             value: 'validee',
-                            child: Text('Validated', style: TextStyle(fontSize: 13)),
+                            child: Text('Validated',
+                                style: TextStyle(fontSize: 13)),
                           ),
                         ],
                         onChanged: widget.onStatusChange,
@@ -2075,11 +2444,26 @@ List<String> _postes() {
                         label: 'Time Range',
                         value: widget.timeRange,
                         items: const [
-                          DropdownMenuItem(value: 'today', child: Text('Today', style: TextStyle(fontSize: 13))),
-                          DropdownMenuItem(value: 'week', child: Text('Last Week', style: TextStyle(fontSize: 13))),
-                          DropdownMenuItem(value: 'month', child: Text('This Month', style: TextStyle(fontSize: 13))),
-                          DropdownMenuItem(value: 'year', child: Text('This Year', style: TextStyle(fontSize: 13))),
-                          DropdownMenuItem(value: 'custom', child: Text('Custom', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'today',
+                              child: Text('Today',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'week',
+                              child: Text('Last Week',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'month',
+                              child: Text('This Month',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'year',
+                              child: Text('This Year',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'custom',
+                              child: Text('Custom',
+                                  style: TextStyle(fontSize: 13))),
                         ],
                         onChanged: widget.onTimeRangeChange,
                       ),
@@ -2091,12 +2475,16 @@ List<String> _postes() {
                         setState(() => _historyFilter = null);
                       },
                       icon: const Icon(Icons.refresh_outlined, size: 15),
-                      label: const Text('Reset', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      label: const Text('Reset',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _navy,
                         side: const BorderSide(color: _border),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 13),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
                       ),
                     ),
                   ],
@@ -2129,6 +2517,7 @@ List<String> _postes() {
     );
   }
 }
+
 class _ProgressStatCard extends StatelessWidget {
   final int inProgressCount;
   final int criticalCount;
@@ -2157,7 +2546,10 @@ class _ProgressStatCard extends StatelessWidget {
             color: isActive ? _orange : _border,
             width: isActive ? 2 : 1,
           ),
-          boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))],
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
+          ],
         ),
         child: Row(
           children: [
@@ -2166,20 +2558,31 @@ class _ProgressStatCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('In Progress',
-                      style: TextStyle(fontSize: 12, color: _muted, fontWeight: FontWeight.w500)),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: _muted,
+                          fontWeight: FontWeight.w500)),
                   const SizedBox(height: 6),
                   Text('$inProgressCount',
-                      style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: _orange, height: 1)),
+                      style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: _orange,
+                          height: 1)),
                   const SizedBox(height: 4),
                   if (criticalCount > 0)
                     GestureDetector(
                       onTap: onCriticalTap,
                       child: Row(
                         children: [
-                          const Icon(Icons.warning_amber_rounded, size: 12, color: Colors.red),
+                          const Icon(Icons.warning_amber_rounded,
+                              size: 12, color: Colors.red),
                           const SizedBox(width: 4),
                           Text('$criticalCount Critical',
-                              style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w600)),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -2187,7 +2590,10 @@ class _ProgressStatCard extends StatelessWidget {
                     const Padding(
                       padding: EdgeInsets.only(top: 6),
                       child: Text('Click to hide history',
-                          style: TextStyle(fontSize: 9, color: _muted, fontStyle: FontStyle.italic)),
+                          style: TextStyle(
+                              fontSize: 9,
+                              color: _muted,
+                              fontStyle: FontStyle.italic)),
                     ),
                 ],
               ),
@@ -2195,7 +2601,8 @@ class _ProgressStatCard extends StatelessWidget {
             Container(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(color: _orangeLt, shape: BoxShape.circle),
+              decoration:
+                  BoxDecoration(color: _orangeLt, shape: BoxShape.circle),
               child: const Icon(Icons.timer_outlined, color: _orange, size: 22),
             ),
           ],
@@ -2233,7 +2640,10 @@ class _UnclaimedStatCard extends StatelessWidget {
             color: isActive ? _blue : _border,
             width: isActive ? 2 : 1,
           ),
-          boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))],
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
+          ],
         ),
         child: Row(
           children: [
@@ -2242,20 +2652,31 @@ class _UnclaimedStatCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Unclaimed',
-                      style: TextStyle(fontSize: 12, color: _muted, fontWeight: FontWeight.w500)),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: _muted,
+                          fontWeight: FontWeight.w500)),
                   const SizedBox(height: 6),
                   Text('$unclaimedCount',
-                      style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: _blue, height: 1)),
+                      style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: _blue,
+                          height: 1)),
                   const SizedBox(height: 4),
                   if (criticalCount > 0)
                     GestureDetector(
                       onTap: onCriticalTap,
                       child: Row(
                         children: [
-                          const Icon(Icons.warning_amber_rounded, size: 12, color: Colors.red),
+                          const Icon(Icons.warning_amber_rounded,
+                              size: 12, color: Colors.red),
                           const SizedBox(width: 4),
                           Text('$criticalCount Critical',
-                              style: const TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w600)),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -2263,7 +2684,10 @@ class _UnclaimedStatCard extends StatelessWidget {
                     const Padding(
                       padding: EdgeInsets.only(top: 6),
                       child: Text('Click to hide history',
-                          style: TextStyle(fontSize: 9, color: _muted, fontStyle: FontStyle.italic)),
+                          style: TextStyle(
+                              fontSize: 9,
+                              color: _muted,
+                              fontStyle: FontStyle.italic)),
                     ),
                 ],
               ),
@@ -2272,7 +2696,8 @@ class _UnclaimedStatCard extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(color: _blueLt, shape: BoxShape.circle),
-              child: const Icon(Icons.notifications_outlined, color: _blue, size: 22),
+              child: const Icon(Icons.notifications_outlined,
+                  color: _blue, size: 22),
             ),
           ],
         ),
@@ -2289,22 +2714,22 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-    decoration: BoxDecoration(
-        color: _navy, borderRadius: BorderRadius.circular(99)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(label,
-          style: const TextStyle(fontSize: 11, color: _white,
-              fontWeight: FontWeight.w600)),
-      if (onRemove != null) ...[
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: onRemove,
-          child: const Icon(Icons.close, size: 12, color: _white),
-        ),
-      ],
-    ]),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+            color: _navy, borderRadius: BorderRadius.circular(99)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11, color: _white, fontWeight: FontWeight.w600)),
+          if (onRemove != null) ...[
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onRemove,
+              child: const Icon(Icons.close, size: 12, color: _white),
+            ),
+          ],
+        ]),
+      );
 }
 
 class _ExportBtn extends StatelessWidget {
@@ -2314,49 +2739,58 @@ class _ExportBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => OutlinedButton(
-    onPressed: onTap,
-    style: OutlinedButton.styleFrom(
-        foregroundColor: _text,
-        side: const BorderSide(color: _border),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-    child: Text(label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-  );
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+            foregroundColor: _text,
+            side: const BorderSide(color: _border),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+        child: Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+      );
 }
 
 class _FilterDropdown extends StatelessWidget {
   final String label, value;
   final List<DropdownMenuItem<String>> items;
   final void Function(String) onChanged;
-  const _FilterDropdown({required this.label, required this.value,
-      required this.items, required this.onChanged});
+  const _FilterDropdown(
+      {required this.label,
+      required this.value,
+      required this.items,
+      required this.onChanged});
 
   @override
   Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label.toUpperCase(),
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-              color: _muted, letterSpacing: 1)),
-      const SizedBox(height: 5),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(color: _bg,
-            border: Border.all(color: _border),
-            borderRadius: BorderRadius.circular(8)),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: value, isExpanded: true,
-            style: const TextStyle(fontSize: 13, color: _text),
-            dropdownColor: _white,
-            items: items,
-            onChanged: (v) => onChanged(v!),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(),
+              style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: _muted,
+                  letterSpacing: 1)),
+          const SizedBox(height: 5),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+                color: _bg,
+                border: Border.all(color: _border),
+                borderRadius: BorderRadius.circular(8)),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: value,
+                isExpanded: true,
+                style: const TextStyle(fontSize: 13, color: _text),
+                dropdownColor: _white,
+                items: items,
+                onChanged: (v) => onChanged(v!),
+              ),
+            ),
           ),
-        ),
-      ),
-    ],
-  );
+        ],
+      );
 }
 
 class _AlertHistoryRow extends StatelessWidget {
@@ -2366,44 +2800,53 @@ class _AlertHistoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sc = switch (alert.status) {
-      'validee'  => _green,
+      'validee' => _green,
       'en_cours' => _blue,
-      _          => _orange,
+      _ => _orange,
     };
     final sl = switch (alert.status) {
-      'validee'  => 'Validated',
+      'validee' => 'Validated',
       'en_cours' => 'In Progress',
-      _          => 'Available',
+      _ => 'Available',
     };
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: _white, border: Border.all(color: _border),
+          color: _white,
+          border: Border.all(color: _border),
           borderRadius: BorderRadius.circular(10),
-          boxShadow: const [BoxShadow(color: Color(0x05000000),
-              blurRadius: 3, offset: Offset(0, 1))]),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x05000000), blurRadius: 3, offset: Offset(0, 1))
+          ]),
       child: Row(children: [
-        Container(width: 9, height: 9,
-            decoration: BoxDecoration(color: _typeColor(alert.type),
-                shape: BoxShape.circle)),
+        Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+                color: _typeColor(alert.type), shape: BoxShape.circle)),
         const SizedBox(width: 10),
-        Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${_typeLabel(alert.type)} — ${alert.description}',
-              style: const TextStyle(fontSize: 13,
-                  fontWeight: FontWeight.w600, color: _text),
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: _text),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           const SizedBox(height: 2),
-          Text('${alert.usine}  ·  Line ${alert.convoyeur}'
+          Text(
+              '${alert.usine}  ·  Line ${alert.convoyeur}'
               '  ·  Post ${alert.poste}  ·  ${_fmtTs(alert.timestamp)}',
-              style: const TextStyle(fontFamily: 'monospace',
-                  fontSize: 10, color: _muted)),
+              style: const TextStyle(
+                  fontFamily: 'monospace', fontSize: 10, color: _muted)),
           if (alert.superviseurName != null)
             Text('Assigned: ${alert.superviseurName}',
                 style: const TextStyle(fontSize: 11, color: _blue)),
-                if (alert.criticalNote != null && alert.criticalNote!.isNotEmpty)
-  Text('Critical note: ${alert.criticalNote}', style: const TextStyle(fontSize: 11, color: Colors.red)),
+          if (alert.criticalNote != null && alert.criticalNote!.isNotEmpty)
+            Text('Critical note: ${alert.criticalNote}',
+                style: const TextStyle(fontSize: 11, color: Colors.red)),
         ])),
         const SizedBox(width: 8),
         Container(
@@ -2413,8 +2856,8 @@ class _AlertHistoryRow extends StatelessWidget {
               border: Border.all(color: sc),
               borderRadius: BorderRadius.circular(99)),
           child: Text(sl,
-              style: TextStyle(fontSize: 10,
-                  fontWeight: FontWeight.w700, color: sc)),
+              style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700, color: sc)),
         ),
       ]),
     );
@@ -2450,29 +2893,46 @@ class _ClickableStatCard extends StatelessWidget {
         decoration: BoxDecoration(
             color: isActive ? color.withOpacity(0.1) : _white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isActive ? color : _border, width: isActive ? 2 : 1),
-            boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))]),
+            border: Border.all(
+                color: isActive ? color : _border, width: isActive ? 2 : 1),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
+            ]),
         child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-            Text(label,
-                style: const TextStyle(fontSize: 12, color: _muted,
-                    fontWeight: FontWeight.w500)),
-            const SizedBox(height: 6),
-            Text('$value',
-                style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800,
-                    color: color, height: 1)),
-            if (showHistoryHint)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  isActive ? 'Click to hide history' : 'Click to show history',
-                  style: const TextStyle(fontSize: 9, color: _muted, fontStyle: FontStyle.italic),
-                ),
-              ),
-          ])),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: _muted,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(height: 6),
+                Text('$value',
+                    style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                        height: 1)),
+                if (showHistoryHint)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      isActive
+                          ? 'Click to hide history'
+                          : 'Click to show history',
+                      style: const TextStyle(
+                          fontSize: 9,
+                          color: _muted,
+                          fontStyle: FontStyle.italic),
+                    ),
+                  ),
+              ])),
           Container(
-            width: 46, height: 46,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
             child: Icon(icon, color: color, size: 22),
           ),
@@ -2507,16 +2967,23 @@ class _ClickableTypeCard extends StatelessWidget {
         decoration: BoxDecoration(
             color: isActive ? color.withOpacity(0.1) : _white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isActive ? color : _border, width: isActive ? 2 : 1),
-            boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))]),
+            border: Border.all(
+                color: isActive ? color : _border, width: isActive ? 2 : 1),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
+            ]),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Text(_typeLabel(type),
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                     color: isActive ? color : _text)),
             const Spacer(),
             Container(
-              width: 30, height: 30,
+              width: 30,
+              height: 30,
               decoration: BoxDecoration(
                   color: color.withOpacity(.1), shape: BoxShape.circle),
               child: Icon(_typeIcon(type), color: color, size: 15),
@@ -2524,36 +2991,42 @@ class _ClickableTypeCard extends StatelessWidget {
           ]),
           const SizedBox(height: 8),
           Text('$total',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800,
-                  color: isActive ? color : _text, height: 1)),
+              style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: isActive ? color : _text,
+                  height: 1)),
           const SizedBox(height: 10),
           Row(children: [
             Row(children: [
               const Icon(Icons.check_circle_outline, size: 13, color: _green),
               const SizedBox(width: 3),
-              Text('Validated', style: const TextStyle(fontSize: 10, color: _muted)),
+              Text('Validated',
+                  style: const TextStyle(fontSize: 10, color: _muted)),
             ]),
             const Spacer(),
             Text('$solved',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                    color: _green)),
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700, color: _green)),
           ]),
           const SizedBox(height: 4),
           Row(children: [
             Row(children: [
               const Icon(Icons.cancel_outlined, size: 13, color: _orange),
               const SizedBox(width: 3),
-              Text('Pending', style: const TextStyle(fontSize: 10, color: _muted)),
+              Text('Pending',
+                  style: const TextStyle(fontSize: 10, color: _muted)),
             ]),
             const Spacer(),
             Text('$pending',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                    color: _orange)),
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700, color: _orange)),
           ]),
           const SizedBox(height: 6),
           Text(
             isActive ? 'Click to hide history' : 'Click to show history',
-            style: const TextStyle(fontSize: 9, color: _muted, fontStyle: FontStyle.italic),
+            style: const TextStyle(
+                fontSize: 9, color: _muted, fontStyle: FontStyle.italic),
             textAlign: TextAlign.center,
           ),
         ]),
@@ -2578,7 +3051,8 @@ class _SupervisorsTab extends StatefulWidget {
     required this.onDelete,
     required this.onRefresh,
   });
-  @override State<_SupervisorsTab> createState() => _SupervisorsTabState();
+  @override
+  State<_SupervisorsTab> createState() => _SupervisorsTabState();
 }
 
 class _SupervisorsTabState extends State<_SupervisorsTab>
@@ -2599,7 +3073,8 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
 
   void _loadFactories() {
     _factoriesSubscription?.cancel();
-    _factoriesSubscription = _hierarchyService.getFactories().listen((factories) {
+    _factoriesSubscription =
+        _hierarchyService.getFactories().listen((factories) {
       if (!mounted) return;
       setState(() {
         _factories = factories;
@@ -2635,9 +3110,21 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
           padding: const EdgeInsets.all(3),
           child: Row(
             children: [
-              _SubPill(label: 'Management',  icon: Icons.people_alt_outlined,  index: 0, ctrl: _sub),
-              _SubPill(label: 'Performance', icon: Icons.show_chart_outlined,  index: 1, ctrl: _sub),
-              _SubPill(label: 'Assignments', icon: Icons.bar_chart_outlined,   index: 2, ctrl: _sub),
+              _SubPill(
+                  label: 'Management',
+                  icon: Icons.people_alt_outlined,
+                  index: 0,
+                  ctrl: _sub),
+              _SubPill(
+                  label: 'Performance',
+                  icon: Icons.show_chart_outlined,
+                  index: 1,
+                  ctrl: _sub),
+              _SubPill(
+                  label: 'Assignments',
+                  icon: Icons.bar_chart_outlined,
+                  index: 2,
+                  ctrl: _sub),
             ],
           ),
         ),
@@ -2649,18 +3136,18 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
             _ManagementSubTab(
               supervisors: filteredSupervisors,
               totalSupervisors: widget.supervisors.length,
-              alerts:      widget.alerts,
-              factories:   _factories,
-              onAdd:       widget.onAdd,
-              onDelete:    widget.onDelete,
-              onRefresh:   widget.onRefresh,
-              searchCtrl:  _searchCtrl,
+              alerts: widget.alerts,
+              factories: _factories,
+              onAdd: widget.onAdd,
+              onDelete: widget.onDelete,
+              onRefresh: widget.onRefresh,
+              searchCtrl: _searchCtrl,
               searchQuery: _searchQuery,
               onSearchChanged: (v) => setState(() => _searchQuery = v),
             ),
             _PerformanceSubTab(
               supervisors: widget.supervisors,
-              alerts:      widget.alerts,
+              alerts: widget.alerts,
             ),
             _AssignmentsSubTab(
               supervisors: widget.supervisors,
@@ -2673,20 +3160,26 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
 }
 
 class _SubPill extends StatefulWidget {
-  final String       label;
-  final IconData     icon;
-  final int          index;
+  final String label;
+  final IconData icon;
+  final int index;
   final TabController ctrl;
-  const _SubPill({required this.label, required this.icon,
-      required this.index, required this.ctrl});
-  @override State<_SubPill> createState() => _SubPillState();
+  const _SubPill(
+      {required this.label,
+      required this.icon,
+      required this.index,
+      required this.ctrl});
+  @override
+  State<_SubPill> createState() => _SubPillState();
 }
 
 class _SubPillState extends State<_SubPill> {
   @override
   void initState() {
     super.initState();
-    widget.ctrl.addListener(() { if (mounted) setState(() {}); });
+    widget.ctrl.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -2701,14 +3194,21 @@ class _SubPillState extends State<_SubPill> {
           decoration: BoxDecoration(
               color: sel ? _white : Colors.transparent,
               borderRadius: BorderRadius.circular(17),
-              boxShadow: sel ? [const BoxShadow(color: Color(0x18000000),
-                  blurRadius: 4, offset: Offset(0, 1))] : []),
+              boxShadow: sel
+                  ? [
+                      const BoxShadow(
+                          color: Color(0x18000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 1))
+                    ]
+                  : []),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(widget.icon, size: 14,
-                color: sel ? _navy : _muted),
+            Icon(widget.icon, size: 14, color: sel ? _navy : _muted),
             const SizedBox(width: 5),
             Text(widget.label,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                     color: sel ? _navy : _muted)),
           ]),
         ),
@@ -2718,118 +3218,128 @@ class _SubPillState extends State<_SubPill> {
 }
 
 class _ManagementSubTab extends StatelessWidget {
-  final List<UserModel>  supervisors;
+  final List<UserModel> supervisors;
   final int totalSupervisors;
   final List<AlertModel> alerts;
   final List<Factory> factories;
-  final VoidCallback     onAdd;
+  final VoidCallback onAdd;
   final void Function(UserModel) onDelete;
   final Future<void> Function() onRefresh;
   final TextEditingController searchCtrl;
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
-  const _ManagementSubTab({required this.supervisors, required this.alerts,
+  const _ManagementSubTab(
+      {required this.supervisors,
+      required this.alerts,
       required this.factories,
-      required this.onAdd, required this.onDelete, required this.onRefresh,
-      required this.totalSupervisors, required this.searchCtrl,
-      required this.searchQuery, required this.onSearchChanged});
+      required this.onAdd,
+      required this.onDelete,
+      required this.onRefresh,
+      required this.totalSupervisors,
+      required this.searchCtrl,
+      required this.searchQuery,
+      required this.onSearchChanged});
 
   @override
   Widget build(BuildContext context) => Column(children: [
-    Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Row(children: [
-        _Chip('${supervisors.where((s) => s.isActive).length} Active',  _green),
-        const SizedBox(width: 8),
-        _Chip('${supervisors.where((s) => !s.isActive).length} Absent', _red),
-        const Spacer(),
-        ElevatedButton.icon(
-          onPressed: onAdd,
-          icon: const Icon(Icons.person_add_outlined, size: 16),
-          label: const Text('Add Supervisor',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          style: ElevatedButton.styleFrom(
-              backgroundColor: _navy, foregroundColor: _white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(children: [
+            _Chip('${supervisors.where((s) => s.isActive).length} Active',
+                _green),
+            const SizedBox(width: 8),
+            _Chip(
+                '${supervisors.where((s) => !s.isActive).length} Absent', _red),
+            const Spacer(),
+            ElevatedButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.person_add_outlined, size: 16),
+              label: const Text('Add Supervisor',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: _navy,
+                  foregroundColor: _white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9))),
+            ),
+          ]),
         ),
-      ]),
-    ),
-    Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: TextField(
-        controller: searchCtrl,
-        onChanged: onSearchChanged,
-        decoration: InputDecoration(
-          hintText: 'Search supervisor by name...',
-          prefixIcon: const Icon(Icons.search, color: _muted),
-          suffixIcon: searchQuery.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: _muted),
-                  onPressed: () {
-                    searchCtrl.clear();
-                    onSearchChanged('');
-                  },
-                ),
-          filled: true,
-          fillColor: _white,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _navy, width: 1.4),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: TextField(
+            controller: searchCtrl,
+            onChanged: onSearchChanged,
+            decoration: InputDecoration(
+              hintText: 'Search supervisor by name...',
+              prefixIcon: const Icon(Icons.search, color: _muted),
+              suffixIcon: searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close, size: 18, color: _muted),
+                      onPressed: () {
+                        searchCtrl.clear();
+                        onSearchChanged('');
+                      },
+                    ),
+              filled: true,
+              fillColor: _white,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _navy, width: 1.4),
+              ),
+            ),
           ),
         ),
-      ),
-    ),
-    Expanded(
-      child: supervisors.isEmpty
-          ? (totalSupervisors == 0
-              ? _emptySups()
-              : Center(
-                  child: Text(
-                    'No supervisors match "$searchQuery"',
-                    style: const TextStyle(fontSize: 13, color: _muted),
-                  ),
-                ))
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              itemCount: supervisors.length,
-              itemBuilder: (_, i) => _SupervisorCard(
-                  supervisor: supervisors[i],
-                  alerts:     alerts,
-                  factories:  factories,
-                  onRefresh:  onRefresh,
-                  onDelete:   () => onDelete(supervisors[i]))),
-    ),
-  ]);
+        Expanded(
+          child: supervisors.isEmpty
+              ? (totalSupervisors == 0
+                  ? _emptySups()
+                  : Center(
+                      child: Text(
+                        'No supervisors match "$searchQuery"',
+                        style: const TextStyle(fontSize: 13, color: _muted),
+                      ),
+                    ))
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  itemCount: supervisors.length,
+                  itemBuilder: (_, i) => _SupervisorCard(
+                      supervisor: supervisors[i],
+                      alerts: alerts,
+                      factories: factories,
+                      onRefresh: onRefresh,
+                      onDelete: () => onDelete(supervisors[i]))),
+        ),
+      ]);
 }
 
 class _PerformanceSubTab extends StatefulWidget {
-  final List<UserModel>  supervisors;
+  final List<UserModel> supervisors;
   final List<AlertModel> alerts;
   const _PerformanceSubTab({required this.supervisors, required this.alerts});
-  @override State<_PerformanceSubTab> createState() => _PerformanceSubTabState();
+  @override
+  State<_PerformanceSubTab> createState() => _PerformanceSubTabState();
 }
 
 class _PerformanceSubTabState extends State<_PerformanceSubTab> {
   UserModel? _selected;
-  String     _chartRange = '7days';
+  String _chartRange = '7days';
 
   List<AlertModel> get _supAlerts => _selected == null
       ? []
-      : widget.alerts
-          .where((a) => a.superviseurId == _selected!.id)
-          .toList();
+      : widget.alerts.where((a) => a.superviseurId == _selected!.id).toList();
 
   List<AlertModel> get _solved =>
       _supAlerts.where((a) => a.status == 'validee').toList();
@@ -2842,7 +3352,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
 
   List<_ChartPoint> _buildChartPoints() {
     final days = _chartRange == '7days' ? 7 : 30;
-    final now  = DateTime.now();
+    final now = DateTime.now();
     return List.generate(days, (i) {
       final day = DateTime(now.year, now.month, now.day)
           .subtract(Duration(days: days - 1 - i));
@@ -2863,11 +3373,23 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
   }
 
   Map<String, _TypeStats> _typeStats() {
-    final types = ['qualite','maintenance','defaut_produit','manque_ressource'];
-    return { for (var t in types) t: _TypeStats(
-      validated:    _supAlerts.where((a) => a.type == t && a.status == 'validee').length,
-      notValidated: _supAlerts.where((a) => a.type == t && a.status != 'validee').length,
-    )};
+    final types = [
+      'qualite',
+      'maintenance',
+      'defaut_produit',
+      'manque_ressource'
+    ];
+    return {
+      for (var t in types)
+        t: _TypeStats(
+          validated: _supAlerts
+              .where((a) => a.type == t && a.status == 'validee')
+              .length,
+          notValidated: _supAlerts
+              .where((a) => a.type == t && a.status != 'validee')
+              .length,
+        )
+    };
   }
 
   @override
@@ -2876,26 +3398,28 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Supervisor Performance',
-            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800,
-                color: _text)),
+            style: TextStyle(
+                fontSize: 19, fontWeight: FontWeight.w800, color: _text)),
         const SizedBox(height: 2),
         const Text('Analyse alert validations per supervisor',
             style: TextStyle(fontSize: 13, color: _muted)),
         const SizedBox(height: 14),
-
         Container(
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: _white,
+          decoration: BoxDecoration(
+              color: _white,
               border: Border.all(color: _border),
               borderRadius: BorderRadius.circular(12)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Select a supervisor',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                    color: _text)),
+                style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600, color: _text)),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(color: _bg,
+              decoration: BoxDecoration(
+                  color: _bg,
                   border: Border.all(color: _border),
                   borderRadius: BorderRadius.circular(9)),
               child: DropdownButtonHideUnderline(
@@ -2905,27 +3429,32 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                   hint: const Text('Choose a supervisor…',
                       style: TextStyle(color: _muted, fontSize: 14)),
                   dropdownColor: _white,
-                  items: widget.supervisors.map((s) => DropdownMenuItem(
-                    value: s,
-                    child: Row(children: [
-                      const Icon(Icons.person_outlined,
-                          size: 16, color: _navy),
-                      const SizedBox(width: 8),
-                      Text(s.fullName,
-                          style: const TextStyle(fontSize: 14, color: _text)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                            color: _navyLt,
-                            borderRadius: BorderRadius.circular(99)),
-                        child: Text(s.usine,
-                            style: const TextStyle(fontSize: 11,
-                                color: _navy, fontWeight: FontWeight.w600)),
-                      ),
-                    ]),
-                  )).toList(),
+                  items: widget.supervisors
+                      .map((s) => DropdownMenuItem(
+                            value: s,
+                            child: Row(children: [
+                              const Icon(Icons.person_outlined,
+                                  size: 16, color: _navy),
+                              const SizedBox(width: 8),
+                              Text(s.fullName,
+                                  style: const TextStyle(
+                                      fontSize: 14, color: _text)),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color: _navyLt,
+                                    borderRadius: BorderRadius.circular(99)),
+                                child: Text(s.usine,
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: _navy,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                            ]),
+                          ))
+                      .toList(),
                   onChanged: (v) => setState(() => _selected = v),
                 ),
               ),
@@ -2933,14 +3462,14 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
           ]),
         ),
         const SizedBox(height: 16),
-
         if (_selected == null)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 60),
             alignment: Alignment.center,
             child: Column(children: [
               Container(
-                width: 64, height: 64,
+                width: 64,
+                height: 64,
                 decoration: const BoxDecoration(
                     color: Color(0xFFF1F5F9), shape: BoxShape.circle),
                 child: const Icon(Icons.person_search_outlined,
@@ -2948,38 +3477,48 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               ),
               const SizedBox(height: 14),
               const Text('Choose a supervisor',
-                  style: TextStyle(fontSize: 16,
-                      fontWeight: FontWeight.w600, color: _muted)),
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: _muted)),
               const SizedBox(height: 4),
               const Text('Select a supervisor above to see their statistics',
                   style: TextStyle(fontSize: 12, color: _muted)),
             ]),
           ),
-
         if (_selected != null) ...[
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               flex: 2,
               child: Container(
                 padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(color: _white,
+                decoration: BoxDecoration(
+                    color: _white,
                     border: Border.all(color: _border),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [BoxShadow(color: Color(0x06000000),
-                        blurRadius: 4, offset: Offset(0, 2))]),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x06000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 2))
+                    ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Fixed Alerts',
                           style: TextStyle(fontSize: 12, color: _muted)),
                       const SizedBox(height: 6),
                       Row(children: [
                         Text('${_solved.length}',
-                            style: const TextStyle(fontSize: 40,
+                            style: const TextStyle(
+                                fontSize: 40,
                                 fontWeight: FontWeight.w800,
-                                color: _navy, height: 1)),
+                                color: _navy,
+                                height: 1)),
                         const Spacer(),
                         Container(
-                          width: 48, height: 48,
+                          width: 48,
+                          height: 48,
                           decoration: const BoxDecoration(
                               color: Color(0xFFEFF6FF), shape: BoxShape.circle),
                           child: const Icon(Icons.check_circle_outline,
@@ -2990,30 +3529,45 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                       const Text('Distribution by Factory:',
                           style: TextStyle(fontSize: 11, color: _muted)),
                       const SizedBox(height: 8),
-                      Wrap(spacing: 8, runSpacing: 8,
-                          children: _factoryDist().entries.map((e) =>
-                            Container(
-                              padding: const EdgeInsets.fromLTRB(10, 7, 14, 7),
-                              decoration: BoxDecoration(
-                                  color: _navyLt,
-                                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                                  borderRadius: BorderRadius.circular(8)),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                const Icon(Icons.bar_chart_outlined,
-                                    size: 14, color: _navy),
-                                const SizedBox(width: 6),
-                                Column(crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(e.key,
-                                          style: const TextStyle(fontSize: 11,
-                                              color: _navy, fontWeight: FontWeight.w600)),
-                                      Text('${e.value}',
-                                          style: const TextStyle(fontSize: 16,
-                                              fontWeight: FontWeight.w800, color: _navy)),
-                                    ]),
-                              ]),
-                            )
-                          ).toList()),
+                      Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _factoryDist()
+                              .entries
+                              .map((e) => Container(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(10, 7, 14, 7),
+                                    decoration: BoxDecoration(
+                                        color: _navyLt,
+                                        border: Border.all(
+                                            color: const Color(0xFFBFDBFE)),
+                                        borderRadius: BorderRadius.circular(8)),
+                                    child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.bar_chart_outlined,
+                                              size: 14, color: _navy),
+                                          const SizedBox(width: 6),
+                                          Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(e.key,
+                                                    style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: _navy,
+                                                        fontWeight:
+                                                            FontWeight.w600)),
+                                                Text('${e.value}',
+                                                    style: const TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: _navy)),
+                                              ]),
+                                        ]),
+                                  ))
+                              .toList()),
                     ]),
               ),
             ),
@@ -3021,26 +3575,34 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             Expanded(
               child: Container(
                 padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(color: _white,
+                decoration: BoxDecoration(
+                    color: _white,
                     border: Border.all(color: _border),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [BoxShadow(color: Color(0x06000000),
-                        blurRadius: 4, offset: Offset(0, 2))]),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x06000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 2))
+                    ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Average Time',
                           style: TextStyle(fontSize: 12, color: _muted)),
                       const SizedBox(height: 6),
                       Row(children: [
                         Expanded(
-                          child: Text(
-                              _avgMin == null ? '—' : _fmtMin(_avgMin!),
-                              style: const TextStyle(fontSize: 26,
+                          child: Text(_avgMin == null ? '—' : _fmtMin(_avgMin!),
+                              style: const TextStyle(
+                                  fontSize: 26,
                                   fontWeight: FontWeight.w800,
-                                  color: _green, height: 1)),
+                                  color: _green,
+                                  height: 1)),
                         ),
                         Container(
-                          width: 48, height: 48,
+                          width: 48,
+                          height: 48,
                           decoration: const BoxDecoration(
                               color: Color(0xFFDCFCE7), shape: BoxShape.circle),
                           child: const Icon(Icons.timer_outlined,
@@ -3052,14 +3614,19 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             ),
           ]),
           const SizedBox(height: 16),
-
-          Row(children: ['qualite','maintenance','defaut_produit','manque_ressource']
-              .map((t) {
-            final ts   = _typeStats()[t]!;
-            final clr  = _typeColor(t);
-            final tot  = ts.validated + ts.notValidated;
-            final pct  = tot == 0 ? 0 : (ts.validated / tot * 100).round();
-            return Expanded(child: Padding(
+          Row(
+              children: [
+            'qualite',
+            'maintenance',
+            'defaut_produit',
+            'manque_ressource'
+          ].map((t) {
+            final ts = _typeStats()[t]!;
+            final clr = _typeColor(t);
+            final tot = ts.validated + ts.notValidated;
+            final pct = tot == 0 ? 0 : (ts.validated / tot * 100).round();
+            return Expanded(
+                child: Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Container(
                 padding: const EdgeInsets.all(14),
@@ -3067,30 +3634,49 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                     color: _white,
                     border: Border.all(color: clr.withOpacity(.25)),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [BoxShadow(color: Color(0x06000000),
-                        blurRadius: 3, offset: Offset(0, 2))]),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x06000000),
+                          blurRadius: 3,
+                          offset: Offset(0, 2))
+                    ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                        Expanded(child: Text(_typeLabel(t),
-                            style: TextStyle(fontSize: 12,
-                                fontWeight: FontWeight.w600, color: clr))),
+                        Expanded(
+                            child: Text(_typeLabel(t),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: clr))),
                         Container(
-                          width: 30, height: 30,
+                          width: 30,
+                          height: 30,
                           decoration: BoxDecoration(
-                              color: clr.withOpacity(.1), shape: BoxShape.circle),
+                              color: clr.withOpacity(.1),
+                              shape: BoxShape.circle),
                           child: Icon(Icons.check_circle_outline,
                               color: clr, size: 16),
                         ),
                       ]),
                       const SizedBox(height: 6),
                       Text('$tot',
-                          style: TextStyle(fontSize: 26,
-                              fontWeight: FontWeight.w800, color: clr, height: 1)),
+                          style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              color: clr,
+                              height: 1)),
                       const SizedBox(height: 10),
-                      _PerfStatRow(label: 'Validated',     value: ts.validated,    color: _green),
+                      _PerfStatRow(
+                          label: 'Validated',
+                          value: ts.validated,
+                          color: _green),
                       const SizedBox(height: 3),
-                      _PerfStatRow(label: 'Not validated', value: ts.notValidated, color: _orange),
+                      _PerfStatRow(
+                          label: 'Not validated',
+                          value: ts.notValidated,
+                          color: _orange),
                       const SizedBox(height: 6),
                       Text('$pct% validated',
                           style: const TextStyle(fontSize: 10, color: _muted)),
@@ -3099,30 +3685,40 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             ));
           }).toList()),
           const SizedBox(height: 20),
-
           Container(
             padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(color: _white,
+            decoration: BoxDecoration(
+                color: _white,
                 border: Border.all(color: _border),
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: const [BoxShadow(color: Color(0x06000000),
-                    blurRadius: 4, offset: Offset(0, 2))]),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                boxShadow: const [
+                  BoxShadow(
+                      color: Color(0x06000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 2))
+                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 const Icon(Icons.calendar_today_outlined,
                     size: 15, color: _navy),
                 const SizedBox(width: 8),
-                const Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Evolution of Validations',
-                      style: TextStyle(fontSize: 14,
-                          fontWeight: FontWeight.w700, color: _text)),
-                  Text('Number of alerts validated per day',
-                      style: TextStyle(fontSize: 11, color: _muted)),
-                ])),
+                const Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text('Evolution of Validations',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _text)),
+                      Text('Number of alerts validated per day',
+                          style: TextStyle(fontSize: 11, color: _muted)),
+                    ])),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(color: _bg,
+                  decoration: BoxDecoration(
+                      color: _bg,
                       border: Border.all(color: _border),
                       borderRadius: BorderRadius.circular(8)),
                   child: DropdownButtonHideUnderline(
@@ -3131,10 +3727,10 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                       style: const TextStyle(fontSize: 12, color: _text),
                       dropdownColor: _white,
                       items: const [
-                        DropdownMenuItem(value: '7days',
-                            child: Text('Last 7 days')),
-                        DropdownMenuItem(value: '30days',
-                            child: Text('Last 30 days')),
+                        DropdownMenuItem(
+                            value: '7days', child: Text('Last 7 days')),
+                        DropdownMenuItem(
+                            value: '30days', child: Text('Last 30 days')),
                       ],
                       onChanged: (v) => setState(() => _chartRange = v!),
                     ),
@@ -3158,13 +3754,12 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             ]),
           ),
           const SizedBox(height: 20),
-
           Row(children: [
             const Icon(Icons.check_circle_outline, size: 16, color: _green),
             const SizedBox(width: 6),
             Text('Validated Alerts (${_solved.length})',
-                style: const TextStyle(fontSize: 14,
-                    fontWeight: FontWeight.w700, color: _text)),
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: _text)),
           ]),
           const SizedBox(height: 2),
           Text('Detailed list of alerts validated by ${_selected!.fullName}',
@@ -3186,16 +3781,19 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
 }
 
 class _PerfStatRow extends StatelessWidget {
-  final String label; final int value; final Color color;
-  const _PerfStatRow({required this.label, required this.value,
-      required this.color});
-  @override Widget build(BuildContext context) =>
-      Row(children: [
-        Expanded(child: Text(label,
-            style: const TextStyle(fontSize: 10, color: _muted))),
+  final String label;
+  final int value;
+  final Color color;
+  const _PerfStatRow(
+      {required this.label, required this.value, required this.color});
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+            child: Text(label,
+                style: const TextStyle(fontSize: 10, color: _muted))),
         Text('$value',
-            style: TextStyle(fontSize: 12,
-                fontWeight: FontWeight.w700, color: color)),
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w700, color: color)),
       ]);
 }
 
@@ -3214,7 +3812,8 @@ class _ValidatedAlertRow extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(color: _white,
+      decoration: BoxDecoration(
+          color: _white,
           border: Border.all(color: _border),
           borderRadius: BorderRadius.circular(10)),
       child: Row(children: [
@@ -3224,20 +3823,21 @@ class _ValidatedAlertRow extends StatelessWidget {
               color: clr.withOpacity(.1),
               borderRadius: BorderRadius.circular(6)),
           child: Text(_typeLabel(alert.type),
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                  color: clr)),
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: clr)),
         ),
         const SizedBox(width: 10),
-        Expanded(child: Text(
-            '${alert.usine} — C${alert.convoyeur} — P${alert.poste}',
-            style: const TextStyle(fontSize: 12, color: _text))),
+        Expanded(
+            child: Text(
+                '${alert.usine} — C${alert.convoyeur} — P${alert.poste}',
+                style: const TextStyle(fontSize: 12, color: _text))),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
               color: _greenLt, borderRadius: BorderRadius.circular(99)),
           child: Text('Validated',
-              style: const TextStyle(fontSize: 10,
-                  fontWeight: FontWeight.w700, color: _green)),
+              style: const TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700, color: _green)),
         ),
       ]),
     );
@@ -3246,7 +3846,7 @@ class _ValidatedAlertRow extends StatelessWidget {
 
 class _ChartPoint {
   final DateTime day;
-  final double   value;
+  final double value;
   const _ChartPoint({required this.day, required this.value});
 }
 
@@ -3271,17 +3871,17 @@ class _LineChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (points.isEmpty) return;
 
-    const leftPad   = 36.0;
-    const rightPad  = 16.0;
-    const topPad    = 10.0;
+    const leftPad = 36.0;
+    const rightPad = 16.0;
+    const topPad = 10.0;
     const bottomPad = 28.0;
 
-    final chartW = size.width  - leftPad  - rightPad;
-    final chartH = size.height - topPad   - bottomPad;
+    final chartW = size.width - leftPad - rightPad;
+    final chartH = size.height - topPad - bottomPad;
 
     final maxVal = points.map((p) => p.value).reduce((a, b) => a > b ? a : b);
-    final yMax   = maxVal < 1 ? 1.0 : maxVal;
-    final n      = points.length;
+    final yMax = maxVal < 1 ? 1.0 : maxVal;
+    final n = points.length;
 
     final gridPaint = Paint()
       ..color = const Color(0xFFE2E8F0)
@@ -3290,16 +3890,15 @@ class _LineChartPainter extends CustomPainter {
 
     for (int i = 0; i <= 4; i++) {
       final y = topPad + chartH * (1 - i / 4);
-      canvas.drawLine(Offset(leftPad, y), Offset(leftPad + chartW, y), gridPaint);
+      canvas.drawLine(
+          Offset(leftPad, y), Offset(leftPad + chartW, y), gridPaint);
       final textPainter = TextPainter(
         text: TextSpan(
             text: (yMax * i / 4).toStringAsFixed(0),
-            style: const TextStyle(fontSize: 9,
-                color: Color(0xFF94A3B8))),
+            style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
         textDirection: TextDirection.ltr,
       )..layout();
-      textPainter.paint(canvas,
-          Offset(0, y - textPainter.height / 2));
+      textPainter.paint(canvas, Offset(0, y - textPainter.height / 2));
     }
 
     Offset pos(int i) {
@@ -3316,12 +3915,14 @@ class _LineChartPainter extends CustomPainter {
     fillPath.lineTo(pos(n - 1).dx, topPad + chartH);
     fillPath.close();
 
-    canvas.drawPath(fillPath,
-        Paint()..shader = LinearGradient(
-          colors: [_navy.withOpacity(.15), _navy.withOpacity(.01)],
-          begin: Alignment.topCenter,
-          end:   Alignment.bottomCenter,
-        ).createShader(Rect.fromLTWH(0, topPad, size.width, chartH)));
+    canvas.drawPath(
+        fillPath,
+        Paint()
+          ..shader = LinearGradient(
+            colors: [_navy.withOpacity(.15), _navy.withOpacity(.01)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ).createShader(Rect.fromLTWH(0, topPad, size.width, chartH)));
 
     final linePaint = Paint()
       ..color = _navy
@@ -3338,7 +3939,7 @@ class _LineChartPainter extends CustomPainter {
     }
     canvas.drawPath(linePath, linePaint);
 
-    final dotPaint  = Paint()..color = _navy;
+    final dotPaint = Paint()..color = _navy;
     final dotBorder = Paint()
       ..color = _white
       ..style = PaintingStyle.stroke
@@ -3355,27 +3956,37 @@ class _LineChartPainter extends CustomPainter {
         final d = points[i].day;
         final label = '${d.day} ${_monthAbbr(d.month)}';
         final tp = TextPainter(
-          text: TextSpan(text: label,
-              style: const TextStyle(fontSize: 9,
-                  color: Color(0xFF94A3B8))),
+          text: TextSpan(
+              text: label,
+              style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
           textDirection: TextDirection.ltr,
         )..layout();
-        tp.paint(canvas,
-            Offset(p.dx - tp.width / 2,
-                topPad + chartH + 6));
+        tp.paint(canvas, Offset(p.dx - tp.width / 2, topPad + chartH + 6));
       }
     }
   }
 
   String _monthAbbr(int m) {
-    const abbr = ['', 'Jan','Feb','Mar','Apr','May','Jun',
-        'Jul','Aug','Sep','Oct','Nov','Dec'];
+    const abbr = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
     return abbr[m];
   }
 
   @override
-  bool shouldRepaint(_LineChartPainter old) =>
-      old.points != points;
+  bool shouldRepaint(_LineChartPainter old) => old.points != points;
 }
 
 class _AssignmentsSubTab extends StatefulWidget {
@@ -3411,7 +4022,8 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
   Map<String, List<UserModel>> _groupByFactory() {
     final map = <String, List<UserModel>>{};
     for (var factory in _factories) {
-      map[factory.name] = widget.supervisors.where((s) => s.usine == factory.name).toList();
+      map[factory.name] =
+          widget.supervisors.where((s) => s.usine == factory.name).toList();
     }
     return map;
   }
@@ -3435,30 +4047,37 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Supervisor Assignments',
-            style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: _text)),
+            style: TextStyle(
+                fontSize: 19, fontWeight: FontWeight.w800, color: _text)),
         const SizedBox(height: 2),
         const Text('Assign supervisors to plants for alert monitoring',
             style: TextStyle(fontSize: 13, color: _muted)),
         const SizedBox(height: 16),
-
         Container(
           padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(color: _white,
+          decoration: BoxDecoration(
+              color: _white,
               border: Border.all(color: _border),
               borderRadius: BorderRadius.circular(14),
-              boxShadow: const [BoxShadow(color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))]),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              boxShadow: const [
+                BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 2))
+              ]),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               const Icon(Icons.bar_chart_outlined, size: 16, color: _navy),
               const SizedBox(width: 8),
               const Text('Assignments by Plant',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _text)),
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700, color: _text)),
             ]),
             const SizedBox(height: 4),
             const Text('See supervisors assigned to each plant',
                 style: TextStyle(fontSize: 12, color: _muted)),
             const SizedBox(height: 16),
-
             ...grouped.entries.map((e) {
               final factoryName = e.key;
               final sups = e.value;
@@ -3470,37 +4089,55 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
                     border: Border.all(color: _border),
                     borderRadius: BorderRadius.circular(10)),
                 child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text(factoryName,
-                          style: const TextStyle(fontSize: 15,
-                              fontWeight: FontWeight.w700, color: _text)),
-                      const SizedBox(height: 2),
-                      Text(_getLocationForFactory(factoryName) ?? '',
-                          style: const TextStyle(fontSize: 12, color: _muted)),
-                    ])),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                      decoration: BoxDecoration(
-                          color: sups.isEmpty ? const Color(0xFFF1F5F9) : _navyLt,
-                          borderRadius: BorderRadius.circular(99)),
-                      child: Text(
-                          sups.isEmpty ? '0 supervisors' : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                              color: sups.isEmpty ? _muted : _navy)),
-                    ),
-                  ]),
-                  const SizedBox(height: 10),
-                  if (sups.isEmpty)
-                    const Text('No supervisor assigned',
-                        style: TextStyle(fontSize: 12, color: _muted, fontStyle: FontStyle.italic))
-                  else
-                    Wrap(spacing: 8, runSpacing: 8,
-                        children: sups.map((s) => _SupChip(sup: s)).toList()),
-                ]),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                              Text(factoryName,
+                                  style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: _text)),
+                              const SizedBox(height: 2),
+                              Text(_getLocationForFactory(factoryName) ?? '',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: _muted)),
+                            ])),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 5),
+                          decoration: BoxDecoration(
+                              color: sups.isEmpty
+                                  ? const Color(0xFFF1F5F9)
+                                  : _navyLt,
+                              borderRadius: BorderRadius.circular(99)),
+                          child: Text(
+                              sups.isEmpty
+                                  ? '0 supervisors'
+                                  : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: sups.isEmpty ? _muted : _navy)),
+                        ),
+                      ]),
+                      const SizedBox(height: 10),
+                      if (sups.isEmpty)
+                        const Text('No supervisor assigned',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: _muted,
+                                fontStyle: FontStyle.italic))
+                      else
+                        Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children:
+                                sups.map((s) => _SupChip(sup: s)).toList()),
+                    ]),
               );
             }),
           ]),
@@ -3516,31 +4153,32 @@ class _SupChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-    decoration: BoxDecoration(
-        color: _navy, borderRadius: BorderRadius.circular(20)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.person_outline, size: 13, color: _white),
-      const SizedBox(width: 6),
-      Text(sup.fullName,
-          style: const TextStyle(fontSize: 12,
-              fontWeight: FontWeight.w600, color: _white)),
-    ]),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+            color: _navy, borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.person_outline, size: 13, color: _white),
+          const SizedBox(width: 6),
+          Text(sup.fullName,
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600, color: _white)),
+        ]),
+      );
 }
 
-Widget _emptySups() => Center(child: Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: const [
-      Icon(Icons.people_outline, size: 52, color: _muted),
-      SizedBox(height: 12),
-      Text('No supervisors yet',
-          style: TextStyle(fontSize: 16,
-              fontWeight: FontWeight.w600, color: _muted)),
-      SizedBox(height: 6),
-      Text('Tap "Add Supervisor" to create an account',
-          style: TextStyle(fontSize: 12, color: _muted)),
-    ]));
+Widget _emptySups() => Center(
+        child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+          Icon(Icons.people_outline, size: 52, color: _muted),
+          SizedBox(height: 12),
+          Text('No supervisors yet',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w600, color: _muted)),
+          SizedBox(height: 6),
+          Text('Tap "Add Supervisor" to create an account',
+              style: TextStyle(fontSize: 12, color: _muted)),
+        ]));
 
 class _SupervisorCard extends StatefulWidget {
   final UserModel supervisor;
@@ -3548,10 +4186,14 @@ class _SupervisorCard extends StatefulWidget {
   final List<Factory> factories;
   final Future<void> Function() onRefresh;
   final VoidCallback onDelete;
-  const _SupervisorCard({required this.supervisor, required this.alerts,
+  const _SupervisorCard(
+      {required this.supervisor,
+      required this.alerts,
       required this.factories,
-      required this.onDelete, required this.onRefresh});
-  @override State<_SupervisorCard> createState() => _SupervisorCardState();
+      required this.onDelete,
+      required this.onRefresh});
+  @override
+  State<_SupervisorCard> createState() => _SupervisorCardState();
 }
 
 class _SupervisorCardState extends State<_SupervisorCard> {
@@ -3623,7 +4265,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           isDense: true,
                         ),
                         items: usineChoices
-                            .map((u) => DropdownMenuItem(value: u, child: Text(u)))
+                            .map((u) =>
+                                DropdownMenuItem(value: u, child: Text(u)))
                             .toList(),
                         onChanged: saving
                             ? null
@@ -3650,7 +4293,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           final phone = phoneCtrl.text.trim();
                           if (first.isEmpty || last.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('First and last name are required')),
+                              const SnackBar(
+                                  content:
+                                      Text('First and last name are required')),
                             );
                             return;
                           }
@@ -3668,7 +4313,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             Navigator.pop(dialogCtx);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Supervisor updated successfully'),
+                                content:
+                                    Text('Supervisor updated successfully'),
                                 backgroundColor: _green,
                               ),
                             );
@@ -3702,102 +4348,129 @@ class _SupervisorCardState extends State<_SupervisorCard> {
 
   @override
   Widget build(BuildContext context) {
-    final sup     = widget.supervisor;
-    final solved  = widget.alerts
+    final sup = widget.supervisor;
+    final solved = widget.alerts
         .where((a) => a.status == 'validee' && a.superviseurId == sup.id)
         .toList();
-    final inProg  = widget.alerts
+    final inProg = widget.alerts
         .where((a) => a.status == 'en_cours' && a.superviseurId == sup.id)
         .length;
-    final withTime= solved.where((a) => a.elapsedTime != null).toList();
-    final avgMin  = withTime.isEmpty ? null
-        : withTime.fold(0, (s, a) => s + (a.elapsedTime ?? 0)) ~/ withTime.length;
+    final withTime = solved.where((a) => a.elapsedTime != null).toList();
+    final avgMin = withTime.isEmpty
+        ? null
+        : withTime.fold(0, (s, a) => s + (a.elapsedTime ?? 0)) ~/
+            withTime.length;
     final sc = sup.isActive ? _green : _red;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-          color: _white, borderRadius: BorderRadius.circular(14),
+          color: _white,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: _border),
-          boxShadow: const [BoxShadow(color: Color(0x0A000000),
-              blurRadius: 4, offset: Offset(0, 1))]),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1))
+          ]),
       child: Column(children: [
         Padding(
           padding: const EdgeInsets.all(14),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Stack(children: [
-              Container(width: 48, height: 48,
-                  decoration: BoxDecoration(color: _navyLt,
-                      borderRadius: BorderRadius.circular(12)),
+              Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                      color: _navyLt, borderRadius: BorderRadius.circular(12)),
                   child: const Center(
                       child: Text('👷', style: TextStyle(fontSize: 24)))),
-              Positioned(bottom: 0, right: 0,
-                  child: Container(width: 12, height: 12,
-                      decoration: BoxDecoration(color: sc,
+              Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                          color: sc,
                           shape: BoxShape.circle,
                           border: Border.all(color: _white, width: 2)))),
             ]),
             const SizedBox(width: 12),
-            Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Expanded(child: Text(sup.fullName,
-                    style: const TextStyle(fontSize: 15,
-                        fontWeight: FontWeight.w700, color: _navy))),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: sc.withOpacity(.1),
-                      border: Border.all(color: sc),
-                      borderRadius: BorderRadius.circular(99)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Container(width: 5, height: 5,
-                        decoration: BoxDecoration(
-                            color: sc, shape: BoxShape.circle)),
-                    const SizedBox(width: 4),
-                    Text(sup.isActive ? 'Active' : 'Absent',
-                        style: TextStyle(fontSize: 10,
-                            fontWeight: FontWeight.w700, color: sc)),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Row(children: [
+                    Expanded(
+                        child: Text(sup.fullName,
+                            style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: _navy))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: sc.withOpacity(.1),
+                          border: Border.all(color: sc),
+                          borderRadius: BorderRadius.circular(99)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                            width: 5,
+                            height: 5,
+                            decoration: BoxDecoration(
+                                color: sc, shape: BoxShape.circle)),
+                        const SizedBox(width: 4),
+                        Text(sup.isActive ? 'Active' : 'Absent',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: sc)),
+                      ]),
+                    ),
                   ]),
-                ),
-              ]),
-              const SizedBox(height: 2),
-              Text(sup.email,
-                  style: const TextStyle(fontSize: 11, color: _muted)),
-              Row(children: [
-                const Icon(Icons.phone_outlined, size: 12, color: _muted),
-                const SizedBox(width: 3),
-                Text(sup.phone.isEmpty ? 'No phone' : sup.phone,
-                    style: const TextStyle(fontSize: 11, color: _muted)),
-                const SizedBox(width: 10),
-                const Icon(Icons.factory_outlined, size: 12, color: _muted),
-                const SizedBox(width: 3),
-                Text(sup.usine,
-                    style: const TextStyle(fontSize: 11, color: _muted)),
-              ]),
-              if (sup.hiredDate != null)
-                Row(children: [
-                  const Icon(Icons.calendar_today_outlined, size: 12, color: _muted),
-                  const SizedBox(width: 3),
-                  Text('Hired: ${_fmtDate(sup.hiredDate!)}',
+                  const SizedBox(height: 2),
+                  Text(sup.email,
                       style: const TextStyle(fontSize: 11, color: _muted)),
-                ]),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 6, children: [
-                _MiniChip(Icons.check_circle_outline,
-                    '${solved.length} fixed', _green),
-                _MiniChip(Icons.timer_outlined,
-                    '$inProg in progress', _blue),
-                if (avgMin != null)
-                  _MiniChip(Icons.av_timer_outlined,
-                      'Avg ${_fmtMin(avgMin)}', _orange),
-              ]),
-            ])),
+                  Row(children: [
+                    const Icon(Icons.phone_outlined, size: 12, color: _muted),
+                    const SizedBox(width: 3),
+                    Text(sup.phone.isEmpty ? 'No phone' : sup.phone,
+                        style: const TextStyle(fontSize: 11, color: _muted)),
+                    const SizedBox(width: 10),
+                    const Icon(Icons.factory_outlined, size: 12, color: _muted),
+                    const SizedBox(width: 3),
+                    Text(sup.usine,
+                        style: const TextStyle(fontSize: 11, color: _muted)),
+                  ]),
+                  if (sup.hiredDate != null)
+                    Row(children: [
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 12, color: _muted),
+                      const SizedBox(width: 3),
+                      Text('Hired: ${_fmtDate(sup.hiredDate!)}',
+                          style: const TextStyle(fontSize: 11, color: _muted)),
+                    ]),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    _MiniChip(Icons.check_circle_outline,
+                        '${solved.length} fixed', _green),
+                    _MiniChip(
+                        Icons.timer_outlined, '$inProg in progress', _blue),
+                    if (avgMin != null)
+                      _MiniChip(Icons.av_timer_outlined,
+                          'Avg ${_fmtMin(avgMin)}', _orange),
+                  ]),
+                ])),
             Column(children: [
               if (solved.isNotEmpty)
                 IconButton(
                   onPressed: () => setState(() => _expanded = !_expanded),
-                  icon: Icon(_expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: _navy),
+                  icon: Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      color: _navy),
                 ),
               IconButton(
                 onPressed: () => _showModifyDialog(context),
@@ -3819,53 +4492,61 @@ class _SupervisorCardState extends State<_SupervisorCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('FIXED CASES HISTORY',
-                    style: TextStyle(fontSize: 10,
+                    style: TextStyle(
+                        fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: _muted, letterSpacing: 1.2)),
+                        color: _muted,
+                        letterSpacing: 1.2)),
                 const SizedBox(height: 10),
                 ...solved.map((a) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Row(children: [
-                    Container(width: 8, height: 8,
-                        decoration: BoxDecoration(
-                            color: _typeColor(a.type),
-                            shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
-                    Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text('${_typeLabel(a.type)} — ${a.description}',
-                          style: const TextStyle(fontSize: 12,
-                              fontWeight: FontWeight.w600, color: _navy),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      Text('${a.usine} · Line ${a.convoyeur} · Post ${a.poste}',
-                          style: const TextStyle(
-                              fontSize: 10, color: _muted)),
-                    ])),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text(
-                          a.elapsedTime != null
-                              ? _fmtMin(a.elapsedTime!)
-                              : '-',
-                          style: const TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _green)),
-                    ),
-                  ]),
-                )),
+                          color: const Color(0xFFF0FDF4),
+                          border: Border.all(color: const Color(0xFFBBF7D0)),
+                          borderRadius: BorderRadius.circular(8)),
+                      child: Row(children: [
+                        Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                                color: _typeColor(a.type),
+                                shape: BoxShape.circle)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                              Text('${_typeLabel(a.type)} — ${a.description}',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: _navy),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              Text(
+                                  '${a.usine} · Line ${a.convoyeur} · Post ${a.poste}',
+                                  style: const TextStyle(
+                                      fontSize: 10, color: _muted)),
+                            ])),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(6)),
+                          child: Text(
+                              a.elapsedTime != null
+                                  ? _fmtMin(a.elapsedTime!)
+                                  : '-',
+                              style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _green)),
+                        ),
+                      ]),
+                    )),
               ],
             ),
           ),
@@ -3876,38 +4557,49 @@ class _SupervisorCardState extends State<_SupervisorCard> {
 }
 
 class _Chip extends StatelessWidget {
-  final String label; final Color color;
+  final String label;
+  final Color color;
   const _Chip(this.label, this.color);
-  @override Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(color: color.withOpacity(.1),
-        border: Border.all(color: color),
-        borderRadius: BorderRadius.circular(99)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(width: 6, height: 6,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-      const SizedBox(width: 5),
-      Text(label, style: TextStyle(fontSize: 11,
-          fontWeight: FontWeight.w600, color: color)),
-    ]),
-  );
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+            color: color.withOpacity(.1),
+            border: Border.all(color: color),
+            borderRadius: BorderRadius.circular(99)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 5),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+        ]),
+      );
 }
 
 class _MiniChip extends StatelessWidget {
-  final IconData icon; final String label; final Color color;
+  final IconData icon;
+  final String label;
+  final Color color;
   const _MiniChip(this.icon, this.label, this.color);
-  @override Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: color.withOpacity(.08),
-        border: Border.all(color: color.withOpacity(.4)),
-        borderRadius: BorderRadius.circular(6)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 12, color: color),
-      const SizedBox(width: 4),
-      Text(label, style: TextStyle(fontSize: 11,
-          fontWeight: FontWeight.w600, color: color)),
-    ]),
-  );
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color.withOpacity(.08),
+            border: Border.all(color: color.withOpacity(.4)),
+            borderRadius: BorderRadius.circular(6)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+        ]),
+      );
 }
 
 class _SheetField extends StatelessWidget {
@@ -3918,39 +4610,52 @@ class _SheetField extends StatelessWidget {
   const _SheetField(this.label, this.ctrl, this.hint,
       {this.obscure = false, this.keyboard = TextInputType.text});
 
-  @override Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _SheetLabel(label),
-      TextField(
-        controller: ctrl, obscureText: obscure, keyboardType: keyboard,
-        style: const TextStyle(fontSize: 14),
-        decoration: InputDecoration(
-          hintText: hint, hintStyle: const TextStyle(color: _muted),
-          filled: true, fillColor: _bg,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
-              borderSide: const BorderSide(color: _border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
-              borderSide: const BorderSide(color: _border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
-              borderSide: const BorderSide(color: _navy, width: 1.5)),
-        ),
-      ),
-      const SizedBox(height: 14),
-    ],
-  );
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SheetLabel(label),
+          TextField(
+            controller: ctrl,
+            obscureText: obscure,
+            keyboardType: keyboard,
+            style: const TextStyle(fontSize: 14),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: _muted),
+              filled: true,
+              fillColor: _bg,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: _border)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: _border)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(9),
+                  borderSide: const BorderSide(color: _navy, width: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+      );
 }
 
 class _SheetLabel extends StatelessWidget {
   final String text;
   const _SheetLabel(this.text);
-  @override Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(text.toUpperCase(),
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-            color: _muted, letterSpacing: 1.3)),
-  );
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(text.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: _muted,
+                letterSpacing: 1.3)),
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3985,8 +4690,11 @@ class _AlertsTab extends StatelessWidget {
       itemCount: alerts.length,
       itemBuilder: (_, i) => _AlertRow(
         alert: alerts[i],
-        onAssign: alerts[i].status == 'disponible' ? () => onAssign(alerts[i]) : null,
-        onAssignAssistant: alerts[i].status == 'en_cours' ? () => onAssignAssistant(alerts[i]) : null,
+        onAssign:
+            alerts[i].status == 'disponible' ? () => onAssign(alerts[i]) : null,
+        onAssignAssistant: alerts[i].status == 'en_cours'
+            ? () => onAssignAssistant(alerts[i])
+            : null,
       ),
     );
   }
@@ -4005,14 +4713,14 @@ class _AlertRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sc = switch (alert.status) {
-      'validee'  => _green,
+      'validee' => _green,
       'en_cours' => _blue,
-      _          => _orange,
+      _ => _orange,
     };
     final sl = switch (alert.status) {
-      'validee'  => '✅ Fixed',
+      'validee' => '✅ Fixed',
       'en_cours' => '⏳ In Progress',
-      _          => '📋 Available',
+      _ => '📋 Available',
     };
 
     return Container(
@@ -4022,24 +4730,37 @@ class _AlertRow extends StatelessWidget {
         color: _white,
         border: Border.all(color: _border),
         borderRadius: BorderRadius.circular(10),
-        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 3, offset: Offset(0, 1))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x08000000), blurRadius: 3, offset: Offset(0, 1))
+        ],
       ),
       child: Row(children: [
-        Container(width: 10, height: 10,
-            decoration: BoxDecoration(color: _typeColor(alert.type), shape: BoxShape.circle)),
+        Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+                color: _typeColor(alert.type), shape: BoxShape.circle)),
         const SizedBox(width: 10),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${_typeLabel(alert.type)} — ${alert.description}',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _navy),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600, color: _navy),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
             const SizedBox(height: 2),
-            Text('📍 ${alert.usine}  ·  Line ${alert.convoyeur}  ·  Post ${alert.poste}  ·  ${_fmtTs(alert.timestamp)}',
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: _muted)),
+            Text(
+                '📍 ${alert.usine}  ·  Line ${alert.convoyeur}  ·  Post ${alert.poste}  ·  ${_fmtTs(alert.timestamp)}',
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: 10, color: _muted)),
             if (alert.superviseurName != null)
-              Text('👤 Assigned: ${alert.superviseurName}', style: const TextStyle(fontSize: 11, color: _blue)),
-              if (alert.criticalNote != null && alert.criticalNote!.isNotEmpty)
-  Text('Critical note: ${alert.criticalNote}', style: const TextStyle(fontSize: 11, color: Colors.red)),
+              Text('👤 Assigned: ${alert.superviseurName}',
+                  style: const TextStyle(fontSize: 11, color: _blue)),
+            if (alert.criticalNote != null && alert.criticalNote!.isNotEmpty)
+              Text('Critical note: ${alert.criticalNote}',
+                  style: const TextStyle(fontSize: 11, color: Colors.red)),
           ]),
         ),
         const SizedBox(width: 8),
@@ -4049,21 +4770,25 @@ class _AlertRow extends StatelessWidget {
             icon: const Icon(Icons.person_add, size: 16),
             label: const Text('Assign', style: TextStyle(fontSize: 11)),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _navy, foregroundColor: _white,
+              backgroundColor: _navy,
+              foregroundColor: _white,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
             ),
           ),
         if (onAssignAssistant != null)
           OutlinedButton.icon(
             onPressed: onAssignAssistant,
             icon: const Icon(Icons.group_add, size: 16),
-            label: const Text('Assign Assistant', style: TextStyle(fontSize: 11)),
+            label:
+                const Text('Assign Assistant', style: TextStyle(fontSize: 11)),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: _blue),
               foregroundColor: _blue,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6)),
             ),
           ),
         if (onAssign == null && onAssignAssistant == null)
@@ -4074,7 +4799,9 @@ class _AlertRow extends StatelessWidget {
               border: Border.all(color: sc),
               borderRadius: BorderRadius.circular(99),
             ),
-            child: Text(sl, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: sc)),
+            child: Text(sl,
+                style: TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w700, color: sc)),
           ),
       ]),
     );
