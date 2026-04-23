@@ -730,7 +730,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedStationId != null
+                    value: selectedStationId != null
                         ? 'Station ${selectedStationNumber}'
                         : null,
                     items: stations
