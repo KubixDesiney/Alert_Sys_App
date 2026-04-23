@@ -1512,7 +1512,7 @@ class _HeaderState extends State<_Header> {
                   fontWeight: FontWeight.w800,
                   color: _navy,
                   letterSpacing: .2)),
-          const Text('admin — Sagem',
+          const Text('Production Manager - Dashboard',
               style: TextStyle(fontSize: 11, color: _muted)),
         ]),
         const Spacer(),
