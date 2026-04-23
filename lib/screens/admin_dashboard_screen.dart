@@ -2651,7 +2651,7 @@ class _UnclaimedStatCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Unclaimed',
+                  const Text('Claimed',
                       style: TextStyle(
                           fontSize: 12,
                           color: _muted,

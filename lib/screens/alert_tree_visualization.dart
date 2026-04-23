@@ -1,5 +1,6 @@
 // lib/screens/alert_tree_visualization.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/hierarchy_service.dart';
 import '../services/auth_service.dart';
 import '../models/alert_model.dart';
@@ -129,11 +130,25 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 int.tryParse(station.id.replaceAll('station_', '')) ?? 0;
             final key = '${factory.name}|${conveyor.number}|$stationNumber';
             final errorCount = alertCounts[key] ?? 0;
+            final baseStationData = <String, dynamic>{
+              'usine': factory.name,
+              'convoyeur': conveyor.number,
+              'poste': stationNumber,
+            };
             return AlertNode(
               id: '${factory.id}|${conveyor.id}|${station.id}',
               label: station.name,
               errorCount: errorCount,
-              alertData: errorCount > 0 ? firstAlertData[key] : null,
+              alertData: errorCount > 0
+                  ? {
+                      ...baseStationData,
+                      ...?firstAlertData[key],
+                      'hasActiveAlert': true,
+                    }
+                  : {
+                      ...baseStationData,
+                      'hasActiveAlert': false,
+                    },
               type: 'workstation',
             );
           }).toList();
@@ -221,13 +236,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   void _onWorkstationClick(AlertNode workstation, Offset globalPosition) {
-    if (workstation.hasError && workstation.alertData != null) {
-      setState(() {
-        _selectedWorkstation = workstation;
-        _popupAlertData = workstation.alertData;
-        _popupPosition = globalPosition;
-      });
-    }
+    setState(() {
+      _selectedWorkstation = workstation;
+      _popupAlertData = workstation.alertData;
+      _popupPosition = globalPosition;
+    });
   }
 
   void _closePopup() {
@@ -240,13 +253,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   void _zoomInTree() {
     setState(() {
-      _treeScale = (_treeScale + _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
+      _treeScale =
+          (_treeScale + _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
     });
   }
 
   void _zoomOutTree() {
     setState(() {
-      _treeScale = (_treeScale - _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
+      _treeScale =
+          (_treeScale - _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
     });
   }
 
@@ -887,13 +902,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     final isSelected = _selectedWorkstation?.id == workstation.id;
     return GestureDetector(
       onTapDown: (details) {
-        if (workstation.hasError) {
-          _onWorkstationClick(workstation, details.globalPosition);
-        }
+        _onWorkstationClick(workstation, details.globalPosition);
       },
       child: MouseRegion(
-        cursor:
-            workstation.hasError ? SystemMouseCursors.click : MouseCursor.defer,
+        cursor: SystemMouseCursors.click,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -975,9 +987,24 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Widget _buildAlertPopup() {
     final alert = _popupAlertData!;
     final screenSize = MediaQuery.of(context).size;
-    final status = (alert['status'] as String?) ?? 'disponible';
-    final claimedBy = alert['superviseurName'] as String?;
-    final assistantName = alert['assistantName'] as String?;
+    final hasActiveAlert = (alert['hasActiveAlert'] as bool?) ?? false;
+
+    // Safe type extraction
+    final String alertType = (alert['type'] as String?) ?? 'unknown';
+
+    final String alertId = (alert['id'] as String?) ?? '';
+    final String status = (alert['status'] as String?) ?? 'disponible';
+    final String? claimedBy = alert['superviseurName'] as String?;
+    final String? assistantName = alert['assistantName'] as String?;
+    final bool isCritical = (alert['isCritical'] as bool?) ?? false;
+
+    final String usine = (alert['usine'] as String?) ?? 'Unknown';
+    final String convoyeur = (alert['convoyeur'] as num?)?.toString() ?? '-';
+    final String poste = (alert['poste'] as num?)?.toString() ?? '-';
+
+    final String description = hasActiveAlert
+        ? (alert['description'] as String?) ?? 'No description'
+        : 'No active alert on this workstation right now. Use history to view previous alerts.';
 
     double left = _popupPosition!.dx + 20;
     double top = _popupPosition!.dy - 100;
@@ -1004,8 +1031,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           decoration: BoxDecoration(
             color: _white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: alert['isCritical'] ? _red : _border, width: 2),
+            border: Border.all(color: isCritical ? _red : _border, width: 2),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1014,7 +1040,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _typeColor(alert['type']).withOpacity(0.1),
+                  color: _typeColor(alertType).withOpacity(0.1),
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(10),
                     topRight: Radius.circular(10),
@@ -1025,11 +1051,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: _typeColor(alert['type']),
+                        color: _typeColor(alertType),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        _typeIcon(alert['type']),
+                        _typeIcon(alertType),
                         size: 16,
                         color: _white,
                       ),
@@ -1040,15 +1066,21 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _typeLabel(alert['type']),
+                            hasActiveAlert
+                                ? _typeLabel(alertType)
+                                : 'Workstation',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: _typeColor(alert['type']),
+                              color: hasActiveAlert
+                                  ? _typeColor(alertType)
+                                  : _navy,
                             ),
                           ),
                           Text(
-                            'Alert #${alert['id'].substring(0, 8)}',
+                            hasActiveAlert
+                                ? 'Alert #${alertId.length > 8 ? alertId.substring(0, 8) : alertId}'
+                                : 'No active alert',
                             style: const TextStyle(
                               fontSize: 10,
                               color: _muted,
@@ -1073,7 +1105,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (alert['isCritical'])
+                      if (hasActiveAlert && isCritical)
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(8),
@@ -1098,9 +1130,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                             ],
                           ),
                         ),
-                      _buildInfoRow('Location', alert['usine']),
-                      _buildInfoRow('Line', '${alert['convoyeur']}'),
-                      _buildInfoRow('Workstation', '${alert['poste']}'),
+                      _buildInfoRow('Location', usine),
+                      _buildInfoRow('Line', convoyeur),
+                      _buildInfoRow('Workstation', poste),
                       const SizedBox(height: 8),
                       const Divider(height: 1),
                       const SizedBox(height: 8),
@@ -1115,39 +1147,42 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        alert['description'] ?? 'No description',
+                        description,
                         style: const TextStyle(
                           fontSize: 12,
                           color: _navy,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _statusColor(alert['status']).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: _statusColor(alert['status'])),
-                        ),
-                        child: Text(
-                          _statusLabel(alert['status']),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: _statusColor(alert['status']),
+                      if (hasActiveAlert) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _statusColor(status).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: _statusColor(status)),
+                          ),
+                          child: Text(
+                            _statusLabel(status),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: _statusColor(status),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoRow('Claim status',
-                          _statusSummary(status, claimedBy, assistantName)),
-                      if (claimedBy != null)
-                        _buildInfoRow('Claimed by', claimedBy),
-                      if (assistantName != null && assistantName.isNotEmpty)
-                        _buildInfoRow('Assisted by', assistantName),
-                      if (status == 'disponible')
+                        const SizedBox(height: 10),
+                        _buildInfoRow(
+                          'Claim status',
+                          _statusSummary(status, claimedBy, assistantName),
+                        ),
+                        if (claimedBy != null && claimedBy.isNotEmpty)
+                          _buildInfoRow('Claimed by', claimedBy),
+                        if (assistantName != null && assistantName.isNotEmpty)
+                          _buildInfoRow('Assisted by', assistantName),
+                      ],
+                      if (hasActiveAlert && status == 'disponible')
                         Padding(
                           padding: const EdgeInsets.only(top: 12),
                           child: SizedBox(
@@ -1170,6 +1205,26 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                             ),
                           ),
                         ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () =>
+                                _showWorkstationHistoryDialog(alert),
+                            icon: const Icon(Icons.history, size: 18),
+                            label: const Text('Show Workstation History'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _navy,
+                              side: BorderSide(color: _navy.withOpacity(0.35)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1281,6 +1336,305 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showWorkstationHistoryDialog(Map<String, dynamic> alert) async {
+    final usine = alert['usine']?.toString() ?? '';
+    final convoyeur = int.tryParse('${alert['convoyeur']}') ?? -1;
+    final poste = int.tryParse('${alert['poste']}') ?? -1;
+
+    final workstationAlerts = widget.alerts
+        .where(
+          (a) =>
+              a.usine == usine && a.convoyeur == convoyeur && a.poste == poste,
+        )
+        .toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    if (!mounted) return;
+
+    final searchController = TextEditingController();
+    String selectedStatus = 'all';
+    String selectedDateFilter = '7_days';
+    DateTimeRange? customRange;
+    String query = '';
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final normalizedQuery = query.trim().toLowerCase();
+            final now = DateTime.now();
+
+            bool dateMatches(DateTime timestamp) {
+              final ts = timestamp.toLocal();
+              switch (selectedDateFilter) {
+                case 'today':
+                  return ts.year == now.year &&
+                      ts.month == now.month &&
+                      ts.day == now.day;
+                case '7_days':
+                  return !ts.isBefore(now.subtract(const Duration(days: 7)));
+                case '15_days':
+                  return !ts.isBefore(now.subtract(const Duration(days: 15)));
+                case '1_month':
+                  return !ts.isBefore(now.subtract(const Duration(days: 30)));
+                case 'custom':
+                  if (customRange == null) return true;
+                  final start = DateTime(
+                    customRange!.start.year,
+                    customRange!.start.month,
+                    customRange!.start.day,
+                  );
+                  final end = DateTime(
+                    customRange!.end.year,
+                    customRange!.end.month,
+                    customRange!.end.day,
+                    23,
+                    59,
+                    59,
+                  );
+                  return !ts.isBefore(start) && !ts.isAfter(end);
+                default:
+                  return true;
+              }
+            }
+
+            final filtered = workstationAlerts.where((a) {
+              final statusMatch =
+                  selectedStatus == 'all' || a.status == selectedStatus;
+              final dateMatch = dateMatches(a.timestamp);
+              final searchMatch = normalizedQuery.isEmpty ||
+                  a.id.toLowerCase().contains(normalizedQuery) ||
+                  _typeLabel(a.type).toLowerCase().contains(normalizedQuery) ||
+                  a.description.toLowerCase().contains(normalizedQuery);
+              return statusMatch && dateMatch && searchMatch;
+            }).toList();
+
+            return AlertDialog(
+              title:
+                  Text('Workstation History - $usine / C$convoyeur / W$poste'),
+              content: SizedBox(
+                width: 760,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 260,
+                          child: TextField(
+                            controller: searchController,
+                            decoration: const InputDecoration(
+                              labelText: 'Filter (ID, title, description)',
+                              prefixIcon: Icon(Icons.search),
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                query = value;
+                              });
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 180,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: selectedStatus,
+                            decoration: const InputDecoration(
+                              labelText: 'Status',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'all', child: Text('All statuses')),
+                              DropdownMenuItem(
+                                  value: 'disponible',
+                                  child: Text('Available')),
+                              DropdownMenuItem(
+                                  value: 'en_cours',
+                                  child: Text('In Progress')),
+                              DropdownMenuItem(
+                                  value: 'validee', child: Text('Fixed')),
+                            ],
+                            onChanged: (value) {
+                              if (value == null) return;
+                              setDialogState(() {
+                                selectedStatus = value;
+                              });
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 220,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: selectedDateFilter,
+                            decoration: const InputDecoration(
+                              labelText: 'Date range',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'today', child: Text('Today')),
+                              DropdownMenuItem(
+                                  value: '7_days', child: Text('7 days')),
+                              DropdownMenuItem(
+                                  value: '15_days', child: Text('15 days')),
+                              DropdownMenuItem(
+                                  value: '1_month', child: Text('1 month')),
+                              DropdownMenuItem(
+                                  value: 'custom', child: Text('Custom range')),
+                            ],
+                            onChanged: (value) async {
+                              if (value == null) return;
+                              if (value == 'custom') {
+                                final picked = await showDateRangePicker(
+                                  context: dialogContext,
+                                  initialDateRange: customRange,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now().add(
+                                    const Duration(days: 1),
+                                  ),
+                                );
+                                if (picked == null) return;
+                                setDialogState(() {
+                                  selectedDateFilter = 'custom';
+                                  customRange = picked;
+                                });
+                                return;
+                              }
+
+                              setDialogState(() {
+                                selectedDateFilter = value;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (selectedDateFilter == 'custom' && customRange != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Custom range: ${DateFormat('dd/MM/yyyy').format(customRange!.start)} - ${DateFormat('dd/MM/yyyy').format(customRange!.end)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _muted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Showing ${filtered.length} of ${workstationAlerts.length} alerts',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _muted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: filtered.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 20),
+                                child: Text(
+                                  'No alerts match the current filters.',
+                                  style: TextStyle(color: _muted),
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 14),
+                              itemBuilder: (_, index) {
+                                final item = filtered[index];
+                                return Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: _bg,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: _border),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildHistoryRow('Alert ID', item.id),
+                                      _buildHistoryRow(
+                                          'Title', _typeLabel(item.type)),
+                                      _buildHistoryRow(
+                                          'Description', item.description),
+                                      _buildHistoryRow(
+                                        'Date',
+                                        DateFormat('dd/MM/yyyy HH:mm:ss')
+                                            .format(item.timestamp),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
+  }
+
+  Widget _buildHistoryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 92,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: _muted,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 11,
+                color: _navy,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
