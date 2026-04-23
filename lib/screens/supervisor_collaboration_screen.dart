@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:provider/provider.dart';
 import '../models/alert_model.dart';
 import '../models/user_model.dart';
-import '../providers/alert_provider.dart';
 import '../services/auth_service.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';

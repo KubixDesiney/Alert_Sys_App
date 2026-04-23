@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/alert_model.dart';
 import '../providers/alert_provider.dart';
-import '../services/ai_service.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
