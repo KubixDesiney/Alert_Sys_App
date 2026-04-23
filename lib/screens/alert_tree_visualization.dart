@@ -269,15 +269,26 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   child: AnimatedBuilder(
                     animation: Listenable.merge([_zoomAnimation, _detailAnimation]),
                     builder: (context, child) {
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _buildUsineLayer(_zoomAnimation.value),
-                          if (_selectedUsine != null && _selectedConveyor == null)
-                            _buildConveyorLayer(_zoomAnimation.value),
-                          if (_selectedConveyor != null)
-                            _buildWorkstationLayer(_detailAnimation.value),
-                        ],
+                      return SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Level 1: Factories
+                            if (_selectedUsine == null)
+                              _buildUsineLayer(_zoomAnimation.value)
+                            else
+                              _buildConveyorLayerWithParent(_zoomAnimation.value),
+                            // Level 3: Workstations (visible when conveyor selected)
+                            if (_selectedConveyor != null)
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildInterLayerConnector(height: 42),
+                                  _buildWorkstationLayerWithParent(_detailAnimation.value),
+                                ],
+                              ),
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -373,88 +384,55 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     return Row(children: parts);
   }
 
-  Widget _buildUsineLayer(double progress) {
-    final layerOpacity = _selectedUsine == null ? 1.0 : (1.0 - progress).clamp(0.0, 1.0);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final spacing = constraints.maxWidth / (_usines.length + 1);
-        return Opacity(
-          opacity: layerOpacity,
-          child: IgnorePointer(
-            ignoring: _selectedUsine != null,
-            child: Transform.scale(
-              scale: 1 - (progress * 0.04),
-              alignment: Alignment.topCenter,
-              child: Transform.translate(
-                offset: Offset(0, -progress * 8),
-                child: CustomPaint(
-                  painter: _UsineTreePainter(
-                    usines: _usines,
-                    spacing: spacing,
-                    animation: _pulseController,
-                  ),
-                  child: Stack(
-                    children: _usines.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final usine = entry.value;
-                      final x = spacing * (index + 1);
-                      final isSelected = _selectedUsine?.id == usine.id;
-                      return Positioned(
-                        left: x - 40,
-                        top: 100,
-                        child: AnimatedScale(
-                          scale: isSelected ? 0.94 : 1,
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutBack,
-                          child: _buildUsineNode(usine),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildConveyorLayer(double progress) {
+  Widget _buildConveyorLayerWithParent(double progress) {
     if (_selectedUsine == null) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
         final conveyors = _selectedUsine!.children;
         final spacing = constraints.maxWidth / (conveyors.length + 1);
-        return Opacity(
-          opacity: progress,
-          child: Transform.translate(
-            offset: Offset(0, 14 * (1 - progress)),
+        final selectedIndex = conveyors.indexWhere((c) => c.id == _selectedConveyor?.id);
+        final selectedX = selectedIndex >= 0 ? spacing * (selectedIndex + 1) : null;
+        return Padding(
+          padding: EdgeInsets.only(bottom: _selectedConveyor != null ? 0 : 16),
+          child: SizedBox(
+            height: 200,
             child: CustomPaint(
               painter: _ConveyorTreePainter(
                 conveyors: conveyors,
                 spacing: spacing,
-                animation: _detailAnimation,
+                selectedX: selectedX,
+                animation: _zoomAnimation,
               ),
               child: Stack(
                 children: [
+                  // Parent badge at top center
                   Align(
                     alignment: Alignment.topCenter,
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 40),
+                      padding: const EdgeInsets.only(top: 8),
                       child: _buildUsineNodeSmall(_selectedUsine!),
                     ),
                   ),
+                  // Conveyor nodes
                   ...conveyors.asMap().entries.map((entry) {
                     final index = entry.key;
                     final conveyor = entry.value;
                     final x = spacing * (index + 1);
+                    final isSelected = _selectedConveyor?.id == conveyor.id;
                     return Positioned(
                       left: x - 35,
-                      top: 180,
-                      child: _buildConveyorNode(conveyor),
+                      top: 50,
+                      child: GestureDetector(
+                        onTap: () => _onConveyorClick(conveyor),
+                        child: AnimatedScale(
+                          scale: isSelected ? 0.94 : 1,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutBack,
+                          child: _buildConveyorNode(conveyor),
+                        ),
+                      ),
                     );
-                  }),
+                  }).toList(),
                 ],
               ),
             ),
@@ -464,42 +442,131 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     );
   }
 
-  Widget _buildWorkstationLayer(double progress) {
+  Widget _buildWorkstationLayerWithParent(double progress) {
     if (_selectedConveyor == null) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
         final workstations = _selectedConveyor!.children;
+        final parentConveyors = _selectedUsine?.children ?? const <AlertNode>[];
+        final selectedParentIndex = parentConveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
+        final parentSpacing = parentConveyors.isEmpty
+            ? constraints.maxWidth / 2
+            : constraints.maxWidth / (parentConveyors.length + 1);
+        final parentX = selectedParentIndex >= 0
+            ? parentSpacing * (selectedParentIndex + 1)
+            : constraints.maxWidth / 2;
         final spacing = constraints.maxWidth / (workstations.length + 1);
-        return Opacity(
-          opacity: progress,
-          child: Transform.translate(
-            offset: Offset(0, 14 * (1 - progress)),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: SizedBox(
+            height: 200,
             child: CustomPaint(
               painter: _WorkstationTreePainter(
                 workstations: workstations,
                 spacing: spacing,
+                parentX: parentX,
                 animation: _detailAnimation,
               ),
               child: Stack(
                 children: [
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 40),
-                      child: _buildConveyorNodeSmall(_selectedConveyor!),
-                    ),
-                  ),
+                  // Workstation nodes
                   ...workstations.asMap().entries.map((entry) {
                     final index = entry.key;
                     final workstation = entry.value;
                     final x = spacing * (index + 1);
                     return Positioned(
                       left: x - 30,
-                      top: 180,
-                      child: _buildWorkstationNode(workstation),
+                      top: 50,
+                      child: GestureDetector(
+                        onTap: () => _onWorkstationClick(workstation, Offset(x, 50)),
+                        child: _buildWorkstationNode(workstation),
+                      ),
                     );
-                  }),
+                  }).toList(),
                 ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInterLayerConnector({double height = 42}) {
+    if (_selectedUsine == null || _selectedConveyor == null) {
+      return SizedBox(height: height);
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final conveyors = _selectedUsine!.children;
+        final selectedIndex = conveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
+        if (selectedIndex < 0 || conveyors.isEmpty) {
+          return SizedBox(height: height);
+        }
+
+        final spacing = constraints.maxWidth / (conveyors.length + 1);
+        final selectedX = spacing * (selectedIndex + 1);
+
+        return SizedBox(
+          width: double.infinity,
+          height: height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: selectedX - 2,
+                top: -1,
+                child: Container(
+                  width: 4,
+                  height: height + 2,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF111827).withOpacity(0.88),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUsineLayer(double progress) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final spacing = constraints.maxWidth / (_usines.length + 1);
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: SizedBox(
+            height: 200,
+            child: CustomPaint(
+              painter: _UsineTreePainter(
+                usines: _usines,
+                spacing: spacing,
+                animation: _pulseController,
+              ),
+              child: Stack(
+                children: _usines.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final usine = entry.value;
+                  final x = spacing * (index + 1);
+                  final isSelected = _selectedUsine?.id == usine.id;
+                  return Positioned(
+                    left: x - 40,
+                    top: 50,
+                    child: GestureDetector(
+                      onTap: () => _onUsineClick(usine),
+                      child: AnimatedScale(
+                        scale: isSelected ? 0.94 : 1,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOutBack,
+                        child: _buildUsineNode(usine),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
             ),
           ),
@@ -544,6 +611,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedContainer(
+              key: ValueKey('usine-node-${usine.id}'),
               duration: const Duration(milliseconds: 300),
               width: 80,
               height: 80,
@@ -643,6 +711,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedContainer(
+              key: ValueKey('conveyor-node-${conveyor.id}'),
               duration: const Duration(milliseconds: 300),
               width: 70,
               height: 70,
@@ -731,32 +800,6 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     );
   }
 
-  Widget _buildConveyorNodeSmall(AlertNode conveyor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: _white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: conveyor.hasError ? _orange : _blue, width: 2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.linear_scale, size: 18, color: conveyor.hasError ? _orange : _blue),
-          const SizedBox(width: 6),
-          Text(
-            conveyor.label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: conveyor.hasError ? _orange : _blue,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildWorkstationNode(AlertNode workstation) {
     final isSelected = _selectedWorkstation?.id == workstation.id;
     return GestureDetector(
@@ -771,6 +814,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedContainer(
+              key: ValueKey('workstation-node-${workstation.id}'),
               duration: const Duration(milliseconds: 300),
               width: 60,
               height: 60,
@@ -1195,13 +1239,13 @@ class _UsineTreePainter extends CustomPainter {
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    const parentY = 38.0;
-    const childY = 84.0;
+    const parentY = 30.0;
+    const childY = 50.0;
     for (var i = 0; i < usines.length; i++) {
       final childX = spacing * (i + 1);
       final path = Path()
         ..moveTo(childX, parentY)
-        ..cubicTo(childX, parentY + 12, childX, childY - 16, childX, childY);
+        ..cubicTo(childX, parentY + 10, childX, childY - 10, childX, childY);
       final metric = path.computeMetrics().first;
       canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
     }
@@ -1212,8 +1256,14 @@ class _UsineTreePainter extends CustomPainter {
 class _ConveyorTreePainter extends CustomPainter {
   final List<AlertNode> conveyors;
   final double spacing;
+  final double? selectedX;
   final Animation<double> animation;
-  _ConveyorTreePainter({required this.conveyors, required this.spacing, required this.animation}) : super(repaint: animation);
+  _ConveyorTreePainter({
+    required this.conveyors,
+    required this.spacing,
+    required this.selectedX,
+    required this.animation,
+  }) : super(repaint: animation);
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -1222,15 +1272,24 @@ class _ConveyorTreePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     final parentX = size.width / 2;
-    const parentY = 58.0;
+    const parentY = 38.0;
+    const childY = 50.0;
     for (var i = 0; i < conveyors.length; i++) {
       final childX = spacing * (i + 1);
-      const childY = 215.0;
       final path = Path();
       path.moveTo(parentX, parentY);
-      path.cubicTo(parentX, parentY + 50, childX, childY - 50, childX, childY);
+      path.cubicTo(parentX, parentY + 6, childX, childY - 6, childX, childY);
       final metric = path.computeMetrics().first;
       canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
+    }
+
+    if (selectedX != null) {
+      const selectedNodeBottomY = 120.0;
+      final bridgePath = Path()
+        ..moveTo(selectedX!, selectedNodeBottomY)
+        ..lineTo(selectedX!, size.height);
+      final bridgeMetric = bridgePath.computeMetrics().first;
+      canvas.drawPath(bridgeMetric.extractPath(0, bridgeMetric.length * animation.value), paint);
     }
   }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
@@ -1239,8 +1298,14 @@ class _ConveyorTreePainter extends CustomPainter {
 class _WorkstationTreePainter extends CustomPainter {
   final List<AlertNode> workstations;
   final double spacing;
+  final double parentX;
   final Animation<double> animation;
-  _WorkstationTreePainter({required this.workstations, required this.spacing, required this.animation}) : super(repaint: animation);
+  _WorkstationTreePainter({
+    required this.workstations,
+    required this.spacing,
+    required this.parentX,
+    required this.animation,
+  }) : super(repaint: animation);
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -1248,14 +1313,14 @@ class _WorkstationTreePainter extends CustomPainter {
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    final parentX = size.width / 2;
-    const parentY = 58.0;
+    const parentY = 0.0;
+    const childY = 50.0;
+
     for (var i = 0; i < workstations.length; i++) {
       final childX = spacing * (i + 1);
-      const childY = 210.0;
       final path = Path();
       path.moveTo(parentX, parentY);
-      path.cubicTo(parentX, parentY + 40, childX, childY - 40, childX, childY);
+      path.cubicTo(parentX, parentY + 14, childX, childY - 10, childX, childY);
       final metric = path.computeMetrics().first;
       canvas.drawPath(metric.extractPath(0, metric.length * animation.value), paint);
     }

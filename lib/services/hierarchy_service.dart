@@ -10,7 +10,7 @@ class HierarchyService {
       final data = event.snapshot.value;
       if (data == null) return [];
       if (data is! Map) return [];
-final map = Map<Object?, Object?>.from(data as Map);
+final map = Map<Object?, Object?>.from(data);
 final factories = <Factory>[];
 for (var entry in map.entries) {
   try {
