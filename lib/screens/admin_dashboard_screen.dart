@@ -657,7 +657,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedType,
+                    value: selectedType,
                     items: const [
                       DropdownMenuItem(
                           value: 'qualite', child: Text('⚠️ Quality')),
@@ -679,7 +679,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedFactoryName,
+                    value: selectedFactoryName,
                     items: factories
                         .map((f) => DropdownMenuItem(
                             value: f.name, child: Text(f.name)))
@@ -702,7 +702,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedConveyorId != null
+                    value: selectedConveyorId != null
                         ? 'Conveyor ${selectedConveyorNumber}'
                         : null,
                     items: conveyors
@@ -772,7 +772,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       Switch(
                         value: isCritical,
                         onChanged: (val) => setState(() => isCritical = val),
-                        activeThumbColor: Colors.red,
+                        activeColor: Colors.red,
                       ),
                     ],
                   ),
@@ -4259,7 +4259,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                       const SizedBox(height: 12),
                       _SheetLabel('Assigned Plant'),
                       DropdownButtonFormField<String>(
-                        initialValue: selectedUsine,
+                        value: selectedUsine,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                           isDense: true,
