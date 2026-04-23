@@ -579,7 +579,7 @@ void _showSimulateDialog() {
                 const Text('Alert Type', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: selectedType,
+                  initialValue: selectedType,
                   items: const [
                     DropdownMenuItem(value: 'qualite', child: Text('⚠️ Quality')),
                     DropdownMenuItem(value: 'maintenance', child: Text('🔧 Maintenance')),
@@ -593,7 +593,7 @@ void _showSimulateDialog() {
                 const Text('Factory (Usine)', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: selectedFactoryName,
+                  initialValue: selectedFactoryName,
                   items: factories.map((f) => DropdownMenuItem(value: f.name, child: Text(f.name))).toList(),
                   onChanged: (val) {
                     setState(() {
@@ -610,7 +610,7 @@ void _showSimulateDialog() {
                 const Text('Conveyor', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: selectedConveyorId != null ? 'Conveyor ${selectedConveyorNumber}' : null,
+                  initialValue: selectedConveyorId != null ? 'Conveyor ${selectedConveyorNumber}' : null,
                   items: conveyors.map((c) => DropdownMenuItem(value: 'Conveyor ${c.number}', child: Text('Conveyor ${c.number}'))).toList(),
                   onChanged: conveyors.isEmpty ? null : (val) {
                     setState(() {
@@ -627,7 +627,7 @@ void _showSimulateDialog() {
                 const Text('Workstation (Poste)', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 DropdownButtonFormField<String>(
-                  value: selectedStationId != null ? 'Station ${selectedStationNumber}' : null,
+                  initialValue: selectedStationId != null ? 'Station ${selectedStationNumber}' : null,
                   items: stations.map((s) => DropdownMenuItem(value: s.name, child: Text(s.name))).toList(),
                   onChanged: stations.isEmpty ? null : (val) {
                     setState(() {
@@ -656,7 +656,7 @@ void _showSimulateDialog() {
                     Switch(
                       value: isCritical,
                       onChanged: (val) => setState(() => isCritical = val),
-                      activeColor: Colors.red,
+                      activeThumbColor: Colors.red,
                     ),
                   ],
                 ),
@@ -3617,7 +3617,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                       const SizedBox(height: 12),
                       _SheetLabel('Assigned Plant'),
                       DropdownButtonFormField<String>(
-                        value: selectedUsine,
+                        initialValue: selectedUsine,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                           isDense: true,
