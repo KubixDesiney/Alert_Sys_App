@@ -351,7 +351,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: const [
                     Text(
-                      'Alert Dashboard VV2',
+                      'Alert Dashboard',
                       style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
