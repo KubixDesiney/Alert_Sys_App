@@ -55,6 +55,7 @@ Future<String> createCollaborationRequest({
     targetSupervisorNames: targetSupervisorNames,
     message: message,
     status: 'pending',
+    assistantDecision: 'pending',
     timestamp: DateTime.now(),
     requiresPMApproval: true,
     pmApproved: false,
@@ -86,9 +87,6 @@ Future<String> createCollaborationRequest({
     await _db.child('notifications/$targetId').push().set(notification);
   }
 
-  // Notify admin/PM
-  await _notifyAdminsAboutCollabRequest(request);
-
   return requestId;
 }
 
@@ -108,8 +106,115 @@ Future<String> createCollaborationRequest({
 
   // Get pending collaboration requests (for admin)
   Stream<List<CollaborationRequest>> getPendingCollaborationRequests() {
-    return getAllCollaborationRequests().map((requests) =>
-        requests.where((r) => r.status == 'pending').toList());
+    // Pending for PM/admin review means assistant accepted but PM not yet approved.
+    return getAllCollaborationRequests().map((requests) => requests
+        .where((r) =>
+            r.pmApproved == false &&
+            r.status != 'rejected' &&
+            r.assistantDecision == 'accepted')
+        .toList());
+  }
+
+  Future<void> respondToCollaborationRequest({
+    required String requestId,
+    required String responderId,
+    required String responderName,
+    required bool accepted,
+  }) async {
+    final snapshot = await _db.child('collaboration_requests/$requestId').get();
+    if (!snapshot.exists) {
+      throw Exception('Collaboration request not found');
+    }
+
+    final request = CollaborationRequest.fromMap(
+      requestId,
+      Map<String, dynamic>.from(snapshot.value as Map),
+    );
+
+    if (!request.targetSupervisorIds.contains(responderId)) {
+      throw Exception('You are not allowed to respond to this request');
+    }
+    if (request.pmApproved) {
+      throw Exception('This request has already been approved by PM');
+    }
+    if (request.assistantDecision != 'pending') {
+      throw Exception('This request has already been responded to');
+    }
+
+    final nowIso = DateTime.now().toIso8601String();
+
+    if (!accepted) {
+      await _db.child('collaboration_requests/$requestId').update({
+        'assistantDecision': 'refused',
+        'assistantId': responderId,
+        'assistantName': responderName,
+        'assistantRespondedAt': nowIso,
+        'status': 'rejected',
+        'rejectedBy': responderId,
+        'rejectedAt': nowIso,
+      });
+
+      await _db.child('alerts/${request.alertId}').update({
+        'collaborationRequestId': null,
+      });
+
+      await _db.child('notifications/${request.requesterId}').push().set({
+        'type': 'collaboration_refused',
+        'collabRequestId': requestId,
+        'alertId': request.alertId,
+        'message': '$responderName refused your collaboration request.',
+        'timestamp': nowIso,
+        'status': 'pending',
+      });
+      return;
+    }
+
+    await _db.child('collaboration_requests/$requestId').update({
+      'assistantDecision': 'accepted',
+      'assistantId': responderId,
+      'assistantName': responderName,
+      'assistantRespondedAt': nowIso,
+    });
+
+    await _db.child('notifications/${request.requesterId}').push().set({
+      'type': 'collaboration_assistant_accepted',
+      'collabRequestId': requestId,
+      'alertId': request.alertId,
+      'message':
+          '$responderName accepted your collaboration request. Waiting for PM approval.',
+      'timestamp': nowIso,
+      'status': 'pending',
+    });
+
+    // Now notify admin/PM for final review.
+    final escalated = CollaborationRequest(
+      id: request.id,
+      alertId: request.alertId,
+      requesterId: request.requesterId,
+      requesterName: request.requesterName,
+      targetSupervisorIds: request.targetSupervisorIds,
+      targetSupervisorNames: request.targetSupervisorNames,
+      message: request.message,
+      status: request.status,
+      assistantDecision: 'accepted',
+      assistantId: responderId,
+      assistantName: responderName,
+      assistantRespondedAt: DateTime.parse(nowIso),
+      timestamp: request.timestamp,
+      approvedBy: request.approvedBy,
+      approvedAt: request.approvedAt,
+      rejectedBy: request.rejectedBy,
+      rejectedAt: request.rejectedAt,
+      requiresPMApproval: request.requiresPMApproval,
+      pmApproved: request.pmApproved,
+      cancelsOriginalAlert: request.cancelsOriginalAlert,
+      usine: request.usine,
+      convoyeur: request.convoyeur,
+      poste: request.poste,
+      alertType: request.alertType,
+      alertDescription: request.alertDescription,
+    );
+    await _notifyAdminsAboutCollabRequest(escalated);
   }
 
   // Get collaboration requests for a specific supervisor
@@ -138,6 +243,9 @@ Future<String> createCollaborationRequest({
     );
 
     if (isPMApproval) {
+      if (request.assistantDecision != 'accepted') {
+        throw Exception('Assistant must accept before PM approval');
+      }
       // PM approval
       await _db.child('collaboration_requests/$requestId').update({
         'pmApproved': true,
@@ -197,9 +305,18 @@ Future<void> approveCollaborationRequestWithDetails({
   );
 
   if (isPMApproval) {
+    if (request.assistantDecision != 'accepted') {
+      throw Exception('Assistant must accept before PM approval');
+    }
     // 1. Assign assistant to the collaboration alert
-    final assistantId = request.targetSupervisorIds.isNotEmpty ? request.targetSupervisorIds.first : null;
-    final assistantName = request.targetSupervisorNames.isNotEmpty ? request.targetSupervisorNames.first : null;
+    final assistantId = request.assistantId ??
+        (request.targetSupervisorIds.isNotEmpty
+            ? request.targetSupervisorIds.first
+            : null);
+    final assistantName = request.assistantName ??
+        (request.targetSupervisorNames.isNotEmpty
+            ? request.targetSupervisorNames.first
+            : null);
 
     if (assistantId != null && assistantName != null) {
       await _db.child('alerts/${request.alertId}').update({
@@ -257,9 +374,10 @@ Future<void> approveCollaborationRequestWithDetails({
   } else {
     // Supervisor approval (not PM) – keep simple
     await _db.child('collaboration_requests/$requestId').update({
-      'status': 'approved',
-      'approvedBy': approverId,
-      'approvedAt': DateTime.now().toIso8601String(),
+      'assistantDecision': 'accepted',
+      'assistantId': approverId,
+      'assistantName': approverName,
+      'assistantRespondedAt': DateTime.now().toIso8601String(),
     });
   }
 }
