@@ -664,7 +664,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedType,
+                    value: selectedType,
                     items: const [
                       DropdownMenuItem(
                           value: 'qualite', child: Text('⚠️ Quality')),
@@ -686,7 +686,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedFactoryName,
+                    value: selectedFactoryName,
                     items: factories
                         .map((f) => DropdownMenuItem(
                             value: f.name, child: Text(f.name)))
@@ -709,7 +709,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedConveyorId != null
+                    value: selectedConveyorId != null
                         ? 'Conveyor ${selectedConveyorNumber}'
                         : null,
                     items: conveyors
@@ -737,7 +737,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedStationId != null
+                    value: selectedStationId != null
                         ? 'Station ${selectedStationNumber}'
                         : null,
                     items: stations
@@ -779,7 +779,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       Switch(
                         value: isCritical,
                         onChanged: (val) => setState(() => isCritical = val),
-                        activeThumbColor: Colors.red,
+                        activeColor: Colors.red,
                       ),
                     ],
                   ),
