@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -25,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   static const _border = AppColors.borderSoft;
   static const _textDark = AppColors.textDark;
   static const _textMuted = AppColors.textMuted;
+  static const _navy = AppColors.navy;
 
   String _t(String key) {
     const copy = {
@@ -76,6 +78,19 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _downloadApk() async {
+    const url = 'https://github.com/KubixDesiney/Alert_Sys_App/releases/download/1.0.0b2/alertappsys.apk';
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to open download link')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -91,17 +106,37 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   Align(
                     alignment: Alignment.topRight,
-                    child: SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment(value: 'en', label: Text('EN')),
-                        ButtonSegment(value: 'fr', label: Text('FR')),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _downloadApk,
+                          icon: const Icon(Icons.download, size: 16),
+                          label: const Text('Download APK'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _navy,
+                            foregroundColor: _white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(value: 'en', label: Text('EN')),
+                            ButtonSegment(value: 'fr', label: Text('FR')),
+                          ],
+                          selected: {_language},
+                          onSelectionChanged: (selection) {
+                            setState(() {
+                              _language = selection.first;
+                            });
+                          },
+                        ),
                       ],
-                      selected: {_language},
-                      onSelectionChanged: (selection) {
-                        setState(() {
-                          _language = selection.first;
-                        });
-                      },
                     ),
                   ),
                   const SizedBox(height: 14),

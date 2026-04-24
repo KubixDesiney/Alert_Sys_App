@@ -811,7 +811,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                           ),
                           DropdownMenuItem(
                             value: 'en_cours',
-                            child: Text('In Progress',
+                            child: Text('Being fixed...',
                                 style: TextStyle(fontSize: 13)),
                           ),
                           DropdownMenuItem(
@@ -925,6 +925,99 @@ class _ProgressStatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
+          color: isActive ? _blue.withOpacity(0.1) : _white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive ? _blue : _border,
+            width: isActive ? 2 : 1,
+          ),
+          boxShadow: const [
+            BoxShadow(
+                color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Being fixed...',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: _muted,
+                          fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 6),
+                  Text('$inProgressCount',
+                      style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: _blue,
+                          height: 1)),
+                  const SizedBox(height: 4),
+                  if (criticalCount > 0)
+                    GestureDetector(
+                      onTap: onCriticalTap,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded,
+                              size: 12, color: Colors.red),
+                          const SizedBox(width: 4),
+                          Text('$criticalCount Critical',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  if (isActive)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text('Click to hide history',
+                          style: TextStyle(
+                              fontSize: 9,
+                              color: _muted,
+                              fontStyle: FontStyle.italic)),
+                    ),
+                ],
+              ),
+            ),
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(color: _blueLt, shape: BoxShape.circle),
+              child: const Icon(Icons.timer_outlined, color: _blue, size: 22),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UnclaimedStatCard extends StatelessWidget {
+  final int unclaimedCount;
+  final int criticalCount;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback onCriticalTap;
+
+  const _UnclaimedStatCard({
+    required this.unclaimedCount,
+    required this.criticalCount,
+    required this.isActive,
+    required this.onTap,
+    required this.onCriticalTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
           color: isActive ? _orange.withOpacity(0.1) : _white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
@@ -942,13 +1035,13 @@ class _ProgressStatCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('In Progress',
+                  const Text('Unclaimed',
                       style: TextStyle(
                           fontSize: 12,
                           color: _muted,
                           fontWeight: FontWeight.w500)),
                   const SizedBox(height: 6),
-                  Text('$inProgressCount',
+                  Text('$unclaimedCount',
                       style: TextStyle(
                           fontSize: 34,
                           fontWeight: FontWeight.w800,
@@ -988,101 +1081,8 @@ class _ProgressStatCard extends StatelessWidget {
               height: 46,
               decoration:
                   BoxDecoration(color: _orangeLt, shape: BoxShape.circle),
-              child: const Icon(Icons.timer_outlined, color: _orange, size: 22),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _UnclaimedStatCard extends StatelessWidget {
-  final int unclaimedCount;
-  final int criticalCount;
-  final bool isActive;
-  final VoidCallback onTap;
-  final VoidCallback onCriticalTap;
-
-  const _UnclaimedStatCard({
-    required this.unclaimedCount,
-    required this.criticalCount,
-    required this.isActive,
-    required this.onTap,
-    required this.onCriticalTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: isActive ? _blue.withOpacity(0.1) : _white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isActive ? _blue : _border,
-            width: isActive ? 2 : 1,
-          ),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Unclaimed',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: _muted,
-                          fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 6),
-                  Text('$unclaimedCount',
-                      style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          color: _blue,
-                          height: 1)),
-                  const SizedBox(height: 4),
-                  if (criticalCount > 0)
-                    GestureDetector(
-                      onTap: onCriticalTap,
-                      child: Row(
-                        children: [
-                          const Icon(Icons.warning_amber_rounded,
-                              size: 12, color: Colors.red),
-                          const SizedBox(width: 4),
-                          Text('$criticalCount Critical',
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.red,
-                                  fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  if (isActive)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text('Click to hide history',
-                          style: TextStyle(
-                              fontSize: 9,
-                              color: _muted,
-                              fontStyle: FontStyle.italic)),
-                    ),
-                ],
-              ),
-            ),
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(color: _blueLt, shape: BoxShape.circle),
               child: const Icon(Icons.notifications_outlined,
-                  color: _blue, size: 22),
+                  color: _orange, size: 22),
             ),
           ],
         ),
@@ -1191,7 +1191,7 @@ class _AlertHistoryRow extends StatelessWidget {
     };
     final sl = switch (alert.status) {
       'validee' => 'Validated',
-      'en_cours' => 'In Progress',
+      'en_cours' => 'Being fixed...',
       _ => 'Available',
     };
     return Container(
