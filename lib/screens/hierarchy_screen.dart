@@ -2,14 +2,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
+import '../theme.dart';
 
-const _navy = Color(0xFF0D4A75);
-const _white = Colors.white;
-const _bg = Color(0xFFF8FAFC);
-const _border = Color(0xFFE2E8F0);
-const _muted = Color(0xFF64748B);
-const _green = Color(0xFF16A34A);
-const _red = Color(0xFFDC2626);
+const _navy = AppColors.navy;
+const _white = AppColors.white;
+const _bg = AppColors.bg;
+const _border = AppColors.border;
+const _muted = AppColors.mutedDark;
+const _green = AppColors.green;
+const _red = AppColors.red;
 
 class HierarchyScreen extends StatefulWidget {
   const HierarchyScreen({super.key});
@@ -367,6 +368,25 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
   // ------------------- Delete Conveyor -------------------
   Future<void> _deleteConveyor(Conveyor conveyor) async {
     if (_selectedFactory == null) return;
+
+    final activeAlerts = await _service.getActiveAlertsCountForConveyor(
+      usine: _selectedFactory!.name,
+      convoyeur: conveyor.number,
+    );
+
+    if (activeAlerts > 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot delete Conveyor ${conveyor.number}: $activeAlerts active alert(s) are still disponible/en_cours.',
+          ),
+          backgroundColor: _red,
+        ),
+      );
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -470,39 +490,41 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           ),
                           const Divider(height: 1),
                           Expanded(
-                            child: _factories.isEmpty
-                                ? const Center(
-                                    child: Text('No factories',
-                                        style: TextStyle(color: _muted)))
-                                : ListView.builder(
-                                    itemCount: _factories.length,
-                                    itemBuilder: (context, index) {
-                                      final factory = _factories[index];
-                                      final isSelected =
-                                          _selectedFactory?.id == factory.id;
-                                      return ListTile(
-                                        selected: isSelected,
-                                        selectedTileColor:
-                                            _navy.withOpacity(0.1),
-                                        title: Text(factory.name,
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.w600)),
-                                        subtitle: Text(
-                                            '${factory.location} · ${factory.conveyors.length} conveyor(s)'),
-                                        trailing: IconButton(
-                                          icon: const Icon(Icons.delete_outline,
-                                              size: 18, color: _red),
-                                          onPressed: () =>
-                                              _deleteFactory(factory),
-                                        ),
-                                        onTap: () => setState(() {
-                                          _selectedFactory = factory;
-                                          _selectedConveyor = null;
-                                        }),
-                                      );
-                                    },
-                                  ),
-                          ),
+                              child: _factories.isEmpty
+                                  ? const Center(
+                                      child: Text('No factories',
+                                          style: TextStyle(color: _muted)))
+: ListView.builder(
+  itemCount: _factories.length,
+  itemBuilder: (context, index) {
+    final factory = _factories[index];
+    final isSelected = _selectedFactory?.id == factory.id;
+    return Container(
+      color: isSelected ? _navy.withOpacity(0.1) : Colors.transparent,
+      child: ListTile(
+        title: Text(
+          factory.name,
+          style: TextStyle(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? _navy : null,
+          ),
+        ),
+        subtitle: Text(
+          '${factory.location} · ${factory.conveyors.length} conveyor(s)',
+          style: const TextStyle(fontSize: 12, color: _muted),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline, size: 18, color: _red),
+          onPressed: () => _deleteFactory(factory),
+        ),
+        onTap: () => setState(() {
+          _selectedFactory = factory;
+          _selectedConveyor = null;
+        }),
+      ),
+    );
+  },
+)),
                         ],
                       ),
                     ),
@@ -546,54 +568,51 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           ),
                           const Divider(height: 1),
                           Expanded(
-                            child: _selectedFactory == null
-                                ? const Center(
-                                    child: Text('Select a factory first',
-                                        style: TextStyle(color: _muted)))
-                                : conveyors.isEmpty
-                                    ? const Center(
-                                        child: Text('No conveyors',
-                                            style: TextStyle(color: _muted)))
-                                    : ListView.builder(
-                                        itemCount: conveyors.length,
-                                        itemBuilder: (context, index) {
-                                          final conveyor = conveyors[index];
-                                          final isSelected =
-                                              _selectedConveyor?.id ==
-                                                  conveyor.id;
-                                          return ListTile(
-                                            selected: isSelected,
-                                            selectedTileColor:
-                                                _navy.withOpacity(0.1),
-                                            title: Text(
-                                                'Conveyor ${conveyor.number}'),
-                                            subtitle: Text(
-                                                '${conveyor.stations.length}/${_service.maxStations} stations'),
-                                            trailing: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                IconButton(
-                                                  icon: const Icon(Icons.edit,
-                                                      size: 18),
-                                                  onPressed:
-                                                      _showEditConveyorDialog,
-                                                ),
-                                                IconButton(
-                                                  icon: const Icon(
-                                                      Icons.delete_outline,
-                                                      size: 18,
-                                                      color: _red),
-                                                  onPressed: () =>
-                                                      _deleteConveyor(conveyor),
-                                                ),
-                                              ],
-                                            ),
-                                            onTap: () => setState(() =>
-                                                _selectedConveyor = conveyor),
-                                          );
-                                        },
-                                      ),
-                          ),
+                              child: _selectedFactory == null
+                                  ? const Center(
+                                      child: Text('Select a factory first',
+                                          style: TextStyle(color: _muted)))
+                                  : conveyors.isEmpty
+                                      ? const Center(
+                                          child: Text('No conveyors',
+                                              style: TextStyle(color: _muted)))
+: ListView.builder(
+  itemCount: conveyors.length,
+  itemBuilder: (context, index) {
+    final conveyor = conveyors[index];
+    final isSelected = _selectedConveyor?.id == conveyor.id;
+    return Container(
+      color: isSelected ? _navy.withOpacity(0.1) : Colors.transparent,
+      child: ListTile(
+        title: Text(
+          'Conveyor ${conveyor.number}',
+          style: TextStyle(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            color: isSelected ? _navy : null,
+          ),
+        ),
+        subtitle: Text(
+          '${conveyor.stations.length}/${_service.maxStations} stations',
+          style: const TextStyle(fontSize: 12, color: _muted),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, size: 18),
+              onPressed: _showEditConveyorDialog,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 18, color: _red),
+              onPressed: () => _deleteConveyor(conveyor),
+            ),
+          ],
+        ),
+        onTap: () => setState(() => _selectedConveyor = conveyor),
+      ),
+    );
+  },
+)),
                         ],
                       ),
                     ),

@@ -4,25 +4,26 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
 import '../models/alert_model.dart';
+import '../theme.dart';
 
-
-const _navy = Color(0xFF0D4A75);
-const _white = Colors.white;
-const _bg = Color(0xFFF8FAFC);
-const _border = Color(0xFFE2E8F0);
-const _muted = Color(0xFF64748B);
-const _green = Color(0xFF16A34A);
-const _greenLt = Color(0xFFDCFCE7);
-const _red = Color(0xFFDC2626);
+const _navy = AppColors.navy;
+const _white = AppColors.white;
+const _bg = AppColors.bg;
+const _border = AppColors.border;
+const _muted = AppColors.mutedDark;
+const _green = AppColors.green;
+const _greenLt = AppColors.greenLight;
+const _red = AppColors.red;
 const _redLt = Color(0xFFFEE2E2);
-const _orange = Color(0xFFEA580C);
-const _orangeLt = Color(0xFFFFF7ED);
-const _blue = Color(0xFF2563EB);
-const _blueLt = Color(0xFFEFF6FF);
+const _orange = AppColors.orange;
+const _orangeLt = AppColors.orangeLight;
+const _blue = AppColors.blue;
+const _blueLt = AppColors.blueLight;
 const _yellow = Color(0xFFFBBF24);
 const _yellowLt = Color(0xFFFEF3C7);
 const _purple = Color(0xFF9333EA);
 
+// ignore: unused_element
 Color _typeColor(String type) => switch (type) {
       'qualite' => _red,
       'maintenance' => _blue,
@@ -31,6 +32,7 @@ Color _typeColor(String type) => switch (type) {
       _ => _muted,
     };
 
+// ignore: unused_element
 Color _typeBgColor(String type) => switch (type) {
       'qualite' => _redLt,
       'maintenance' => _blueLt,
@@ -47,6 +49,7 @@ String _typeLabel(String type) => switch (type) {
       _ => type,
     };
 
+// ignore: unused_element
 IconData _typeIcon(String type) => switch (type) {
       'qualite' => Icons.warning_amber_rounded,
       'maintenance' => Icons.build_circle_outlined,
@@ -151,7 +154,8 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                                 stream: _getEscalatedAlertsCount(),
                                 builder: (context, snapshot) {
                                   final count = snapshot.data?.length ?? 0;
-                                  if (count == 0) return const SizedBox.shrink();
+                                  if (count == 0)
+                                    return const SizedBox.shrink();
                                   return Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 6, vertical: 2),
@@ -182,10 +186,12 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                               const Text('Collaborations'),
                               const SizedBox(width: 4),
                               StreamBuilder<List<CollaborationRequest>>(
-                                stream: _service.getPendingCollaborationRequests(),
+                                stream:
+                                    _service.getPendingCollaborationRequests(),
                                 builder: (context, snapshot) {
                                   final count = snapshot.data?.length ?? 0;
-                                  if (count == 0) return const SizedBox.shrink();
+                                  if (count == 0)
+                                    return const SizedBox.shrink();
                                   return Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 6, vertical: 2),
@@ -269,7 +275,8 @@ class _EscalatedAlertsTab extends StatelessWidget {
             Map<String, dynamic>.from(alertsMap as Map).entries.toList();
         final escalated = entries
             .where((entry) => entry.value['isEscalated'] == true)
-            .map((entry) => AlertModel.fromMap(entry.key, Map.from(entry.value)))
+            .map(
+                (entry) => AlertModel.fromMap(entry.key, Map.from(entry.value)))
             .toList()
           ..sort((a, b) => b.escalatedAt!.compareTo(a.escalatedAt!));
 
@@ -342,7 +349,8 @@ class _EscalatedAlertCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text('📍 ${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
+          Text(
+              '📍 ${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
           Text('⏰ Escalated at: ${_formatDateTime(alert.escalatedAt!)}'),
           if (alert.status == 'disponible')
             const Text('⚠️ Unclaimed alert exceeded threshold',
@@ -382,7 +390,8 @@ class _CollaborationsTab extends StatelessWidget {
               const SizedBox(width: 8),
               const Text(
                 'Pending Collaboration Requests',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _navy),
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold, color: _navy),
               ),
             ],
           ),
@@ -406,7 +415,8 @@ class _CollaborationsTab extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Column(
                     children: [
-                      Icon(Icons.check_circle_outline, size: 48, color: _green.withOpacity(0.5)),
+                      Icon(Icons.check_circle_outline,
+                          size: 48, color: _green.withOpacity(0.5)),
                       const SizedBox(height: 8),
                       Text(
                         'No pending collaboration requests',
@@ -417,7 +427,10 @@ class _CollaborationsTab extends StatelessWidget {
                 );
               }
               return Column(
-                children: snapshot.data!.map((request) => _CollaborationRequestCard(request: request)).toList(),
+                children: snapshot.data!
+                    .map((request) =>
+                        _CollaborationRequestCard(request: request))
+                    .toList(),
               );
             },
           ),
@@ -431,7 +444,8 @@ class _CollaborationsTab extends StatelessWidget {
               const SizedBox(width: 8),
               const Text(
                 'Request History',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _navy),
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold, color: _navy),
               ),
             ],
           ),
@@ -459,9 +473,8 @@ class _CollaborationsTab extends StatelessWidget {
                   ),
                 );
               }
-              final history = snapshot.data!
-                  .where((r) => r.status != 'pending')
-                  .toList();
+              final history =
+                  snapshot.data!.where((r) => r.status != 'pending').toList();
               if (history.isEmpty) {
                 return Container(
                   padding: const EdgeInsets.symmetric(vertical: 32),
@@ -473,7 +486,9 @@ class _CollaborationsTab extends StatelessWidget {
                 );
               }
               return Column(
-                children: history.map((request) => _HistoryRequestCard(request: request)).toList(),
+                children: history
+                    .map((request) => _HistoryRequestCard(request: request))
+                    .toList(),
               );
             },
           ),
@@ -490,7 +505,6 @@ class _CollaborationRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final service = CollaborationService();
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return Container(
@@ -509,45 +523,72 @@ class _CollaborationRequestCard extends StatelessWidget {
             children: [
               Text(
                 request.requesterName,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
               ),
               const SizedBox(width: 8),
               Text(
                 'Alert #${request.alertId.substring(0, 8)}',
-                style: const TextStyle(fontSize: 12, color: _muted, fontFamily: 'monospace'),
+                style: const TextStyle(
+                    fontSize: 12, color: _muted, fontFamily: 'monospace'),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: _orange, borderRadius: BorderRadius.circular(12)),
-                child: const Text('Pending', style: TextStyle(fontSize: 10, color: _white, fontWeight: FontWeight.bold)),
+                decoration: BoxDecoration(
+                    color: _orange, borderRadius: BorderRadius.circular(12)),
+                child: const Text('Pending',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: _white,
+                        fontWeight: FontWeight.bold)),
               ),
             ],
           ),
           const SizedBox(height: 4),
-          Text('⏰ ${_formatTime(request.timestamp)}', style: const TextStyle(fontSize: 11, color: _muted)),
+          Text('⏰ ${_formatTime(request.timestamp)}',
+              style: const TextStyle(fontSize: 11, color: _muted)),
           const SizedBox(height: 12),
-          const Text('Requesting collaboration with:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _muted)),
+          const Text('Requesting collaboration with:',
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: _muted)),
           const SizedBox(height: 6),
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: request.targetSupervisorNames.map((name) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: _purple, borderRadius: BorderRadius.circular(16)),
-              child: Text('@$name', style: const TextStyle(fontSize: 11, color: _white, fontWeight: FontWeight.w600)),
-            )).toList(),
+            children: request.targetSupervisorNames
+                .map((name) => Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                          color: _purple,
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Text('@$name',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: _white,
+                              fontWeight: FontWeight.w600)),
+                    ))
+                .toList(),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: _white, borderRadius: BorderRadius.circular(8), border: Border.all(color: _border)),
+            decoration: BoxDecoration(
+                color: _white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _border)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(request.message, style: const TextStyle(fontSize: 12, color: _navy)),
+                Text(request.message,
+                    style: const TextStyle(fontSize: 12, color: _navy)),
                 const SizedBox(height: 8),
-                Text('Issue: ${request.alertDescription}', style: const TextStyle(fontSize: 11, color: _muted, fontStyle: FontStyle.italic)),
+                Text('Issue: ${request.alertDescription}',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: _muted,
+                        fontStyle: FontStyle.italic)),
               ],
             ),
           ),
@@ -558,12 +599,15 @@ class _CollaborationRequestCard extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () => _handleApprove(context, request),
                   icon: const Icon(Icons.check_circle, size: 16),
-                  label: const Text('Approve', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  label: const Text('Approve',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _green,
                     foregroundColor: _white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
@@ -571,20 +615,26 @@ class _CollaborationRequestCard extends StatelessWidget {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    await CollaborationService().rejectCollaborationRequest(request.id, currentUserId, '');
+                    await CollaborationService().rejectCollaborationRequest(
+                        request.id, currentUserId, '');
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Collaboration rejected'), backgroundColor: _red),
+                        const SnackBar(
+                            content: Text('Collaboration rejected'),
+                            backgroundColor: _red),
                       );
                     }
                   },
                   icon: const Icon(Icons.cancel, size: 16),
-                  label: const Text('Reject', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  label: const Text('Reject',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _red,
                     side: const BorderSide(color: _red),
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ),
@@ -594,189 +644,230 @@ class _CollaborationRequestCard extends StatelessWidget {
       ),
     );
   }
-Future<void> _handleApprove(BuildContext context, CollaborationRequest request) async {
-  final service = CollaborationService();
-  final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
-  final alertSnapshot = await FirebaseDatabase.instance.ref('alerts/${request.alertId}').get();
-  if (!alertSnapshot.exists) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alert not found'), backgroundColor: _red));
-    return;
-  }
-  final alertData = Map<String, dynamic>.from(alertSnapshot.value as Map);
-  final alertUsine = alertData['usine'] ?? '';
 
-  // 1. Cross-factory detection
-  final List<String> crossFactorySupervisors = [];
-  for (int i = 0; i < request.targetSupervisorIds.length; i++) {
-    final supId = request.targetSupervisorIds[i];
-    final supName = request.targetSupervisorNames[i];
-    final supSnapshot = await FirebaseDatabase.instance.ref('users/$supId').get();
-    if (supSnapshot.exists) {
-      final supData = Map<String, dynamic>.from(supSnapshot.value as Map);
-      final supUsine = supData['usine'] ?? '';
-      if (supUsine != alertUsine) {
-        crossFactorySupervisors.add(supName);
-      }
+  Future<void> _handleApprove(
+      BuildContext context, CollaborationRequest request) async {
+    final service = CollaborationService();
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final alertSnapshot =
+        await FirebaseDatabase.instance.ref('alerts/${request.alertId}').get();
+    if (!alertSnapshot.exists) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Alert not found'), backgroundColor: _red));
+      return;
     }
-  }
+    final alertData = Map<String, dynamic>.from(alertSnapshot.value as Map);
+    final alertUsine = alertData['usine'] ?? '';
 
-  // 2. Find existing alerts for target supervisors (as claimant OR assistant)
-  final List<String> existingAlertIds = [];
-  for (final supId in request.targetSupervisorIds) {
-    // As claimant
-    final claimantSnapshot = await FirebaseDatabase.instance
-        .ref('alerts')
-        .orderByChild('superviseurId')
-        .equalTo(supId)
-        .once();
-    if (claimantSnapshot.snapshot.exists) {
-      final alertsMap = Map<String, dynamic>.from(claimantSnapshot.snapshot.value as Map);
-      for (final entry in alertsMap.entries) {
-        final alert = Map<String, dynamic>.from(entry.value);
-        if (alert['status'] == 'en_cours' || alert['status'] == 'disponible') {
-          existingAlertIds.add(entry.key);
+    // 1. Cross-factory detection
+    final List<String> crossFactorySupervisors = [];
+    for (int i = 0; i < request.targetSupervisorIds.length; i++) {
+      final supId = request.targetSupervisorIds[i];
+      final supName = request.targetSupervisorNames[i];
+      final supSnapshot =
+          await FirebaseDatabase.instance.ref('users/$supId').get();
+      if (supSnapshot.exists) {
+        final supData = Map<String, dynamic>.from(supSnapshot.value as Map);
+        final supUsine = supData['usine'] ?? '';
+        if (supUsine != alertUsine) {
+          crossFactorySupervisors.add(supName);
         }
       }
     }
-    // As assistant
-    final assistantSnapshot = await FirebaseDatabase.instance
-        .ref('alerts')
-        .orderByChild('assistantId')
-        .equalTo(supId)
-        .once();
-    if (assistantSnapshot.snapshot.exists) {
-      final alertsMap = Map<String, dynamic>.from(assistantSnapshot.snapshot.value as Map);
-      for (final entry in alertsMap.entries) {
-        final alert = Map<String, dynamic>.from(entry.value);
-        if (alert['status'] == 'en_cours' || alert['status'] == 'disponible') {
-          existingAlertIds.add(entry.key);
+
+    // 2. Find existing alerts for target supervisors (as claimant OR assistant)
+    final List<String> existingAlertIds = [];
+    for (final supId in request.targetSupervisorIds) {
+      // As claimant
+      final claimantSnapshot = await FirebaseDatabase.instance
+          .ref('alerts')
+          .orderByChild('superviseurId')
+          .equalTo(supId)
+          .once();
+      if (claimantSnapshot.snapshot.exists) {
+        final alertsMap =
+            Map<String, dynamic>.from(claimantSnapshot.snapshot.value as Map);
+        for (final entry in alertsMap.entries) {
+          final alert = Map<String, dynamic>.from(entry.value);
+          if (alert['status'] == 'en_cours' ||
+              alert['status'] == 'disponible') {
+            existingAlertIds.add(entry.key);
+          }
+        }
+      }
+      // As assistant
+      final assistantSnapshot = await FirebaseDatabase.instance
+          .ref('alerts')
+          .orderByChild('assistantId')
+          .equalTo(supId)
+          .once();
+      if (assistantSnapshot.snapshot.exists) {
+        final alertsMap =
+            Map<String, dynamic>.from(assistantSnapshot.snapshot.value as Map);
+        for (final entry in alertsMap.entries) {
+          final alert = Map<String, dynamic>.from(entry.value);
+          if (alert['status'] == 'en_cours' ||
+              alert['status'] == 'disponible') {
+            existingAlertIds.add(entry.key);
+          }
         }
       }
     }
-  }
 
-  bool transferConfirmed = false;
-  bool cancelConfirmed = false;
+    bool transferConfirmed = false;
+    bool cancelConfirmed = false;
 
-  // Helper to approve after all dialogs
-  Future<void> doApproval() async {
-    await service.approveCollaborationRequestWithDetails(
-      requestId: request.id,
-      approverId: currentUserId,
-      approverName: 'Production Manager',
-      isPMApproval: true,
-      confirmTransfer: transferConfirmed,
-      confirmCancelOriginal: cancelConfirmed,
-      cancelExistingAlertIds: cancelConfirmed ? existingAlertIds : null,
-    );
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Collaboration approved'), backgroundColor: _green),
+    // Helper to approve after all dialogs
+    Future<void> doApproval() async {
+      await service.approveCollaborationRequestWithDetails(
+        requestId: request.id,
+        approverId: currentUserId,
+        approverName: 'Production Manager',
+        isPMApproval: true,
+        confirmTransfer: transferConfirmed,
+        confirmCancelOriginal: cancelConfirmed,
+        cancelExistingAlertIds: cancelConfirmed ? existingAlertIds : null,
       );
-    }
-  }
-
-  // --- Cross-factory dialog ---
-  if (crossFactorySupervisors.isNotEmpty) {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Cross-Factory Transfer Required'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Approving this collaboration will require supervisor(s) to be transferred to work on an alert in a different factory.'),
-            const SizedBox(height: 16),
-            ...crossFactorySupervisors.map((name) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: _orangeLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _orange.withOpacity(0.3))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Will be transferred from their current factory to $alertUsine', style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-            )),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm Transfer & Approve')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    transferConfirmed = true;
-    // Continue to next dialog
-  }
-
-  // --- Cancel original alert dialog ---
-  if (existingAlertIds.isNotEmpty) {
-    // Fetch details of existing alerts
-    List<Map<String, dynamic>> existingAlertsData = [];
-    for (final alertId in existingAlertIds) {
-      final alertSnap = await FirebaseDatabase.instance.ref('alerts/$alertId').get();
-      if (alertSnap.exists) {
-        existingAlertsData.add(Map<String, dynamic>.from(alertSnap.value as Map));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Collaboration approved'), backgroundColor: _green),
+        );
       }
     }
 
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Cancel Original Alert(s)?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('The assistant(s) already have an active alert. Approving this collaboration will cancel their current alert(s).'),
-            const SizedBox(height: 12),
-            ...existingAlertsData.map((alert) => Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(8), border: Border.all(color: _red.withOpacity(0.3))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('⚠️ Alert: ${alert['description'] ?? 'No description'}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Factory: ${alert['usine'] ?? 'Unknown'}', style: const TextStyle(fontSize: 12)),
-                  Text('Status: ${alert['status'] ?? 'unknown'}', style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-            )),
-            const SizedBox(height: 8),
-            const Text('Do you confirm canceling the original alert(s) and approving this collaboration?'),
+    // --- Cross-factory dialog ---
+    if (crossFactorySupervisors.isNotEmpty) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Cross-Factory Transfer Required'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'Approving this collaboration will require supervisor(s) to be transferred to work on an alert in a different factory.'),
+              const SizedBox(height: 16),
+              ...crossFactorySupervisors.map((name) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: _orangeLt,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _orange.withOpacity(0.3))),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(
+                            'Will be transferred from their current factory to $alertUsine',
+                            style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  )),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: _green),
+                child: const Text('Confirm Transfer & Approve')),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: _green), child: const Text('Confirm & Approve')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    cancelConfirmed = true;
+      );
+      if (confirmed != true) return;
+      transferConfirmed = true;
+      // Continue to next dialog
+    }
+
+    // --- Cancel original alert dialog ---
+    if (existingAlertIds.isNotEmpty) {
+      // Fetch details of existing alerts
+      List<Map<String, dynamic>> existingAlertsData = [];
+      for (final alertId in existingAlertIds) {
+        final alertSnap =
+            await FirebaseDatabase.instance.ref('alerts/$alertId').get();
+        if (alertSnap.exists) {
+          existingAlertsData
+              .add(Map<String, dynamic>.from(alertSnap.value as Map));
+        }
+      }
+
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('Cancel Original Alert(s)?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'The assistant(s) already have an active alert. Approving this collaboration will cancel their current alert(s).'),
+              const SizedBox(height: 12),
+              ...existingAlertsData.map((alert) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: _redLt,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _red.withOpacity(0.3))),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                            '⚠️ Alert: ${alert['description'] ?? 'No description'}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Factory: ${alert['usine'] ?? 'Unknown'}',
+                            style: const TextStyle(fontSize: 12)),
+                        Text('Status: ${alert['status'] ?? 'unknown'}',
+                            style: const TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  )),
+              const SizedBox(height: 8),
+              const Text(
+                  'Do you confirm canceling the original alert(s) and approving this collaboration?'),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: _green),
+                child: const Text('Confirm & Approve')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      cancelConfirmed = true;
+    }
+
+    // Finally approve
+    await doApproval();
   }
-
-  // Finally approve
-  await doApproval();
-}
-
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
+    if (diff.inHours < 24)
+      return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
     return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
   }
 }
+
 class _HistoryRequestCard extends StatelessWidget {
   final CollaborationRequest request;
 
@@ -791,7 +882,10 @@ class _HistoryRequestCard extends StatelessWidget {
         color: _white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _border),
-        boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1))
+        ],
       ),
       child: Row(
         children: [
@@ -839,7 +933,8 @@ class _HistoryRequestCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: request.status == 'approved' ? _greenLt : _redLt,
                         borderRadius: BorderRadius.circular(8),
@@ -862,16 +957,17 @@ class _HistoryRequestCard extends StatelessWidget {
       ),
     );
   }
+
   String _formatRelativeTime(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
+    if (diff.inHours < 24)
+      return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
     return '${diff.inDays} day${diff.inDays > 1 ? 's' : ''} ago';
   }
 }
-
 
 // ============================================================================
 // SETTINGS TAB
@@ -920,7 +1016,8 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   void _updateThreshold(String type, int unclaimed, int claimed) {
     if (_settings == null) return;
-    final newThresholds = Map<String, EscalationThreshold>.from(_settings!.thresholds);
+    final newThresholds =
+        Map<String, EscalationThreshold>.from(_settings!.thresholds);
     newThresholds[type] = EscalationThreshold(
       type: type,
       unclaimedMinutes: unclaimed,
@@ -1067,7 +1164,8 @@ class _SettingsTabState extends State<_SettingsTab> {
                     )
                   : const Text(
                       'Save Settings',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                     ),
             ),
           ),
@@ -1082,7 +1180,8 @@ class _SettingsTabState extends State<_SettingsTab> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• ', style: TextStyle(fontSize: 11, color: Color(0xFF78350F))),
+          const Text('• ',
+              style: TextStyle(fontSize: 11, color: Color(0xFF78350F))),
           Expanded(
             child: Text(
               text,
@@ -1125,8 +1224,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
   @override
   void initState() {
     super.initState();
-    _unclaimedController =
-        TextEditingController(text: widget.threshold.unclaimedMinutes.toString());
+    _unclaimedController = TextEditingController(
+        text: widget.threshold.unclaimedMinutes.toString());
     _claimedController =
         TextEditingController(text: widget.threshold.claimedMinutes.toString());
   }
@@ -1220,7 +1319,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                     const SizedBox(height: 4),
                     Text(
                       'Alert escalates if not claimed within this time',
-                      style: TextStyle(fontSize: 10, color: widget.color.withOpacity(0.7)),
+                      style: TextStyle(
+                          fontSize: 10, color: widget.color.withOpacity(0.7)),
                     ),
                   ],
                 ),
@@ -1262,7 +1362,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                               ),
                               onChanged: (value) {
                                 final unclaimed =
-                                    int.tryParse(_unclaimedController.text) ?? 0;
+                                    int.tryParse(_unclaimedController.text) ??
+                                        0;
                                 final claimed = int.tryParse(value) ?? 0;
                                 widget.onUpdate(unclaimed, claimed);
                               },
@@ -1279,7 +1380,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                     const SizedBox(height: 4),
                     Text(
                       'Alert escalates if claimed but not fixed within this time',
-                      style: TextStyle(fontSize: 10, color: widget.color.withOpacity(0.7)),
+                      style: TextStyle(
+                          fontSize: 10, color: widget.color.withOpacity(0.7)),
                     ),
                   ],
                 ),
@@ -1309,7 +1411,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: widget.bgColor,
                         borderRadius: BorderRadius.circular(4),
@@ -1324,7 +1427,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Text('→', style: TextStyle(fontSize: 10, color: _muted)),
+                    const Text('→',
+                        style: TextStyle(fontSize: 10, color: _muted)),
                     const SizedBox(width: 6),
                     Text(
                       'Escalates after ${_unclaimedController.text} min',
@@ -1336,7 +1440,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: widget.bgColor,
                         borderRadius: BorderRadius.circular(4),
@@ -1351,7 +1456,8 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Text('→', style: TextStyle(fontSize: 10, color: _muted)),
+                    const Text('→',
+                        style: TextStyle(fontSize: 10, color: _muted)),
                     const SizedBox(width: 6),
                     Text(
                       'Escalates after ${_claimedController.text} min without fix',

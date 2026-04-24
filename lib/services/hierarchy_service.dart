@@ -10,41 +10,45 @@ class HierarchyService {
       final data = event.snapshot.value;
       if (data == null) return [];
       if (data is! Map) return [];
-final map = Map<Object?, Object?>.from(data);
-final factories = <Factory>[];
-for (var entry in map.entries) {
-  try {
-    if (entry.value is Map<Object?, Object?>) {
-      factories.add(Factory.fromMap(entry.key.toString(), entry.value as Map<Object?, Object?>));
-    }
-  } catch (e) {
-    print('Error parsing factory ${entry.key}: $e');
-  }
-}
+      final map = Map<Object?, Object?>.from(data);
+      final factories = <Factory>[];
+      for (var entry in map.entries) {
+        try {
+          if (entry.value is Map<Object?, Object?>) {
+            factories.add(Factory.fromMap(
+                entry.key.toString(), entry.value as Map<Object?, Object?>));
+          }
+        } catch (e) {
+          print('Error parsing factory ${entry.key}: $e');
+        }
+      }
       return factories;
     });
   }
-  /// Checks if the given factory name, conveyor number, and station number exist in the hierarchy.
-Future<bool> validateLocation(String factoryName, int conveyorNumber, int stationNumber) async {
-  final factories = await getFactories().first;
-  final factory = factories.cast<Factory?>().firstWhere(
-    (f) => f?.name == factoryName,
-    orElse: () => null,
-  );
-  if (factory == null) return false;
-  final conveyor = factory.conveyors.values.cast<Conveyor?>().firstWhere(
-    (c) => c?.number == conveyorNumber,
-    orElse: () => null,
-  );
-  if (conveyor == null) return false;
-  final station = conveyor.stations.values.cast<Station?>().firstWhere(
-    (s) => s?.id == 'station_$stationNumber',
-    orElse: () => null,
-  );
-  return station != null;
-}
 
-  Future<void> addFactoryWithConveyors(String id, String name, String location, int numConveyors) async {
+  /// Checks if the given factory name, conveyor number, and station number exist in the hierarchy.
+  Future<bool> validateLocation(
+      String factoryName, int conveyorNumber, int stationNumber) async {
+    final factories = await getFactories().first;
+    final factory = factories.cast<Factory?>().firstWhere(
+          (f) => f?.name == factoryName,
+          orElse: () => null,
+        );
+    if (factory == null) return false;
+    final conveyor = factory.conveyors.values.cast<Conveyor?>().firstWhere(
+          (c) => c?.number == conveyorNumber,
+          orElse: () => null,
+        );
+    if (conveyor == null) return false;
+    final station = conveyor.stations.values.cast<Station?>().firstWhere(
+          (s) => s?.id == 'station_$stationNumber',
+          orElse: () => null,
+        );
+    return station != null;
+  }
+
+  Future<void> addFactoryWithConveyors(
+      String id, String name, String location, int numConveyors) async {
     final factoryRef = _db.child('hierarchy/factories/$id');
     final existing = await factoryRef.get();
     if (existing.exists) {
@@ -70,10 +74,12 @@ Future<bool> validateLocation(String factoryName, int conveyorNumber, int statio
 
   Future<void> addConveyor(String factoryId, int conveyorNumber) async {
     final conveyorId = "conveyor_$conveyorNumber";
-    final conveyorRef = _db.child('hierarchy/factories/$factoryId/conveyors/$conveyorId');
+    final conveyorRef =
+        _db.child('hierarchy/factories/$factoryId/conveyors/$conveyorId');
     final existing = await conveyorRef.get();
     if (existing.exists) {
-      throw Exception('Conveyor $conveyorNumber already exists in this factory');
+      throw Exception(
+          'Conveyor $conveyorNumber already exists in this factory');
     }
     final conveyorMap = {
       'number': conveyorNumber,
@@ -82,21 +88,27 @@ Future<bool> validateLocation(String factoryName, int conveyorNumber, int statio
     await conveyorRef.set(conveyorMap);
   }
 
-  Future<void> updateConveyorNumber(String factoryId, String conveyorId, int newNumber) async {
-    await _db.child('hierarchy/factories/$factoryId/conveyors/$conveyorId/number').set(newNumber);
+  Future<void> updateConveyorNumber(
+      String factoryId, String conveyorId, int newNumber) async {
+    await _db
+        .child('hierarchy/factories/$factoryId/conveyors/$conveyorId/number')
+        .set(newNumber);
   }
 
-  Future<void> addStation(String factoryId, String conveyorId, int stationNumber) async {
+  Future<void> addStation(
+      String factoryId, String conveyorId, int stationNumber) async {
     // Use string key to prevent Firebase array conversion
     final stationId = "station_$stationNumber";
-    final stationRef = _db.child('hierarchy/factories/$factoryId/conveyors/$conveyorId/stations/$stationId');
+    final stationRef = _db.child(
+        'hierarchy/factories/$factoryId/conveyors/$conveyorId/stations/$stationId');
     final existing = await stationRef.get();
     if (existing.exists) {
       throw Exception('Station $stationNumber already exists');
     }
     final stationMap = {
       'name': 'Station $stationNumber',
-      'address': '${factoryId.replaceAll(' ', '_')}_C${conveyorId.replaceAll('conveyor_', '')}_P$stationNumber',
+      'address':
+          '${factoryId.replaceAll(' ', '_')}_C${conveyorId.replaceAll('conveyor_', '')}_P$stationNumber',
     };
     await stationRef.set(stationMap);
   }
@@ -106,6 +118,35 @@ Future<bool> validateLocation(String factoryName, int conveyorNumber, int statio
   }
 
   Future<void> deleteConveyor(String factoryId, String conveyorId) async {
-    await _db.child('hierarchy/factories/$factoryId/conveyors/$conveyorId').remove();
+    await _db
+        .child('hierarchy/factories/$factoryId/conveyors/$conveyorId')
+        .remove();
+  }
+
+  Future<int> getActiveAlertsCountForConveyor({
+    required String usine,
+    required int convoyeur,
+  }) async {
+    final snapshot = await _db.child('alerts').get();
+    final data = snapshot.value;
+    if (data == null || data is! Map) {
+      return 0;
+    }
+
+    int count = 0;
+    final alerts = Map<Object?, Object?>.from(data);
+    for (final value in alerts.values) {
+      if (value is! Map) continue;
+      final alert = Map<Object?, Object?>.from(value);
+      final status = alert['status']?.toString() ?? '';
+      final alertUsine = alert['usine']?.toString() ?? '';
+      final alertConvoyeur = int.tryParse('${alert['convoyeur']}');
+
+      final isActive = status == 'disponible' || status == 'en_cours';
+      if (isActive && alertUsine == usine && alertConvoyeur == convoyeur) {
+        count++;
+      }
+    }
+    return count;
   }
 }
