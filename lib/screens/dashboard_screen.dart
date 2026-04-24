@@ -8,16 +8,17 @@ import 'package:vibration/vibration.dart';
 import '../providers/alert_provider.dart';
 import '../models/alert_model.dart';
 import '../services/auth_service.dart';
+import '../theme.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
 
-const _navy = Color(0xFF0D4A75);
-const _red = Color(0xFFE31E24);
-const _bgPage = Color(0xFFF8FAFC);
-const _white = Colors.white;
-const _muted = Color(0xFF6B7280);
+const _navy = AppColors.navy;
+const _red = AppColors.redAlt;
+const _bgPage = AppColors.bg;
+const _white = AppColors.white;
+const _muted = AppColors.textMuted;
 
 Color _typeColor(String type) => switch (type) {
       'qualite' => const Color(0xFFEF4444),
@@ -1828,7 +1829,7 @@ class _AlertRow extends StatelessWidget {
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)))));
 
-            final card = Container(
+    final card = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
           color: effectiveRowColor,
@@ -1837,7 +1838,8 @@ class _AlertRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(10)),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 520 && rightWidgets.isNotEmpty;
+          final isCompact =
+              constraints.maxWidth < 520 && rightWidgets.isNotEmpty;
 
           final leftPanel = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1871,8 +1873,7 @@ class _AlertRow extends StatelessWidget {
                           alert.isCritical
                               ? Icons.warning_rounded
                               : Icons.warning_amber_outlined,
-                          color:
-                              alert.isCritical ? Colors.red : Colors.orange,
+                          color: alert.isCritical ? Colors.red : Colors.orange,
                           size: 20),
                       tooltip: alert.isCritical
                           ? 'Remove critical flag'
@@ -1889,8 +1890,8 @@ class _AlertRow extends StatelessWidget {
               ]),
               const SizedBox(height: 6),
               Text(alert.description,
-                  style: const TextStyle(
-                      fontSize: 12, color: Color(0xFF6B7280))),
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
               const SizedBox(height: 4),
               Text(
                   'Address: ${alert.adresse}  ·  ${_formatTimestamp(alert.timestamp)}',
