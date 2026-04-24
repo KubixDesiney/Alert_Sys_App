@@ -1002,18 +1002,11 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       .remove();
                 if (context.mounted) {
                   Navigator.pop(context);
-                  final collabId = n['type'] == 'collaboration_request'
-                      ? n['collabRequestId']
-                      : null;
                   Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (_) =>
-                              AlertDetailScreen(
-                                alertId: n['alertId'],
-                                collabRequestId: collabId,
-                                showCollaborationDecision: collabId != null,
-                              )));
+                              AlertDetailScreen(alertId: n['alertId'])));
                 }
               },
             ),
@@ -1027,17 +1020,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 .remove();
           if (context.mounted) {
             Navigator.pop(context);
-            final collabId = n['type'] == 'collaboration_request'
-                ? n['collabRequestId']
-                : null;
             Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => AlertDetailScreen(
-                          alertId: n['alertId'],
-                          collabRequestId: collabId,
-                          showCollaborationDecision: collabId != null,
-                        )));
+                    builder: (_) => AlertDetailScreen(alertId: n['alertId'])));
           }
         },
       ),
