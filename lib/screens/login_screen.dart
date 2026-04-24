@@ -79,7 +79,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _downloadApk() async {
-    const url = 'https://github.com/KubixDesiney/Alert_Sys_App/releases/download/1.0.0b2/alertappsys.apk';
+    const url =
+        'https://github.com/KubixDesiney/Alert_Sys_App/releases/download/1.0.0b3/alertsysappb3.apk';
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     } else {
@@ -116,8 +117,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _navy,
                             foregroundColor: _white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
