@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,14 +16,48 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _error;
+  String _language = 'en';
 
   // Colors
-  static const _white = Colors.white;
-  static const _red = Color(0xFFDC2626);
+  static const _white = AppColors.white;
+  static const _red = AppColors.red;
   static const _redLight = Color(0xFFFEF2F2);
-  static const _border = Color(0xFFE5E7EB);
-  static const _textDark = Color(0xFF111827);
-  static const _textMuted = Color(0xFF6B7280);
+  static const _border = AppColors.borderSoft;
+  static const _textDark = AppColors.textDark;
+  static const _textMuted = AppColors.textMuted;
+
+  String _t(String key) {
+    const copy = {
+      'en': {
+        'title': 'Sign In',
+        'subtitle': 'Sign In (v2.0 - Patched!)',
+        'email': 'Email',
+        'email_hint': 'your@email.com',
+        'password': 'Password',
+        'login': 'Sign In',
+        'test_accounts': 'Test Accounts:',
+        'production_manager': 'Production Manager',
+        'supervisor': 'Supervisor',
+        'technician': 'Technician',
+        'accounts_note': 'Accounts are created by administrators',
+      },
+      'fr': {
+        'title': 'Connexion',
+        'subtitle': 'Connexion (v2.0 - Patched!)',
+        'email': 'Email',
+        'email_hint': 'votre@email.com',
+        'password': 'Mot de passe',
+        'login': 'Se connecter',
+        'test_accounts': 'Comptes de test :',
+        'production_manager': 'Chef de Production',
+        'supervisor': 'Superviseur',
+        'technician': 'Technicien',
+        'accounts_note': 'Les comptes sont crees par les administrateurs',
+      },
+    };
+
+    return copy[_language]?[key] ?? copy['en']![key] ?? key;
+  }
 
   Future<void> _login() async {
     setState(() {
@@ -54,12 +89,27 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'en', label: Text('EN')),
+                        ButtonSegment(value: 'fr', label: Text('FR')),
+                      ],
+                      selected: {_language},
+                      onSelectionChanged: (selection) {
+                        setState(() {
+                          _language = selection.first;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   // Logo / Title
-                  const Icon(Icons.factory_outlined,
-                      size: 56, color: _red),
+                  const Icon(Icons.factory_outlined, size: 56, color: _red),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Connexion',
+                  Text(
+                    _t('title'),
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w700,
@@ -68,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Connexion (v2.0 - Patched!)',
+                    _t('subtitle'),
                     style: TextStyle(
                       fontSize: 14,
                       color: _textMuted,
@@ -96,8 +146,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Email field
-                        const Text(
-                          'Email',
+                        Text(
+                          _t('email'),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -110,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           keyboardType: TextInputType.emailAddress,
                           style: const TextStyle(fontSize: 15),
                           decoration: InputDecoration(
-                            hintText: 'votre@email.com',
+                            hintText: _t('email_hint'),
                             hintStyle: TextStyle(color: _textMuted),
                             filled: true,
                             fillColor: _white,
@@ -126,15 +176,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: _red, width: 1.5),
+                              borderSide:
+                                  const BorderSide(color: _red, width: 1.5),
                             ),
                           ),
                         ),
                         const SizedBox(height: 18),
 
                         // Password field
-                        const Text(
-                          'Mot de passe',
+                        Text(
+                          _t('password'),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -160,8 +211,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     : Icons.visibility,
                                 color: _textMuted,
                               ),
-                              onPressed: () => setState(() =>
-                                  _obscurePassword = !_obscurePassword),
+                              onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword),
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -173,7 +224,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: _red, width: 1.5),
+                              borderSide:
+                                  const BorderSide(color: _red, width: 1.5),
                             ),
                           ),
                         ),
@@ -196,7 +248,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Expanded(
                                   child: Text(
                                     _error!,
-                                    style: const TextStyle(color: _red, fontSize: 13),
+                                    style: const TextStyle(
+                                        color: _red, fontSize: 13),
                                   ),
                                 ),
                               ],
@@ -227,8 +280,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Text(
-                                    'Se connecter',
+                                : Text(
+                                    _t('login'),
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -252,8 +305,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Column(
                       children: [
-                        const Text(
-                          'Comptes de test :',
+                        Text(
+                          _t('test_accounts'),
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -261,15 +314,15 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        _testAccountRow('superadmin@test.com', 'Super Admin'),
                         _testAccountRow(
-                            'superadmin@test.com', 'Super Admin'),
-                        _testAccountRow('admin@test.com', 'Chef de Production'),
+                            'admin@test.com', _t('production_manager')),
                         _testAccountRow(
-                            'superviseur@test.com', 'Superviseur'),
-                        _testAccountRow('tech@test.com', 'Technicien'),
+                            'superviseur@test.com', _t('supervisor')),
+                        _testAccountRow('tech@test.com', _t('technician')),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Les comptes sont créés par les administrateurs',
+                        Text(
+                          _t('accounts_note'),
                           style: TextStyle(fontSize: 11, color: _textMuted),
                           textAlign: TextAlign.center,
                         ),

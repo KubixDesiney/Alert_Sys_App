@@ -5,15 +5,16 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
+import '../theme.dart';
 
-const _navy = Color(0xFF0D4A75);
+const _navy = AppColors.navy;
 const _purple = Color(0xFF9333EA);
 const _white = Colors.white;
-const _bg = Color(0xFFF8FAFC);
-const _border = Color(0xFFE2E8F0);
-const _muted = Color(0xFF64748B);
+const _bg = AppColors.bg;
+const _border = AppColors.border;
+const _muted = AppColors.mutedDark;
 const _green = Color(0xFF16A34A);
-const _red = Color(0xFFDC2626);
+const _red = AppColors.red;
 
 class CollaborationProgressScreen extends StatelessWidget {
   const CollaborationProgressScreen({super.key});
