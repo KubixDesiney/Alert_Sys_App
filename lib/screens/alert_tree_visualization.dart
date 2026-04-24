@@ -1276,7 +1276,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     if (claimedBy != null) {
       return 'Claimed by $claimedBy';
     }
-    return 'In progress';
+    return 'Being fixed...';
   }
 
   Future<void> _showAssignSupervisorDialog(Map<String, dynamic> alert) async {
@@ -1464,7 +1464,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                                   child: Text('Available')),
                               DropdownMenuItem(
                                   value: 'en_cours',
-                                  child: Text('In Progress')),
+                                  child: Text('Being fixed...')),
                               DropdownMenuItem(
                                   value: 'validee', child: Text('Fixed')),
                             ],
@@ -1673,7 +1673,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   String _statusLabel(String status) => switch (status) {
         'validee' => 'Fixed',
-        'en_cours' => 'In Progress',
+        'en_cours' => 'Being fixed...',
         _ => 'Available',
       };
 }
