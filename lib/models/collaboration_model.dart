@@ -7,6 +7,11 @@ class CollaborationRequest {
   final List<String> targetSupervisorNames;
   final String message;
   final String status; // 'pending', 'approved', 'rejected'
+  /// Assistant decision prior to PM review: 'pending', 'accepted', 'refused'
+  final String assistantDecision;
+  final String? assistantId;
+  final String? assistantName;
+  final DateTime? assistantRespondedAt;
   final DateTime timestamp;
   final String? approvedBy;
   final DateTime? approvedAt;
@@ -30,6 +35,10 @@ class CollaborationRequest {
     required this.targetSupervisorNames,
     required this.message,
     required this.status,
+    this.assistantDecision = 'pending',
+    this.assistantId,
+    this.assistantName,
+    this.assistantRespondedAt,
     required this.timestamp,
     this.approvedBy,
     this.approvedAt,
@@ -55,6 +64,12 @@ class CollaborationRequest {
       targetSupervisorNames: List<String>.from(map['targetSupervisorNames'] ?? []),
       message: map['message'] ?? '',
       status: map['status'] ?? 'pending',
+      assistantDecision: map['assistantDecision'] ?? 'pending',
+      assistantId: map['assistantId'],
+      assistantName: map['assistantName'],
+      assistantRespondedAt: map['assistantRespondedAt'] != null
+          ? DateTime.parse(map['assistantRespondedAt'])
+          : null,
       timestamp: DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
       approvedBy: map['approvedBy'],
       approvedAt: map['approvedAt'] != null ? DateTime.parse(map['approvedAt']) : null,
@@ -80,6 +95,10 @@ class CollaborationRequest {
       'targetSupervisorNames': targetSupervisorNames,
       'message': message,
       'status': status,
+      'assistantDecision': assistantDecision,
+      'assistantId': assistantId,
+      'assistantName': assistantName,
+      'assistantRespondedAt': assistantRespondedAt?.toIso8601String(),
       'timestamp': timestamp.toIso8601String(),
       'approvedBy': approvedBy,
       'approvedAt': approvedAt?.toIso8601String(),

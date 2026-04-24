@@ -212,11 +212,13 @@ class _CollaborationCard extends StatelessWidget {
           ),
           _buildProgressStep(
             icon: Icons.pending,
-            title: 'Supervisor Approval',
-            subtitle: request.status == 'approved'
-                ? 'Approved by supervisor'
-                : 'Waiting for ${request.targetSupervisorNames.first} to approve the collaboration',
-            isCompleted: request.status == 'approved',
+            title: 'Assistant Response',
+            subtitle: request.assistantDecision == 'accepted'
+                ? 'Accepted by ${request.assistantName ?? request.targetSupervisorNames.first}'
+                : request.assistantDecision == 'refused'
+                    ? 'Refused by ${request.assistantName ?? request.targetSupervisorNames.first}'
+                    : 'Waiting for ${request.targetSupervisorNames.first} to accept or refuse',
+            isCompleted: request.assistantDecision == 'accepted',
             timestamp: null,
           ),
           _buildProgressStep(
@@ -244,7 +246,7 @@ class _CollaborationCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Your collaboration request will be reviewed first by the target supervisor, then by the Production Manager',
+                      'Your collaboration request will be reviewed first by the assistant, then by the Production Manager',
                       style: TextStyle(
                         fontSize: 11,
                         color: const Color(0xFF1E40AF),
