@@ -1002,11 +1002,18 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       .remove();
                 if (context.mounted) {
                   Navigator.pop(context);
+                  final collabId = n['type'] == 'collaboration_request'
+                      ? n['collabRequestId']
+                      : null;
                   Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (_) =>
-                              AlertDetailScreen(alertId: n['alertId'])));
+                              AlertDetailScreen(
+                                alertId: n['alertId'],
+                                collabRequestId: collabId,
+                                showCollaborationDecision: collabId != null,
+                              )));
                 }
               },
             ),
@@ -1020,10 +1027,17 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 .remove();
           if (context.mounted) {
             Navigator.pop(context);
+            final collabId = n['type'] == 'collaboration_request'
+                ? n['collabRequestId']
+                : null;
             Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => AlertDetailScreen(alertId: n['alertId'])));
+                    builder: (_) => AlertDetailScreen(
+                          alertId: n['alertId'],
+                          collabRequestId: collabId,
+                          showCollaborationDecision: collabId != null,
+                        )));
           }
         },
       ),
@@ -2059,76 +2073,6 @@ class _HoldToCollabCardState extends State<_HoldToCollabCard>
                                 Color(0x55A855F7),
                                 Color(0x447E22CE),
                               ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: Center(
-                          child: ScaleTransition(
-                            scale: Tween<double>(begin: 0.96, end: 1.04)
-                                .animate(CurvedAnimation(
-                              parent: pulse,
-                              curve: Curves.easeInOut,
-                            )),
-                            child: FadeTransition(
-                              opacity: Tween<double>(begin: 0.75, end: 1.0)
-                                  .animate(CurvedAnimation(
-                                parent: pulse,
-                                curve: Curves.easeInOut,
-                              )),
-                              child: SizedBox(
-                                width: 210,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF3E8FF)
-                                        .withOpacity(0.96),
-                                    borderRadius: BorderRadius.circular(99),
-                                    border: Border.all(
-                                      color: const Color(0xFFD8B4FE),
-                                    ),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(99),
-                                    child: Stack(
-                                      children: [
-                                        FractionallySizedBox(
-                                          alignment: Alignment.centerLeft,
-                                          widthFactor: _progress,
-                                          child: Container(
-                                            height: 24,
-                                            decoration: const BoxDecoration(
-                                              gradient: LinearGradient(
-                                                begin: Alignment.centerLeft,
-                                                end: Alignment.centerRight,
-                                                colors: [
-                                                  Color(0xFFC084FC),
-                                                  Color(0xFFA855F7),
-                                                  Color(0xFF7E22CE),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 5),
-                                          child: Text(
-                                            'Holding to collab...',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Color(0xFF7E22CE),
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
                             ),
                           ),
                         ),

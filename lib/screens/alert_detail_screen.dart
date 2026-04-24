@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../models/alert_model.dart';
 import '../providers/alert_provider.dart';
+import '../models/collaboration_model.dart';
+import '../services/collaboration_service.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
-  const AlertDetailScreen({super.key, required this.alertId});
+  final String? collabRequestId;
+  final bool showCollaborationDecision;
+  const AlertDetailScreen({
+    super.key,
+    required this.alertId,
+    this.collabRequestId,
+    this.showCollaborationDecision = false,
+  });
 
   @override
   State<AlertDetailScreen> createState() => _AlertDetailScreenState();
@@ -13,22 +24,37 @@ class AlertDetailScreen extends StatefulWidget {
 
 class _AlertDetailScreenState extends State<AlertDetailScreen> {
   late Future<AlertModel> _alertFuture;
+  Future<CollaborationRequest?>? _collabFuture;
   final _commentController = TextEditingController();
   final _reasonController = TextEditingController();
   bool _isAiLoading = false;
   String? _aiSuggestion;
+  final _collabService = CollaborationService();
 
   @override
   void initState() {
     super.initState();
     _alertFuture = _loadAlert();
+    if (widget.showCollaborationDecision && widget.collabRequestId != null) {
+      _collabFuture = _collabService.getCollaborationRequest(widget.collabRequestId!);
+    }
   }
 
   Future<AlertModel> _loadAlert() async {
     final provider = context.read<AlertProvider>();
-    await Future.delayed(const Duration(milliseconds: 500));
-    final all = [...provider.availableAlerts, ...provider.inProgressAlerts(provider.currentSuperviseurId), ...provider.validatedAlerts(provider.currentSuperviseurId)];
-    return all.firstWhere((a) => a.id == widget.alertId);
+    final local = provider.allAlerts;
+    try {
+      return local.firstWhere((a) => a.id == widget.alertId);
+    } catch (_) {
+      final snap = await FirebaseDatabase.instance.ref('alerts/${widget.alertId}').get();
+      if (!snap.exists || snap.value == null) {
+        throw Exception('Alert not found');
+      }
+      return AlertModel.fromMap(
+        widget.alertId,
+        Map<String, dynamic>.from(snap.value as Map),
+      );
+    }
   }
 
   void _addComment(AlertProvider provider, AlertModel alert) async {
@@ -62,6 +88,40 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     _isAiLoading = false;
   });
 }
+
+  Future<void> _respondToCollab({
+    required bool accepted,
+    required CollaborationRequest request,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final uid = user.uid;
+    final name = user.email?.split('@').first ?? 'Supervisor';
+    try {
+      await _collabService.respondToCollaborationRequest(
+        requestId: request.id,
+        responderId: uid,
+        responderName: name,
+        accepted: accepted,
+      );
+      if (!mounted) return;
+      setState(() {
+        _collabFuture = _collabService.getCollaborationRequest(request.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(accepted
+              ? 'Collaboration accepted. Waiting for PM approval.'
+              : 'Collaboration refused.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +157,87 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                   ]),
                 )),
                 const SizedBox(height: 16),
+
+                if (widget.showCollaborationDecision &&
+                    widget.collabRequestId != null &&
+                    _collabFuture != null) ...[
+                  FutureBuilder<CollaborationRequest?>(
+                    future: _collabFuture,
+                    builder: (context, collabSnap) {
+                      if (collabSnap.connectionState == ConnectionState.waiting) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: LinearProgressIndicator(),
+                        );
+                      }
+                      final req = collabSnap.data;
+                      if (req == null) return const SizedBox.shrink();
+
+                      final uid = FirebaseAuth.instance.currentUser?.uid;
+                      final isTarget = uid != null && req.targetSupervisorIds.contains(uid);
+
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Collaboration Request',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              Text('From: ${req.requesterName}'),
+                              const SizedBox(height: 4),
+                              Text(req.message),
+                              const SizedBox(height: 12),
+                              if (!isTarget)
+                                const Text(
+                                  'You are not a target for this collaboration request.',
+                                  style: TextStyle(color: Colors.grey),
+                                )
+                              else if (req.assistantDecision == 'pending')
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _respondToCollab(
+                                          accepted: false,
+                                          request: req,
+                                        ),
+                                        icon: const Icon(Icons.close, color: Colors.red),
+                                        label: const Text(
+                                          'Refuse',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _respondToCollab(
+                                          accepted: true,
+                                          request: req,
+                                        ),
+                                        icon: const Icon(Icons.check),
+                                        label: const Text('Accept'),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Text(
+                                  'Decision: ${req.assistantDecision}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // AI Assist button (only if not resolved)
                 if (alert.status != 'validee') ...[
