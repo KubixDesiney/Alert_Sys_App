@@ -42,7 +42,7 @@ Future<void> _initOneSignalPostLaunch() async {
   if (kIsWeb) return;
   try {
     OneSignal.Debug.setLogLevel(OSLogLevel.none);
-    OneSignal.initialize("322abcb7-c4e5-4630-811f-ccea86a6f481");
+    OneSignal.initialize("os_v2_app_givlzn6e4vddbai7ztvinjxuqh57nrdtotbej4ed7ua5hchr3y3c5ajdofhf6ykchqrsyg6c2n2igiah7c4y53bt2qls5iojftxpjua");
 
     // Prevent heavy restoration backlog from blocking first frames.
     OneSignal.Notifications.clearAll();
