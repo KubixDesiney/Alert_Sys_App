@@ -1223,7 +1223,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                       const SizedBox(height: 12),
                       _SheetLabel('Assigned Plant'),
                       DropdownButtonFormField<String>(
-                        initialValue: selectedUsine,
+                        value: selectedUsine,
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                           isDense: true,
