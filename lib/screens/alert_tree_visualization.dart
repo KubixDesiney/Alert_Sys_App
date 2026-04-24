@@ -1450,7 +1450,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         SizedBox(
                           width: 180,
                           child: DropdownButtonFormField<String>(
-                            initialValue: selectedStatus,
+                            value: selectedStatus,
                             decoration: const InputDecoration(
                               labelText: 'Status',
                               border: OutlineInputBorder(),
@@ -1479,7 +1479,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         SizedBox(
                           width: 220,
                           child: DropdownButtonFormField<String>(
-                            initialValue: selectedDateFilter,
+                            value: selectedDateFilter,
                             decoration: const InputDecoration(
                               labelText: 'Date range',
                               border: OutlineInputBorder(),
