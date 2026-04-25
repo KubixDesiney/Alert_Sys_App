@@ -50,31 +50,49 @@ Future<void> _safeInitFirebase() async {
 Future<void> _initOneSignalPostLaunch(String? appId) async {
   if (kIsWeb) return;
   if (appId == null || appId.isEmpty) {
-    debugPrint('OneSignal init skipped: missing app ID');
+    debugPrint('OneSignal init skipped: missing app ID from config');
     return;
   }
   try {
     OneSignal.Debug.setLogLevel(OSLogLevel.none);
     OneSignal.initialize(appId);
-
-    // Prevent heavy restoration backlog from blocking first frames.
     OneSignal.Notifications.clearAll();
 
-    // Avoid forcing permission popup immediately at app boot.
-    await OneSignal.Notifications.requestPermission(false);
+    // IMPORTANT: Request permission with `true` to show the system dialog
+    final permissionStatus =
+        await OneSignal.Notifications.requestPermission(true);
+    if (permissionStatus) {
+      debugPrint('✅ Notification permission granted');
+    } else {
+      debugPrint('❌ Permission denied – push will not work');
+      return;
+    }
+
+    // Wait for OneSignal to generate a subscribed player ID
+    await Future.delayed(const Duration(seconds: 2));
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final playerId = await OneSignal.User.getOnesignalId();
-    if (playerId == null || playerId.isEmpty) return;
+    String? playerId = await OneSignal.User.getOnesignalId();
+    if (playerId == null || playerId.isEmpty) {
+      // Retry once
+      await Future.delayed(const Duration(seconds: 1));
+      playerId = await OneSignal.User.getOnesignalId();
+    }
+    if (playerId == null || playerId.isEmpty) {
+      debugPrint('❌ No player ID – OneSignal not ready');
+      return;
+    }
 
+    // Save the player ID only after subscription is confirmed
     await FirebaseDatabase.instance.ref('users/${user.uid}').update({
       'onesignalId': playerId,
       'lastSeen': DateTime.now().toIso8601String(),
     });
+    debugPrint('✅ OneSignal player ID saved: $playerId');
   } catch (e) {
-    debugPrint('OneSignal init skipped: $e');
+    debugPrint('OneSignal init error: $e');
   }
 }
 

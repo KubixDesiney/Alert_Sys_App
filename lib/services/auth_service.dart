@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'config_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -16,24 +17,72 @@ class AuthService {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       final uid = _auth.currentUser?.uid;
       if (uid != null) {
-        final updates = {
+        final updates = <String, dynamic>{
           'status': 'active',
           'lastSeen': DateTime.now().toIso8601String(),
         };
-        // Only get OneSignal ID on mobile
-        if (!kIsWeb) {
-          String? playerId = await OneSignal.User.getOnesignalId();
-          if (playerId != null && playerId.isNotEmpty) {
-            updates['onesignalId'] = playerId;
-          }
-        }
         await _db.child('users/$uid').update(updates);
+        // Re-request permission and refresh player ID after sign-in (mobile only).
+        await _syncOneSignalPlayerIdAfterLogin(uid);
       }
       return null;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') return 'User not found.';
       if (e.code == 'wrong-password') return 'Incorrect password.';
       return 'Login error: ${e.message}';
+    }
+  }
+
+  /// Same flow as [main.dart] post-launch init: force permission dialog, wait
+  /// for subscription, then persist `onesignalId` so denied users get another
+  /// chance on each login.
+  Future<void> _syncOneSignalPlayerIdAfterLogin(String uid) async {
+    if (kIsWeb) return;
+    try {
+      final RemoteConfig config;
+      try {
+        config = await ConfigService.fetchConfig();
+      } catch (e) {
+        debugPrint('OneSignal login sync: config fetch failed: $e');
+        return;
+      }
+      final appId = config.onesignalAppId;
+      if (appId.isEmpty) {
+        debugPrint('OneSignal login sync: missing app ID');
+        return;
+      }
+
+      OneSignal.Debug.setLogLevel(OSLogLevel.none);
+      OneSignal.initialize(appId);
+
+      final permissionStatus =
+          await OneSignal.Notifications.requestPermission(true);
+      if (permissionStatus) {
+        debugPrint('✅ Notification permission granted (login)');
+      } else {
+        debugPrint('❌ Permission denied – push will not work (login)');
+        return;
+      }
+
+      await Future.delayed(const Duration(seconds: 2));
+
+      String? playerId = await OneSignal.User.getOnesignalId();
+      if (playerId == null || playerId.isEmpty) {
+        await Future.delayed(const Duration(seconds: 1));
+        playerId = await OneSignal.User.getOnesignalId();
+      }
+      if (playerId == null || playerId.isEmpty) {
+        debugPrint('❌ No player ID – OneSignal not ready (login)');
+        return;
+      }
+
+      await _db.child('users/$uid').update({
+        'onesignalId': playerId,
+        'lastSeen': DateTime.now().toIso8601String(),
+      });
+      debugPrint('✅ OneSignal player ID saved (login): $playerId');
+    } catch (e) {
+      debugPrint('OneSignal login sync error: $e');
     }
   }
 
