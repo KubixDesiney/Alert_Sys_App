@@ -71,13 +71,21 @@ Future<void> _initOneSignalPostLaunch(String? appId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Set external user ID (Firebase UID) – stable across reinstalls / player ID changes
-    OneSignal.login(user.uid);
+    // Associate the current Firebase user with OneSignal external user ID.
+    try {
+      await OneSignal.login(user.uid);
+      debugPrint('✅ OneSignal external ID set (initialize): ${user.uid}');
+    } catch (e) {
+      debugPrint('OneSignal.login error: $e');
+    }
 
-    // Optional: player ID for RTDB (server uses it for include_player_ids) + debugging
-    final String? playerId = await OneSignal.User.getOnesignalId();
+    String? playerId = await OneSignal.User.getOnesignalId();
+    if (playerId == null || playerId.isEmpty) {
+      await Future.delayed(const Duration(seconds: 1));
+      playerId = await OneSignal.User.getOnesignalId();
+    }
     debugPrint(
-        '✅ OneSignal external ID set: ${user.uid}, player ID: $playerId');
+        '✅ OneSignal external ID set (initialize): ${user.uid}, player ID: $playerId');
 
     if (playerId != null && playerId.isNotEmpty) {
       await FirebaseDatabase.instance.ref('users/${user.uid}').update({

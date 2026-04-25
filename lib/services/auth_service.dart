@@ -81,17 +81,20 @@ class AuthService {
 
       await Future.delayed(const Duration(seconds: 2));
 
-      // Associate device with Firebase UID (survives reinstalls / subscription changes)
       try {
-        OneSignal.login(uid);
+        await OneSignal.login(uid);
+        debugPrint('✅ OneSignal external ID set (login): $uid');
       } catch (e) {
         debugPrint('OneSignal login sync: OneSignal.login failed: $e');
-        return;
       }
 
-      final String? playerId = await OneSignal.User.getOnesignalId();
+      String? playerId = await OneSignal.User.getOnesignalId();
+      if (playerId == null || playerId.isEmpty) {
+        await Future.delayed(const Duration(seconds: 1));
+        playerId = await OneSignal.User.getOnesignalId();
+      }
       debugPrint(
-          '✅ OneSignal external ID set (login): $uid, player ID: $playerId');
+          '✅ OneSignal login sync: $uid, player ID: $playerId');
 
       if (playerId == null || playerId.isEmpty) {
         debugPrint('❌ Player ID still null (login)');
@@ -226,7 +229,8 @@ class AuthService {
     }
     if (!kIsWeb) {
       try {
-        OneSignal.logout();
+        await OneSignal.logout();
+        debugPrint('✅ OneSignal logout called on app sign out');
       } catch (e) {
         debugPrint('OneSignal logout error: $e');
       }
