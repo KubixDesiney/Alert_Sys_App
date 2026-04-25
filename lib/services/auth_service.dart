@@ -66,13 +66,15 @@ class AuthService {
 
       await Future.delayed(const Duration(seconds: 2));
 
-      String? playerId = await OneSignal.User.getOnesignalId();
+      // Associate device with Firebase UID (survives reinstalls / subscription changes)
+      OneSignal.login(uid);
+
+      final String? playerId = await OneSignal.User.getOnesignalId();
+      debugPrint(
+          '✅ OneSignal external ID set (login): $uid, player ID: $playerId');
+
       if (playerId == null || playerId.isEmpty) {
-        await Future.delayed(const Duration(seconds: 1));
-        playerId = await OneSignal.User.getOnesignalId();
-      }
-      if (playerId == null || playerId.isEmpty) {
-        debugPrint('❌ No player ID – OneSignal not ready (login)');
+        debugPrint('❌ Player ID still null (login)');
         return;
       }
 
@@ -80,7 +82,6 @@ class AuthService {
         'onesignalId': playerId,
         'lastSeen': DateTime.now().toIso8601String(),
       });
-      debugPrint('✅ OneSignal player ID saved (login): $playerId');
     } catch (e) {
       debugPrint('OneSignal login sync error: $e');
     }
@@ -202,6 +203,13 @@ class AuthService {
       }
     } catch (e) {
       debugPrint('Logout DB error: $e');
+    }
+    if (!kIsWeb) {
+      try {
+        OneSignal.logout();
+      } catch (e) {
+        debugPrint('OneSignal logout error: $e');
+      }
     }
     await _auth.signOut();
   }
