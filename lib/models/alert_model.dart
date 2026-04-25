@@ -17,6 +17,9 @@ class AlertModel {
   final String? collaborationRequestId; // ✅ NEW
   final bool isEscalated;
   final DateTime? escalatedAt;
+  final bool? wasAssisted;  // ✅ NEW - Track if this alert was assisted
+  final String? assistedBySupervisorId;  // ✅ NEW - Who supervised the assist
+  final String? assistedBySupervisorName;  // ✅ NEW - Name of supervisor
   String status;
   String? superviseurId;
   String? superviseurName;
@@ -45,6 +48,9 @@ class AlertModel {
     this.collaborationRequestId,
     this.isCritical = false,
     this.criticalNote,
+    this.wasAssisted = false,
+    this.assistedBySupervisorId,
+    this.assistedBySupervisorName,
     this.status = 'disponible',
     this.superviseurId,
     this.superviseurName,
@@ -83,6 +89,9 @@ class AlertModel {
       resolvedAt: data['resolvedAt'] != null ? _parseDate(data['resolvedAt']) : null,
       isEscalated: data['isEscalated'] ?? false,
       escalatedAt: data['escalatedAt'] != null ? _parseDate(data['escalatedAt']) : null,
+      wasAssisted: data['wasAssisted'] ?? false,
+      assistedBySupervisorId: data['assistedBySupervisorId'],
+      assistedBySupervisorName: data['assistedBySupervisorName'],
     );
   }
 
