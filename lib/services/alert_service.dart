@@ -1,4 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
 
@@ -80,6 +82,16 @@ class AlertService {
       'elapsedTime': null,
     };
     await ref.set(alertData);
+    // Trigger the Cloudflare Worker to send notifications immediately
+    try {
+      await http.post(
+        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev/'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'alertId': alertId}),
+      );
+    } catch (e) {
+      print('Manual worker trigger failed: $e');
+    }
     return alertId;
   }
 
