@@ -14,22 +14,30 @@ class AuthService {
 
   Future<String?> login(String email, String password) async {
     try {
+      debugPrint('AuthService.login: signing in...');
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       final uid = _auth.currentUser?.uid;
       if (uid != null) {
+        debugPrint('AuthService.login: sign-in OK uid=$uid');
         final updates = <String, dynamic>{
           'status': 'active',
           'lastSeen': DateTime.now().toIso8601String(),
         };
         await _db.child('users/$uid').update(updates);
         // Re-request permission and refresh player ID after sign-in (mobile only).
-        await _syncOneSignalPlayerIdAfterLogin(uid);
+        // IMPORTANT: do not block login on OneSignal SDK/permission state.
+        _syncOneSignalPlayerIdAfterLogin(uid);
+      } else {
+        debugPrint('AuthService.login: sign-in returned null uid');
       }
       return null;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') return 'User not found.';
       if (e.code == 'wrong-password') return 'Incorrect password.';
       return 'Login error: ${e.message}';
+    } catch (e) {
+      debugPrint('AuthService.login: unexpected error: $e');
+      return 'Login error: $e';
     }
   }
 
@@ -39,6 +47,7 @@ class AuthService {
   Future<void> _syncOneSignalPlayerIdAfterLogin(String uid) async {
     if (kIsWeb) return;
     try {
+      debugPrint('OneSignal login sync: start uid=$uid');
       final RemoteConfig config;
       try {
         config = await ConfigService.fetchConfig();
@@ -56,7 +65,13 @@ class AuthService {
       OneSignal.initialize(appId);
 
       final permissionStatus =
-          await OneSignal.Notifications.requestPermission(true);
+          await OneSignal.Notifications.requestPermission(true).timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  debugPrint('OneSignal login sync: permission request timed out');
+                  return false;
+                },
+              );
       if (permissionStatus) {
         debugPrint('✅ Notification permission granted (login)');
       } else {
@@ -67,7 +82,12 @@ class AuthService {
       await Future.delayed(const Duration(seconds: 2));
 
       // Associate device with Firebase UID (survives reinstalls / subscription changes)
-      OneSignal.login(uid);
+      try {
+        OneSignal.login(uid);
+      } catch (e) {
+        debugPrint('OneSignal login sync: OneSignal.login failed: $e');
+        return;
+      }
 
       final String? playerId = await OneSignal.User.getOnesignalId();
       debugPrint(
