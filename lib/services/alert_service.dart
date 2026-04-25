@@ -151,13 +151,22 @@ class AlertService {
   }
 
   Future<void> resolveAlert(
-      String alertId, String reason, int elapsedMinutes) async {
-    await _db.child('alerts/$alertId').update({
+      String alertId, String reason, int elapsedMinutes, {String? assistingSupervisorId, String? assistingSupervisorName}) async {
+    final updates = {
       'status': 'validee',
       'elapsedTime': elapsedMinutes,
       'resolutionReason': reason,
       'resolvedAt': DateTime.now().toIso8601String(),
-    });
+    };
+
+    // If resolved by a supervisor with assistant help, mark it as assisted for the assistant
+    if (assistingSupervisorId != null && assistingSupervisorName != null) {
+      updates['wasAssisted'] = true;
+      updates['assistedBySupervisorId'] = assistingSupervisorId;
+      updates['assistedBySupervisorName'] = assistingSupervisorName;
+    }
+
+    await _db.child('alerts/$alertId').update(updates);
   }
 
   Future<void> addComment(String alertId, String comment) async {

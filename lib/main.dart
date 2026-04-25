@@ -63,6 +63,7 @@ class AlertSysApp extends StatelessWidget {
             error: Color(0xFFE31E24),
           ),
         ),
+        navigatorKey: FcmService.navigatorKey,
         home: const AuthGate(),
       ),
     );
