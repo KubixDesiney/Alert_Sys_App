@@ -66,24 +66,27 @@ Future<void> _initOneSignalPostLaunch(String? appId) async {
       return;
     }
 
-    // Give OneSignal time to register the device fully
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Get the player ID (this should now be the subscribed one)
-    String? playerId = await OneSignal.User.getOnesignalId();
-    if (playerId == null || playerId.isEmpty) {
-      debugPrint('❌ Player ID still null');
-      return;
-    }
+    // Set external user ID (Firebase UID) – stable across reinstalls / player ID changes
+    OneSignal.login(user.uid);
 
-    await FirebaseDatabase.instance.ref('users/${user.uid}').update({
-      'onesignalId': playerId,
-      'lastSeen': DateTime.now().toIso8601String(),
-    });
-    debugPrint('✅ Saved correct player ID: $playerId');
+    // Optional: player ID for RTDB (server uses it for include_player_ids) + debugging
+    final String? playerId = await OneSignal.User.getOnesignalId();
+    debugPrint(
+        '✅ OneSignal external ID set: ${user.uid}, player ID: $playerId');
+
+    if (playerId != null && playerId.isNotEmpty) {
+      await FirebaseDatabase.instance.ref('users/${user.uid}').update({
+        'onesignalId': playerId,
+        'lastSeen': DateTime.now().toIso8601String(),
+      });
+    } else {
+      debugPrint('❌ Player ID still null');
+    }
   } catch (e) {
     debugPrint('OneSignal init error: $e');
   }
