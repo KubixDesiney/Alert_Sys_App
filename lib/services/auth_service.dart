@@ -1,9 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
-import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
-import 'config_service.dart';
+import 'fcm_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -24,9 +23,14 @@ class AuthService {
           'lastSeen': DateTime.now().toIso8601String(),
         };
         await _db.child('users/$uid').update(updates);
-        // Re-request permission and refresh player ID after sign-in (mobile only).
-        // IMPORTANT: do not block login on OneSignal SDK/permission state.
-        _syncOneSignalPlayerIdAfterLogin(uid);
+        // Initialize FCM after sign-in
+        if (!kIsWeb) {
+          try {
+            await FcmService().init();
+          } catch (e) {
+            debugPrint('FCM init after login failed: $e');
+          }
+        }
       } else {
         debugPrint('AuthService.login: sign-in returned null uid');
       }
@@ -38,75 +42,6 @@ class AuthService {
     } catch (e) {
       debugPrint('AuthService.login: unexpected error: $e');
       return 'Login error: $e';
-    }
-  }
-
-  /// Same flow as [main.dart] post-launch init: force permission dialog, wait
-  /// for subscription, then persist `onesignalId` so denied users get another
-  /// chance on each login.
-  Future<void> _syncOneSignalPlayerIdAfterLogin(String uid) async {
-    if (kIsWeb) return;
-    try {
-      debugPrint('OneSignal login sync: start uid=$uid');
-      final RemoteConfig config;
-      try {
-        config = await ConfigService.fetchConfig();
-      } catch (e) {
-        debugPrint('OneSignal login sync: config fetch failed: $e');
-        return;
-      }
-      final appId = config.onesignalAppId;
-      if (appId.isEmpty) {
-        debugPrint('OneSignal login sync: missing app ID');
-        return;
-      }
-
-      OneSignal.Debug.setLogLevel(OSLogLevel.none);
-      OneSignal.initialize(appId);
-
-      final permissionStatus =
-          await OneSignal.Notifications.requestPermission(true).timeout(
-                const Duration(seconds: 10),
-                onTimeout: () {
-                  debugPrint('OneSignal login sync: permission request timed out');
-                  return false;
-                },
-              );
-      if (permissionStatus) {
-        debugPrint('✅ Notification permission granted (login)');
-      } else {
-        debugPrint('❌ Permission denied – push will not work (login)');
-        return;
-      }
-
-      await Future.delayed(const Duration(seconds: 2));
-
-      try {
-        await OneSignal.login(uid);
-        debugPrint('✅ OneSignal external ID set (login): $uid');
-      } catch (e) {
-        debugPrint('OneSignal login sync: OneSignal.login failed: $e');
-      }
-
-      String? playerId = await OneSignal.User.getOnesignalId();
-      if (playerId == null || playerId.isEmpty) {
-        await Future.delayed(const Duration(seconds: 1));
-        playerId = await OneSignal.User.getOnesignalId();
-      }
-      debugPrint(
-          '✅ OneSignal login sync: $uid, player ID: $playerId');
-
-      if (playerId == null || playerId.isEmpty) {
-        debugPrint('❌ Player ID still null (login)');
-        return;
-      }
-
-      await _db.child('users/$uid').update({
-        'onesignalId': playerId,
-        'lastSeen': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      debugPrint('OneSignal login sync error: $e');
     }
   }
 
@@ -226,14 +161,6 @@ class AuthService {
       }
     } catch (e) {
       debugPrint('Logout DB error: $e');
-    }
-    if (!kIsWeb) {
-      try {
-        await OneSignal.logout();
-        debugPrint('✅ OneSignal logout called on app sign out');
-      } catch (e) {
-        debugPrint('OneSignal logout error: $e');
-      }
     }
     await _auth.signOut();
   }

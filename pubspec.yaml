@@ -14,7 +14,7 @@ dependencies:
   path_provider: ^2.1.5
   file_saver: ^0.2.0   # optional, but simplifies web saves
   universal_html: ^2.2.4
-  onesignal_flutter: ^5.2.0
+  firebase_messaging: ^16.1.1
   flutter_local_notifications: ^18.0.1
   shorebird_code_push: ^1.0.0
   vibration: ^3.1.4
