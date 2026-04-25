@@ -47,6 +47,7 @@ Future<void> _safeInitFirebase() async {
   }
 }
 
+/// Post-launch OneSignal setup. [appId] must be non-empty when config loads.
 Future<void> _initOneSignalPostLaunch(String? appId) async {
   if (kIsWeb) return;
   if (appId == null || appId.isEmpty) {
@@ -58,39 +59,31 @@ Future<void> _initOneSignalPostLaunch(String? appId) async {
     OneSignal.initialize(appId);
     OneSignal.Notifications.clearAll();
 
-    // IMPORTANT: Request permission with `true` to show the system dialog
-    final permissionStatus =
-        await OneSignal.Notifications.requestPermission(true);
-    if (permissionStatus) {
-      debugPrint('✅ Notification permission granted');
-    } else {
-      debugPrint('❌ Permission denied – push will not work');
+    // Request permission and wait for user decision
+    final permission = await OneSignal.Notifications.requestPermission(true);
+    if (!permission) {
+      debugPrint('❌ Permission denied');
       return;
     }
 
-    // Wait for OneSignal to generate a subscribed player ID
-    await Future.delayed(const Duration(seconds: 2));
+    // Give OneSignal time to register the device fully
+    await Future.delayed(const Duration(seconds: 3));
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    // Get the player ID (this should now be the subscribed one)
     String? playerId = await OneSignal.User.getOnesignalId();
     if (playerId == null || playerId.isEmpty) {
-      // Retry once
-      await Future.delayed(const Duration(seconds: 1));
-      playerId = await OneSignal.User.getOnesignalId();
-    }
-    if (playerId == null || playerId.isEmpty) {
-      debugPrint('❌ No player ID – OneSignal not ready');
+      debugPrint('❌ Player ID still null');
       return;
     }
 
-    // Save the player ID only after subscription is confirmed
     await FirebaseDatabase.instance.ref('users/${user.uid}').update({
       'onesignalId': playerId,
       'lastSeen': DateTime.now().toIso8601String(),
     });
-    debugPrint('✅ OneSignal player ID saved: $playerId');
+    debugPrint('✅ Saved correct player ID: $playerId');
   } catch (e) {
     debugPrint('OneSignal init error: $e');
   }
