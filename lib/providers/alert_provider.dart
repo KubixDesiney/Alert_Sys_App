@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/alert_model.dart';
 import '../services/alert_service.dart';
 import '../services/ai_service.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:rxdart/rxdart.dart';
 
 class AlertProvider extends ChangeNotifier {
@@ -158,14 +157,7 @@ class AlertProvider extends ChangeNotifier {
       _lastProcessed[id] = now;
       final alert = newAlerts.firstWhere((a) => a.id == id);
 
-      print(
-          '📢 New alert detected: ${alert.id} (${alert.type}) – calling sendNewAlertNotification');
-
-      // ✅ Only send push on mobile (Android/iOS)
-      if (!kIsWeb) {
-        _service.sendNewAlertNotification(
-            alert.id, alert.type, alert.description);
-      }
+      print('📢 New alert detected: ${alert.id} (${alert.type})');
     }
     _previousAlertIds = newIds;
   }

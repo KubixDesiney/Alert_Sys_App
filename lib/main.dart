@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'firebase_options.dart';
+import 'services/config_service.dart';
 import 'providers/alert_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -18,12 +19,20 @@ void main() async {
 
   await _safeInitFirebase();
 
+  String? onesignalAppId;
+  try {
+    final config = await ConfigService.fetchConfig();
+    onesignalAppId = config.onesignalAppId;
+  } catch (e) {
+    debugPrint('Remote config fetch failed: $e');
+  }
+
   // Keep startup path light; post-launch SDK setup runs in background.
   ShorebirdCodePush();
 
   runApp(const AlertSysApp());
 
-  _initOneSignalPostLaunch();
+  _initOneSignalPostLaunch(onesignalAppId);
 }
 
 Future<void> _safeInitFirebase() async {
@@ -38,11 +47,15 @@ Future<void> _safeInitFirebase() async {
   }
 }
 
-Future<void> _initOneSignalPostLaunch() async {
+Future<void> _initOneSignalPostLaunch(String? appId) async {
   if (kIsWeb) return;
+  if (appId == null || appId.isEmpty) {
+    debugPrint('OneSignal init skipped: missing app ID');
+    return;
+  }
   try {
     OneSignal.Debug.setLogLevel(OSLogLevel.none);
-    OneSignal.initialize("os_v2_app_givlzn6e4vddbai7ztvinjxuqg7cngo72pgul5emvcif2bl66awz4ld6sj76wsbrffbmbsixas6bff7q4duis6vbx3r73unkmnxvpoq");
+    OneSignal.initialize(appId);
 
     // Prevent heavy restoration backlog from blocking first frames.
     OneSignal.Notifications.clearAll();
