@@ -244,4 +244,33 @@ class AlertService {
   Future<void> setCriticalNote(String alertId, String note) async {
     await _db.child('alerts/$alertId').update({'criticalNote': note});
   }
+
+  /// Creates in-app notifications for all supervisors and admins.
+  /// OneSignal pushes are now handled by the Cloudflare Worker.
+  Future<void> sendNewAlertNotification(String alertId, String alertType, String description) async {
+    final alertSnap = await _db.child('alerts/$alertId').get();
+    if (alertSnap.exists && alertSnap.child('notificationSent').value == true) return;
+
+    final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
+    await _db.child('alerts/$alertId').update({'notificationSent': true});
+
+    final users = await getAllUsers();
+
+    for (var entry in users.entries) {
+      final role = entry.value['role'] ?? 'supervisor';
+      if (role == 'supervisor' || role == 'admin') {
+        // Create in-app notification (Firebase only)
+        final notification = {
+          'alertId': alertId,
+          'alertType': alertType,
+          'alertDescription': description,
+          'usine': usine,
+          'message': '🔔 New alert from $usine: $alertType',
+          'timestamp': DateTime.now().toIso8601String(),
+          'status': 'pending',
+        };
+        await _db.child('notifications/${entry.key}').push().set(notification);
+      }
+    }
+  }
 }
