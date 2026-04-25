@@ -80,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _downloadApk() async {
     const url =
-        'https://github.com/KubixDesiney/Alert_Sys_App/releases/download/1.0.0b3/alertsysappb3.apk';
+        'https://github.com/KubixDesiney/Alert_Sys_App/releases/download/1.0.0B/Alertysysapp.apk';
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url));
     } else {
