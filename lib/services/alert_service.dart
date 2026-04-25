@@ -247,9 +247,11 @@ class AlertService {
 
   /// Creates in-app notifications for all supervisors and admins.
   /// OneSignal pushes are now handled by the Cloudflare Worker.
-  Future<void> sendNewAlertNotification(String alertId, String alertType, String description) async {
+  Future<void> sendNewAlertNotification(
+      String alertId, String alertType, String description) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
-    if (alertSnap.exists && alertSnap.child('notificationSent').value == true) return;
+    if (alertSnap.exists && alertSnap.child('notificationSent').value == true)
+      return;
 
     final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
     await _db.child('alerts/$alertId').update({'notificationSent': true});
