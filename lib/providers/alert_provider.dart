@@ -311,7 +311,15 @@ class AlertProvider extends ChangeNotifier {
               resolutionReason: reason,
               resolvedAt: DateTime.now(),
             ));
-    await _service.resolveAlert(alertId, reason, elapsed);
+    
+    // If an assistant helped, credit them with "Assisted" label
+    await _service.resolveAlert(
+      alertId, 
+      reason, 
+      elapsed,
+      assistingSupervisorId: alert.superviseurId,
+      assistingSupervisorName: alert.superviseurName,
+    );
   }
 
   Future<void> addComment(String alertId, String comment) async {

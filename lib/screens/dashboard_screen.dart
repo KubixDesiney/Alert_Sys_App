@@ -1770,6 +1770,31 @@ class _FixedView extends StatelessWidget {
                                       color: _muted)),
                           ])),
                         ),
+                      if (a.wasAssisted == true && a.assistedBySupervisorName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFEBF8FF),
+                                border: Border.all(color: const Color(0xFF93C5FD)),
+                                borderRadius: BorderRadius.circular(7)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.handshake_outlined,
+                                  size: 15, color: Color(0xFF3B82F6)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                    'Assisted ${a.assistedBySupervisorName}',
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF3B82F6))),
+                              ),
+                            ]),
+                          ),
+                        ),
                     ],
                   ),
                 ))
