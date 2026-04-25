@@ -157,7 +157,8 @@ class AlertProvider extends ChangeNotifier {
       _lastProcessed[id] = now;
       final alert = newAlerts.firstWhere((a) => a.id == id);
 
-      print('📢 New alert detected: ${alert.id} (${alert.type}) – creating in-app notifications');
+      print(
+          '📢 New alert detected: ${alert.id} (${alert.type}) – creating in-app notifications');
 
       // Create in-app Firebase notifications (OneSignal pushes handled by Worker)
       _service.sendNewAlertNotification(
