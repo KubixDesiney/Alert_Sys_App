@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'firebase_options.dart';
 import 'services/config_service.dart';
@@ -13,26 +12,24 @@ import 'screens/dashboard_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
+import 'services/fcm_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await _safeInitFirebase();
 
-  String? onesignalAppId;
+  final fcm = FcmService();
   try {
-    final config = await ConfigService.fetchConfig();
-    onesignalAppId = config.onesignalAppId;
+    await fcm.init();
   } catch (e) {
-    debugPrint('Remote config fetch failed: $e');
+    debugPrint('FCM init failed: $e');
   }
 
   // Keep startup path light; post-launch SDK setup runs in background.
   ShorebirdCodePush();
 
   runApp(const AlertSysApp());
-
-  _initOneSignalPostLaunch(onesignalAppId);
 }
 
 Future<void> _safeInitFirebase() async {
@@ -44,59 +41,6 @@ Future<void> _safeInitFirebase() async {
   } catch (e) {
     // Duplicate app can happen on hot restart/background isolate startup.
     debugPrint('Firebase init skipped: $e');
-  }
-}
-
-/// Post-launch OneSignal setup. [appId] must be non-empty when config loads.
-Future<void> _initOneSignalPostLaunch(String? appId) async {
-  if (kIsWeb) return;
-  if (appId == null || appId.isEmpty) {
-    debugPrint('OneSignal init skipped: missing app ID from config');
-    return;
-  }
-  try {
-    OneSignal.Debug.setLogLevel(OSLogLevel.none);
-    OneSignal.initialize(appId);
-    OneSignal.Notifications.clearAll();
-
-    // Request permission and wait for user decision
-    final permission = await OneSignal.Notifications.requestPermission(true);
-    if (!permission) {
-      debugPrint('❌ Permission denied');
-      return;
-    }
-
-    await Future.delayed(const Duration(seconds: 2));
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    // Associate the current Firebase user with OneSignal external user ID.
-    try {
-      await OneSignal.login(user.uid);
-      debugPrint('✅ OneSignal external ID set (initialize): ${user.uid}');
-    } catch (e) {
-      debugPrint('OneSignal.login error: $e');
-    }
-
-    String? playerId = await OneSignal.User.getOnesignalId();
-    if (playerId == null || playerId.isEmpty) {
-      await Future.delayed(const Duration(seconds: 1));
-      playerId = await OneSignal.User.getOnesignalId();
-    }
-    debugPrint(
-        '✅ OneSignal external ID set (initialize): ${user.uid}, player ID: $playerId');
-
-    if (playerId != null && playerId.isNotEmpty) {
-      await FirebaseDatabase.instance.ref('users/${user.uid}').update({
-        'onesignalId': playerId,
-        'lastSeen': DateTime.now().toIso8601String(),
-      });
-    } else {
-      debugPrint('❌ Player ID still null');
-    }
-  } catch (e) {
-    debugPrint('OneSignal init error: $e');
   }
 }
 
