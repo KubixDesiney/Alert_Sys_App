@@ -274,7 +274,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                     count: myInProgress.length,
                     color: const Color(0xFF3B82F6),
                     bgColor: const Color(0xFFDBEAFE),
-                    icon: Icons.timer_outlined,
+                    icon: Icons.timer,
                     active: _activeView == 'claimed' && _showPanel,
                     onTap: () => _handleCardClick('claimed'),
                   ),
@@ -920,7 +920,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           }
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                               content: Text(
-                                  '✅ Assigned ${supervisors[i].fullName} as assistant'),
+                                  'Assigned ${supervisors[i].fullName} as assistant'),
                               backgroundColor: Colors.green));
                         },
                       ),
@@ -1331,7 +1331,7 @@ class _ReceivedView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (alerts.isEmpty)
-      return _empty(Icons.notifications_off_outlined, Colors.orange,
+      return _empty(Icons.notifications_off, Colors.orange,
           'No alerts available', 'All alerts are being handled');
     return Column(
         children: alerts
@@ -1395,7 +1395,7 @@ class _ClaimedView extends StatelessWidget {
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         title: Row(
           children: [
-            const Icon(Icons.people_alt_outlined,
+            const Icon(Icons.people,
                 color: Colors.deepPurple, size: 22),
             const SizedBox(width: 8),
             const Expanded(
@@ -1531,7 +1531,11 @@ class _ClaimedView extends StatelessWidget {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('🤖 AI Suggestion'),
+          title: const Row(children: [
+            Icon(Icons.auto_awesome, size: 20, color: Color(0xFF7C3AED)),
+            SizedBox(width: 8),
+            Text('AI Suggestion'),
+          ]),
           content: SingleChildScrollView(child: Text(suggestion)),
           actions: [
             TextButton(
@@ -1736,7 +1740,7 @@ class _FixedView extends StatelessWidget {
                             border: Border.all(color: const Color(0xFF86EFAC)),
                             borderRadius: BorderRadius.circular(7)),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.timer_outlined,
+                          const Icon(Icons.timer,
                               size: 15, color: Color(0xFF16A34A)),
                           const SizedBox(width: 6),
                           Text(
@@ -1770,7 +1774,8 @@ class _FixedView extends StatelessWidget {
                                       color: _muted)),
                           ])),
                         ),
-                      if (a.wasAssisted == true && a.assistedBySupervisorName != null)
+                      if (a.wasAssisted == true &&
+                          a.assistedBySupervisorName != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Container(
@@ -1778,10 +1783,12 @@ class _FixedView extends StatelessWidget {
                                 horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                                 color: const Color(0xFFEBF8FF),
-                                border: Border.all(color: const Color(0xFF93C5FD)),
+                                border:
+                                    Border.all(color: const Color(0xFF93C5FD)),
                                 borderRadius: BorderRadius.circular(7)),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.handshake_outlined,
+                            child:
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.handshake,
                                   size: 15, color: Color(0xFF3B82F6)),
                               const SizedBox(width: 6),
                               Flexible(
@@ -1897,7 +1904,7 @@ class _AlertRow extends StatelessWidget {
                       icon: Icon(
                           alert.isCritical
                               ? Icons.warning_rounded
-                              : Icons.warning_amber_outlined,
+                              : Icons.warning_amber,
                           color: alert.isCritical ? Colors.red : Colors.orange,
                           size: 20),
                       tooltip: alert.isCritical
@@ -2096,15 +2103,28 @@ class _HoldToCollabCardState extends State<_HoldToCollabCard>
               left: 12,
               right: 12,
               bottom: 10,
-              child: Text(
-                '💡 Hold to collab this alert',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: _isHolding
-                      ? const Color(0xFF7C3AED)
-                      : const Color(0xFF8B5CF6),
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.people,
+                    size: 12,
+                    color: _isHolding
+                        ? const Color(0xFF7C3AED)
+                        : const Color(0xFF8B5CF6),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Hold to collab this alert',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _isHolding
+                          ? const Color(0xFF7C3AED)
+                          : const Color(0xFF8B5CF6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -2131,7 +2151,7 @@ class _ElapsedTimer extends StatelessWidget {
           border: Border.all(color: const Color(0xFF93C5FD)),
           borderRadius: BorderRadius.circular(7)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.timer_outlined, size: 15, color: Color(0xFF1D4ED8)),
+        const Icon(Icons.timer, size: 15, color: Color(0xFF1D4ED8)),
         const SizedBox(width: 6),
         Flexible(
             child: Text('Elapsed time: $elapsed',

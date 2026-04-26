@@ -146,7 +146,7 @@ class AuthService {
       'alertId': alertId,
       'alertType': alertType,
       'alertDescription': alertDesc,
-      'message': '📋 You have been assigned to an alert: $alertType',
+      'message': 'You have been assigned to an alert: $alertType',
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
     };

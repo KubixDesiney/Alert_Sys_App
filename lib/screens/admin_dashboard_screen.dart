@@ -63,9 +63,9 @@ String _typeLabel(String t) => switch (t) {
 
 IconData _typeIcon(String t) => switch (t) {
       'qualite' => Icons.warning_amber_rounded,
-      'maintenance' => Icons.build_outlined,
-      'defaut_produit' => Icons.cancel_outlined,
-      'manque_ressource' => Icons.inventory_2_outlined,
+      'maintenance' => Icons.build,
+      'defaut_produit' => Icons.cancel,
+      'manque_ressource' => Icons.inventory_2,
       _ => Icons.notifications_outlined,
     };
 
@@ -259,7 +259,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                '✅ Simulated ${_typeLabel(type)} alert on $usine, Conv $convoyeur, Post $poste'),
+                'Simulated ${_typeLabel(type)} alert on $usine, Conv $convoyeur, Post $poste'),
             backgroundColor: _green,
           ),
         );
@@ -268,7 +268,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('❌ Failed: ${e.toString()}'),
+              content: Text('Failed: ${e.toString()}'),
               backgroundColor: _red),
         );
       }
@@ -500,14 +500,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content:
-                Text('👷 No active supervisors available for this factory')),
+                const Text('No active supervisors available for this factory')),
       );
       return;
     }
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('👷 Assign Supervisor'),
+        title: const Row(children: [
+          Icon(Icons.person_add, size: 20),
+          SizedBox(width: 8),
+          Text('Assign Supervisor'),
+        ]),
         content: SizedBox(
           width: 300,
           child: ListView.builder(
@@ -523,7 +527,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     alert.id, filtered[i].id, filtered[i].fullName);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                      content: Text('✅ Assigned to ${filtered[i].fullName}'),
+                      content: Text('Assigned to ${filtered[i].fullName}'),
                       backgroundColor: _green),
                 );
               },
@@ -547,14 +551,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content:
-                Text('👷 No active supervisors available for this factory')),
+                const Text('No active supervisors available for this factory')),
       );
       return;
     }
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('👷 Assign Assistant'),
+        title: const Row(children: [
+          Icon(Icons.group_add, size: 20),
+          SizedBox(width: 8),
+          Text('Assign Assistant'),
+        ]),
         content: SizedBox(
           width: 300,
           child: ListView.builder(
@@ -571,7 +579,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                       content: Text(
-                          '✅ Assigned ${filtered[i].fullName} as assistant'),
+                          'Assigned ${filtered[i].fullName} as assistant'),
                       backgroundColor: _green),
                 );
               },
@@ -653,8 +661,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           }
 
           return AlertDialog(
-            title: const Text('🚨 Simulate Custom Alert',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            title: const Row(children: [
+              Icon(Icons.notification_important, size: 20, color: Colors.red),
+              SizedBox(width: 8),
+              Text('Simulate Custom Alert', style: TextStyle(fontWeight: FontWeight.bold)),
+            ]),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -667,15 +678,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     value: selectedType,
                     items: const [
                       DropdownMenuItem(
-                          value: 'qualite', child: Text('⚠️ Quality')),
+                          value: 'qualite',
+                          child: Row(children: [
+                            Icon(Icons.check_circle_outline, size: 16),
+                            SizedBox(width: 8),
+                            Text('Quality'),
+                          ])),
                       DropdownMenuItem(
-                          value: 'maintenance', child: Text('🔧 Maintenance')),
+                          value: 'maintenance',
+                          child: Row(children: [
+                            Icon(Icons.handyman, size: 16),
+                            SizedBox(width: 8),
+                            Text('Maintenance'),
+                          ])),
                       DropdownMenuItem(
                           value: 'defaut_produit',
-                          child: Text('🔨 Damaged Product')),
+                          child: Row(children: [
+                            Icon(Icons.report_problem, size: 16),
+                            SizedBox(width: 8),
+                            Text('Damaged Product'),
+                          ])),
                       DropdownMenuItem(
                           value: 'manque_ressource',
-                          child: Text('📦 Resource Shortage')),
+                          child: Row(children: [
+                            Icon(Icons.inventory_2, size: 16),
+                            SizedBox(width: 8),
+                            Text('Resource Shortage'),
+                          ])),
                     ],
                     onChanged: (val) => setState(() => selectedType = val!),
                     decoration:
@@ -885,7 +914,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       decoration: BoxDecoration(
                           color: _navyLt,
                           borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.person_add_outlined,
+                      child: const Icon(Icons.person_add,
                           color: _navy, size: 20)),
                   const SizedBox(width: 12),
                   const Text('New Supervisor Account',
@@ -952,7 +981,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         border: Border.all(color: _border),
                         borderRadius: BorderRadius.circular(9)),
                     child: Row(children: [
-                      const Icon(Icons.calendar_today_outlined,
+                      const Icon(Icons.calendar_today,
                           size: 16, color: _muted),
                       const SizedBox(width: 8),
                       Text(_fmtDate(hired),
@@ -1011,7 +1040,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 if (mounted)
                                   ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                          content: Text('✅ Supervisor created'),
+                                          content: Text('Supervisor created'),
                                           backgroundColor: _green));
                               }
                             },
@@ -1051,7 +1080,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     await _loadSupervisors();
     if (mounted)
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('👷 Supervisor removed'), backgroundColor: _red));
+          content: const Text('Supervisor removed'), backgroundColor: _red));
   }
 
   @override
@@ -1386,7 +1415,7 @@ class _HeaderState extends State<_Header> {
                                                       .showSnackBar(
                                                     SnackBar(
                                                         content: Text(
-                                                            '✅ Assigned ${supervisors[i].fullName} as assistant'),
+                                                            'Assigned ${supervisors[i].fullName} as assistant'),
                                                         backgroundColor:
                                                             Colors.green),
                                                   );
@@ -1508,8 +1537,7 @@ class _HeaderState extends State<_Header> {
               color: _navyLt,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: _border)),
-          child:
-              const Center(child: Text('🏭', style: TextStyle(fontSize: 22))),
+          child: const Center(child: Icon(Icons.factory, size: 22)),
         ),
         const SizedBox(width: 12),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1525,7 +1553,7 @@ class _HeaderState extends State<_Header> {
         const Spacer(),
         Stack(children: [
           IconButton(
-            icon: const Icon(Icons.notifications_none_outlined,
+            icon: const Icon(Icons.notifications_none,
                 color: _muted, size: 24),
             onPressed: _showNotifications,
           ),
@@ -1549,7 +1577,7 @@ class _HeaderState extends State<_Header> {
         const SizedBox(width: 4),
         OutlinedButton.icon(
           onPressed: widget.onLogout,
-          icon: const Icon(Icons.logout_outlined, size: 15, color: _red),
+          icon: const Icon(Icons.logout, size: 15, color: _red),
           label: const Text('Sign Out',
               style: TextStyle(
                   color: _red, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -1575,11 +1603,11 @@ class _PillTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const tabs = [
-      {'icon': Icons.bar_chart_outlined, 'label': 'Overview'},
-      {'icon': Icons.people_alt_outlined, 'label': 'Supervisors'},
+      {'icon': Icons.bar_chart, 'label': 'Overview'},
+      {'icon': Icons.people, 'label': 'Supervisors'},
       {'icon': Icons.notifications_outlined, 'label': 'Alerts'},
       {'icon': Icons.warning_amber, 'label': 'Escalations'}, // <-- NEW
-      {'icon': Icons.account_tree_outlined, 'label': 'Hierarchy'}, // NEW
+      {'icon': Icons.account_tree, 'label': 'Hierarchy'}, // NEW
     ];
     return Container(
       color: _white,
