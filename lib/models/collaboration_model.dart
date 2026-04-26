@@ -25,6 +25,8 @@ class CollaborationRequest {
   final int? poste;
   final String? alertType;
   final String? alertDescription;
+  /// Per-supervisor decision map: uid → 'pending' | 'accepted' | 'refused'
+  final Map<String, String> assistantDecisions;
 
   CollaborationRequest({
     required this.id,
@@ -52,6 +54,7 @@ class CollaborationRequest {
     this.poste,
     this.alertType,
     this.alertDescription,
+    this.assistantDecisions = const {},
   });
 
   factory CollaborationRequest.fromMap(String id, Map<String, dynamic> map) {
@@ -83,6 +86,11 @@ class CollaborationRequest {
       poste: map['poste'],
       alertType: map['alertType'],
       alertDescription: map['alertDescription'],
+      assistantDecisions: map['assistantDecisions'] != null
+          ? Map<String, String>.from(
+              (map['assistantDecisions'] as Map).map(
+                  (k, v) => MapEntry(k.toString(), v.toString())))
+          : {},
     );
   }
 
@@ -112,6 +120,7 @@ class CollaborationRequest {
       'poste': poste,
       'alertType': alertType,
       'alertDescription': alertDescription,
+      'assistantDecisions': assistantDecisions,
     };
   }
 }
