@@ -23,6 +23,7 @@ import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
+import '../providers/theme_provider.dart';
 import '../theme.dart';
 import 'alerts_tree_tab.dart';
 
@@ -1086,7 +1087,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
           child: Column(children: [
         _Header(activeSups: _activeSups, onLogout: _logout),
@@ -1526,35 +1527,47 @@ class _HeaderState extends State<_Header> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final isDark = context.isDark;
     return Container(
-      color: _white,
+      color: t.card,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(children: [
         Container(
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-              color: _navyLt,
+              color: t.navyLt,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _border)),
-          child: const Center(child: Icon(Icons.factory, size: 22)),
+              border: Border.all(color: t.border)),
+          child: Center(child: Icon(Icons.factory, size: 22, color: t.navy)),
         ),
         const SizedBox(width: 12),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Production Manager',
+          Text('Production Manager',
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
-                  color: _navy,
+                  color: t.navy,
                   letterSpacing: .2)),
-          const Text('Production Manager - Dashboard',
-              style: TextStyle(fontSize: 11, color: _muted)),
+          Text('Production Manager - Dashboard',
+              style: TextStyle(fontSize: 11, color: t.muted)),
         ]),
         const Spacer(),
+        // ── Theme toggle ──
+        IconButton(
+          icon: Icon(
+            isDark ? Icons.light_mode : Icons.dark_mode,
+            color: t.muted,
+            size: 22,
+          ),
+          tooltip: isDark ? 'Light mode' : 'Dark mode',
+          onPressed: () => context.read<ThemeProvider>().toggle(),
+        ),
+        // ── Notifications ──
         Stack(children: [
           IconButton(
-            icon: const Icon(Icons.notifications_none,
-                color: _muted, size: 24),
+            icon: Icon(Icons.notifications_none, color: t.muted, size: 24),
             onPressed: _showNotifications,
           ),
           if (_notificationCount > 0)
@@ -1565,11 +1578,11 @@ class _HeaderState extends State<_Header> {
                   width: 16,
                   height: 16,
                   decoration:
-                      const BoxDecoration(color: _red, shape: BoxShape.circle),
+                      BoxDecoration(color: t.red, shape: BoxShape.circle),
                   child: Center(
                       child: Text('$_notificationCount',
-                          style: const TextStyle(
-                              color: _white,
+                          style: TextStyle(
+                              color: t.card,
                               fontSize: 9,
                               fontWeight: FontWeight.w700))),
                 )),
@@ -1577,12 +1590,12 @@ class _HeaderState extends State<_Header> {
         const SizedBox(width: 4),
         OutlinedButton.icon(
           onPressed: widget.onLogout,
-          icon: const Icon(Icons.logout, size: 15, color: _red),
-          label: const Text('Sign Out',
+          icon: Icon(Icons.logout, size: 15, color: t.red),
+          label: Text('Sign Out',
               style: TextStyle(
-                  color: _red, fontSize: 13, fontWeight: FontWeight.w600)),
+                  color: t.red, fontSize: 13, fontWeight: FontWeight.w600)),
           style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: _red),
+              side: BorderSide(color: t.red),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8))),

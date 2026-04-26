@@ -85,7 +85,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
         child: Column(
           children: [

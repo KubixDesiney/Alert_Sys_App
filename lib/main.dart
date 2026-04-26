@@ -7,12 +7,14 @@ import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'firebase_options.dart';
 import 'services/config_service.dart';
 import 'providers/alert_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
+import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,19 +54,18 @@ class AlertSysApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AlertProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        title: 'AlertSys',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          scaffoldBackgroundColor: const Color(0xFFF3F4F6),
-          colorScheme: const ColorScheme.light(
-            primary: Color(0xFF0D4A75),
-            error: Color(0xFFE31E24),
-          ),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => MaterialApp(
+          title: 'AlertSys',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeProvider.mode,
+          theme: buildLightTheme(),
+          darkTheme: buildDarkTheme(),
+          navigatorKey: FcmService.navigatorKey,
+          home: const AuthGate(),
         ),
-        navigatorKey: FcmService.navigatorKey,
-        home: const AuthGate(),
       ),
     );
   }

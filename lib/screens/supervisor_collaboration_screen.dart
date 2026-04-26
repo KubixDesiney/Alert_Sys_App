@@ -25,7 +25,7 @@ class CollaborationProgressScreen extends StatelessWidget {
     final service = CollaborationService();
 
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
         child: Column(
           children: [
