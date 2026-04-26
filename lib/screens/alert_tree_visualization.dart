@@ -397,7 +397,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       ),
       child: Row(
         children: [
-          Icon(Icons.account_tree_outlined, color: _navy, size: 24),
+          Icon(Icons.account_tree, color: _navy, size: 24),
           const SizedBox(width: 12),
           Expanded(child: _buildBreadcrumb()),
           if (_selectedUsine != null || _selectedConveyor != null)
@@ -678,7 +678,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.factory_outlined,
+          Icon(Icons.factory,
               size: 20, color: usine.hasError ? _red : _navy),
           const SizedBox(width: 8),
           Text(
@@ -729,7 +729,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 alignment: Alignment.center,
                 children: [
                   Icon(
-                    Icons.factory_outlined,
+                    Icons.factory,
                     size: 40,
                     color: usine.hasError ? _red : _navy,
                   ),
@@ -1651,9 +1651,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   IconData _typeIcon(String type) => switch (type) {
         'qualite' => Icons.warning_amber_rounded,
-        'maintenance' => Icons.build_outlined,
-        'defaut_produit' => Icons.cancel_outlined,
-        'manque_ressource' => Icons.inventory_2_outlined,
+        'maintenance' => Icons.build,
+        'defaut_produit' => Icons.cancel,
+        'manque_ressource' => Icons.inventory_2,
         _ => Icons.notifications_outlined,
       };
 

@@ -141,7 +141,7 @@ class AlertService {
           'supervisorName': supervisorName,
           'reason': reason ?? 'No reason provided',
           'message':
-              '⚠️ Supervisor $supervisorName suspended an alert. ${reason != null ? "Reason: $reason" : ""}',
+              'Supervisor $supervisorName suspended an alert. ${reason != null ? "Reason: $reason" : ""}',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
         };
@@ -150,8 +150,8 @@ class AlertService {
     }
   }
 
-  Future<void> resolveAlert(
-      String alertId, String reason, int elapsedMinutes, {String? assistingSupervisorId, String? assistingSupervisorName}) async {
+  Future<void> resolveAlert(String alertId, String reason, int elapsedMinutes,
+      {String? assistingSupervisorId, String? assistingSupervisorName}) async {
     final updates = {
       'status': 'validee',
       'elapsedTime': elapsedMinutes,
@@ -288,7 +288,7 @@ class AlertService {
           'alertType': alertType,
           'alertDescription': description,
           'usine': usine,
-          'message': '🔔 New alert from $usine: $alertType',
+          'message': 'New alert from $usine: $alertType',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
         };

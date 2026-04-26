@@ -311,11 +311,11 @@ class AlertProvider extends ChangeNotifier {
               resolutionReason: reason,
               resolvedAt: DateTime.now(),
             ));
-    
+
     // If an assistant helped, credit them with "Assisted" label
     await _service.resolveAlert(
-      alertId, 
-      reason, 
+      alertId,
+      reason,
       elapsed,
       assistingSupervisorId: alert.superviseurId,
       assistingSupervisorName: alert.superviseurName,
@@ -422,8 +422,8 @@ class AlertProvider extends ChangeNotifier {
       if (userData['role'] == 'admin' || userData['role'] == 'supervisor') {
         final message = customMessage ??
             (isCritical
-                ? '⚠️ Alert marked as CRITICAL: ${alert.type}'
-                : '✅ Alert critical flag removed: ${alert.type}');
+                ? 'Alert marked as CRITICAL: ${alert.type}'
+                : 'Alert critical flag removed: ${alert.type}');
         final notification = {
           'alertId': alertId,
           'alertType': alert.type,
