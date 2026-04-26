@@ -220,7 +220,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                   // Summary Cards (as in original)
                   _SummaryCard(
                     label: 'Fixed Alerts',
-                    count: validated.length,
+                    count: validated.length + assisted.length,
                     color: const Color(0xFF22C55E),
                     bgColor: const Color(0xFFDCFCE7),
                     icon: Icons.check_circle_outline,

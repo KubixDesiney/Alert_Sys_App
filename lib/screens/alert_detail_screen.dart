@@ -6,7 +6,6 @@ import '../models/alert_model.dart';
 import '../providers/alert_provider.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
-import '../theme.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
@@ -124,24 +123,6 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     }
   }
 
-  Widget _collabStatusBanner(
-      IconData icon, String message, Color color, Color bg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-          color: bg, borderRadius: BorderRadius.circular(8)),
-      child: Row(children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(message,
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: color)),
-        ),
-      ]),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AlertProvider>();
@@ -195,133 +176,67 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       final uid = FirebaseAuth.instance.currentUser?.uid;
                       final isTarget = uid != null && req.targetSupervisorIds.contains(uid);
 
-                      final t = context.appTheme;
-                      final myDecision = req.assistantDecisions[uid];
-                      final decided =
-                          myDecision == 'accepted' || myDecision == 'refused';
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 4),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: t.card,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: decided
-                                ? (myDecision == 'accepted'
-                                    ? const Color(0xFF16A34A)
-                                    : Colors.red)
-                                    .withValues(alpha: 0.4)
-                                : const Color(0xFF9333EA).withValues(alpha: 0.4),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header
-                            Row(children: [
-                              const Icon(Icons.people,
-                                  color: Color(0xFF9333EA), size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text('Collaboration Request',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 15,
-                                        color: t.navy)),
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Collaboration Request',
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
-                            ]),
-                            const SizedBox(height: 10),
-                            // Requester
-                            Row(children: [
-                              Icon(Icons.person_outline, size: 14, color: t.muted),
-                              const SizedBox(width: 6),
-                              Text('From: ',
-                                  style: TextStyle(fontSize: 13, color: t.muted)),
-                              Text(req.requesterName,
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: t.navy)),
-                            ]),
-                            // Message
-                            if (req.message.isNotEmpty) ...[
                               const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                    color: t.scaffold,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: t.border)),
-                                child: Text(req.message,
-                                    style: TextStyle(fontSize: 12, color: t.text),
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis),
-                              ),
+                              Text('From: ${req.requesterName}'),
+                              const SizedBox(height: 4),
+                              Text(req.message),
+                              const SizedBox(height: 12),
+                              if (!isTarget)
+                                const Text(
+                                  'You are not a target for this collaboration request.',
+                                  style: TextStyle(color: Colors.grey),
+                                )
+                              else if (req.assistantDecision == 'pending')
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _respondToCollab(
+                                          accepted: false,
+                                          request: req,
+                                        ),
+                                        icon: const Icon(Icons.close, color: Colors.white),
+                                        label: const Text('Decline'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFFFB3BA), // Light red
+                                          foregroundColor: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _respondToCollab(
+                                          accepted: true,
+                                          request: req,
+                                        ),
+                                        icon: const Icon(Icons.check, color: Colors.white),
+                                        label: const Text('Approve'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Text(
+                                  'Decision: ${req.assistantDecision}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
                             ],
-                            const SizedBox(height: 14),
-                            if (!isTarget)
-                              Text('You are not a target for this request.',
-                                  style: TextStyle(color: t.muted, fontSize: 13))
-                            else if (req.pmApproved)
-                              _collabStatusBanner(
-                                  Icons.verified, 'Fully approved by PM',
-                                  const Color(0xFF16A34A),
-                                  const Color(0xFFDCFCE7))
-                            else if (myDecision == 'accepted')
-                              _collabStatusBanner(
-                                  Icons.check_circle,
-                                  'You accepted — waiting for PM approval',
-                                  const Color(0xFF16A34A),
-                                  const Color(0xFFDCFCE7))
-                            else if (myDecision == 'refused')
-                              _collabStatusBanner(
-                                  Icons.cancel,
-                                  'You declined this request',
-                                  Colors.red,
-                                  Colors.red.withValues(alpha: 0.08))
-                            else
-                              Row(children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    onPressed: () =>
-                                        _respondToCollab(accepted: false, request: req),
-                                    icon: const Icon(Icons.close,
-                                        size: 16, color: Colors.red),
-                                    label: const Text('Decline',
-                                        style: TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.w600)),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.red,
-                                      side: const BorderSide(color: Colors.red),
-                                      backgroundColor: Colors.transparent,
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: ElevatedButton.icon(
-                                    onPressed: () =>
-                                        _respondToCollab(accepted: true, request: req),
-                                    icon: const Icon(Icons.check_circle, size: 16),
-                                    label: const Text('Accept',
-                                        style: TextStyle(fontWeight: FontWeight.w600)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF16A34A),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                  ),
-                                ),
-                              ]),
-                          ],
+                          ),
                         ),
                       );
                     },
