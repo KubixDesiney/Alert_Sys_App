@@ -349,7 +349,17 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   shouldBuzz = true;
                 } else if (userRole == 'supervisor' &&
                     alertUsine == userUsine) {
-                  shouldBuzz = true;
+                  // Suppress buzz if supervisor already has a claimed alert —
+                  // they're already on-site and don't need another interruption.
+                  if (mounted) {
+                    final uid =
+                        FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final hasClaimed = context
+                        .read<AlertProvider>()
+                        .inProgressAlerts(uid)
+                        .isNotEmpty;
+                    shouldBuzz = !hasClaimed;
+                  }
                 }
                 if (shouldBuzz) {
                   _startBuzzing(newUnread['id']);
