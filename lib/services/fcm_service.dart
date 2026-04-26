@@ -2,10 +2,13 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import '../screens/alert_detail_screen.dart';
 
 class FcmService {
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-  
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+  static String? pendingAlertId;
+
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -18,33 +21,58 @@ class FcmService {
       await _saveTokenToDatabase(newToken);
     });
 
-    // Handle notification taps when app is in foreground
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('Foreground message received: ${message.data}');
-      _handleNotificationTap(message);
-    });
-
-    // Handle notification taps when app is in background
+    // Handle notification taps when app is in background/terminated
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       print('Notification opened app: ${message.data}');
       _navigateToAlertDetail(message);
     });
+
+    // Handle notification taps when app is in foreground
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print('Foreground message received: ${message.data}');
+      // Show a dialog or snackbar and navigate when tapped
+      _handleForegroundMessage(message);
+    });
   }
 
-  void _handleNotificationTap(RemoteMessage message) {
+  void _handleForegroundMessage(RemoteMessage message) {
     final alertId = message.data['alertId'];
-    if (alertId != null) {
-      _navigateToAlertDetail(message);
+    final title = message.notification?.title ?? 'New Alert';
+    final body = message.notification?.body ?? 'Tap to view details';
+
+    if (alertId == null) return;
+
+    // Show a snackbar that navigates when tapped
+    if (navigatorKey.currentContext != null) {
+      ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
+        SnackBar(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(body, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'VIEW',
+            onPressed: () => _navigateToAlertDetail(message),
+          ),
+        ),
+      );
     }
   }
 
   void _navigateToAlertDetail(RemoteMessage message) {
     final alertId = message.data['alertId'];
-    if (alertId != null && navigatorKey.currentContext != null) {
-      // Import AlertDetailScreen at the top
-      // navigatorKey.currentState?.pushNamed('/alert/$alertId');
-      // For now, we'll use a simple approach - dispatch to main app
-      print('Navigating to alert: $alertId');
+    if (alertId != null && navigatorKey.currentState != null) {
+      print('🔔 Navigating to alert: $alertId');
+      navigatorKey.currentState!.push(
+        MaterialPageRoute(
+          builder: (context) => AlertDetailScreen(alertId: alertId),
+        ),
+      );
     }
   }
 

@@ -144,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 14),
                   // Logo / Title
-                  const Icon(Icons.factory_outlined, size: 56, color: _red),
+                  const Icon(Icons.factory, size: 56, color: _red),
                   const SizedBox(height: 16),
                   Text(
                     _t('title'),

@@ -264,7 +264,11 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('💡 AI Suggestion', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Row(children: [
+                            Icon(Icons.auto_awesome, size: 16, color: Color(0xFF7C3AED)),
+                            SizedBox(width: 6),
+                            Text('AI Suggestion', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ]),
                           const SizedBox(height: 4),
                           Text(_aiSuggestion!),
                         ],

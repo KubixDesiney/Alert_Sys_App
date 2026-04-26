@@ -498,7 +498,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                           color: Colors.red, size: 20),
                       const SizedBox(width: 8),
                       Text(
-                        '⚠️ Critical Unclaimed Alerts ($_criticalUnclaimedCount)',
+                        'Critical Unclaimed Alerts ($_criticalUnclaimedCount)',
                         style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -649,7 +649,7 @@ class _OverviewTabState extends State<_OverviewTab> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.calendar_today_outlined,
+                    const Icon(Icons.calendar_today,
                         size: 16, color: _navy),
                     const SizedBox(width: 8),
                     Text(
@@ -663,14 +663,16 @@ class _OverviewTabState extends State<_OverviewTab> {
                 ),
                 const SizedBox(width: 16),
                 _ExportBtn(
-                  label: '📄 Export CSV',
+                  label: 'Export CSV',
+                  icon: Icons.table_chart,
                   onTap: () {
                     _exportFilteredAlerts(_displayedAlerts);
                   },
                 ),
                 const SizedBox(width: 8),
                 _ExportBtn(
-                  label: '📊 Export Excel',
+                  label: 'Export Excel',
+                  icon: Icons.grid_on,
                   onTap: () {
                     _exportFilteredAlertsExcel(_displayedAlerts);
                   },
@@ -698,7 +700,7 @@ class _OverviewTabState extends State<_OverviewTab> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.filter_list_outlined, size: 16, color: _navy),
+                    Icon(Icons.filter_list, size: 16, color: _navy),
                     SizedBox(width: 6),
                     Text(
                       'Filter History',
@@ -859,7 +861,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                         widget.onReset();
                         setState(() => _historyFilter = null);
                       },
-                      icon: const Icon(Icons.refresh_outlined, size: 15),
+                      icon: const Icon(Icons.refresh, size: 15),
                       label: const Text('Reset',
                           style: TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
@@ -987,7 +989,7 @@ class _ProgressStatCard extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(color: _blueLt, shape: BoxShape.circle),
-              child: const Icon(Icons.timer_outlined, color: _blue, size: 22),
+              child: const Icon(Icons.timer, color: _blue, size: 22),
             ),
           ],
         ),
@@ -1119,11 +1121,12 @@ class _FilterChip extends StatelessWidget {
 
 class _ExportBtn extends StatelessWidget {
   final String label;
+  final IconData icon;
   final VoidCallback onTap;
-  const _ExportBtn({required this.label, required this.onTap});
+  const _ExportBtn({required this.label, required this.icon, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => OutlinedButton(
+  Widget build(BuildContext context) => OutlinedButton.icon(
         onPressed: onTap,
         style: OutlinedButton.styleFrom(
             foregroundColor: _text,
@@ -1131,7 +1134,8 @@ class _ExportBtn extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-        child: Text(label,
+        icon: Icon(icon, size: 14),
+        label: Text(label,
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
       );
 }
@@ -1397,7 +1401,7 @@ class _ClickableTypeCard extends StatelessWidget {
           const SizedBox(height: 4),
           Row(children: [
             Row(children: [
-              const Icon(Icons.cancel_outlined, size: 13, color: _orange),
+              const Icon(Icons.cancel, size: 13, color: _orange),
               const SizedBox(width: 3),
               Text('Pending',
                   style: const TextStyle(fontSize: 10, color: _muted)),

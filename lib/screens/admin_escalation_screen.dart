@@ -52,9 +52,9 @@ String _typeLabel(String type) => switch (type) {
 // ignore: unused_element
 IconData _typeIcon(String type) => switch (type) {
       'qualite' => Icons.warning_amber_rounded,
-      'maintenance' => Icons.build_circle_outlined,
-      'defaut_produit' => Icons.cancel_outlined,
-      'manque_ressource' => Icons.inventory_2_outlined,
+      'maintenance' => Icons.build_circle,
+      'defaut_produit' => Icons.cancel,
+      'manque_ressource' => Icons.inventory_2,
       _ => Icons.notifications_outlined,
     };
 
@@ -181,7 +181,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.shield_outlined, size: 16),
+                              Icon(Icons.shield, size: 16),
                               const SizedBox(width: 6),
                               const Text('Collaborations'),
                               const SizedBox(width: 4),
@@ -349,15 +349,30 @@ class _EscalatedAlertCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-              '📍 ${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
-          Text('⏰ Escalated at: ${_formatDateTime(alert.escalatedAt!)}'),
+          Row(children: [
+            const Icon(Icons.location_on, size: 14, color: _muted),
+            const SizedBox(width: 4),
+            Text('${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
+          ]),
+          Row(children: [
+            const Icon(Icons.access_time, size: 14, color: _muted),
+            const SizedBox(width: 4),
+            Text('Escalated at: ${_formatDateTime(alert.escalatedAt!)}'),
+          ]),
           if (alert.status == 'disponible')
-            const Text('⚠️ Unclaimed alert exceeded threshold',
-                style: TextStyle(color: _red, fontSize: 12))
+            Row(children: [
+              const Icon(Icons.warning_amber_rounded, size: 14, color: _red),
+              const SizedBox(width: 4),
+              const Text('Unclaimed alert exceeded threshold',
+                  style: TextStyle(color: _red, fontSize: 12)),
+            ])
           else if (alert.status == 'en_cours')
-            const Text('⚠️ Claimed but not resolved in time',
-                style: TextStyle(color: _red, fontSize: 12)),
+            Row(children: [
+              const Icon(Icons.hourglass_bottom, size: 14, color: _red),
+              const SizedBox(width: 4),
+              const Text('Claimed but not resolved in time',
+                  style: TextStyle(color: _red, fontSize: 12)),
+            ]),
         ],
       ),
     );
@@ -546,8 +561,12 @@ class _CollaborationRequestCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          Text('⏰ ${_formatTime(request.timestamp)}',
-              style: const TextStyle(fontSize: 11, color: _muted)),
+          Row(children: [
+            const Icon(Icons.access_time, size: 12, color: _muted),
+            const SizedBox(width: 4),
+            Text(_formatTime(request.timestamp),
+                style: const TextStyle(fontSize: 11, color: _muted)),
+          ]),
           const SizedBox(height: 12),
           const Text('Requesting collaboration with:',
               style: TextStyle(
@@ -822,10 +841,16 @@ class _CollaborationRequestCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                            '⚠️ Alert: ${alert['description'] ?? 'No description'}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
+                        Row(children: [
+                          const Icon(Icons.warning_amber_rounded, size: 14, color: _red),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Alert: ${alert['description'] ?? 'No description'}',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ]),
                         Text('Factory: ${alert['usine'] ?? 'Unknown'}',
                             style: const TextStyle(fontSize: 12)),
                         Text('Status: ${alert['status'] ?? 'unknown'}',
@@ -1112,7 +1137,7 @@ class _SettingsTabState extends State<_SettingsTab> {
             label: 'Maintenance',
             color: _blue,
             bgColor: _blueLt,
-            icon: Icons.build_circle_outlined,
+            icon: Icons.build_circle,
             threshold: _settings!.thresholds['maintenance']!,
             onUpdate: (unclaimed, claimed) =>
                 _updateThreshold('maintenance', unclaimed, claimed),
@@ -1123,7 +1148,7 @@ class _SettingsTabState extends State<_SettingsTab> {
             label: 'Damaged Product',
             color: _green,
             bgColor: _greenLt,
-            icon: Icons.cancel_outlined,
+            icon: Icons.cancel,
             threshold: _settings!.thresholds['defaut_produit']!,
             onUpdate: (unclaimed, claimed) =>
                 _updateThreshold('defaut_produit', unclaimed, claimed),
@@ -1134,7 +1159,7 @@ class _SettingsTabState extends State<_SettingsTab> {
             label: 'Resource Deficiency',
             color: _orange,
             bgColor: _orangeLt,
-            icon: Icons.inventory_2_outlined,
+            icon: Icons.inventory_2,
             threshold: _settings!.thresholds['manque_ressource']!,
             onUpdate: (unclaimed, claimed) =>
                 _updateThreshold('manque_ressource', unclaimed, claimed),

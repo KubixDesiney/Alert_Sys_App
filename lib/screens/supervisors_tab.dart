@@ -76,17 +76,17 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
             children: [
               _SubPill(
                   label: 'Management',
-                  icon: Icons.people_alt_outlined,
+                  icon: Icons.people,
                   index: 0,
                   ctrl: _sub),
               _SubPill(
                   label: 'Performance',
-                  icon: Icons.show_chart_outlined,
+                  icon: Icons.show_chart,
                   index: 1,
                   ctrl: _sub),
               _SubPill(
                   label: 'Assignments',
-                  icon: Icons.bar_chart_outlined,
+                  icon: Icons.bar_chart,
                   index: 2,
                   ctrl: _sub),
             ],
@@ -217,7 +217,7 @@ class _ManagementSubTab extends StatelessWidget {
             const Spacer(),
             ElevatedButton.icon(
               onPressed: onAdd,
-              icon: const Icon(Icons.person_add_outlined, size: 16),
+              icon: const Icon(Icons.person_add, size: 16),
               label: const Text('Add Supervisor',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
               style: ElevatedButton.styleFrom(
@@ -397,7 +397,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                       .map((s) => DropdownMenuItem(
                             value: s,
                             child: Row(children: [
-                              const Icon(Icons.person_outlined,
+                              const Icon(Icons.person_outline,
                                   size: 16, color: _navy),
                               const SizedBox(width: 8),
                               Text(s.fullName,
@@ -436,7 +436,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                 height: 64,
                 decoration: const BoxDecoration(
                     color: Color(0xFFF1F5F9), shape: BoxShape.circle),
-                child: const Icon(Icons.person_search_outlined,
+                child: const Icon(Icons.person_search,
                     size: 32, color: _muted),
               ),
               const SizedBox(height: 14),
@@ -509,7 +509,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                                     child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(Icons.bar_chart_outlined,
+                                          const Icon(Icons.bar_chart,
                                               size: 14, color: _navy),
                                           const SizedBox(width: 6),
                                           Column(
@@ -569,7 +569,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                           height: 48,
                           decoration: const BoxDecoration(
                               color: Color(0xFFDCFCE7), shape: BoxShape.circle),
-                          child: const Icon(Icons.timer_outlined,
+                          child: const Icon(Icons.timer,
                               color: _green, size: 24),
                         ),
                       ]),
@@ -664,7 +664,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                const Icon(Icons.calendar_today_outlined,
+                const Icon(Icons.calendar_today,
                     size: 15, color: _navy),
                 const SizedBox(width: 8),
                 const Expanded(
@@ -1032,7 +1032,7 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              const Icon(Icons.bar_chart_outlined, size: 16, color: _navy),
+              const Icon(Icons.bar_chart, size: 16, color: _navy),
               const SizedBox(width: 8),
               const Text('Assignments by Plant',
                   style: TextStyle(
@@ -1347,7 +1347,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   decoration: BoxDecoration(
                       color: _navyLt, borderRadius: BorderRadius.circular(12)),
                   child: const Center(
-                      child: Text('👷', style: TextStyle(fontSize: 24)))),
+                      child: Icon(Icons.engineering, size: 24))),
               Positioned(
                   bottom: 0,
                   right: 0,
@@ -1397,19 +1397,19 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   Text(sup.email,
                       style: const TextStyle(fontSize: 11, color: _muted)),
                   Row(children: [
-                    const Icon(Icons.phone_outlined, size: 12, color: _muted),
+                    const Icon(Icons.phone, size: 12, color: _muted),
                     const SizedBox(width: 3),
                     Text(sup.phone.isEmpty ? 'No phone' : sup.phone,
                         style: const TextStyle(fontSize: 11, color: _muted)),
                     const SizedBox(width: 10),
-                    const Icon(Icons.factory_outlined, size: 12, color: _muted),
+                    const Icon(Icons.factory, size: 12, color: _muted),
                     const SizedBox(width: 3),
                     Text(sup.usine,
                         style: const TextStyle(fontSize: 11, color: _muted)),
                   ]),
                   if (sup.hiredDate != null)
                     Row(children: [
-                      const Icon(Icons.calendar_today_outlined,
+                      const Icon(Icons.calendar_today,
                           size: 12, color: _muted),
                       const SizedBox(width: 3),
                       Text('Hired: ${_fmtDate(sup.hiredDate!)}',
@@ -1420,9 +1420,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                     _MiniChip(Icons.check_circle_outline,
                         '${solved.length} fixed', _green),
                     _MiniChip(
-                        Icons.timer_outlined, '$inProg in progress', _blue),
+                        Icons.timer, '$inProg in progress', _blue),
                     if (avgMin != null)
-                      _MiniChip(Icons.av_timer_outlined,
+                      _MiniChip(Icons.av_timer,
                           'Avg ${_fmtMin(avgMin)}', _orange),
                   ]),
                 ])),
@@ -1438,7 +1438,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                 ),
               IconButton(
                 onPressed: () => _showModifyDialog(context),
-                icon: const Icon(Icons.edit_outlined, color: _navy, size: 20),
+                icon: const Icon(Icons.edit, color: _navy, size: 20),
                 tooltip: 'Modify Supervisor',
               ),
               IconButton(

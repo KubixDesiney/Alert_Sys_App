@@ -34,7 +34,7 @@ class CollaborationProgressScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Icon(Icons.shield_outlined, color: _purple, size: 24),
+                  Icon(Icons.shield, color: _purple, size: 24),
                   const SizedBox(width: 8),
                   const Text(
                     'Collab Progress',
@@ -131,7 +131,7 @@ class CollaborationProgressScreen extends StatelessWidget {
               color: _purple.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.groups_outlined, size: 48, color: _purple),
+            child: Icon(Icons.groups, size: 48, color: _purple),
           ),
           const SizedBox(height: 16),
           const Text(
