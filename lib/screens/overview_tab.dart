@@ -369,8 +369,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: _white,
-                  border: Border.all(color: _border),
+                  color: context.appTheme.card,
+                  border: Border.all(color: context.appTheme.border),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -527,8 +527,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: Colors.red.shade200),
+                          color: context.appTheme.card,
+                          border: Border.all(color: context.appTheme.border),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
@@ -691,8 +691,8 @@ class _OverviewTabState extends State<_OverviewTab> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _white,
-              border: Border.all(color: _border),
+              color: context.appTheme.card,
+              border: Border.all(color: context.appTheme.border),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -927,7 +927,7 @@ class _ProgressStatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: isActive ? _blue.withOpacity(0.1) : _white,
+          color: isActive ? _blue.withValues(alpha: 0.1) : context.appTheme.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isActive ? _blue : _border,
@@ -1020,7 +1020,7 @@ class _UnclaimedStatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: isActive ? _orange.withOpacity(0.1) : _white,
+          color: isActive ? _orange.withValues(alpha: 0.1) : context.appTheme.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isActive ? _orange : _border,
@@ -1164,15 +1164,15 @@ class _FilterDropdown extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
-                color: _bg,
-                border: Border.all(color: _border),
+                color: context.appTheme.scaffold,
+                border: Border.all(color: context.appTheme.border),
                 borderRadius: BorderRadius.circular(8)),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: value,
                 isExpanded: true,
-                style: const TextStyle(fontSize: 13, color: _text),
-                dropdownColor: _white,
+                style: TextStyle(fontSize: 13, color: context.appTheme.text),
+                dropdownColor: context.appTheme.card,
                 items: items,
                 onChanged: (v) => onChanged(v!),
               ),
@@ -1202,8 +1202,8 @@ class _AlertHistoryRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: _white,
-          border: Border.all(color: _border),
+          color: context.appTheme.card,
+          border: Border.all(color: context.appTheme.border),
           borderRadius: BorderRadius.circular(10),
           boxShadow: const [
             BoxShadow(
@@ -1220,8 +1220,8 @@ class _AlertHistoryRow extends StatelessWidget {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${_typeLabel(alert.type)} — ${alert.description}',
-              style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: _text),
+              style: TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: context.appTheme.text),
               maxLines: 1,
               overflow: TextOverflow.ellipsis),
           const SizedBox(height: 2),
@@ -1280,7 +1280,7 @@ class _ClickableStatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-            color: isActive ? color.withOpacity(0.1) : _white,
+            color: isActive ? color.withValues(alpha: 0.1) : context.appTheme.card,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
                 color: isActive ? color : _border, width: isActive ? 2 : 1),
@@ -1354,7 +1354,7 @@ class _ClickableTypeCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-            color: isActive ? color.withOpacity(0.1) : _white,
+            color: isActive ? color.withValues(alpha: 0.1) : context.appTheme.card,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
                 color: isActive ? color : _border, width: isActive ? 2 : 1),
@@ -1368,7 +1368,7 @@ class _ClickableTypeCard extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: isActive ? color : _text)),
+                    color: isActive ? color : context.appTheme.text)),
             const Spacer(),
             Container(
               width: 30,
@@ -1383,7 +1383,7 @@ class _ClickableTypeCard extends StatelessWidget {
               style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
-                  color: isActive ? color : _text,
+                  color: isActive ? color : context.appTheme.text,
                   height: 1)),
           const SizedBox(height: 10),
           Row(children: [

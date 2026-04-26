@@ -8,7 +8,6 @@ import '../theme.dart';
 
 const _navy = AppColors.navy;
 const _white = AppColors.white;
-const _bg = AppColors.bg;
 const _border = AppColors.border;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
@@ -91,7 +90,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
           children: [
             // Header
             Container(
-              color: _white,
+              color: context.appTheme.card,
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
@@ -113,14 +112,14 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                   // Tab Bar
                   Container(
                     decoration: BoxDecoration(
-                      color: _bg,
+                      color: context.appTheme.scaffold,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _border),
+                      border: Border.all(color: context.appTheme.border),
                     ),
                     child: TabBar(
                       controller: _tabController,
                       indicator: BoxDecoration(
-                        color: _white,
+                        color: context.appTheme.card,
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: const [
                           BoxShadow(
@@ -329,9 +328,9 @@ class _EscalatedAlertCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _redLt,
+        color: context.appTheme.redLt,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _red.withOpacity(0.3)),
+        border: Border.all(color: _red.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -431,7 +430,7 @@ class _CollaborationsTab extends StatelessWidget {
                   child: Column(
                     children: [
                       Icon(Icons.check_circle_outline,
-                          size: 48, color: _green.withOpacity(0.5)),
+                          size: 48, color: _green.withValues(alpha: 0.5)),
                       const SizedBox(height: 8),
                       Text(
                         'No pending collaboration requests',
@@ -775,7 +774,7 @@ class _CollaborationRequestCard extends StatelessWidget {
                     decoration: BoxDecoration(
                         color: _orangeLt,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _orange.withOpacity(0.3))),
+                        border: Border.all(color: _orange.withValues(alpha: 0.3))),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -835,9 +834,9 @@ class _CollaborationRequestCard extends StatelessWidget {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                        color: _redLt,
+                        color: context.appTheme.redLt,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _red.withOpacity(0.3))),
+                        border: Border.all(color: _red.withValues(alpha: 0.3))),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -904,9 +903,9 @@ class _HistoryRequestCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _white,
+        color: context.appTheme.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
+        border: Border.all(color: context.appTheme.border),
         boxShadow: const [
           BoxShadow(
               color: Color(0x08000000), blurRadius: 2, offset: Offset(0, 1))
@@ -1090,14 +1089,14 @@ class _SettingsTabState extends State<_SettingsTab> {
             decoration: BoxDecoration(
               color: _yellowLt,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _yellow.withOpacity(0.3)),
+              border: Border.all(color: _yellow.withValues(alpha: 0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info, color: _yellow.withOpacity(0.8), size: 16),
+                    Icon(Icons.info, color: _yellow.withValues(alpha: 0.8), size: 16),
                     const SizedBox(width: 8),
                     const Text(
                       'How Escalation Works:',
@@ -1269,7 +1268,7 @@ class _ThresholdCardState extends State<_ThresholdCard> {
       decoration: BoxDecoration(
         color: widget.bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: widget.color.withOpacity(0.3)),
+        border: Border.all(color: widget.color.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1345,7 +1344,7 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                     Text(
                       'Alert escalates if not claimed within this time',
                       style: TextStyle(
-                          fontSize: 10, color: widget.color.withOpacity(0.7)),
+                          fontSize: 10, color: widget.color.withValues(alpha: 0.7)),
                     ),
                   ],
                 ),
@@ -1406,7 +1405,7 @@ class _ThresholdCardState extends State<_ThresholdCard> {
                     Text(
                       'Alert escalates if claimed but not fixed within this time',
                       style: TextStyle(
-                          fontSize: 10, color: widget.color.withOpacity(0.7)),
+                          fontSize: 10, color: widget.color.withValues(alpha: 0.7)),
                     ),
                   ],
                 ),
@@ -1419,7 +1418,7 @@ class _ThresholdCardState extends State<_ThresholdCard> {
             decoration: BoxDecoration(
               color: _white,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: widget.color.withOpacity(0.2)),
+              border: Border.all(color: widget.color.withValues(alpha: 0.2)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

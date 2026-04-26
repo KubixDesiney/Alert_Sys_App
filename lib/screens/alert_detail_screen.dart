@@ -200,15 +200,16 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: OutlinedButton.icon(
+                                      child: ElevatedButton.icon(
                                         onPressed: () => _respondToCollab(
                                           accepted: false,
                                           request: req,
                                         ),
-                                        icon: const Icon(Icons.close, color: Colors.red),
-                                        label: const Text(
-                                          'Refuse',
-                                          style: TextStyle(color: Colors.red),
+                                        icon: const Icon(Icons.close, color: Colors.white),
+                                        label: const Text('Decline'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFFFB3BA), // Light red
+                                          foregroundColor: Colors.white,
                                         ),
                                       ),
                                     ),
@@ -219,8 +220,12 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                           accepted: true,
                                           request: req,
                                         ),
-                                        icon: const Icon(Icons.check),
-                                        label: const Text('Accept'),
+                                        icon: const Icon(Icons.check, color: Colors.white),
+                                        label: const Text('Approve'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                          foregroundColor: Colors.white,
+                                        ),
                                       ),
                                     ),
                                   ],

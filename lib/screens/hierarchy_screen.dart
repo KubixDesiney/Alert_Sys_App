@@ -5,8 +5,6 @@ import '../services/hierarchy_service.dart';
 import '../theme.dart';
 
 const _navy = AppColors.navy;
-const _white = AppColors.white;
-const _border = AppColors.border;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
 const _red = AppColors.red;
@@ -457,9 +455,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     flex: 1,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: _white,
+                        color: context.appTheme.card,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _border),
+                        border: Border.all(color: context.appTheme.border),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -534,9 +532,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     flex: 1,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: _white,
+                        color: context.appTheme.card,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _border),
+                        border: Border.all(color: context.appTheme.border),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -622,9 +620,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     flex: 1,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: _white,
+                        color: context.appTheme.card,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _border),
+                        border: Border.all(color: context.appTheme.border),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
