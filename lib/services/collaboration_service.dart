@@ -90,6 +90,11 @@ Future<String> createCollaborationRequest({
   return requestId;
 }
 
+  Future<void> cancelCollaborationRequest(String requestId, String alertId) async {
+    await _db.child('collaboration_requests/$requestId').remove();
+    await _db.child('alerts/$alertId').update({'collaborationRequestId': null});
+  }
+
   // Get all collaboration requests (for admin)
   Stream<List<CollaborationRequest>> getAllCollaborationRequests() {
     return _db.child('collaboration_requests').onValue.map((event) {

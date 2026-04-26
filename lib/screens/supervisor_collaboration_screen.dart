@@ -153,25 +153,94 @@ class CollaborationProgressScreen extends StatelessWidget {
   }
 }
 
-class _CollaborationCard extends StatelessWidget {
+class _CollaborationCard extends StatefulWidget {
   final CollaborationRequest request;
-
   const _CollaborationCard({required this.request});
 
   @override
+  State<_CollaborationCard> createState() => _CollaborationCardState();
+}
+
+class _CollaborationCardState extends State<_CollaborationCard> {
+  bool _cancelling = false;
+
+  Future<void> _confirmCancel(BuildContext context) async {
+    final r = widget.request;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+          SizedBox(width: 8),
+          Text('Cancel Collaboration?'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('This will permanently cancel the request.', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 16),
+            _DialogDetail(label: 'Request ID', value: 'collab-${r.id.substring(0, 12)}'),
+            const SizedBox(height: 8),
+            _DialogDetail(
+              label: 'Members',
+              value: r.targetSupervisorNames.join(', '),
+            ),
+            const SizedBox(height: 8),
+            _DialogDetail(
+              label: 'Alert type',
+              value: r.alertType ?? '—',
+            ),
+            const SizedBox(height: 8),
+            _DialogDetail(
+              label: 'Description',
+              value: (r.alertDescription?.isNotEmpty ?? false) ? r.alertDescription! : '—',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            icon: const Icon(Icons.cancel, size: 16),
+            label: const Text('Cancel Request'),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    setState(() => _cancelling = true);
+    try {
+      await CollaborationService()
+          .cancelCollaborationRequest(r.id, r.alertId);
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final r = widget.request;
+    final canCancel = !r.pmApproved && r.status != 'rejected';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _white,
+        color: t.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
-        boxShadow: const [
+        border: Border.all(color: t.border),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x08000000),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 4,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -182,91 +251,102 @@ class _CollaborationCard extends StatelessWidget {
             children: [
               Icon(Icons.send, color: _purple, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Collaboration Request Progress',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
-                  color: _navy,
+                  color: t.navy,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            'Request ID: collab-${request.id.substring(0, 12)}',
-            style: const TextStyle(
+            'Request ID: collab-${r.id.substring(0, 12)}',
+            style: TextStyle(
               fontSize: 11,
-              color: _muted,
+              color: t.muted,
               fontFamily: 'monospace',
             ),
           ),
           const SizedBox(height: 16),
-          // Progress steps
-          _buildProgressStep(
-            icon: Icons.check_circle,
+          _buildProgressStep(t, Icons.check_circle,
             title: 'Request Sent',
-            subtitle: 'Collaboration request sent to ${request.targetSupervisorNames.join(", ")}',
+            subtitle: 'Sent to ${r.targetSupervisorNames.join(", ")}',
             isCompleted: true,
-            timestamp: 'Just now',
           ),
-          _buildProgressStep(
-            icon: Icons.pending,
+          _buildProgressStep(t, Icons.pending,
             title: 'Assistant Response',
-            subtitle: request.assistantDecision == 'accepted'
-                ? 'Accepted by ${request.assistantName ?? request.targetSupervisorNames.first}'
-                : request.assistantDecision == 'refused'
-                    ? 'Refused by ${request.assistantName ?? request.targetSupervisorNames.first}'
-                    : 'Waiting for ${request.targetSupervisorNames.first} to accept or refuse',
-            isCompleted: request.assistantDecision == 'accepted',
-            timestamp: null,
+            subtitle: r.assistantDecision == 'accepted'
+                ? 'Accepted by ${r.assistantName ?? r.targetSupervisorNames.first}'
+                : r.assistantDecision == 'refused'
+                    ? 'Refused by ${r.assistantName ?? r.targetSupervisorNames.first}'
+                    : 'Waiting for ${r.targetSupervisorNames.first} to accept or refuse',
+            isCompleted: r.assistantDecision == 'accepted',
           ),
-          _buildProgressStep(
-            icon: Icons.admin_panel_settings,
+          _buildProgressStep(t, Icons.admin_panel_settings,
             title: 'Production Manager Approval',
-            subtitle: request.pmApproved
+            subtitle: r.pmApproved
                 ? 'Approved by Production Manager'
-                : 'Waiting for Production Manager final approval',
-            isCompleted: request.pmApproved,
-            timestamp: null,
+                : 'Waiting for PM final approval',
+            isCompleted: r.pmApproved,
             isLast: true,
           ),
-          if (!request.pmApproved)
+          if (!r.pmApproved) ...[
+            const SizedBox(height: 12),
             Container(
-              margin: const EdgeInsets.only(top: 12),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
+                color: t.blueLt,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
+                border: Border.all(color: t.blue.withValues(alpha: 0.3)),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: const Color(0xFF2563EB), size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Your collaboration request will be reviewed first by the assistant, then by the Production Manager',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: const Color(0xFF1E40AF),
-                      ),
-                    ),
+              child: Row(children: [
+                Icon(Icons.info_outline, color: t.blue, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Reviewed by assistant first, then by Production Manager.',
+                    style: TextStyle(fontSize: 11, color: t.blue),
                   ),
-                ],
+                ),
+              ]),
+            ),
+          ],
+          if (canCancel) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _cancelling ? null : () => _confirmCancel(context),
+                icon: _cancelling
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
+                    : const Icon(Icons.cancel, size: 16, color: Colors.red),
+                label: Text(
+                  _cancelling ? 'Cancelling…' : 'Cancel Request',
+                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                  backgroundColor: Colors.red.withValues(alpha: 0.06),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
               ),
             ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildProgressStep({
-    required IconData icon,
+  Widget _buildProgressStep(AppTheme t, IconData icon, {
     required String title,
     required String subtitle,
     required bool isCompleted,
-    String? timestamp,
     bool isLast = false,
   }) {
     return Row(
@@ -319,33 +399,38 @@ class _CollaborationCard extends StatelessWidget {
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: _muted,
-                ),
+                style: TextStyle(fontSize: 11, color: _muted),
               ),
-              if (timestamp != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      timestamp,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: _green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
               if (!isLast) const SizedBox(height: 8),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DialogDetail extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DialogDetail({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(label,
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF64748B))),
+        ),
+        Expanded(
+          child: Text(value,
+              style: const TextStyle(fontSize: 12)),
         ),
       ],
     );
