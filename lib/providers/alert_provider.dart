@@ -253,6 +253,11 @@ class AlertProvider extends ChangeNotifier {
       .where((a) => a.status == 'validee' && a.superviseurId == superviseurId)
       .toList();
 
+  /// Alerts where this supervisor was the assistant (not the main claimant).
+  List<AlertModel> assistedAlerts(String superviseurId) => _alerts
+      .where((a) => a.status == 'validee' && a.assistantId == superviseurId)
+      .toList();
+
   DateTime get currentTime => _currentTime;
   String get currentSuperviseurId =>
       FirebaseAuth.instance.currentUser?.uid ?? '';
