@@ -512,152 +512,211 @@ class _CollaborationsTab extends StatelessWidget {
   }
 }
 
-class _CollaborationRequestCard extends StatelessWidget {
+class _CollaborationRequestCard extends StatefulWidget {
   final CollaborationRequest request;
-
   const _CollaborationRequestCard({required this.request});
 
   @override
+  State<_CollaborationRequestCard> createState() =>
+      _CollaborationRequestCardState();
+}
+
+class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
+  final Set<String> _removing = {};
+
+  Future<void> _removeAssistant(String assistantId, String assistantName) async {
+    if (_removing.contains(assistantId)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remove Assistant?'),
+        content: Text('Remove @$assistantName from this collaboration?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: _red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _removing.add(assistantId));
+    try {
+      final pmName = FirebaseAuth.instance.currentUser?.email?.split('@').first ?? 'PM';
+      await CollaborationService().removeAssistantFromRequest(
+        requestId: widget.request.id,
+        assistantId: assistantId,
+        assistantName: assistantName,
+        removedByName: pmName,
+      );
+    } finally {
+      if (mounted) setState(() => _removing.remove(assistantId));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final r = widget.request;
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final hasMultipleAssistants = r.targetSupervisorIds.length > 1;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F4FF),
+        color: t.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE9D5FF)),
+        border: Border.all(color: _purple.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header (unchanged)
-          Row(
-            children: [
-              Text(
-                request.requesterName,
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Alert #${request.alertId.substring(0, 8)}',
-                style: const TextStyle(
-                    fontSize: 12, color: _muted, fontFamily: 'monospace'),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                    color: _orange, borderRadius: BorderRadius.circular(12)),
-                child: const Text('Pending',
-                    style: TextStyle(
-                        fontSize: 10,
-                        color: _white,
-                        fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
+          // Header
+          Row(children: [
+            Icon(Icons.shield, color: _purple, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(r.requesterName,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: t.navy)),
+            ),
+            Text('Alert #${r.alertId.substring(0, 8)}',
+                style: TextStyle(fontSize: 11, color: t.muted, fontFamily: 'monospace')),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: _orange, borderRadius: BorderRadius.circular(12)),
+              child: const Text('Pending PM',
+                  style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ]),
           const SizedBox(height: 4),
           Row(children: [
-            const Icon(Icons.access_time, size: 12, color: _muted),
+            Icon(Icons.access_time, size: 12, color: t.muted),
             const SizedBox(width: 4),
-            Text(_formatTime(request.timestamp),
-                style: const TextStyle(fontSize: 11, color: _muted)),
+            Text(_formatTime(r.timestamp), style: TextStyle(fontSize: 11, color: t.muted)),
           ]),
           const SizedBox(height: 12),
-          const Text('Requesting collaboration with:',
-              style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: _muted)),
-          const SizedBox(height: 6),
+
+          // Assistants with optional remove buttons
+          Text('Requesting collaboration with:',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: t.muted)),
+          const SizedBox(height: 8),
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: request.targetSupervisorNames
-                .map((name) => Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: _purple,
-                          borderRadius: BorderRadius.circular(16)),
-                      child: Text('@$name',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              color: _white,
-                              fontWeight: FontWeight.w600)),
-                    ))
-                .toList(),
+            spacing: 6, runSpacing: 6,
+            children: List.generate(r.targetSupervisorIds.length, (i) {
+              final id = r.targetSupervisorIds[i];
+              final name = r.targetSupervisorNames[i];
+              final decision = r.assistantDecisions[id] ?? 'pending';
+              final isRemoving = _removing.contains(id);
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: decision == 'accepted'
+                      ? _green.withValues(alpha: 0.12)
+                      : decision == 'refused'
+                          ? _red.withValues(alpha: 0.1)
+                          : _purple.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: decision == 'accepted'
+                        ? _green.withValues(alpha: 0.4)
+                        : decision == 'refused'
+                            ? _red.withValues(alpha: 0.4)
+                            : _purple.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(
+                    decision == 'accepted' ? Icons.check_circle : decision == 'refused' ? Icons.cancel : Icons.pending,
+                    size: 13,
+                    color: decision == 'accepted' ? _green : decision == 'refused' ? _red : _purple,
+                  ),
+                  const SizedBox(width: 5),
+                  Text('@$name',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w600,
+                        color: decision == 'accepted' ? _green : decision == 'refused' ? _red : _purple,
+                      )),
+                  // PM remove button — only if multiple assistants
+                  if (hasMultipleAssistants && decision != 'refused') ...[
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: isRemoving ? null : () => _removeAssistant(id, name),
+                      child: isRemoving
+                          ? const SizedBox(width: 12, height: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
+                          : const Icon(Icons.close, size: 13, color: Colors.red),
+                    ),
+                  ],
+                ]),
+              );
+            }),
           ),
           const SizedBox(height: 12),
+
+          // Message + description
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: _white,
+                color: t.scaffold,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _border)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(request.message,
-                    style: const TextStyle(fontSize: 12, color: _navy)),
+                border: Border.all(color: t.border)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(r.message, style: TextStyle(fontSize: 12, color: t.navy)),
+              if (r.alertDescription?.isNotEmpty == true) ...[
                 const SizedBox(height: 8),
-                Text('Issue: ${request.alertDescription}',
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: _muted,
-                        fontStyle: FontStyle.italic)),
+                Text('Issue: ${r.alertDescription}',
+                    style: TextStyle(fontSize: 11, color: t.muted, fontStyle: FontStyle.italic)),
               ],
+            ]),
+          ),
+          const SizedBox(height: 14),
+
+          // PM Approve / Reject buttons
+          Row(children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _handleApprove(context, r),
+                icon: const Icon(Icons.check_circle, size: 16),
+                label: const Text('Approve',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _handleApprove(context, request),
-                  icon: const Icon(Icons.check_circle, size: 16),
-                  label: const Text('Approve',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _green,
-                    foregroundColor: _white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await CollaborationService()
+                      .rejectCollaborationRequest(r.id, currentUserId, '');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Collaboration rejected'),
+                        backgroundColor: _red));
+                  }
+                },
+                icon: const Icon(Icons.cancel, size: 16),
+                label: const Text('Reject',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _red,
+                  side: const BorderSide(color: _red),
+                  backgroundColor: Colors.transparent,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await CollaborationService().rejectCollaborationRequest(
-                        request.id, currentUserId, '');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Collaboration rejected'),
-                            backgroundColor: _red),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.cancel, size: 16),
-                  label: const Text('Reject',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _red,
-                    side: const BorderSide(color: _red),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ]),
         ],
       ),
     );
