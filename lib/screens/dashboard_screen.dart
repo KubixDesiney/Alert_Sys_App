@@ -1182,22 +1182,24 @@ class _SummaryCard extends StatelessWidget {
       required this.onTap});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: _white,
+            color: t.card,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-                color: active ? color : const Color(0xFFE5E7EB),
+                color: active ? color : t.border,
                 width: active ? 2 : 1),
             boxShadow: active
                 ? [
                     BoxShadow(
-                        color: color.withOpacity(0.15),
+                        color: color.withValues(alpha: 0.15),
                         blurRadius: 8,
                         offset: const Offset(0, 2))
                   ]
@@ -1208,9 +1210,9 @@ class _SummaryCard extends StatelessWidget {
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(label,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF64748B),
+                        color: t.muted,
                         fontWeight: FontWeight.w500)),
                 const SizedBox(height: 4),
                 Text('$count',
@@ -1219,8 +1221,8 @@ class _SummaryCard extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                         color: color)),
                 const SizedBox(height: 8),
-                const Text('Click to see details',
-                    style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                Text('Click to see details',
+                    style: TextStyle(fontSize: 11, color: t.muted)),
               ]),
               Container(
                   width: 48,
@@ -1232,6 +1234,7 @@ class _SummaryCard extends StatelessWidget {
           ),
         ),
       );
+  }
 }
 
 // ---------- DETAIL PANEL ----------
@@ -1256,38 +1259,41 @@ class _DetailPanel extends StatelessWidget {
       };
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-            color: _white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE5E7EB))),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-            child: Row(children: [
-              const Icon(Icons.info_outline, color: _navy, size: 20),
-              const SizedBox(width: 8),
-              Text(_title,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold, color: _navy))
-            ]),
-          ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-          const SizedBox(height: 16),
-          if (activeView == 'received')
-            _ReceivedView(
-                alerts: available,
-                provider: provider,
-                superviseurId: superviseurId,
-                superviseurName: superviseurName),
-          if (activeView == 'claimed')
-            _ClaimedView(alerts: allInProgress, provider: provider),
-          if (activeView == 'fixed')
-            _FixedView(alerts: validated, provider: provider),
-          const SizedBox(height: 8),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: t.border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Row(children: [
+            Icon(Icons.info_outline, color: t.navy, size: 20),
+            const SizedBox(width: 8),
+            Text(_title,
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold, color: t.navy))
+          ]),
+        ),
+        Divider(height: 1, color: t.border),
+        const SizedBox(height: 16),
+        if (activeView == 'received')
+          _ReceivedView(
+              alerts: available,
+              provider: provider,
+              superviseurId: superviseurId,
+              superviseurName: superviseurName),
+        if (activeView == 'claimed')
+          _ClaimedView(alerts: allInProgress, provider: provider),
+        if (activeView == 'fixed')
+          _FixedView(alerts: validated, provider: provider),
+        const SizedBox(height: 8),
+      ]),
+    );
+  }
 }
 
 // ---------- RECEIVED VIEW ----------
