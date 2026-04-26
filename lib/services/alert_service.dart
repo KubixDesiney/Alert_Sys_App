@@ -4,6 +4,14 @@ import 'dart:convert';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
 
+String _defaultDescription(String type) => switch (type) {
+      'qualite' => 'Quality control issue detected on the line.',
+      'maintenance' => 'Equipment requires maintenance intervention.',
+      'defaut_produit' => 'Product defect identified at workstation.',
+      'manque_ressource' => 'Resource shortage reported at production post.',
+      _ => 'Alert raised — awaiting supervisor assessment.',
+    };
+
 class AlertService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -68,7 +76,7 @@ class AlertService {
       'poste': poste,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
       'timestamp': now.toIso8601String(),
-      'description': description,
+      'description': description.trim().isEmpty ? _defaultDescription(type) : description,
       'status': 'disponible',
       'comments': [],
       'isCritical': isCritical,
