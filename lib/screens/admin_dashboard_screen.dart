@@ -35,7 +35,6 @@ const _navy = AppColors.navy;
 const _navyLt = AppColors.navyLight;
 const _red = AppColors.red;
 const _white = AppColors.white;
-const _bg = AppColors.bg;
 const _border = AppColors.border;
 const _muted = AppColors.muted;
 const _text = AppColors.text;
@@ -941,8 +940,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   margin: const EdgeInsets.only(bottom: 14),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                      color: _bg,
-                      border: Border.all(color: _border),
+                      color: context.appTheme.scaffold,
+                      border: Border.all(color: context.appTheme.border),
                       borderRadius: BorderRadius.circular(9)),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -978,8 +977,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 13),
                     decoration: BoxDecoration(
-                        color: _bg,
-                        border: Border.all(color: _border),
+                        color: context.appTheme.scaffold,
+                        border: Border.all(color: context.appTheme.border),
                         borderRadius: BorderRadius.circular(9)),
                     child: Row(children: [
                       const Icon(Icons.calendar_today,
@@ -1622,8 +1621,9 @@ class _PillTabBar extends StatelessWidget {
       {'icon': Icons.warning_amber, 'label': 'Escalations'}, // <-- NEW
       {'icon': Icons.account_tree, 'label': 'Hierarchy'}, // NEW
     ];
+    final t = context.appTheme;
     return Container(
-      color: _white,
+      color: t.card,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.start,
@@ -1639,19 +1639,19 @@ class _PillTabBar extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: sel ? _navy : _white,
+                  color: sel ? t.navy : t.scaffold,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: sel ? _navy : _border),
+                  border: Border.all(color: sel ? t.navy : t.border),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(item['icon'] as IconData,
-                      size: 15, color: sel ? _white : _muted),
+                      size: 15, color: sel ? Colors.white : t.muted),
                   const SizedBox(width: 6),
                   Text(item['label'] as String,
                       style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: sel ? _white : _muted)),
+                          color: sel ? Colors.white : t.muted)),
                 ]),
               ),
             ),

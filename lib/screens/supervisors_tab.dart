@@ -65,11 +65,11 @@ class _SupervisorsTabState extends State<_SupervisorsTab>
 
     return Column(children: [
       Container(
-        color: _white,
+        color: context.appTheme.card,
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         child: Container(
           decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
+              color: context.appTheme.scaffold,
               borderRadius: BorderRadius.circular(20)),
           padding: const EdgeInsets.all(3),
           child: Row(
@@ -371,8 +371,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-              color: _white,
-              border: Border.all(color: _border),
+              color: context.appTheme.card,
+              border: Border.all(color: context.appTheme.border),
               borderRadius: BorderRadius.circular(12)),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -383,8 +383,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                  color: _bg,
-                  border: Border.all(color: _border),
+                  color: context.appTheme.scaffold,
+                  border: Border.all(color: context.appTheme.border),
                   borderRadius: BorderRadius.circular(9)),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<UserModel>(
@@ -457,8 +457,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               child: Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                    color: _white,
-                    border: Border.all(color: _border),
+                    color: context.appTheme.card,
+                    border: Border.all(color: context.appTheme.border),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
                       BoxShadow(
@@ -540,8 +540,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               child: Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                    color: _white,
-                    border: Border.all(color: _border),
+                    color: context.appTheme.card,
+                    border: Border.all(color: context.appTheme.border),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
                       BoxShadow(
@@ -595,8 +595,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                    color: _white,
-                    border: Border.all(color: clr.withOpacity(.25)),
+                    color: context.appTheme.card,
+                    border: Border.all(color: clr.withValues(alpha: .25)),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
                       BoxShadow(
@@ -652,8 +652,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-                color: _white,
-                border: Border.all(color: _border),
+                color: context.appTheme.card,
+                border: Border.all(color: context.appTheme.border),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: const [
                   BoxShadow(
@@ -682,8 +682,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                      color: _bg,
-                      border: Border.all(color: _border),
+                      color: context.appTheme.scaffold,
+                      border: Border.all(color: context.appTheme.border),
                       borderRadius: BorderRadius.circular(8)),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
@@ -777,8 +777,8 @@ class _ValidatedAlertRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-          color: _white,
-          border: Border.all(color: _border),
+          color: context.appTheme.card,
+          border: Border.all(color: context.appTheme.border),
           borderRadius: BorderRadius.circular(10)),
       child: Row(children: [
         Container(
@@ -1020,8 +1020,8 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-              color: _white,
-              border: Border.all(color: _border),
+              color: context.appTheme.card,
+              border: Border.all(color: context.appTheme.border),
               borderRadius: BorderRadius.circular(14),
               boxShadow: const [
                 BoxShadow(
@@ -1049,8 +1049,8 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                    color: _bg,
-                    border: Border.all(color: _border),
+                    color: context.appTheme.scaffold,
+                    border: Border.all(color: context.appTheme.border),
                     borderRadius: BorderRadius.circular(10)),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1329,9 +1329,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-          color: _white,
+          color: context.appTheme.card,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _border),
+          border: Border.all(color: context.appTheme.border),
           boxShadow: const [
             BoxShadow(
                 color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1))
@@ -1588,7 +1588,7 @@ class _SheetField extends StatelessWidget {
               hintText: hint,
               hintStyle: const TextStyle(color: _muted),
               filled: true,
-              fillColor: _bg,
+              fillColor: context.appTheme.scaffold,
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               border: OutlineInputBorder(
