@@ -303,7 +303,11 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
 
   List<AlertModel> get _supAlerts => _selected == null
       ? []
-      : widget.alerts.where((a) => a.superviseurId == _selected!.id).toList();
+      : widget.alerts
+          .where((a) =>
+              a.superviseurId == _selected!.id ||
+              a.assistantId == _selected!.id)
+          .toList();
 
   List<AlertModel> get _solved =>
       _supAlerts.where((a) => a.status == 'validee').toList();
@@ -1314,7 +1318,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
   Widget build(BuildContext context) {
     final sup = widget.supervisor;
     final solved = widget.alerts
-        .where((a) => a.status == 'validee' && a.superviseurId == sup.id)
+        .where((a) => a.status == 'validee' &&
+            (a.superviseurId == sup.id || a.assistantId == sup.id))
         .toList();
     final inProg = widget.alerts
         .where((a) => a.status == 'en_cours' && a.superviseurId == sup.id)

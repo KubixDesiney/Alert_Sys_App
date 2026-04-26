@@ -351,7 +351,8 @@ class _EscalatedAlertCard extends StatelessWidget {
           Row(children: [
             const Icon(Icons.location_on, size: 14, color: _muted),
             const SizedBox(width: 4),
-            Text('${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
+            Text(
+                '${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
           ]),
           Row(children: [
             const Icon(Icons.access_time, size: 14, color: _muted),
@@ -524,7 +525,8 @@ class _CollaborationRequestCard extends StatefulWidget {
 class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
   final Set<String> _removing = {};
 
-  Future<void> _removeAssistant(String assistantId, String assistantName) async {
+  Future<void> _removeAssistant(
+      String assistantId, String assistantName) async {
     if (_removing.contains(assistantId)) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -532,7 +534,9 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
         title: const Text('Remove Assistant?'),
         content: Text('Remove @$assistantName from this collaboration?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: _red),
@@ -544,7 +548,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
     if (confirmed != true || !mounted) return;
     setState(() => _removing.add(assistantId));
     try {
-      final pmName = FirebaseAuth.instance.currentUser?.email?.split('@').first ?? 'PM';
+      final pmName =
+          FirebaseAuth.instance.currentUser?.email?.split('@').first ?? 'PM';
       await CollaborationService().removeAssistantFromRequest(
         requestId: widget.request.id,
         assistantId: assistantId,
@@ -580,32 +585,43 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(r.requesterName,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: t.navy)),
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: t.navy)),
             ),
             Text('Alert #${r.alertId.substring(0, 8)}',
-                style: TextStyle(fontSize: 11, color: t.muted, fontFamily: 'monospace')),
+                style: TextStyle(
+                    fontSize: 11, color: t.muted, fontFamily: 'monospace')),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(color: _orange, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                  color: _orange, borderRadius: BorderRadius.circular(12)),
               child: const Text('Pending PM',
-                  style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold)),
             ),
           ]),
           const SizedBox(height: 4),
           Row(children: [
             Icon(Icons.access_time, size: 12, color: t.muted),
             const SizedBox(width: 4),
-            Text(_formatTime(r.timestamp), style: TextStyle(fontSize: 11, color: t.muted)),
+            Text(_formatTime(r.timestamp),
+                style: TextStyle(fontSize: 11, color: t.muted)),
           ]),
           const SizedBox(height: 12),
 
           // Assistants with optional remove buttons
           Text('Requesting collaboration with:',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: t.muted)),
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: t.muted)),
           const SizedBox(height: 8),
           Wrap(
-            spacing: 6, runSpacing: 6,
+            spacing: 6,
+            runSpacing: 6,
             children: List.generate(r.targetSupervisorIds.length, (i) {
               final id = r.targetSupervisorIds[i];
               final name = r.targetSupervisorNames[i];
@@ -613,7 +629,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
               final isRemoving = _removing.contains(id);
 
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: decision == 'accepted'
                       ? _green.withValues(alpha: 0.12)
@@ -631,25 +648,43 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(
-                    decision == 'accepted' ? Icons.check_circle : decision == 'refused' ? Icons.cancel : Icons.pending,
+                    decision == 'accepted'
+                        ? Icons.check_circle
+                        : decision == 'refused'
+                            ? Icons.cancel
+                            : Icons.pending,
                     size: 13,
-                    color: decision == 'accepted' ? _green : decision == 'refused' ? _red : _purple,
+                    color: decision == 'accepted'
+                        ? _green
+                        : decision == 'refused'
+                            ? _red
+                            : _purple,
                   ),
                   const SizedBox(width: 5),
                   Text('@$name',
                       style: TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w600,
-                        color: decision == 'accepted' ? _green : decision == 'refused' ? _red : _purple,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: decision == 'accepted'
+                            ? _green
+                            : decision == 'refused'
+                                ? _red
+                                : _purple,
                       )),
                   // PM remove button — only if multiple assistants
                   if (hasMultipleAssistants && decision != 'refused') ...[
                     const SizedBox(width: 4),
                     GestureDetector(
-                      onTap: isRemoving ? null : () => _removeAssistant(id, name),
+                      onTap:
+                          isRemoving ? null : () => _removeAssistant(id, name),
                       child: isRemoving
-                          ? const SizedBox(width: 12, height: 12,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
-                          : const Icon(Icons.close, size: 13, color: Colors.red),
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.red))
+                          : const Icon(Icons.close,
+                              size: 13, color: Colors.red),
                     ),
                   ],
                 ]),
@@ -665,12 +700,16 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 color: t.scaffold,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: t.border)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(r.message, style: TextStyle(fontSize: 12, color: t.navy)),
               if (r.alertDescription?.isNotEmpty == true) ...[
                 const SizedBox(height: 8),
                 Text('Issue: ${r.alertDescription}',
-                    style: TextStyle(fontSize: 11, color: t.muted, fontStyle: FontStyle.italic)),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: t.muted,
+                        fontStyle: FontStyle.italic)),
               ],
             ]),
           ),
@@ -683,12 +722,14 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 onPressed: () => _handleApprove(context, r),
                 icon: const Icon(Icons.check_circle, size: 16),
                 label: const Text('Approve',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ),
@@ -706,13 +747,15 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 },
                 icon: const Icon(Icons.cancel, size: 16),
                 label: const Text('Reject',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _red,
                   side: const BorderSide(color: _red),
                   backgroundColor: Colors.transparent,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ),
@@ -833,7 +876,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                     decoration: BoxDecoration(
                         color: _orangeLt,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _orange.withValues(alpha: 0.3))),
+                        border:
+                            Border.all(color: _orange.withValues(alpha: 0.3))),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -900,12 +944,14 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(children: [
-                          const Icon(Icons.warning_amber_rounded, size: 14, color: _red),
+                          const Icon(Icons.warning_amber_rounded,
+                              size: 14, color: _red),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               'Alert: ${alert['description'] ?? 'No description'}',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
                         ]),
@@ -1053,7 +1099,7 @@ class _HistoryRequestCard extends StatelessWidget {
 }
 
 // ============================================================================
-// SETTINGS TAB
+// SETTINGS TAB (Theme‑aware & dark‑mode creativity)
 // ============================================================================
 class _SettingsTab extends StatefulWidget {
   const _SettingsTab();
@@ -1089,9 +1135,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     setState(() => _saving = false);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Settings saved successfully'),
-          backgroundColor: _green,
+          backgroundColor: context.appTheme.green,
         ),
       );
     }
@@ -1113,8 +1159,9 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: CircularProgressIndicator(color: t.navy));
     }
 
     return SingleChildScrollView(
@@ -1122,57 +1169,52 @@ class _SettingsTabState extends State<_SettingsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.settings, color: _navy, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Escalation Time Thresholds',
+          Row(children: [
+            Icon(Icons.settings, color: t.navy, size: 20),
+            const SizedBox(width: 8),
+            Text('Escalation Time Thresholds',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: _navy,
-                ),
-              ),
-            ],
-          ),
+                    fontSize: 16, fontWeight: FontWeight.bold, color: t.navy)),
+          ]),
           const SizedBox(height: 8),
           Text(
-            'Configure default time limits before alerts are escalated to your attention',
-            style: TextStyle(fontSize: 12, color: _muted),
-          ),
+              'Configure default time limits before alerts are escalated to your attention',
+              style: TextStyle(fontSize: 12, color: t.muted)),
           const SizedBox(height: 16),
           // Info Box
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _yellowLt,
+              gradient: LinearGradient(
+                colors: t.isDark
+                    ? [t.yellowLt.withOpacity(0.4), t.yellowLt.withOpacity(0.2)]
+                    : [t.yellowLt, t.yellowLt],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _yellow.withValues(alpha: 0.3)),
+              border: Border.all(color: t.yellow.withOpacity(0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.info, color: _yellow.withValues(alpha: 0.8), size: 16),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'How Escalation Works:',
+                Row(children: [
+                  Icon(Icons.info, color: t.yellow, size: 16),
+                  const SizedBox(width: 8),
+                  Text('How Escalation Works:',
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF78350F),
-                      ),
-                    ),
-                  ],
-                ),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: t.isDark
+                              ? const Color(0xFFFFE0A0)
+                              : const Color(0xFF78350F))),
+                ]),
                 const SizedBox(height: 8),
-                _buildInfoBullet(
+                _buildInfoBullet(t,
                     'Unclaimed Alert Threshold: Time before an unclaimed alert is escalated'),
-                _buildInfoBullet(
+                _buildInfoBullet(t,
                     'Claimed Alert Threshold: Time a supervisor has to fix a claimed alert before escalation'),
-                _buildInfoBullet(
+                _buildInfoBullet(t,
                     'Escalated alerts appear in the "Escalated Alerts" section for immediate attention'),
               ],
             ),
@@ -1182,8 +1224,8 @@ class _SettingsTabState extends State<_SettingsTab> {
           _ThresholdCard(
             type: 'qualite',
             label: 'Quality Issues',
-            color: _red,
-            bgColor: _redLt,
+            color: t.red,
+            bgColor: t.redLt,
             icon: Icons.warning_amber_rounded,
             threshold: _settings!.thresholds['qualite']!,
             onUpdate: (unclaimed, claimed) =>
@@ -1193,8 +1235,8 @@ class _SettingsTabState extends State<_SettingsTab> {
           _ThresholdCard(
             type: 'maintenance',
             label: 'Maintenance',
-            color: _blue,
-            bgColor: _blueLt,
+            color: t.blue,
+            bgColor: t.blueLt,
             icon: Icons.build_circle,
             threshold: _settings!.thresholds['maintenance']!,
             onUpdate: (unclaimed, claimed) =>
@@ -1204,8 +1246,8 @@ class _SettingsTabState extends State<_SettingsTab> {
           _ThresholdCard(
             type: 'defaut_produit',
             label: 'Damaged Product',
-            color: _green,
-            bgColor: _greenLt,
+            color: t.green,
+            bgColor: t.greenLt,
             icon: Icons.cancel,
             threshold: _settings!.thresholds['defaut_produit']!,
             onUpdate: (unclaimed, claimed) =>
@@ -1215,41 +1257,36 @@ class _SettingsTabState extends State<_SettingsTab> {
           _ThresholdCard(
             type: 'manque_ressource',
             label: 'Resource Deficiency',
-            color: _orange,
-            bgColor: _orangeLt,
+            color: t.orange,
+            bgColor: t.orangeLt,
             icon: Icons.inventory_2,
             threshold: _settings!.thresholds['manque_ressource']!,
             onUpdate: (unclaimed, claimed) =>
                 _updateThreshold('manque_ressource', unclaimed, claimed),
           ),
           const SizedBox(height: 24),
-          // Save button
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _saving ? null : _saveSettings,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _navy,
-                foregroundColor: _white,
+                backgroundColor: t.navy,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                    borderRadius: BorderRadius.circular(8)),
               ),
               child: _saving
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 16,
                       width: 16,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(_white),
-                      ),
-                    )
-                  : const Text(
-                      'Save Settings',
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white)))
+                  : const Text('Save Settings',
                       style:
-                          TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             ),
           ),
         ],
@@ -1257,20 +1294,25 @@ class _SettingsTabState extends State<_SettingsTab> {
     );
   }
 
-  Widget _buildInfoBullet(String text) {
+  Widget _buildInfoBullet(AppTheme t, String text) {
     return Padding(
       padding: const EdgeInsets.only(left: 8, bottom: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• ',
-              style: TextStyle(fontSize: 11, color: Color(0xFF78350F))),
+          Text('• ',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: t.isDark
+                      ? const Color(0xFFFFE0A0)
+                      : const Color(0xFF78350F))),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF78350F)),
-            ),
-          ),
+              child: Text(text,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: t.isDark
+                          ? const Color(0xFFFFF3CC)
+                          : const Color(0xFF78350F)))),
         ],
       ),
     );
@@ -1278,10 +1320,8 @@ class _SettingsTabState extends State<_SettingsTab> {
 }
 
 class _ThresholdCard extends StatefulWidget {
-  final String type;
-  final String label;
-  final Color color;
-  final Color bgColor;
+  final String type, label;
+  final Color color, bgColor;
   final IconData icon;
   final EscalationThreshold threshold;
   final Function(int unclaimed, int claimed) onUpdate;
@@ -1322,234 +1362,214 @@ class _ThresholdCardState extends State<_ThresholdCard> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
+    // Dark mode: add subtle inner gradient to the card for depth
+    final cardDecoration = BoxDecoration(
+      gradient: t.isDark
+          ? LinearGradient(
+              colors: [widget.bgColor, widget.bgColor.withOpacity(0.8)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            )
+          : null,
+      color: t.isDark ? null : widget.bgColor,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: widget.color.withOpacity(0.3)),
+    );
+
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: widget.bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: widget.color.withValues(alpha: 0.3)),
-      ),
+      decoration: cardDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(widget.icon, color: widget.color, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                widget.label,
+          Row(children: [
+            Icon(widget.icon, color: widget.color, size: 20),
+            const SizedBox(width: 8),
+            Text(widget.label,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: widget.color,
-                ),
-              ),
-            ],
-          ),
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: widget.color)),
+          ]),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
+          Row(children: [
+            Expanded(
+              child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Unclaimed Alert Threshold',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: widget.color,
-                      ),
-                    ),
+                    Text('Unclaimed Alert Threshold',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: widget.color)),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: _white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: _border),
-                            ),
-                            child: TextField(
-                              controller: _unclaimedController,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
+                    Row(children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: t.card,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: t.border),
+                            boxShadow: t.isDark
+                                ? [
+                                    BoxShadow(
+                                        color: widget.color.withOpacity(0.15),
+                                        blurRadius: 4,
+                                        offset: Offset(0, 2))
+                                  ]
+                                : null,
+                          ),
+                          child: TextField(
+                            controller: _unclaimedController,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                              ),
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.all(12),
-                              ),
-                              onChanged: (value) {
-                                final unclaimed = int.tryParse(value) ?? 0;
-                                final claimed =
-                                    int.tryParse(_claimedController.text) ?? 0;
-                                widget.onUpdate(unclaimed, claimed);
-                              },
+                                color: t.text),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.all(12),
                             ),
+                            onChanged: (value) {
+                              final unclaimed = int.tryParse(value) ?? 0;
+                              final claimed =
+                                  int.tryParse(_claimedController.text) ?? 0;
+                              widget.onUpdate(unclaimed, claimed);
+                            },
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'minutes',
-                          style: TextStyle(fontSize: 11, color: widget.color),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('minutes',
+                          style: TextStyle(fontSize: 11, color: widget.color)),
+                    ]),
                     const SizedBox(height: 4),
-                    Text(
-                      'Alert escalates if not claimed within this time',
-                      style: TextStyle(
-                          fontSize: 10, color: widget.color.withValues(alpha: 0.7)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
+                    Text('Alert escalates if not claimed within this time',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: widget.color.withOpacity(0.7))),
+                  ]),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Claimed Alert Threshold',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: widget.color,
-                      ),
-                    ),
+                    Text('Claimed Alert Threshold',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: widget.color)),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: _white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: _border),
-                            ),
-                            child: TextField(
-                              controller: _claimedController,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
+                    Row(children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: t.card,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: t.border),
+                            boxShadow: t.isDark
+                                ? [
+                                    BoxShadow(
+                                        color: widget.color.withOpacity(0.15),
+                                        blurRadius: 4,
+                                        offset: Offset(0, 2))
+                                  ]
+                                : null,
+                          ),
+                          child: TextField(
+                            controller: _claimedController,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                              ),
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.all(12),
-                              ),
-                              onChanged: (value) {
-                                final unclaimed =
-                                    int.tryParse(_unclaimedController.text) ??
-                                        0;
-                                final claimed = int.tryParse(value) ?? 0;
-                                widget.onUpdate(unclaimed, claimed);
-                              },
+                                color: t.text),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.all(12),
                             ),
+                            onChanged: (value) {
+                              final unclaimed =
+                                  int.tryParse(_unclaimedController.text) ?? 0;
+                              final claimed = int.tryParse(value) ?? 0;
+                              widget.onUpdate(unclaimed, claimed);
+                            },
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'minutes',
-                          style: TextStyle(fontSize: 11, color: widget.color),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('minutes',
+                          style: TextStyle(fontSize: 11, color: widget.color)),
+                    ]),
                     const SizedBox(height: 4),
                     Text(
-                      'Alert escalates if claimed but not fixed within this time',
-                      style: TextStyle(
-                          fontSize: 10, color: widget.color.withValues(alpha: 0.7)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+                        'Alert escalates if claimed but not fixed within this time',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: widget.color.withOpacity(0.7))),
+                  ]),
+            ),
+          ]),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: _white,
+              color: t.card,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: widget.color.withValues(alpha: 0.2)),
+              border: Border.all(color: widget.color.withOpacity(0.2)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Preview:',
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Preview:',
                   style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: _navy,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: widget.bgColor,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Unclaimed',
-                        style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: t.navy)),
+              const SizedBox(height: 4),
+              Row(children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: widget.bgColor,
+                      borderRadius: BorderRadius.circular(4)),
+                  child: Text('Unclaimed',
+                      style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
-                          color: _navy,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text('→',
-                        style: TextStyle(fontSize: 10, color: _muted)),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Escalates after ${_unclaimedController.text} min',
-                      style: TextStyle(fontSize: 10, color: widget.color),
-                    ),
-                  ],
+                          color: t.navy)),
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: widget.bgColor,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'Claimed',
-                        style: TextStyle(
+                const SizedBox(width: 6),
+                Text('→', style: TextStyle(fontSize: 10, color: t.muted)),
+                const SizedBox(width: 6),
+                Text('Escalates after ${_unclaimedController.text} min',
+                    style: TextStyle(fontSize: 10, color: widget.color)),
+              ]),
+              const SizedBox(height: 2),
+              Row(children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: widget.bgColor,
+                      borderRadius: BorderRadius.circular(4)),
+                  child: Text('Claimed',
+                      style: TextStyle(
                           fontSize: 9,
                           fontWeight: FontWeight.w600,
-                          color: _navy,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text('→',
-                        style: TextStyle(fontSize: 10, color: _muted)),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Escalates after ${_claimedController.text} min without fix',
-                      style: TextStyle(fontSize: 10, color: widget.color),
-                    ),
-                  ],
+                          color: t.navy)),
                 ),
-              ],
-            ),
+                const SizedBox(width: 6),
+                Text('→', style: TextStyle(fontSize: 10, color: t.muted)),
+                const SizedBox(width: 6),
+                Text(
+                    'Escalates after ${_claimedController.text} min without fix',
+                    style: TextStyle(fontSize: 10, color: widget.color)),
+              ]),
+            ]),
           ),
         ],
       ),
