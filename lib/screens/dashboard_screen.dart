@@ -182,6 +182,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
     final allInProgress = provider.allInProgressAlerts;
     final myInProgress = provider.inProgressAlerts(widget.superviseurId);
     final validated = provider.validatedAlerts(widget.superviseurId);
+    final assisted = provider.assistedAlerts(widget.superviseurId);
     final badge = available.length + myInProgress.length;
 
     return SafeArea(
@@ -254,6 +255,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                       available: available,
                       allInProgress: allInProgress,
                       validated: validated,
+                      assisted: assisted,
                       provider: provider,
                       superviseurId: widget.superviseurId,
                       superviseurName: widget.superviseurName,
@@ -1449,7 +1451,7 @@ class _SummaryCard extends StatelessWidget {
 // ---------- DETAIL PANEL ----------
 class _DetailPanel extends StatelessWidget {
   final String activeView;
-  final List<AlertModel> available, allInProgress, validated;
+  final List<AlertModel> available, allInProgress, validated, assisted;
   final AlertProvider provider;
   final String superviseurId, superviseurName;
   const _DetailPanel(
@@ -1457,6 +1459,7 @@ class _DetailPanel extends StatelessWidget {
       required this.available,
       required this.allInProgress,
       required this.validated,
+      required this.assisted,
       required this.provider,
       required this.superviseurId,
       required this.superviseurName});
@@ -1498,7 +1501,7 @@ class _DetailPanel extends StatelessWidget {
         if (activeView == 'claimed')
           _ClaimedView(alerts: allInProgress, provider: provider),
         if (activeView == 'fixed')
-          _FixedView(alerts: validated, provider: provider),
+          _FixedView(alerts: validated, assisted: assisted, provider: provider),
         const SizedBox(height: 8),
       ]),
     );
@@ -1900,100 +1903,120 @@ class _ClaimedView extends StatelessWidget {
 // ---------- FIXED VIEW ----------
 class _FixedView extends StatelessWidget {
   final List<AlertModel> alerts;
+  final List<AlertModel> assisted;
   final AlertProvider provider;
-  const _FixedView({required this.alerts, required this.provider});
+  const _FixedView({required this.alerts, required this.assisted, required this.provider});
+
+  Widget _claimantExtra(AlertModel a) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+                color: const Color(0xFFDCFCE7),
+                border: Border.all(color: const Color(0xFF86EFAC)),
+                borderRadius: BorderRadius.circular(7)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.timer, size: 15, color: Color(0xFF16A34A)),
+              const SizedBox(width: 6),
+              Text('Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF16A34A))),
+            ]),
+          ),
+          if (a.superviseurName != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text.rich(TextSpan(children: [
+                const TextSpan(
+                    text: 'Fixed by: ',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                TextSpan(
+                    text: a.superviseurName,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700, color: _navy)),
+                if (a.assistantName != null)
+                  TextSpan(
+                      text: ' (assisted by ${a.assistantName})',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: _muted)),
+              ])),
+            ),
+          // No "Assisted X" badge here — claimant is not the assistant.
+        ],
+      );
+
+  Widget _assistantExtra(AlertModel a) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+                color: const Color(0xFFEBF8FF),
+                border: Border.all(color: const Color(0xFF93C5FD)),
+                borderRadius: BorderRadius.circular(7)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.handshake, size: 15, color: Color(0xFF3B82F6)),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                    'Assisted ${a.assistedBySupervisorName ?? a.superviseurName ?? ""}',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF3B82F6))),
+              ),
+            ]),
+          ),
+          if (a.superviseurName != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text.rich(TextSpan(children: [
+                const TextSpan(
+                    text: 'Fixed by: ',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                TextSpan(
+                    text: a.superviseurName,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700, color: _navy)),
+              ])),
+            ),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
-    if (alerts.isEmpty)
+    if (alerts.isEmpty && assisted.isEmpty)
       return _empty(Icons.check_circle_outline, Colors.green, 'No fixed alerts',
           'Fixed alerts will appear here');
-    return Column(
-        children: alerts
-            .map((a) => _AlertRow(
-                  alert: a,
-                  rowColor: const Color(0xFFF0FDF4),
-                  statusLabel: 'Fixed',
-                  statusColor: const Color(0xFF16A34A),
-                  statusIcon: Icons.check_circle_outline,
-                  extraContent: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.only(top: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
-                            border: Border.all(color: const Color(0xFF86EFAC)),
-                            borderRadius: BorderRadius.circular(7)),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.timer,
-                              size: 15, color: Color(0xFF16A34A)),
-                          const SizedBox(width: 6),
-                          Text(
-                              'Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF16A34A)))
-                        ]),
-                      ),
-                      if (a.superviseurName != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text.rich(TextSpan(children: [
-                            const TextSpan(
-                                text: 'Fixed by: ',
-                                style: TextStyle(
-                                    fontSize: 12, color: Color(0xFF6B7280))),
-                            TextSpan(
-                                text: a.superviseurName,
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: _navy)),
-                            if (a.assistantName != null)
-                              TextSpan(
-                                  text: ' (assisted by ${a.assistantName})',
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w400,
-                                      color: _muted)),
-                          ])),
-                        ),
-                      if (a.wasAssisted == true &&
-                          a.assistedBySupervisorName != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                                color: const Color(0xFFEBF8FF),
-                                border:
-                                    Border.all(color: const Color(0xFF93C5FD)),
-                                borderRadius: BorderRadius.circular(7)),
-                            child:
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.handshake,
-                                  size: 15, color: Color(0xFF3B82F6)),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                    'Assisted ${a.assistedBySupervisorName}',
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF3B82F6))),
-                              ),
-                            ]),
-                          ),
-                        ),
-                    ],
-                  ),
-                ))
-            .toList());
+
+    return Column(children: [
+      // Own fixed alerts (current user was the claimant)
+      ...alerts.map((a) => _AlertRow(
+            alert: a,
+            rowColor: const Color(0xFFF0FDF4),
+            statusLabel: 'Fixed',
+            statusColor: const Color(0xFF16A34A),
+            statusIcon: Icons.check_circle_outline,
+            extraContent: _claimantExtra(a),
+          )),
+      // Alerts where current user was the assistant
+      ...assisted.map((a) => _AlertRow(
+            alert: a,
+            rowColor: const Color(0xFFEFF6FF),
+            borderColor: const Color(0xFF93C5FD),
+            statusLabel: 'Assisted',
+            statusColor: const Color(0xFF3B82F6),
+            statusIcon: Icons.handshake,
+            extraContent: _assistantExtra(a),
+          )),
+    ]);
   }
 }
 
