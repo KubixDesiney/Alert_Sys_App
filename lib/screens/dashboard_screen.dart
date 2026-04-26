@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:vibration/vibration.dart';
 import '../providers/alert_provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/alert_model.dart';
 import '../services/auth_service.dart';
 import '../theme.dart';
@@ -16,7 +17,6 @@ import 'supervisor_collaboration_screen.dart' as collab;
 
 const _navy = AppColors.navy;
 const _red = AppColors.redAlt;
-const _bgPage = AppColors.bg;
 const _white = AppColors.white;
 const _muted = AppColors.textMuted;
 
@@ -103,25 +103,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
+  void _goToPage(int index) {
+    setState(() => _currentPage = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bgPage,
+      backgroundColor: context.appTheme.scaffold,
       body: PageView(
         controller: _pageController,
         onPageChanged: (index) => setState(() => _currentPage = index),
         children: [
-          // Page 0 – Original Dashboard (all functionality)
           _OriginalDashboardContent(
             superviseurId: _superviseurId,
             superviseurName: _superviseurName,
             usine: _usine,
             onLogout: _logout,
-            currentPage: _currentPage,
           ),
-          // Page 1 – Collaboration Progress
           const CollaborationProgressScreen(),
         ],
+      ),
+      bottomNavigationBar: _DashboardBottomNav(
+        currentIndex: _currentPage,
+        onTap: _goToPage,
       ),
     );
   }
@@ -135,14 +145,12 @@ class _OriginalDashboardContent extends StatefulWidget {
   final String superviseurName;
   final String usine;
   final VoidCallback onLogout;
-  final int currentPage;
 
   const _OriginalDashboardContent({
     required this.superviseurId,
     required this.superviseurName,
     required this.usine,
     required this.onLogout,
-    required this.currentPage,
   });
 
   @override
@@ -190,71 +198,19 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Dashboard Title & Pagination Dots
+                  // Dashboard Title
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.info_outline,
-                              color: _navy, size: 20),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Dashboard',
-                            style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: _navy),
-                          ),
-                        ],
+                      const Icon(Icons.dashboard, color: _navy, size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Dashboard',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: _navy),
                       ),
-                      Row(
-                        children: [
-                          Icon(Icons.chevron_left, color: Colors.grey.shade400),
-                          Icon(Icons.chevron_right, color: _navy),
-                        ],
-                      )
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                                width: 20,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                    color: widget.currentPage == 0
-                                        ? _navy
-                                        : const Color(0xFFCBD5E1),
-                                    borderRadius: BorderRadius.circular(4))),
-                            const SizedBox(width: 4),
-                            Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                    color: widget.currentPage == 1
-                                        ? _navy
-                                        : const Color(0xFFCBD5E1),
-                                    shape: BoxShape.circle)),
-                            const SizedBox(width: 4),
-                            Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                    color: Color(0xFFCBD5E1),
-                                    shape: BoxShape.circle)),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Text('← Swipe to navigate →',
-                            style: TextStyle(
-                                fontSize: 10, color: Color(0xFF94A3B8))),
-                      ],
-                    ),
                   ),
                   const SizedBox(height: 16),
 
@@ -1117,45 +1073,51 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final isDark = context.isDark;
     return Container(
-      decoration: const BoxDecoration(
-          color: _white,
-          border:
-              Border(bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1))),
+      decoration: BoxDecoration(
+          color: t.card,
+          border: Border(bottom: BorderSide(color: t.border, width: 1))),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(children: [
-        Row(
+        Stack(
+          alignment: Alignment.center,
           children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(Icons.factory, size: 28, color: _navy.withOpacity(0.8)),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    decoration: const BoxDecoration(
-                        color: _white, shape: BoxShape.circle),
-                    child: const Icon(Icons.warning, color: _red, size: 14),
-                  ),
-                )
-              ],
+            Icon(Icons.factory, size: 28, color: t.navy.withValues(alpha: 0.8)),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                decoration: BoxDecoration(color: t.card, shape: BoxShape.circle),
+                child: Icon(Icons.warning, color: t.red, size: 14),
+              ),
             ),
-            const SizedBox(width: 12),
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Supervisor',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700, color: _navy)),
-              Text(widget.userName,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-            ]),
           ],
         ),
+        const SizedBox(width: 12),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Supervisor',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w700, color: t.navy)),
+          Text(widget.userName,
+              style: TextStyle(fontSize: 12, color: t.muted)),
+        ]),
         const Spacer(),
+        // ── Theme toggle ──
+        IconButton(
+          icon: Icon(
+            isDark ? Icons.light_mode : Icons.dark_mode,
+            color: t.navy,
+            size: 22,
+          ),
+          tooltip: isDark ? 'Light mode' : 'Dark mode',
+          onPressed: () => context.read<ThemeProvider>().toggle(),
+        ),
+        // ── Notifications ──
         Stack(clipBehavior: Clip.none, children: [
           IconButton(
-              icon:
-                  const Icon(Icons.notifications_none, color: _navy, size: 28),
+              icon: Icon(Icons.notifications_none, color: t.navy, size: 28),
               onPressed: _showNotifications),
           if (_notificationCount > 0)
             Positioned(
@@ -1165,25 +1127,26 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 width: 18,
                 height: 18,
                 decoration:
-                    const BoxDecoration(color: _red, shape: BoxShape.circle),
+                    BoxDecoration(color: t.red, shape: BoxShape.circle),
                 child: Center(
                     child: Text('$_notificationCount',
-                        style: const TextStyle(
-                            color: _white,
+                        style: TextStyle(
+                            color: t.card,
                             fontSize: 10,
                             fontWeight: FontWeight.w700))),
               ),
             ),
         ]),
         const SizedBox(width: 4),
+        // ── Logout ──
         InkWell(
           onTap: widget.onLogout,
           child: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-                border: Border.all(color: _red),
+                border: Border.all(color: t.red),
                 borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.logout, size: 20, color: _red),
+            child: Icon(Icons.logout, size: 20, color: t.red),
           ),
         ),
       ]),
@@ -2261,3 +2224,94 @@ Widget _empty(IconData icon, Color color, String title, String sub) => Padding(
         ]),
       ),
     );
+
+// ============================================================================
+// BOTTOM NAVIGATION BAR
+// ============================================================================
+class _DashboardBottomNav extends StatelessWidget {
+  final int currentIndex;
+  final void Function(int) onTap;
+  const _DashboardBottomNav({required this.currentIndex, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: t.navBar,
+        border: Border(top: BorderSide(color: t.border, width: 1)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              _NavBtn(
+                icon: Icons.dashboard,
+                label: 'Dashboard',
+                selected: currentIndex == 0,
+                onTap: () => onTap(0),
+              ),
+              _NavBtn(
+                icon: Icons.handshake,
+                label: 'Collab Progress',
+                selected: currentIndex == 1,
+                onTap: () => onTap(1),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _NavBtn({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: selected
+              ? BoxDecoration(
+                  color: t.navy,
+                  borderRadius: BorderRadius.circular(12),
+                )
+              : const BoxDecoration(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 22, color: selected ? Colors.white : t.muted),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  color: selected ? Colors.white : t.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -6,7 +6,6 @@ import '../theme.dart';
 
 const _navy = AppColors.navy;
 const _white = AppColors.white;
-const _bg = AppColors.bg;
 const _border = AppColors.border;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
@@ -427,7 +426,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final stations = _selectedConveyor?.stations.values.toList() ?? [];
 
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: context.appTheme.scaffold,
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddFactoryDialog,
         backgroundColor: _navy,
