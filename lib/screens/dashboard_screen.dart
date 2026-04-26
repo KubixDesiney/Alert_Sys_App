@@ -1820,7 +1820,10 @@ class _AlertRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    final effectiveRowColor = alert.isCritical ? Colors.red.shade50 : rowColor;
+    final t = context.appTheme;
+    final effectiveRowColor = context.isDark
+        ? t.card
+        : (alert.isCritical ? Colors.red.shade50 : rowColor);
     final effectiveBorderColor = alert.isCritical
         ? Colors.red.shade300
         : (borderColor ?? const Color(0xFFE5E7EB));
