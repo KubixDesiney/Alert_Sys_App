@@ -14,6 +14,8 @@ import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
+import '../models/collaboration_model.dart';
+import '../services/collaboration_service.dart';
 
 const _navy = AppColors.navy;
 const _red = AppColors.redAlt;
@@ -579,12 +581,17 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                                   final isHelp = n['type'] == 'help_request';
                                   final isAssistance =
                                       n['type'] == 'assistance_request';
+                                  final isCollab =
+                                      n['type'] == 'collaboration_request';
                                   final isUnread = n['status'] != 'read';
                                   if (isHelp) {
                                     return _buildHelpRequestItem(
                                         n, isUnread, setModalState, context);
                                   } else if (isAssistance) {
                                     return _buildAssistanceRequestItem(
+                                        n, isUnread, setModalState, context);
+                                  } else if (isCollab) {
+                                    return _buildCollabRequestItem(
                                         n, isUnread, setModalState, context);
                                   } else {
                                     return _buildDefaultNotificationItem(
@@ -908,6 +915,208 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             child:
                 const Text('Assign Assistant', style: TextStyle(fontSize: 12)),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCollabRequestItem(Map<String, dynamic> n, bool isUnread,
+      StateSetter setModalState, BuildContext context) {
+    final t = context.appTheme;
+    final collabRequestId = n['collabRequestId'] as String?;
+    final alertId = n['alertId'] as String?;
+    final requesterName = n['requesterName'] as String? ?? 'A supervisor';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+          color: t.card,
+          border: Border.all(color: const Color(0xFFE9D5FF)),
+          borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.people, color: Color(0xFF9333EA), size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(n['message'] ?? 'Collaboration request',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: t.text)),
+                  const SizedBox(height: 4),
+                  Text('From: $requesterName',
+                      style: TextStyle(color: t.muted, fontSize: 13)),
+                ],
+              ),
+            ),
+            if (isUnread)
+              Container(
+                  width: 10,
+                  height: 10,
+                  decoration:
+                      const BoxDecoration(color: Color(0xFF9333EA), shape: BoxShape.circle)),
+          ]),
+          const SizedBox(height: 14),
+          // Inline Accept / Decline — keyed on collabRequestId
+          if (collabRequestId != null)
+            StreamBuilder<CollaborationRequest?>(
+              stream: CollaborationService()
+                  .getAllCollaborationRequests()
+                  .map((list) {
+                try {
+                  return list.firstWhere((r) => r.id == collabRequestId);
+                } catch (_) {
+                  return null;
+                }
+              }),
+              builder: (context, snap) {
+                final req = snap.data;
+                final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                final myDecision = req?.assistantDecisions[uid];
+                final decided = myDecision == 'accepted' || myDecision == 'refused';
+
+                if (req == null) {
+                  return Text('Loading…', style: TextStyle(color: t.muted, fontSize: 12));
+                }
+                if (decided) {
+                  final accepted = myDecision == 'accepted';
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: accepted
+                          ? const Color(0xFF16A34A).withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(children: [
+                      Icon(
+                          accepted ? Icons.check_circle : Icons.cancel,
+                          size: 16,
+                          color: accepted ? const Color(0xFF16A34A) : Colors.red),
+                      const SizedBox(width: 8),
+                      Text(
+                          accepted
+                              ? 'You accepted — waiting for PM approval'
+                              : 'You declined this request',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: accepted ? const Color(0xFF16A34A) : Colors.red)),
+                    ]),
+                  );
+                }
+
+                return Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final name = FirebaseAuth.instance.currentUser
+                                ?.email
+                                ?.split('@')
+                                .first ??
+                            'Supervisor';
+                        try {
+                          await CollaborationService()
+                              .respondToCollaborationRequest(
+                            requestId: collabRequestId,
+                            responderId: uid,
+                            responderName: name,
+                            accepted: false,
+                          );
+                          if (alertId != null) {
+                            await _db
+                                .child(
+                                    'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                .remove();
+                          }
+                          if (context.mounted) {
+                            setModalState(() {
+                              _notifications
+                                  .removeWhere((x) => x['id'] == n['id']);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Collaboration declined'),
+                                    backgroundColor: Colors.red));
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error: $e')));
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                      label: const Text('Decline',
+                          style: TextStyle(
+                              color: Colors.red, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8))),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final name = FirebaseAuth.instance.currentUser
+                                ?.email
+                                ?.split('@')
+                                .first ??
+                            'Supervisor';
+                        try {
+                          await CollaborationService()
+                              .respondToCollaborationRequest(
+                            requestId: collabRequestId,
+                            responderId: uid,
+                            responderName: name,
+                            accepted: true,
+                          );
+                          if (alertId != null) {
+                            await _db
+                                .child(
+                                    'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                .remove();
+                          }
+                          if (context.mounted) {
+                            setModalState(() {
+                              _notifications
+                                  .removeWhere((x) => x['id'] == n['id']);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Collaboration accepted! Waiting for PM.'),
+                                    backgroundColor: Color(0xFF16A34A)));
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error: $e')));
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.check_circle, size: 16),
+                      label: const Text('Accept',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16A34A),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8))),
+                    ),
+                  ),
+                ]);
+              },
+            ),
         ],
       ),
     );

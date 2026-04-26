@@ -127,9 +127,7 @@ Future<String> createCollaborationRequest({
     required bool accepted,
   }) async {
     final snapshot = await _db.child('collaboration_requests/$requestId').get();
-    if (!snapshot.exists) {
-      throw Exception('Collaboration request not found');
-    }
+    if (!snapshot.exists) throw Exception('Collaboration request not found');
 
     final request = CollaborationRequest.fromMap(
       requestId,
@@ -142,84 +140,161 @@ Future<String> createCollaborationRequest({
     if (request.pmApproved) {
       throw Exception('This request has already been approved by PM');
     }
-    if (request.assistantDecision != 'pending') {
-      throw Exception('This request has already been responded to');
+    // Allow each individual supervisor to respond exactly once.
+    final existingDecision = request.assistantDecisions[responderId];
+    if (existingDecision != null && existingDecision != 'pending') {
+      throw Exception('You have already responded to this request');
     }
 
     final nowIso = DateTime.now().toIso8601String();
 
-    if (!accepted) {
-      await _db.child('collaboration_requests/$requestId').update({
-        'assistantDecision': 'refused',
-        'assistantId': responderId,
-        'assistantName': responderName,
-        'assistantRespondedAt': nowIso,
-        'status': 'rejected',
-        'rejectedBy': responderId,
-        'rejectedAt': nowIso,
-      });
+    // Record this supervisor's individual decision.
+    await _db
+        .child('collaboration_requests/$requestId/assistantDecisions/$responderId')
+        .set(accepted ? 'accepted' : 'refused');
 
-      await _db.child('alerts/${request.alertId}').update({
-        'collaborationRequestId': null,
-      });
+    if (accepted) {
+      // First acceptance → update top-level fields and notify.
+      if (request.assistantDecision != 'accepted') {
+        await _db.child('collaboration_requests/$requestId').update({
+          'assistantDecision': 'accepted',
+          'assistantId': responderId,
+          'assistantName': responderName,
+          'assistantRespondedAt': nowIso,
+        });
 
+        await _db.child('notifications/${request.requesterId}').push().set({
+          'type': 'collaboration_assistant_accepted',
+          'collabRequestId': requestId,
+          'alertId': request.alertId,
+          'responderName': responderName,
+          'message':
+              '$responderName accepted your collaboration request. Waiting for PM approval.',
+          'timestamp': nowIso,
+          'status': 'pending',
+        });
+
+        await _notifyAdminsAboutCollabRequest(CollaborationRequest(
+          id: request.id,
+          alertId: request.alertId,
+          requesterId: request.requesterId,
+          requesterName: request.requesterName,
+          targetSupervisorIds: request.targetSupervisorIds,
+          targetSupervisorNames: request.targetSupervisorNames,
+          message: request.message,
+          status: request.status,
+          assistantDecision: 'accepted',
+          assistantId: responderId,
+          assistantName: responderName,
+          assistantRespondedAt: DateTime.parse(nowIso),
+          timestamp: request.timestamp,
+          requiresPMApproval: request.requiresPMApproval,
+          pmApproved: request.pmApproved,
+          usine: request.usine,
+          convoyeur: request.convoyeur,
+          poste: request.poste,
+          alertType: request.alertType,
+          alertDescription: request.alertDescription,
+        ));
+      }
+    } else {
+      // Declined — notify the requester.
       await _db.child('notifications/${request.requesterId}').push().set({
         'type': 'collaboration_refused',
         'collabRequestId': requestId,
         'alertId': request.alertId,
-        'message': '$responderName refused your collaboration request.',
+        'responderName': responderName,
+        'message': '$responderName declined your collaboration request.',
         'timestamp': nowIso,
         'status': 'pending',
       });
-      return;
+
+      // If every targeted supervisor has now refused, mark request as rejected.
+      final updatedDecisions = Map<String, String>.from(request.assistantDecisions)
+        ..[responderId] = 'refused';
+      final allRefused = request.targetSupervisorIds
+          .every((id) => updatedDecisions[id] == 'refused');
+      if (allRefused) {
+        await _db.child('collaboration_requests/$requestId').update({
+          'assistantDecision': 'refused',
+          'status': 'rejected',
+          'rejectedBy': responderId,
+          'rejectedAt': nowIso,
+        });
+        await _db.child('alerts/${request.alertId}').update({
+          'collaborationRequestId': null,
+        });
+      }
+    }
+  }
+
+  /// Remove one assistant from an active collaboration request (PM action).
+  Future<void> removeAssistantFromRequest({
+    required String requestId,
+    required String assistantId,
+    required String assistantName,
+    required String removedByName,
+  }) async {
+    final snapshot = await _db.child('collaboration_requests/$requestId').get();
+    if (!snapshot.exists) return;
+    final request = CollaborationRequest.fromMap(
+      requestId,
+      Map<String, dynamic>.from(snapshot.value as Map),
+    );
+
+    final newIds = List<String>.from(request.targetSupervisorIds)
+      ..remove(assistantId);
+    final newNames = List<String>.from(request.targetSupervisorNames)
+      ..remove(assistantName);
+
+    final updates = <String, dynamic>{
+      'targetSupervisorIds': newIds,
+      'targetSupervisorNames': newNames,
+      'assistantDecisions/$assistantId': null,
+    };
+
+    // If this was the accepted assistant, clear top-level acceptance.
+    if (request.assistantId == assistantId) {
+      updates['assistantDecision'] = 'pending';
+      updates['assistantId'] = null;
+      updates['assistantName'] = null;
+      updates['assistantRespondedAt'] = null;
     }
 
-    await _db.child('collaboration_requests/$requestId').update({
-      'assistantDecision': 'accepted',
-      'assistantId': responderId,
-      'assistantName': responderName,
-      'assistantRespondedAt': nowIso,
-    });
+    await _db.child('collaboration_requests/$requestId').update(updates);
 
+    final nowIso = DateTime.now().toIso8601String();
+    // Notify requester.
     await _db.child('notifications/${request.requesterId}').push().set({
-      'type': 'collaboration_assistant_accepted',
+      'type': 'collaboration_assistant_removed',
       'collabRequestId': requestId,
       'alertId': request.alertId,
-      'message':
-          '$responderName accepted your collaboration request. Waiting for PM approval.',
+      'message': '$removedByName removed $assistantName from the collaboration.',
       'timestamp': nowIso,
       'status': 'pending',
     });
+    // Notify removed assistant.
+    await _db.child('notifications/$assistantId').push().set({
+      'type': 'collaboration_removed',
+      'collabRequestId': requestId,
+      'alertId': request.alertId,
+      'message': 'You were removed from the collaboration by $removedByName.',
+      'timestamp': nowIso,
+      'status': 'pending',
+    });
+  }
 
-    // Now notify admin/PM for final review.
-    final escalated = CollaborationRequest(
-      id: request.id,
-      alertId: request.alertId,
-      requesterId: request.requesterId,
-      requesterName: request.requesterName,
-      targetSupervisorIds: request.targetSupervisorIds,
-      targetSupervisorNames: request.targetSupervisorNames,
-      message: request.message,
-      status: request.status,
-      assistantDecision: 'accepted',
-      assistantId: responderId,
-      assistantName: responderName,
-      assistantRespondedAt: DateTime.parse(nowIso),
-      timestamp: request.timestamp,
-      approvedBy: request.approvedBy,
-      approvedAt: request.approvedAt,
-      rejectedBy: request.rejectedBy,
-      rejectedAt: request.rejectedAt,
-      requiresPMApproval: request.requiresPMApproval,
-      pmApproved: request.pmApproved,
-      cancelsOriginalAlert: request.cancelsOriginalAlert,
-      usine: request.usine,
-      convoyeur: request.convoyeur,
-      poste: request.poste,
-      alertType: request.alertType,
-      alertDescription: request.alertDescription,
-    );
-    await _notifyAdminsAboutCollabRequest(escalated);
+  /// Returns true if the given supervisor already has a pending/active outgoing request.
+  Future<bool> hasActiveCollaborationRequest(String requesterId) async {
+    final snapshot = await _db.child('collaboration_requests').get();
+    if (!snapshot.exists || snapshot.value == null) return false;
+    final map = Map<String, dynamic>.from(snapshot.value as Map);
+    return map.values.any((raw) {
+      final m = Map<String, dynamic>.from(raw as Map);
+      return m['requesterId'] == requesterId &&
+          m['status'] == 'pending' &&
+          (m['pmApproved'] == false || m['pmApproved'] == null);
+    });
   }
 
   // Get collaboration requests for a specific supervisor
