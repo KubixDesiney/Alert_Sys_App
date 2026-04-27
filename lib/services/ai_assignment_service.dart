@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/alert_model.dart';
 import '../models/user_model.dart';
+import '../utils/factory_id.dart';
 
 enum AILogStatus { success, skipped, recommended, rejected, aborted }
 
@@ -112,6 +113,8 @@ class AIAssignmentService extends ChangeNotifier {
   final Map<String, DateTime> _supervisorCooldown = {};
   final Set<String> _capturedResolvedFeedback = {};
   final Map<String, _FeedbackSummary> _feedbackSummary = {};
+  final Map<String, bool> _factoryEnabledCache = {};
+  StreamSubscription<DatabaseEvent>? _masterSubscription;
   StreamSubscription<DatabaseEvent>? _settingsSubscription;
   DateTime? _lastAssignmentTime;
   String? _factoryId;
@@ -150,32 +153,97 @@ class AIAssignmentService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final fallbackCachedEnabled = prefs.getBool(_prefKey) ?? false;
 
-    _factoryId = await _resolveCurrentFactoryId();
-    if (_factoryId == null || _factoryId!.isEmpty) {
+    try {
+      final masterSnap = await _db.child('ai_master').get();
+      if (masterSnap.exists && masterSnap.value is Map) {
+        final map = Map<String, dynamic>.from(masterSnap.value as Map);
+        _enabled = map['enabled'] == true;
+      } else {
+        _enabled = fallbackCachedEnabled;
+        await _db.child('ai_master').set({
+          'enabled': _enabled,
+          'enabledBy': FirebaseAuth.instance.currentUser?.uid ?? 'unknown',
+          'enabledAt': DateTime.now().toIso8601String(),
+          'updatedAt': DateTime.now().toIso8601String(),
+        });
+      }
+      _remoteSettingsAvailable = true;
+    } catch (e) {
       _enabled = fallbackCachedEnabled;
-      _remoteSettingsAvailable = false;
+      if (_isPermissionDenied(e)) {
+        _remoteSettingsAvailable = false;
+      }
+    }
+
+    _masterSubscription?.cancel();
+    if (_remoteSettingsAvailable) {
+      _masterSubscription = _db.child('ai_master').onValue.listen(
+        (event) {
+          final value = event.snapshot.value;
+          if (value == null || value is! Map) return;
+          final map = Map<String, dynamic>.from(value);
+          _enabled = map['enabled'] == true;
+          prefs.setBool(_prefKey, _enabled);
+          notifyListeners();
+        },
+        onError: (Object e) {
+          if (_isPermissionDenied(e)) {
+            _remoteSettingsAvailable = false;
+            _masterSubscription?.cancel();
+            _masterSubscription = null;
+          }
+        },
+      );
+    }
+
+    final resolvedFactory = await _resolveCurrentFactoryIds();
+    if (resolvedFactory == null || resolvedFactory.canonicalId.isEmpty) {
       notifyListeners();
       return;
     }
 
-    _settingsPath = 'factories/${_factoryId!}/aiConfig';
+    _factoryId = resolvedFactory.canonicalId;
+    _settingsPath = 'factories/${resolvedFactory.canonicalId}/aiConfig';
     final cachedEnabled =
-        prefs.getBool('$_prefFactoryKeyPrefix${_factoryId!}') ??
+        prefs.getBool('$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}') ??
             fallbackCachedEnabled;
 
     try {
       final settingsSnap = await _db.child(_settingsPath!).get();
       if (settingsSnap.exists) {
         final map = Map<String, dynamic>.from(settingsSnap.value as Map);
-        _enabled = map['enabled'] == true;
+        _factoryEnabledCache[resolvedFactory.canonicalId] = map['enabled'] == true;
         final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
             _defaultSkippedTtl.inMinutes;
         _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
-        await prefs.setBool('$_prefFactoryKeyPrefix${_factoryId!}', _enabled);
+        await prefs.setBool('$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
+            map['enabled'] == true);
+      } else if (resolvedFactory.legacyId != null) {
+        final legacySnap = await _db
+            .child('factories/${resolvedFactory.legacyId}/aiConfig')
+            .get();
+        if (legacySnap.exists) {
+          final map = Map<String, dynamic>.from(legacySnap.value as Map);
+          _factoryEnabledCache[resolvedFactory.canonicalId] = map['enabled'] == true;
+          final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
+              _defaultSkippedTtl.inMinutes;
+          _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
+          await prefs.setBool('$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
+              map['enabled'] == true);
+        } else {
+          _factoryEnabledCache[resolvedFactory.canonicalId] = cachedEnabled;
+          await _db.child(_settingsPath!).set({
+            'enabled': cachedEnabled,
+            'enabledBy': FirebaseAuth.instance.currentUser?.uid ?? 'unknown',
+            'enabledAt': DateTime.now().toIso8601String(),
+            'skippedAlertTtlMinutes': _skippedAlertTtl.inMinutes,
+            'updatedAt': DateTime.now().toIso8601String(),
+          });
+        }
       } else {
-        _enabled = cachedEnabled;
+        _factoryEnabledCache[resolvedFactory.canonicalId] = cachedEnabled;
         await _db.child(_settingsPath!).set({
-          'enabled': _enabled,
+          'enabled': cachedEnabled,
           'enabledBy': FirebaseAuth.instance.currentUser?.uid ?? 'unknown',
           'enabledAt': DateTime.now().toIso8601String(),
           'skippedAlertTtlMinutes': _skippedAlertTtl.inMinutes,
@@ -183,8 +251,7 @@ class AIAssignmentService extends ChangeNotifier {
         });
       }
     } catch (e) {
-      // Backend read failed: fallback to local cache for UI continuity.
-      _enabled = cachedEnabled;
+      // Backend read failed for current-factory config only.
       if (_isPermissionDenied(e)) {
         _remoteSettingsAvailable = false;
       }
@@ -197,11 +264,14 @@ class AIAssignmentService extends ChangeNotifier {
           final value = event.snapshot.value;
           if (value == null) return;
           final map = Map<String, dynamic>.from(value as Map);
-          _enabled = map['enabled'] == true;
+          final factoryEnabled = map['enabled'] == true;
+          if (_factoryId != null) {
+            _factoryEnabledCache[_factoryId!] = factoryEnabled;
+          }
           final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
               _skippedAlertTtl.inMinutes;
           _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
-          prefs.setBool('$_prefFactoryKeyPrefix${_factoryId!}', _enabled);
+          prefs.setBool('$_prefFactoryKeyPrefix${_factoryId!}', factoryEnabled);
           notifyListeners();
         },
         onError: (Object e) {
@@ -219,24 +289,41 @@ class AIAssignmentService extends ChangeNotifier {
 
   Future<void> setEnabled(bool v) async {
     final prefs = await SharedPreferences.getInstance();
-    if (_remoteSettingsAvailable && _settingsPath != null) {
+    if (_remoteSettingsAvailable) {
       try {
-        await _db.child(_settingsPath!).update({
-          'enabled': v,
-          'enabledBy': FirebaseAuth.instance.currentUser?.uid ?? 'unknown',
-          'enabledAt': DateTime.now().toIso8601String(),
-          'updatedAt': DateTime.now().toIso8601String(),
-        });
+        final nowIso = DateTime.now().toIso8601String();
+        final actor = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+        final factoryIds = await _loadFactoryIdsForBulkToggle();
+
+        final updates = <String, dynamic>{
+          'ai_master/enabled': v,
+          'ai_master/enabledBy': actor,
+          'ai_master/enabledAt': nowIso,
+          'ai_master/updatedAt': nowIso,
+        };
+
+        for (final factoryId in factoryIds) {
+          updates['factories/$factoryId/aiConfig/enabled'] = v;
+          updates['factories/$factoryId/aiConfig/enabledBy'] = actor;
+          updates['factories/$factoryId/aiConfig/enabledAt'] = nowIso;
+          updates['factories/$factoryId/aiConfig/updatedAt'] = nowIso;
+        }
+
+        await _db.update(updates);
         _enabled = v;
-        await prefs.setBool('$_prefFactoryKeyPrefix${_factoryId!}', v);
+        for (final id in factoryIds) {
+          _factoryEnabledCache[id] = v;
+          await prefs.setBool('$_prefFactoryKeyPrefix$id', v);
+        }
         await prefs.setBool(_prefKey, v);
       } catch (e) {
-        // Backend write failed: do not change authoritative state remotely,
-        // but keep local cache for temporary UI continuity.
+        debugPrint('AI master toggle failed: $e');
         _enabled = v;
         await prefs.setBool(_prefKey, v);
         if (_isPermissionDenied(e)) {
           _remoteSettingsAvailable = false;
+          _masterSubscription?.cancel();
+          _masterSubscription = null;
           _settingsSubscription?.cancel();
           _settingsSubscription = null;
         }
@@ -269,7 +356,7 @@ class AIAssignmentService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String?> _resolveCurrentFactoryId() async {
+  Future<_ResolvedFactoryIds?> _resolveCurrentFactoryIds() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
 
@@ -282,7 +369,12 @@ class AIAssignmentService extends ChangeNotifier {
 
       final rawFactoryId = userData['factoryId']?.toString().trim() ?? '';
       if (rawFactoryId.isNotEmpty) {
-        return _sanitizeFactoryId(rawFactoryId);
+        return _ResolvedFactoryIds(
+          canonicalId: sanitizeFactoryId(rawFactoryId),
+          legacyId: rawFactoryId == sanitizeFactoryId(rawFactoryId)
+              ? null
+              : rawFactoryId,
+        );
       }
 
       final usine = userData['usine']?.toString().trim() ?? '';
@@ -298,22 +390,23 @@ class AIAssignmentService extends ChangeNotifier {
           final factoryMap = Map<dynamic, dynamic>.from(value);
           final name = factoryMap['name']?.toString().trim() ?? '';
           if (name.isNotEmpty && name.toLowerCase() == usine.toLowerCase()) {
-            return entry.key.toString();
+            final legacyId = entry.key.toString();
+            return _ResolvedFactoryIds(
+              canonicalId: sanitizeFactoryId(legacyId),
+              legacyId:
+                  legacyId == sanitizeFactoryId(legacyId) ? null : legacyId,
+            );
           }
         }
       }
 
-      return _sanitizeFactoryId(usine);
+      return _ResolvedFactoryIds(
+        canonicalId: sanitizeFactoryId(usine),
+        legacyId: usine == sanitizeFactoryId(usine) ? null : usine,
+      );
     } catch (_) {
       return null;
     }
-  }
-
-  String _sanitizeFactoryId(String input) {
-    return input
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'^_+|_+$'), '');
   }
 
   /// Called every time the alerts stream emits. Re-evaluates unassigned alerts.
@@ -343,7 +436,11 @@ class AIAssignmentService extends ChangeNotifier {
       final supervisors = await _fetchActiveSupervisors();
 
       for (final alert in candidates) {
-        if (!_enabled) break;
+        final factoryId = _factoryIdForAlert(alert);
+        if (!await _isFactoryEnabled(factoryId)) {
+          _addLog(_skipLog(alert, 'AI disabled for factory $factoryId'));
+          continue;
+        }
         await _processOne(alert, supervisors, alerts);
       }
     } catch (e, st) {
@@ -460,6 +557,7 @@ class AIAssignmentService extends ChangeNotifier {
       'aiConfidence': confidence,
       'timestamp': now.toIso8601String(),
       'status': 'pending',
+      'pushSent': false,
     });
 
     if (_decisionStoreAvailable) {
@@ -668,6 +766,7 @@ class AIAssignmentService extends ChangeNotifier {
               'rejectedBy': supervisorName,
               'timestamp': DateTime.now().toIso8601String(),
               'status': 'pending',
+              'pushSent': false,
             });
           }
         }
@@ -880,6 +979,56 @@ class AIAssignmentService extends ChangeNotifier {
     return out;
   }
 
+  String _factoryIdForAlert(AlertModel alert) => sanitizeFactoryId(alert.usine);
+
+  Future<bool> _isFactoryEnabled(String factoryId) async {
+    final cached = _factoryEnabledCache[factoryId];
+    if (factoryId == _factoryId && cached != null) return cached;
+
+    try {
+      final snap =
+          await _db.child('factories/$factoryId/aiConfig/enabled').get();
+      final enabled = snap.exists && snap.value == true;
+      if (factoryId == _factoryId) {
+        _factoryEnabledCache[factoryId] = enabled;
+      }
+      return enabled;
+    } catch (e) {
+      if (_isPermissionDenied(e)) {
+        debugPrint(
+            'AI factory read permission denied at factories/$factoryId/aiConfig/enabled');
+      }
+      return false;
+    }
+  }
+
+  Future<Set<String>> _loadFactoryIdsForBulkToggle() async {
+    final ids = <String>{};
+
+    final hierarchySnap = await _db.child('hierarchy/factories').get();
+    if (hierarchySnap.exists && hierarchySnap.value is Map) {
+      final map = Map<dynamic, dynamic>.from(hierarchySnap.value as Map);
+      for (final entry in map.entries) {
+        ids.add(sanitizeFactoryId(entry.key.toString()));
+      }
+    }
+
+    final factoriesSnap = await _db.child('factories').get();
+    if (factoriesSnap.exists && factoriesSnap.value is Map) {
+      final map = Map<dynamic, dynamic>.from(factoriesSnap.value as Map);
+      for (final entry in map.entries) {
+        final id = sanitizeFactoryId(entry.key.toString());
+        if (id.isNotEmpty) ids.add(id);
+      }
+    }
+
+    if (_factoryId != null && _factoryId!.isNotEmpty) {
+      ids.add(_factoryId!);
+    }
+
+    return ids;
+  }
+
   bool _isSkipped({required String alertId}) {
     final until = _skippedAlertIds[alertId];
     if (until == null) return false;
@@ -954,6 +1103,8 @@ class AIAssignmentService extends ChangeNotifier {
         });
       } catch (e) {
         if (_isPermissionDenied(e)) {
+          debugPrint(
+              'AI decision write permission denied at ai_decisions/${alert.id}');
           _decisionStoreAvailable = false;
         }
       }
@@ -989,6 +1140,7 @@ class AIAssignmentService extends ChangeNotifier {
             'confidenceLabel': confidenceLabel(confidence),
             'timestamp': now.toIso8601String(),
             'status': 'pending',
+            'pushSent': false,
           });
         }
       }
@@ -1067,6 +1219,7 @@ class AIAssignmentService extends ChangeNotifier {
       }
     } catch (e) {
       if (_isPermissionDenied(e)) {
+        debugPrint('AI feedback write permission denied at ai_feedback/events');
         _feedbackAvailable = false;
       }
     }
@@ -1101,6 +1254,8 @@ class AIAssignmentService extends ChangeNotifier {
         _capturedResolvedFeedback.add(alert.id);
       } catch (e) {
         if (_isPermissionDenied(e)) {
+          debugPrint(
+              'AI feedback write permission denied at ai_feedback/summary');
           _feedbackAvailable = false;
           return;
         }
@@ -1130,6 +1285,7 @@ class AIAssignmentService extends ChangeNotifier {
         }));
     } catch (e) {
       if (_isPermissionDenied(e)) {
+        debugPrint('AI feedback read permission denied at ai_feedback/summary');
         _feedbackAvailable = false;
         _feedbackSummary.clear();
       }
@@ -1181,6 +1337,20 @@ class AIAssignmentService extends ChangeNotifier {
     _logs.clear();
     notifyListeners();
   }
+
+  @override
+  void dispose() {
+    _masterSubscription?.cancel();
+    _settingsSubscription?.cancel();
+    super.dispose();
+  }
+}
+
+class _ResolvedFactoryIds {
+  final String canonicalId;
+  final String? legacyId;
+
+  _ResolvedFactoryIds({required this.canonicalId, this.legacyId});
 }
 
 class _SupRecord {

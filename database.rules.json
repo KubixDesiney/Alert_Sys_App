@@ -31,7 +31,11 @@
       ".write": false,
       "$userId": {
         ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        "$notifId": {
+          ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+          ".write": "auth != null && (!data.exists() || auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+          ".validate": "newData.hasChild('timestamp') && newData.hasChild('type') && newData.child('type').isString() && newData.child('timestamp').isString() && (!newData.child('pushSent').exists() || newData.child('pushSent').isBoolean())"
+        }
       }
     },
     "users": {
@@ -85,6 +89,25 @@
     "ai_feedback": {
       ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+    "ai_master": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "enabled": {
+        ".validate": "newData.isBoolean()"
+      },
+      "enabledBy": {
+        ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
+      },
+      "enabledAt": {
+        ".validate": "!newData.exists() || newData.isString()"
+      },
+      "updatedAt": {
+        ".validate": "!newData.exists() || newData.isString()"
+      },
+      "$other": {
+        ".validate": false
+      }
     },
     "factories": {
       ".read": "auth != null",

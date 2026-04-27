@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:http/http.dart' as http;
 import 'fcm_service.dart';
 
-const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
+const String _workerBaseUrl =
+    'https://alert-notifier.aziz-nagati01.workers.dev';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -114,6 +115,7 @@ class AuthService {
           'You have been assigned as assistant to $claimantName for alert: $alertType',
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
+      'pushSent': false,
     };
     await _db
         .child('notifications/$assistantId')
@@ -129,6 +131,7 @@ class AuthService {
         'message': '$assistantName has been assigned as your assistant',
         'timestamp': DateTime.now().toIso8601String(),
         'status': 'pending',
+        'pushSent': false,
       };
       await _db
           .child('notifications/$claimantId')
@@ -155,6 +158,7 @@ class AuthService {
       'message': 'You have been assigned to an alert: $alertType',
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
+      'pushSent': false,
     };
     await _db.child('notifications/$supervisorId').push().set(notification);
   }

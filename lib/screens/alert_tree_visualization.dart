@@ -132,8 +132,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(on
-              ? 'AI auto-assignment ON — new alerts will be assigned automatically'
-              : 'AI auto-assignment OFF — manual assignment only'),
+              ? 'Global AI ON — all factories auto-assignment enabled'
+              : 'Global AI OFF — auto-assignment disabled for all factories'),
           backgroundColor: on ? _t.green : _t.muted,
           duration: const Duration(seconds: 2),
         ),
