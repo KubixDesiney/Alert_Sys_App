@@ -852,9 +852,8 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
             if (canonSnap.exists) {
               enabled = canonSnap.value == true;
             } else if (canonicalId != legacyId) {
-              final legacySnap = await _db
-                  .child('factories/$legacyId/aiConfig/enabled')
-                  .get();
+              final legacySnap =
+                  await _db.child('factories/$legacyId/aiConfig/enabled').get();
               if (legacySnap.exists) {
                 enabled = legacySnap.value == true;
               }
