@@ -5,7 +5,6 @@ import '../services/hierarchy_service.dart';
 import '../services/auth_service.dart';
 import '../services/ai_assignment_service.dart';
 import '../models/alert_model.dart';
-import '../theme.dart';
 import '../widgets/ai_logs_panel.dart';
 
 // Color palette matching the app theme
@@ -383,11 +382,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         if (_popupAlertData != null && _popupPosition != null)
           _buildAlertPopup(),
         if (_showAILogsPanel)
-          LayoutBuilder(
-            builder: (context, constraints) => AILogsPanel(
-              onClose: () => setState(() => _showAILogsPanel = false),
-              hostSize: Size(constraints.maxWidth, constraints.maxHeight),
-            ),
+          AILogsPanel(
+            onClose: () => setState(() => _showAILogsPanel = false),
+            hostSize: MediaQuery.of(context).size,
           ),
       ],
     );
@@ -470,6 +467,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Widget _buildAIControlBar() {
     final isOn = AIAssignmentService.instance.enabled;
     final logCount = AIAssignmentService.instance.logs.length;
+    final backendSettingsOk =
+        AIAssignmentService.instance.isUsingBackendSettings;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -498,9 +497,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             children: [
               const Text('AI Assignment',
                   style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: _navy)),
+                      fontSize: 12, fontWeight: FontWeight.w800, color: _navy)),
               Text(
                 isOn
                     ? 'Active — auto-assigning new alerts'
@@ -510,6 +507,34 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                     color: isOn ? _green : _muted,
                     fontWeight: FontWeight.w600),
               ),
+              if (!backendSettingsOk)
+                Container(
+                  margin: const EdgeInsets.only(top: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _orange.withOpacity(0.35)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          size: 10, color: _orange),
+                      SizedBox(width: 4),
+                      Text(
+                        'LOCAL FALLBACK MODE',
+                        style: TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w800,
+                          color: _orange,
+                          letterSpacing: 0.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
           const Spacer(),
@@ -535,8 +560,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             active: _showAILogsPanel,
             activeColor: _navy,
             badge: logCount > 0 ? '$logCount' : null,
-            onTap: () =>
-                setState(() => _showAILogsPanel = !_showAILogsPanel),
+            onTap: () => setState(() => _showAILogsPanel = !_showAILogsPanel),
           ),
         ],
       ),
@@ -559,13 +583,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: active ? activeColor : _border, width: 1),
+            border: Border.all(color: active ? activeColor : _border, width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -862,8 +884,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.factory,
-              size: 20, color: usine.hasError ? _red : _navy),
+          Icon(Icons.factory, size: 20, color: usine.hasError ? _red : _navy),
           const SizedBox(width: 8),
           Text(
             usine.label,

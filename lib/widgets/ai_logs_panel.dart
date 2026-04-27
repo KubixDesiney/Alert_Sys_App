@@ -47,8 +47,8 @@ class _AILogsPanelState extends State<AILogsPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.hostSize != widget.hostSize) {
       _position = Offset(
-        _position.dx.clamp(
-            0.0, (widget.hostSize.width - _panelWidth).clamp(0, double.infinity)),
+        _position.dx.clamp(0.0,
+            (widget.hostSize.width - _panelWidth).clamp(0, double.infinity)),
         _position.dy.clamp(0.0,
             (widget.hostSize.height - _panelHeight).clamp(0, double.infinity)),
       );
@@ -67,8 +67,10 @@ class _AILogsPanelState extends State<AILogsPanel> {
 
   void _handleDrag(DragUpdateDetails d) {
     setState(() {
-      final maxX = (widget.hostSize.width - _panelWidth).clamp(0.0, double.infinity);
-      final maxY = (widget.hostSize.height - _panelHeight).clamp(0.0, double.infinity);
+      final maxX =
+          (widget.hostSize.width - _panelWidth).clamp(0.0, double.infinity);
+      final maxY =
+          (widget.hostSize.height - _panelHeight).clamp(0.0, double.infinity);
       _position = Offset(
         (_position.dx + d.delta.dx).clamp(0.0, maxX),
         (_position.dy + d.delta.dy).clamp(0.0, maxY),
@@ -216,14 +218,12 @@ class _AILogsPanelState extends State<AILogsPanel> {
   }
 
   Widget _buildFooter(AppTheme t, List<AILogEntry> logs) {
-    final success =
-        logs.where((l) => l.status == AILogStatus.success).length;
-    final skipped =
-        logs.where((l) => l.status == AILogStatus.skipped).length;
-    final aborted =
-        logs.where((l) => l.status == AILogStatus.aborted).length;
-    final rejected =
-        logs.where((l) => l.status == AILogStatus.rejected).length;
+    final success = logs.where((l) => l.status == AILogStatus.success).length;
+    final skipped = logs.where((l) => l.status == AILogStatus.skipped).length;
+    final recommended =
+        logs.where((l) => l.status == AILogStatus.recommended).length;
+    final aborted = logs.where((l) => l.status == AILogStatus.aborted).length;
+    final rejected = logs.where((l) => l.status == AILogStatus.rejected).length;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -240,6 +240,8 @@ class _AILogsPanelState extends State<AILogsPanel> {
           _statChip(t, Icons.check_circle, t.green, '$success', 'OK'),
           const SizedBox(width: 6),
           _statChip(t, Icons.skip_next, t.muted, '$skipped', 'Skip'),
+          const SizedBox(width: 6),
+          _statChip(t, Icons.recommend_outlined, t.blue, '$recommended', 'Rec'),
           const SizedBox(width: 6),
           _statChip(t, Icons.stop_circle, t.orange, '$aborted', 'Abort'),
           const SizedBox(width: 6),
@@ -327,9 +329,7 @@ class _LogTile extends StatelessWidget {
                 const Spacer(),
                 Text(time,
                     style: TextStyle(
-                        fontSize: 10,
-                        color: t.muted,
-                        fontFamily: 'monospace')),
+                        fontSize: 10, color: t.muted, fontFamily: 'monospace')),
               ],
             ),
           ),
@@ -341,9 +341,7 @@ class _LogTile extends StatelessWidget {
                 Text(
                   entry.alertLabel,
                   style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: t.text),
+                      fontSize: 12, fontWeight: FontWeight.w700, color: t.text),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -406,8 +404,8 @@ class _LogTile extends StatelessWidget {
                                 color: t.navy,
                                 fontWeight: FontWeight.w600)),
                         style: OutlinedButton.styleFrom(
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 6, horizontal: 6),
                           side: BorderSide(color: t.border),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6)),
@@ -476,8 +474,7 @@ class _LogTile extends StatelessWidget {
           ElevatedButton(
             onPressed: () => Navigator.pop(_, true),
             style: ElevatedButton.styleFrom(backgroundColor: t.orange),
-            child: const Text('Abort',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Abort', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -487,7 +484,8 @@ class _LogTile extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('AI assignment aborted — alert returned to queue'),
+            content:
+                const Text('AI assignment aborted — alert returned to queue'),
             backgroundColor: t.orange,
           ),
         );
@@ -501,6 +499,8 @@ class _LogTile extends StatelessWidget {
         return t.green;
       case AILogStatus.skipped:
         return t.muted;
+      case AILogStatus.recommended:
+        return t.blue;
       case AILogStatus.aborted:
         return t.orange;
       case AILogStatus.rejected:
@@ -514,6 +514,8 @@ class _LogTile extends StatelessWidget {
         return Icons.check_circle;
       case AILogStatus.skipped:
         return Icons.skip_next;
+      case AILogStatus.recommended:
+        return Icons.recommend_outlined;
       case AILogStatus.aborted:
         return Icons.stop_circle_outlined;
       case AILogStatus.rejected:
@@ -527,6 +529,8 @@ class _LogTile extends StatelessWidget {
         return 'ASSIGNED';
       case AILogStatus.skipped:
         return 'SKIPPED';
+      case AILogStatus.recommended:
+        return 'RECOMMENDED';
       case AILogStatus.aborted:
         return 'ABORTED';
       case AILogStatus.rejected:
@@ -543,7 +547,10 @@ class _ConfidenceBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     final pct = (confidence * 100).round();
-    final color = pct >= 70 ? t.green : (pct >= 45 ? t.blue : t.orange);
+    final label = AIAssignmentService.confidenceLabel(confidence);
+    final color = pct >= 85
+        ? t.green
+        : (pct >= 70 ? t.blue : (pct >= 50 ? t.orange : t.red));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
@@ -551,9 +558,9 @@ class _ConfidenceBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        '$pct%',
-        style: TextStyle(
-            fontSize: 9, color: color, fontWeight: FontWeight.w800),
+        '$pct% • $label',
+        style:
+            TextStyle(fontSize: 9, color: color, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -614,9 +621,15 @@ class _AIDetailsDialog extends StatelessWidget {
                       _section(t, 'Assigned to', entry.assignedSupervisorName!),
                     if (entry.confidence > 0)
                       _section(t, 'Confidence',
-                          '${(entry.confidence * 100).round()}%'),
-                    _section(t, 'Status',
-                        entry.status.name.toUpperCase()),
+                          '${(entry.confidence * 100).round()}% • ${AIAssignmentService.confidenceLabel(entry.confidence)}'),
+                    if (entry.confidence > 0)
+                      _section(
+                        t,
+                        'Confidence scale',
+                        AIAssignmentService.confidenceScaleDescription(
+                            entry.confidence),
+                      ),
+                    _section(t, 'Status', entry.status.name.toUpperCase()),
                     if (entry.rejectionReason != null)
                       _section(t, 'Rejection reason', entry.rejectionReason!),
                     const SizedBox(height: 14),
@@ -702,8 +715,7 @@ class _AIDetailsDialog extends StatelessWidget {
                       );
                     },
                     icon: Icon(Icons.open_in_new, size: 16, color: t.navy),
-                    label: Text('Open alert',
-                        style: TextStyle(color: t.navy)),
+                    label: Text('Open alert', style: TextStyle(color: t.navy)),
                   ),
                   const Spacer(),
                   TextButton(
@@ -726,16 +738,12 @@ class _AIDetailsDialog extends StatelessWidget {
             TextSpan(
               text: '$label: ',
               style: TextStyle(
-                  fontSize: 12,
-                  color: t.muted,
-                  fontWeight: FontWeight.w600),
+                  fontSize: 12, color: t.muted, fontWeight: FontWeight.w600),
             ),
             TextSpan(
               text: value,
               style: TextStyle(
-                  fontSize: 12,
-                  color: t.text,
-                  fontWeight: FontWeight.w700),
+                  fontSize: 12, color: t.text, fontWeight: FontWeight.w700),
             ),
           ]),
         ),
