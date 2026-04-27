@@ -874,7 +874,8 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
       setState(() => cfg.saving = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Failed to save: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -942,15 +943,14 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
                       ? Padding(
                           padding: const EdgeInsets.all(20),
                           child: Text(_error!,
-                              style:
-                                  TextStyle(color: t.muted, fontSize: 13)),
+                              style: TextStyle(color: t.muted, fontSize: 13)),
                         )
                       : _factories.isEmpty
                           ? Padding(
                               padding: const EdgeInsets.all(20),
                               child: Text('No factories configured.',
-                                  style: TextStyle(
-                                      color: t.muted, fontSize: 13)),
+                                  style:
+                                      TextStyle(color: t.muted, fontSize: 13)),
                             )
                           : ListView.separated(
                               shrinkWrap: true,
@@ -974,32 +974,27 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
                                         : 'AI auto-assignment OFF',
                                     style: TextStyle(
                                         fontSize: 11,
-                                        color: cfg.enabled
-                                            ? t.green
-                                            : t.muted),
+                                        color: cfg.enabled ? t.green : t.muted),
                                   ),
                                   secondary: cfg.saving
                                       ? SizedBox(
                                           width: 20,
                                           height: 20,
                                           child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: t.navy),
+                                              strokeWidth: 2, color: t.navy),
                                         )
                                       : Icon(
                                           cfg.enabled
                                               ? Icons.smart_toy
                                               : Icons.smart_toy_outlined,
-                                          color: cfg.enabled
-                                              ? t.navy
-                                              : t.muted,
+                                          color: cfg.enabled ? t.navy : t.muted,
                                           size: 22,
                                         ),
                                   value: cfg.enabled,
                                   onChanged: cfg.saving
                                       ? null
                                       : (v) => _toggle(cfg, v),
-                                  activeThumbColor: t.navy,
+                                  activeColor: t.navy,
                                 );
                               },
                             ),
