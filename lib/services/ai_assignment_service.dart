@@ -501,6 +501,13 @@ class AIAssignmentService extends ChangeNotifier {
       'timestamp': now.toIso8601String(),
     });
 
+    // Write aiCooldownUntil so the backend Cloud Function can detect when this
+    // supervisor's cooldown expires and retry any waiting unassigned alerts.
+    // Without this, only Cloud-Function-initiated assignments trigger the retry.
+    await _db
+        .child('users/${best.supervisor.id}/aiCooldownUntil')
+        .set(now.add(_cooldownDuration).toIso8601String());
+
     await _recordFeedback(
       eventType: 'accepted_assignment',
       alertId: alert.id,
