@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/hierarchy_service.dart';
 import '../services/auth_service.dart';
+import '../services/ai_assignment_service.dart';
 import '../models/alert_model.dart';
+import '../theme.dart';
+import '../widgets/ai_logs_panel.dart';
 
 // Color palette matching the app theme
 const _navy = Color(0xFF0D4A75);
@@ -58,6 +61,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Map<String, dynamic>? _popupAlertData;
   Offset? _popupPosition;
   double _treeScale = 1.0;
+  bool _showAILogsPanel = false;
 
   late AnimationController _zoomController;
   late AnimationController _detailController;
@@ -72,6 +76,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   void initState() {
     super.initState();
     _buildHierarchy();
+    AIAssignmentService.instance.init().then((_) {
+      if (mounted) setState(() {});
+      AIAssignmentService.instance.processAlerts(widget.alerts);
+    });
+    AIAssignmentService.instance.addListener(_onAIChange);
 
     _zoomController = AnimationController(
       duration: const Duration(milliseconds: 600),
@@ -104,6 +113,30 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     super.didUpdateWidget(oldWidget);
     if (widget.alerts != oldWidget.alerts) {
       _buildHierarchy();
+      // Feed updated alerts to AI engine for re-evaluation.
+      AIAssignmentService.instance.processAlerts(widget.alerts);
+    }
+  }
+
+  void _onAIChange() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleAI(bool on) async {
+    await AIAssignmentService.instance.setEnabled(on);
+    if (on) {
+      AIAssignmentService.instance.processAlerts(widget.alerts);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(on
+              ? 'AI auto-assignment ON — new alerts will be assigned automatically'
+              : 'AI auto-assignment OFF — manual assignment only'),
+          backgroundColor: on ? _green : _muted,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -267,6 +300,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   @override
   void dispose() {
+    AIAssignmentService.instance.removeListener(_onAIChange);
     _zoomController.dispose();
     _detailController.dispose();
     _pulseController.dispose();
@@ -348,6 +382,13 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         ),
         if (_popupAlertData != null && _popupPosition != null)
           _buildAlertPopup(),
+        if (_showAILogsPanel)
+          LayoutBuilder(
+            builder: (context, constraints) => AILogsPanel(
+              onClose: () => setState(() => _showAILogsPanel = false),
+              hostSize: Size(constraints.maxWidth, constraints.maxHeight),
+            ),
+          ),
       ],
     );
   }
@@ -395,26 +436,169 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         color: _white,
         border: Border(bottom: BorderSide(color: _border)),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_tree, color: _navy, size: 24),
+              const SizedBox(width: 12),
+              Expanded(child: _buildBreadcrumb()),
+              if (_selectedUsine != null || _selectedConveyor != null)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () {
+                    setState(() {
+                      _selectedUsine = null;
+                      _selectedConveyor = null;
+                      _selectedWorkstation = null;
+                      _popupAlertData = null;
+                      _zoomController.reverse();
+                    });
+                  },
+                  tooltip: 'Reset view',
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildAIControlBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAIControlBar() {
+    final isOn = AIAssignmentService.instance.enabled;
+    final logCount = AIAssignmentService.instance.logs.length;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isOn ? _green.withOpacity(0.06) : _bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: isOn ? _green.withOpacity(0.4) : _border, width: 1),
+      ),
       child: Row(
         children: [
-          Icon(Icons.account_tree, color: _navy, size: 24),
-          const SizedBox(width: 12),
-          Expanded(child: _buildBreadcrumb()),
-          if (_selectedUsine != null || _selectedConveyor != null)
-            IconButton(
-              icon: const Icon(Icons.close, size: 20),
-              onPressed: () {
-                setState(() {
-                  _selectedUsine = null;
-                  _selectedConveyor = null;
-                  _selectedWorkstation = null;
-                  _popupAlertData = null;
-                  _zoomController.reverse();
-                });
-              },
-              tooltip: 'Reset view',
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: isOn ? _green : _navy,
+              borderRadius: BorderRadius.circular(7),
             ),
+            child: const Icon(Icons.smart_toy_outlined,
+                size: 16, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('AI Assignment',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: _navy)),
+              Text(
+                isOn
+                    ? 'Active — auto-assigning new alerts'
+                    : 'Off — manual assignment only',
+                style: TextStyle(
+                    fontSize: 10,
+                    color: isOn ? _green : _muted,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const Spacer(),
+          _aiSegment(
+            icon: Icons.power_settings_new,
+            label: 'ON',
+            active: isOn,
+            activeColor: _green,
+            onTap: isOn ? null : () => _toggleAI(true),
+          ),
+          const SizedBox(width: 6),
+          _aiSegment(
+            icon: Icons.stop_circle_outlined,
+            label: 'OFF',
+            active: !isOn,
+            activeColor: _muted,
+            onTap: !isOn ? null : () => _toggleAI(false),
+          ),
+          const SizedBox(width: 6),
+          _aiSegment(
+            icon: Icons.receipt_long,
+            label: 'AI-LOGS',
+            active: _showAILogsPanel,
+            activeColor: _navy,
+            badge: logCount > 0 ? '$logCount' : null,
+            onTap: () =>
+                setState(() => _showAILogsPanel = !_showAILogsPanel),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _aiSegment({
+    required IconData icon,
+    required String label,
+    required bool active,
+    required Color activeColor,
+    String? badge,
+    VoidCallback? onTap,
+  }) {
+    final bg = active ? activeColor : _white;
+    final fg = active ? Colors.white : _muted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: active ? activeColor : _border, width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: fg),
+              const SizedBox(width: 5),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: fg,
+                      letterSpacing: 0.4)),
+              if (badge != null) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: active
+                        ? Colors.white.withOpacity(0.25)
+                        : activeColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(badge,
+                      style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: active ? Colors.white : activeColor)),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

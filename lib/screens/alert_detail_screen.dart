@@ -6,6 +6,7 @@ import '../models/alert_model.dart';
 import '../providers/alert_provider.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
+import '../services/ai_assignment_service.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
@@ -31,12 +32,115 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
   String? _aiSuggestion;
   final _collabService = CollaborationService();
 
+  // AI auto-assignment metadata pulled from /alerts/{id}.
+  bool _aiAssigned = false;
+  String? _aiReason;
+  double? _aiConfidence;
+  bool _isRejecting = false;
+
   @override
   void initState() {
     super.initState();
     _alertFuture = _loadAlert();
+    _loadAIMetadata();
     if (widget.showCollaborationDecision && widget.collabRequestId != null) {
       _collabFuture = _collabService.getCollaborationRequest(widget.collabRequestId!);
+    }
+  }
+
+  Future<void> _loadAIMetadata() async {
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('alerts/${widget.alertId}')
+          .get();
+      if (!snap.exists || !mounted) return;
+      final data = Map<String, dynamic>.from(snap.value as Map);
+      setState(() {
+        _aiAssigned = data['aiAssigned'] == true;
+        _aiReason = data['aiAssignmentReason']?.toString();
+        _aiConfidence = (data['aiConfidence'] as num?)?.toDouble();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _rejectAIAssignment(AlertModel alert) async {
+    if (_isRejecting) return;
+    final reasonCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.thumb_down_outlined, color: Color(0xFFDC2626), size: 22),
+            SizedBox(width: 10),
+            Text('Reject AI assignment?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This alert will be returned to the queue and the Production Manager will be notified.',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Optional reason (e.g. wrong factory, busy elsewhere)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            icon: const Icon(Icons.thumb_down, size: 16, color: Colors.white),
+            label: const Text('Reject',
+                style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isRejecting = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final uid = user?.uid ?? '';
+      final name = user?.email?.split('@').first ?? 'Supervisor';
+      await AIAssignmentService.instance.handleSupervisorRejection(
+        alertId: alert.id,
+        supervisorId: uid,
+        supervisorName: name,
+        reason: reasonCtrl.text.trim().isEmpty ? null : reasonCtrl.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('AI assignment rejected — alert returned to the queue'),
+          backgroundColor: Color(0xFFEF4444),
+        ),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to reject: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isRejecting = false);
     }
   }
 
@@ -156,7 +260,11 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       Text('Reason: ${alert.resolutionReason}'),
                   ]),
                 )),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+
+                if (_aiAssigned) _buildAIBadge(),
+
+                const SizedBox(height: 4),
 
                 if (widget.showCollaborationDecision &&
                     widget.collabRequestId != null &&
@@ -301,11 +409,111 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                     const SizedBox(width: 8),
                     Expanded(child: ElevatedButton(onPressed: () => _showResolveDialog(provider, alert), child: const Text('Resolve'))),
                   ]),
+                  if (_aiAssigned) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isRejecting ? null : () => _rejectAIAssignment(alert),
+                        icon: _isRejecting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Color(0xFFEF4444)),
+                              )
+                            : const Icon(Icons.thumb_down_outlined,
+                                size: 16, color: Color(0xFFEF4444)),
+                        label: Text(
+                          _isRejecting ? 'Rejecting…' : 'Reject AI Assignment',
+                          style: const TextStyle(
+                              color: Color(0xFFEF4444),
+                              fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFEE2E2),
+                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildAIBadge() {
+    final pct = _aiConfidence != null ? (_aiConfidence! * 100).round() : null;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF93C5FD)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: const BoxDecoration(
+              color: Color(0xFF2563EB),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.smart_toy_outlined,
+                color: Colors.white, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Assigned by Automated AI',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E40AF)),
+                    ),
+                    if (pct != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2563EB),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('$pct%',
+                            style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white)),
+                      ),
+                    ],
+                  ],
+                ),
+                if (_aiReason != null && _aiReason!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _aiReason!,
+                    style: const TextStyle(
+                        fontSize: 11, color: Color(0xFF1E40AF)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
