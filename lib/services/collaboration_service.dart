@@ -30,17 +30,13 @@ Future<String> createCollaborationRequest({
     throw Exception('Alert has no factory assigned');
   }
 
-  // Fetch each target supervisor's usine
+  // Verify all target supervisors exist (cross-factory allowed — PM confirms at approval)
   for (int i = 0; i < targetSupervisorIds.length; i++) {
     final supId = targetSupervisorIds[i];
     final supName = targetSupervisorNames[i];
     final supSnapshot = await _db.child('users/$supId').get();
     if (!supSnapshot.exists) {
       throw Exception('Supervisor $supName not found');
-    }
-    final supUsine = supSnapshot.child('usine').value as String?;
-    if (supUsine != alertUsine) {
-      throw Exception('Supervisor $supName is from factory "$supUsine", but alert is from "$alertUsine". Collaboration only allowed within same factory.');
     }
   }
 
