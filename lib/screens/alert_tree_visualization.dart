@@ -6,14 +6,10 @@ import '../services/auth_service.dart';
 import '../services/ai_assignment_service.dart';
 import '../models/alert_model.dart';
 import '../widgets/ai_logs_panel.dart';
+import '../theme.dart';
 
-// Color palette matching the app theme
-const _navy = Color(0xFF0D4A75);
+// Alert/status accent palette
 const _red = Color(0xFFDC2626);
-const _white = Colors.white;
-const _bg = Color(0xFFF8FAFC);
-const _border = Color(0xFFE2E8F0);
-const _muted = Color(0xFF64748B);
 const _green = Color(0xFF16A34A);
 const _orange = Color(0xFFEA580C);
 const _blue = Color(0xFF2563EB);
@@ -70,6 +66,12 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   final HierarchyService _hierarchyService = HierarchyService();
   final AuthService _authService = AuthService();
+
+  AppTheme get _t => context.appTheme;
+  Color get _lineColor =>
+      context.isDark ? Colors.white.withOpacity(0.65) : const Color(0xFF111827).withOpacity(0.88);
+  Color get _lineSoftColor =>
+      context.isDark ? Colors.white.withOpacity(0.45) : const Color(0xFF111827).withOpacity(0.55);
 
   @override
   void initState() {
@@ -132,7 +134,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           content: Text(on
               ? 'AI auto-assignment ON — new alerts will be assigned automatically'
               : 'AI auto-assignment OFF — manual assignment only'),
-          backgroundColor: on ? _green : _muted,
+          backgroundColor: on ? _t.green : _t.muted,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -308,6 +310,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   @override
   Widget build(BuildContext context) {
+    final t = _t;
     return Stack(
       children: [
         GestureDetector(
@@ -329,7 +332,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             }
           },
           child: Container(
-            color: _bg,
+            color: t.scaffold,
             child: Column(
               children: [
                 _buildHeader(),
@@ -391,16 +394,17 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildZoomControls() {
+    final t = _t;
     return Material(
       elevation: 6,
       borderRadius: BorderRadius.circular(14),
-      color: _white,
+      color: t.card,
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: _white,
+          color: t.card,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _border),
+          border: Border.all(color: t.border),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -408,17 +412,17 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             IconButton(
               tooltip: 'Zoom in',
               onPressed: _treeScale < _maxTreeScale ? _zoomInTree : null,
-              icon: const Icon(Icons.add, color: _navy),
+              icon: Icon(Icons.add, color: t.navy),
             ),
             Container(
               width: 24,
               height: 1,
-              color: _border,
+              color: t.border,
             ),
             IconButton(
               tooltip: 'Zoom out',
               onPressed: _treeScale > _minTreeScale ? _zoomOutTree : null,
-              icon: const Icon(Icons.remove, color: _navy),
+              icon: Icon(Icons.remove, color: t.navy),
             ),
           ],
         ),
@@ -427,18 +431,19 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildHeader() {
+    final t = _t;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _white,
-        border: Border(bottom: BorderSide(color: _border)),
+        color: t.card,
+        border: Border(bottom: BorderSide(color: t.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Icon(Icons.account_tree, color: _navy, size: 24),
+              Icon(Icons.account_tree, color: t.navy, size: 24),
               const SizedBox(width: 12),
               Expanded(child: _buildBreadcrumb()),
               if (_selectedUsine != null || _selectedConveyor != null)
@@ -465,6 +470,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildAIControlBar() {
+    final t = _t;
     final isOn = AIAssignmentService.instance.enabled;
     final logCount = AIAssignmentService.instance.logs.length;
     final backendSettingsOk =
@@ -473,10 +479,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: isOn ? _green.withOpacity(0.06) : _bg,
+        color: isOn ? t.greenLt.withOpacity(context.isDark ? 0.32 : 0.55) : t.scaffold,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-            color: isOn ? _green.withOpacity(0.4) : _border, width: 1),
+            color: isOn ? t.green.withOpacity(0.45) : t.border, width: 1),
       ),
       child: Row(
         children: [
@@ -484,7 +490,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: isOn ? _green : _navy,
+              color: isOn ? t.green : t.navy,
               borderRadius: BorderRadius.circular(7),
             ),
             child: const Icon(Icons.smart_toy_outlined,
@@ -495,16 +501,21 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('AI Assignment',
-                  style: TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w800, color: _navy)),
+              Text(
+                'AI Assignment',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: t.navy,
+                ),
+              ),
               Text(
                 isOn
                     ? 'Active — auto-assigning new alerts'
                     : 'Off — manual assignment only',
                 style: TextStyle(
                     fontSize: 10,
-                    color: isOn ? _green : _muted,
+                    color: isOn ? t.green : t.muted,
                     fontWeight: FontWeight.w600),
               ),
               if (!backendSettingsOk)
@@ -513,22 +524,21 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: _orange.withOpacity(0.12),
+                    color: t.orangeLt.withOpacity(context.isDark ? 0.32 : 1),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: _orange.withOpacity(0.35)),
+                    border: Border.all(color: t.orange.withOpacity(0.35)),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.warning_amber_rounded,
-                          size: 10, color: _orange),
-                      SizedBox(width: 4),
+                      Icon(Icons.warning_amber_rounded, size: 10, color: t.orange),
+                      const SizedBox(width: 4),
                       Text(
                         'LOCAL FALLBACK MODE',
                         style: TextStyle(
                           fontSize: 8.5,
                           fontWeight: FontWeight.w800,
-                          color: _orange,
+                          color: t.orange,
                           letterSpacing: 0.25,
                         ),
                       ),
@@ -550,7 +560,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             icon: Icons.stop_circle_outlined,
             label: 'OFF',
             active: !isOn,
-            activeColor: _muted,
+            activeColor: t.muted,
             onTap: !isOn ? null : () => _toggleAI(false),
           ),
           const SizedBox(width: 6),
@@ -558,7 +568,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             icon: Icons.receipt_long,
             label: 'AI-LOGS',
             active: _showAILogsPanel,
-            activeColor: _navy,
+            activeColor: t.navy,
             badge: logCount > 0 ? '$logCount' : null,
             onTap: () => setState(() => _showAILogsPanel = !_showAILogsPanel),
           ),
@@ -575,8 +585,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     String? badge,
     VoidCallback? onTap,
   }) {
-    final bg = active ? activeColor : _white;
-    final fg = active ? Colors.white : _muted;
+    final t = _t;
+    final bg = active ? activeColor : t.card;
+    final fg = active ? Colors.white : t.muted;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -587,7 +598,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: active ? activeColor : _border, width: 1),
+            border: Border.all(color: active ? activeColor : t.border, width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -626,6 +637,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildBreadcrumb() {
+    final t = _t;
     final parts = <Widget>[];
     parts.add(
       Text(
@@ -634,15 +646,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           fontSize: 16,
           fontWeight:
               _selectedUsine == null ? FontWeight.bold : FontWeight.w500,
-          color: _selectedUsine == null ? _navy : _muted,
+          color: _selectedUsine == null ? t.navy : t.muted,
         ),
       ),
     );
 
     if (_selectedUsine != null) {
-      parts.add(const Padding(
+      parts.add(Padding(
         padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Icon(Icons.chevron_right, size: 16, color: _muted),
+        child: Icon(Icons.chevron_right, size: 16, color: t.muted),
       ));
       parts.add(
         Text(
@@ -651,24 +663,24 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             fontSize: 16,
             fontWeight:
                 _selectedConveyor == null ? FontWeight.bold : FontWeight.w500,
-            color: _selectedConveyor == null ? _navy : _muted,
+            color: _selectedConveyor == null ? t.navy : t.muted,
           ),
         ),
       );
     }
 
     if (_selectedConveyor != null) {
-      parts.add(const Padding(
+      parts.add(Padding(
         padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Icon(Icons.chevron_right, size: 16, color: _muted),
+        child: Icon(Icons.chevron_right, size: 16, color: t.muted),
       ));
       parts.add(
         Text(
           _selectedConveyor!.label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: _navy,
+            color: t.navy,
           ),
         ),
       );
@@ -697,6 +709,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 spacing: spacing,
                 selectedX: selectedX,
                 animation: _zoomAnimation,
+                lineColor: _lineColor,
               ),
               child: Stack(
                 children: [
@@ -762,6 +775,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 spacing: spacing,
                 parentX: parentX,
                 animation: _detailAnimation,
+                lineColor: _lineColor,
               ),
               child: Stack(
                 children: [
@@ -819,7 +833,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   width: 4,
                   height: height + 2,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF111827).withOpacity(0.88),
+                    color: _lineColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -844,6 +858,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 usines: _usines,
                 spacing: spacing,
                 animation: _pulseController,
+                lineColor: _lineColor,
+                lineSoftColor: _lineSoftColor,
               ),
               child: Stack(
                 children: _usines.asMap().entries.map((entry) {
@@ -874,24 +890,25 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildUsineNodeSmall(AlertNode usine) {
+    final t = _t;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: _white,
+        color: t.card,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: usine.hasError ? _red : _navy, width: 2),
+        border: Border.all(color: usine.hasError ? _red : t.navy, width: 2),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.factory, size: 20, color: usine.hasError ? _red : _navy),
+          Icon(Icons.factory, size: 20, color: usine.hasError ? _red : t.navy),
           const SizedBox(width: 8),
           Text(
             usine.label,
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,
-              color: usine.hasError ? _red : _navy,
+              color: usine.hasError ? _red : t.navy,
             ),
           ),
         ],
@@ -901,6 +918,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   // Node builders (same as original, but using the updated AlertNode fields)
   Widget _buildUsineNode(AlertNode usine) {
+    final t = _t;
     return GestureDetector(
       onTap: () => _onUsineClick(usine),
       child: MouseRegion(
@@ -916,15 +934,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               decoration: BoxDecoration(
                 color: usine.hasError
                     ? _red.withOpacity(0.1)
-                    : _navy.withOpacity(0.1),
+                    : t.navy.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: usine.hasError ? _red : _navy,
+                  color: usine.hasError ? _red : t.navy,
                   width: 2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: (usine.hasError ? _red : _navy).withOpacity(0.2),
+                    color: (usine.hasError ? _red : t.navy).withOpacity(0.2),
                     blurRadius: 8,
                     spreadRadius: 2,
                   ),
@@ -936,7 +954,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   Icon(
                     Icons.factory,
                     size: 40,
-                    color: usine.hasError ? _red : _navy,
+                    color: usine.hasError ? _red : t.navy,
                   ),
                   if (usine.hasError)
                     Positioned(
@@ -970,18 +988,18 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: _white,
+                color: t.card,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _border),
+                border: Border.all(color: t.border),
               ),
               child: Column(
                 children: [
                   Text(
                     usine.label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
-                      color: _navy,
+                      color: t.navy,
                     ),
                   ),
                   if (usine.hasError)
@@ -1003,6 +1021,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildConveyorNode(AlertNode conveyor) {
+    final t = _t;
     return GestureDetector(
       onTap: () => _onConveyorClick(conveyor),
       child: MouseRegion(
@@ -1071,18 +1090,18 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: _white,
+                color: t.card,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
+                border: Border.all(color: t.border),
               ),
               child: Column(
                 children: [
                   Text(
                     conveyor.label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: _navy,
+                      color: t.navy,
                     ),
                   ),
                   if (conveyor.hasError)
@@ -1104,6 +1123,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildWorkstationNode(AlertNode workstation) {
+    final t = _t;
     final isSelected = _selectedWorkstation?.id == workstation.id;
     return GestureDetector(
       onTapDown: (details) {
@@ -1170,16 +1190,16 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: _white,
+                color: t.card,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _border),
+                border: Border.all(color: t.border),
               ),
               child: Text(
                 workstation.label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: _navy,
+                  color: t.navy,
                 ),
               ),
             ),
@@ -1190,6 +1210,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildAlertPopup() {
+    final t = _t;
     final alert = _popupAlertData!;
     final screenSize = MediaQuery.of(context).size;
     final hasActiveAlert = (alert['hasActiveAlert'] as bool?) ?? false;
@@ -1234,9 +1255,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           width: 320,
           constraints: const BoxConstraints(maxHeight: 400),
           decoration: BoxDecoration(
-            color: _white,
+            color: t.card,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isCritical ? _red : _border, width: 2),
+            border: Border.all(color: isCritical ? _red : t.border, width: 2),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1262,7 +1283,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                       child: Icon(
                         _typeIcon(alertType),
                         size: 16,
-                        color: _white,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1279,16 +1300,16 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                               fontWeight: FontWeight.bold,
                               color: hasActiveAlert
                                   ? _typeColor(alertType)
-                                  : _navy,
+                                  : t.navy,
                             ),
                           ),
                           Text(
                             hasActiveAlert
                                 ? 'Alert #${alertId.length > 8 ? alertId.substring(0, 8) : alertId}'
                                 : 'No active alert',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10,
-                              color: _muted,
+                              color: t.muted,
                               fontFamily: 'monospace',
                             ),
                           ),
@@ -1346,16 +1367,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: _muted,
                           letterSpacing: 1,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         description,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: _navy,
+                          color: t.text,
                         ),
                       ),
                       if (hasActiveAlert) ...[
@@ -1399,8 +1419,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                                   const Icon(Icons.person_add_alt_1, size: 18),
                               label: const Text('Assign Supervisor'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _navy,
-                                foregroundColor: _white,
+                                backgroundColor: t.navy,
+                                foregroundColor: Colors.white,
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 12),
                                 shape: RoundedRectangleBorder(
@@ -1420,8 +1440,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                             icon: const Icon(Icons.history, size: 18),
                             label: const Text('Show Workstation History'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: _navy,
-                              side: BorderSide(color: _navy.withOpacity(0.35)),
+                              foregroundColor: t.navy,
+                              side: BorderSide(color: t.navy.withOpacity(0.35)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
@@ -1442,24 +1462,25 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildInfoRow(String label, String value) {
+    final t = _t;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
           Text(
             '$label:',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: _muted,
+              color: t.muted,
             ),
           ),
           const SizedBox(width: 8),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
-              color: _navy,
+              color: t.text,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1514,7 +1535,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               final supervisor = filtered[index];
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.person, color: _navy),
+                leading: Icon(Icons.person, color: _t.navy),
                 title: Text(supervisor.fullName),
                 subtitle: Text(supervisor.email),
                 onTap: () async {
@@ -1573,6 +1594,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final t = context.appTheme;
             final normalizedQuery = query.trim().toLowerCase();
             final now = DateTime.now();
 
@@ -1734,9 +1756,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
                           'Custom range: ${DateFormat('dd/MM/yyyy').format(customRange!.start)} - ${DateFormat('dd/MM/yyyy').format(customRange!.end)}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: _muted,
+                            color: t.muted,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -1744,21 +1766,21 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                     const SizedBox(height: 12),
                     Text(
                       'Showing ${filtered.length} of ${workstationAlerts.length} alerts',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: _muted,
+                        color: t.muted,
                       ),
                     ),
                     const SizedBox(height: 10),
                     Flexible(
                       child: filtered.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 20),
                                 child: Text(
                                   'No alerts match the current filters.',
-                                  style: TextStyle(color: _muted),
+                                  style: TextStyle(color: t.muted),
                                 ),
                               ),
                             )
@@ -1772,9 +1794,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                                 return Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: _bg,
+                                    color: t.scaffold,
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: _border),
+                                    border: Border.all(color: t.border),
                                   ),
                                   child: Column(
                                     crossAxisAlignment:
@@ -1815,6 +1837,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   Widget _buildHistoryRow(String label, String value) {
+    final t = _t;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -1824,19 +1847,19 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             width: 92,
             child: Text(
               '$label:',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: _muted,
+                color: t.muted,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: _navy,
+                color: t.text,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1851,7 +1874,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         'maintenance' => _blue,
         'defaut_produit' => _green,
         'manque_ressource' => _orange,
-        _ => _muted,
+        _ => _t.muted,
       };
 
   IconData _typeIcon(String type) => switch (type) {
@@ -1888,14 +1911,21 @@ class _UsineTreePainter extends CustomPainter {
   final List<AlertNode> usines;
   final double spacing;
   final Animation<double> animation;
+  final Color lineColor;
+  final Color lineSoftColor;
   _UsineTreePainter(
-      {required this.usines, required this.spacing, required this.animation})
+      {required this.usines,
+      required this.spacing,
+      required this.animation,
+      required this.lineColor,
+      required this.lineSoftColor})
       : super(repaint: animation);
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color =
-          const Color(0xFF111827).withOpacity(0.55 + (animation.value * 0.25))
+      ..color = Color.lerp(
+              lineSoftColor, lineColor, animation.value.clamp(0.0, 1.0)) ??
+          lineSoftColor
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
@@ -1921,16 +1951,18 @@ class _ConveyorTreePainter extends CustomPainter {
   final double spacing;
   final double? selectedX;
   final Animation<double> animation;
+  final Color lineColor;
   _ConveyorTreePainter({
     required this.conveyors,
     required this.spacing,
     required this.selectedX,
     required this.animation,
+    required this.lineColor,
   }) : super(repaint: animation);
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF111827).withOpacity(0.88)
+      ..color = lineColor
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
@@ -1968,16 +2000,18 @@ class _WorkstationTreePainter extends CustomPainter {
   final double spacing;
   final double parentX;
   final Animation<double> animation;
+  final Color lineColor;
   _WorkstationTreePainter({
     required this.workstations,
     required this.spacing,
     required this.parentX,
     required this.animation,
+    required this.lineColor,
   }) : super(repaint: animation);
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF111827).withOpacity(0.88)
+      ..color = lineColor
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;

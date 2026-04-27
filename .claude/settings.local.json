@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(firebase deploy *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(flutter pub *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter clean *)",
+      "Bash(flutter build *)",
+      "Bash(npx firebase-tools *)",
+      "Bash(dart analyze *)"
+    ]
+  }
+}
