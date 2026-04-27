@@ -9,23 +9,11 @@
         ".write": "auth != null",
         "aiHistory": {
           ".read": "auth != null",
-          ".write": "auth != null",
-          "$event": {
-            ".read": "auth != null",
-            ".write": "auth != null"
-          }
+          ".write": "auth != null"
         }
       }
     },
-    "ai_decisions": {
-      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      ".indexOn": ["timestamp", "alertId", "supervisorId"],
-      "$decisionId": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
-    },
+
     "notifications": {
       ".read": "auth != null",
       ".write": false,
@@ -37,6 +25,7 @@
         }
       }
     },
+
     "users": {
       ".read": "auth != null",
       ".write": false,
@@ -46,37 +35,36 @@
         ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
       }
     },
-    "supervisors": {
-      ".read": "auth != null",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      ".indexOn": ["usine", "active"]
-    },
+
     "hierarchy": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      "$key": {
-        ".read": "auth != null",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
-      }
+      ".indexOn": ["name"]
     },
+
     "collaboration_requests": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-      ".indexOn": ["requesterId", "status", "pmApproved", "timestamp", "alertId"],
-      "$requestId": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')"
-      }
+      ".indexOn": ["requesterId", "status", "pmApproved", "timestamp", "alertId"]
     },
-    "escalation_settings": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
-    },
+
     "help_requests": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
       ".indexOn": ["alertId", "requesterId", "targetSupervisorId", "status", "timestamp"]
     },
+
+    "escalation_settings": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+    },
+
+    "supervisors": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["usine", "active"]
+    },
+
     "pm_actions": {
       ".read": "auth != null",
       ".write": false,
@@ -85,57 +73,41 @@
         ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
       }
     },
+
+    "ai_decisions": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["timestamp", "alertId"]
+    },
+
     "ai_feedback": {
       ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
     },
+
     "ai_master": {
       ".read": "auth != null",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      "enabled": {
-        ".validate": "newData.isBoolean()"
-      },
-      "enabledBy": {
-        ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
-      },
-      "enabledAt": {
-        ".validate": "!newData.exists() || newData.isString()"
-      },
-      "updatedAt": {
-        ".validate": "!newData.exists() || newData.isString()"
-      },
-      "$other": {
-        ".validate": false
-      }
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
     },
+
     "factories": {
       ".read": "auth != null",
       "$factoryId": {
         ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
         "aiConfig": {
           ".read": "auth != null",
           ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
           "enabled": {
             ".validate": "newData.isBoolean()"
           },
-          "enabledBy": {
-            ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
-          },
-          "enabledAt": {
-            ".validate": "!newData.exists() || newData.isString()"
-          },
-          "updatedAt": {
-            ".validate": "!newData.exists() || newData.isString()"
-          },
           "skippedAlertTtlMinutes": {
             ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 240)"
-          },
-          "$other": {
-            ".validate": false
           }
         }
       }
     },
+
     ".read": false,
     ".write": false
   }
