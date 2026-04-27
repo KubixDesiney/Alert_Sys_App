@@ -584,14 +584,17 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
 
   const nowIso = new Date().toISOString();
 
-  // PATCH only the fields we want to change — leaves aiHistory child intact.
-  const patchRes = await fetch(alertUrl, {
-    method: 'PATCH',
+  // Conditional PUT — Firebase RTDB only supports if-match on PUT, not PATCH.
+  // Spreading ...current preserves all existing fields (including aiHistory child
+  // nodes that were returned by the GET) so nothing is lost on overwrite.
+  const putRes = await fetch(alertUrl, {
+    method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       'if-match': etag,
     },
     body: JSON.stringify({
+      ...current,
       status: 'en_cours',
       superviseurId: supervisor.uid,
       superviseurName: supervisor.name,
@@ -602,12 +605,12 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
     }),
   });
 
-  if (patchRes.status === 412) {
+  if (putRes.status === 412) {
     console.log(`[AI] Alert ${alertId} concurrently modified — skipping`);
     return false;
   }
-  if (!patchRes.ok) {
-    console.error(`[AI] Assignment PATCH failed: ${patchRes.status}`);
+  if (!putRes.ok) {
+    console.error(`[AI] Assignment PUT failed: ${putRes.status}`);
     return false;
   }
 
