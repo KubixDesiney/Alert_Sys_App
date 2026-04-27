@@ -6,6 +6,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 import '../services/ai_assignment_service.dart';
 import '../theme.dart';
@@ -167,7 +168,17 @@ class _AILogsPanelState extends State<AILogsPanel> {
                 ),
               ),
               Icon(Icons.drag_indicator, size: 16, color: t.muted),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
+              IconButton(
+                tooltip: 'AI settings — enable/disable per factory',
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => const _AISettingsDialog(),
+                ),
+                icon: Icon(Icons.settings_outlined, size: 18, color: t.muted),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              ),
               IconButton(
                 tooltip: 'Close panel',
                 onPressed: widget.onClose,
@@ -757,4 +768,269 @@ class _AIDetailsDialog extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: 0.6),
       );
+}
+
+// ---------------------------------------------------------------------------
+// AI Settings dialog — per-factory AI enable/disable
+// ---------------------------------------------------------------------------
+
+class _FactoryConfig {
+  final String id;
+  final String name;
+  bool enabled;
+  bool saving = false;
+
+  _FactoryConfig({
+    required this.id,
+    required this.name,
+    required this.enabled,
+  });
+}
+
+class _AISettingsDialog extends StatefulWidget {
+  const _AISettingsDialog();
+
+  @override
+  State<_AISettingsDialog> createState() => _AISettingsDialogState();
+}
+
+class _AISettingsDialogState extends State<_AISettingsDialog> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  List<_FactoryConfig> _factories = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFactories();
+  }
+
+  Future<void> _loadFactories() async {
+    try {
+      // Load factory definitions from hierarchy
+      final hierarchySnap = await _db.child('hierarchy/factories').get();
+      if (!hierarchySnap.exists || hierarchySnap.value == null) {
+        setState(() {
+          _loading = false;
+          _error = 'No factories found in hierarchy.';
+        });
+        return;
+      }
+
+      final hierarchyMap =
+          Map<String, dynamic>.from(hierarchySnap.value as Map);
+
+      // Load AI enabled flag for each factory in parallel
+      final configs = await Future.wait(
+        hierarchyMap.entries.map((e) async {
+          final factoryId = e.key;
+          final factoryData = e.value is Map
+              ? Map<String, dynamic>.from(e.value as Map)
+              : <String, dynamic>{};
+          final name = factoryData['name']?.toString() ?? factoryId;
+
+          bool enabled = false;
+          try {
+            final enabledSnap =
+                await _db.child('factories/$factoryId/aiConfig/enabled').get();
+            if (enabledSnap.exists) {
+              enabled = enabledSnap.value == true;
+            }
+          } catch (_) {}
+
+          return _FactoryConfig(id: factoryId, name: name, enabled: enabled);
+        }),
+      );
+
+      // Sort by name for consistent display
+      configs.sort((a, b) => a.name.compareTo(b.name));
+
+      setState(() {
+        _factories = configs;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = 'Failed to load factories: $e';
+      });
+    }
+  }
+
+  Future<void> _toggle(_FactoryConfig cfg, bool value) async {
+    setState(() => cfg.saving = true);
+    try {
+      await _db.child('factories/${cfg.id}/aiConfig').update({
+        'enabled': value,
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+      setState(() {
+        cfg.enabled = value;
+        cfg.saving = false;
+      });
+    } catch (e) {
+      setState(() => cfg.saving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+
+    return Dialog(
+      backgroundColor: t.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 520),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: t.navy,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.settings_outlined,
+                        size: 18, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('AI Assignment Settings',
+                            style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: t.text)),
+                        Text('Enable auto-assignment per factory',
+                            style: TextStyle(fontSize: 11, color: t.muted)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close, size: 20, color: t.muted),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: t.border),
+            // Body
+            Flexible(
+              child: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : _error != null
+                      ? Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(_error!,
+                              style:
+                                  TextStyle(color: t.muted, fontSize: 13)),
+                        )
+                      : _factories.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Text('No factories configured.',
+                                  style: TextStyle(
+                                      color: t.muted, fontSize: 13)),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: _factories.length,
+                              separatorBuilder: (_, __) =>
+                                  Divider(height: 1, color: t.border),
+                              itemBuilder: (_, i) {
+                                final cfg = _factories[i];
+                                return SwitchListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 4),
+                                  title: Text(cfg.name,
+                                      style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: t.text)),
+                                  subtitle: Text(
+                                    cfg.enabled
+                                        ? 'AI auto-assignment ON'
+                                        : 'AI auto-assignment OFF',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: cfg.enabled
+                                            ? t.green
+                                            : t.muted),
+                                  ),
+                                  secondary: cfg.saving
+                                      ? SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: t.navy),
+                                        )
+                                      : Icon(
+                                          cfg.enabled
+                                              ? Icons.smart_toy
+                                              : Icons.smart_toy_outlined,
+                                          color: cfg.enabled
+                                              ? t.navy
+                                              : t.muted,
+                                          size: 22,
+                                        ),
+                                  value: cfg.enabled,
+                                  onChanged: cfg.saving
+                                      ? null
+                                      : (v) => _toggle(cfg, v),
+                                  activeThumbColor: t.navy,
+                                );
+                              },
+                            ),
+            ),
+            // Footer note
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: t.scaffold,
+                border: Border(top: BorderSide(color: t.border)),
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(14),
+                  bottomRight: Radius.circular(14),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 14, color: t.muted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Supervisors must have status "active" and no active alert to be eligible.',
+                      style: TextStyle(fontSize: 10, color: t.muted),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
