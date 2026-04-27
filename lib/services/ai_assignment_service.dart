@@ -510,7 +510,9 @@ class AIAssignmentService extends ChangeNotifier {
       final confidence =
           topSum > 0 ? (best.score / topSum).clamp(0.0, 1.0) : 1.0;
 
-      if (alert.isCritical && best.supervisor.usine != alert.usine) {
+      // Never auto-assign across factories regardless of criticality —
+      // always route to PM for review instead.
+      if (best.supervisor.usine != alert.usine) {
         await _recordCrossFactoryRecommendation(
           alert: alert,
           best: best,
