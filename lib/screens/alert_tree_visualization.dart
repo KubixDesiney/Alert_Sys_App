@@ -68,10 +68,12 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   final AuthService _authService = AuthService();
 
   AppTheme get _t => context.appTheme;
-  Color get _lineColor =>
-      context.isDark ? Colors.white.withOpacity(0.65) : const Color(0xFF111827).withOpacity(0.88);
-  Color get _lineSoftColor =>
-      context.isDark ? Colors.white.withOpacity(0.45) : const Color(0xFF111827).withOpacity(0.55);
+  Color get _lineColor => context.isDark
+      ? Colors.white.withOpacity(0.65)
+      : const Color(0xFF111827).withOpacity(0.88);
+  Color get _lineSoftColor => context.isDark
+      ? Colors.white.withOpacity(0.45)
+      : const Color(0xFF111827).withOpacity(0.55);
 
   @override
   void initState() {
@@ -479,7 +481,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: isOn ? t.greenLt.withOpacity(context.isDark ? 0.32 : 0.55) : t.scaffold,
+        color: isOn
+            ? t.greenLt.withOpacity(context.isDark ? 0.32 : 0.55)
+            : t.scaffold,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
             color: isOn ? t.green.withOpacity(0.45) : t.border, width: 1),
@@ -531,7 +535,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.warning_amber_rounded, size: 10, color: t.orange),
+                      Icon(Icons.warning_amber_rounded,
+                          size: 10, color: t.orange),
                       const SizedBox(width: 4),
                       Text(
                         'LOCAL FALLBACK MODE',
@@ -598,7 +603,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: active ? activeColor : t.border, width: 1),
+            border:
+                Border.all(color: active ? activeColor : t.border, width: 1),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
