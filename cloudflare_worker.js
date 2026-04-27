@@ -152,9 +152,36 @@ async function fetchUnsentAlerts(authToken, env) {
   }));
 }
 
+async function claimAlertForPush(alertId, authToken, env) {
+  const url = `${env.FB_DB_URL}alerts/${alertId}/push_sent.json?auth=${authToken}`;
+  const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
+  if (!getRes.ok) return false;
+
+  const etag = getRes.headers.get('ETag');
+  const current = await getRes.json();
+  if (current !== false) return false;
+
+  const claimRes = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'if-match': etag,
+    },
+    body: JSON.stringify('sending'),
+  });
+
+  if (claimRes.status === 412) return false;
+  return claimRes.ok;
+}
+
 async function markAlertAsSent(alertId, authToken, env) {
   const url = `${env.FB_DB_URL}alerts/${alertId}/push_sent.json?auth=${authToken}`;
   await fetch(url, { method: 'PUT', body: JSON.stringify(true) });
+}
+
+async function releaseAlertPushClaim(alertId, authToken, env) {
+  const url = `${env.FB_DB_URL}alerts/${alertId}/push_sent.json?auth=${authToken}`;
+  await fetch(url, { method: 'PUT', body: JSON.stringify(false) });
 }
 
 async function getFcmTokensForFactory(authToken, env, factoryName) {
@@ -237,17 +264,22 @@ async function fanOutPendingNotifications(authToken, env) {
 
     for (const [notifId, notification] of Object.entries(bucket || {})) {
       if (!notification || notification.pushSent === true) continue;
+      // New-alert FCM is already handled by processAlerts via alerts/push_sent.
+      if (String(notification.type || '') === 'new_alert') continue;
+
+      const claimed = await claimNotificationForPush(uid, notifId, authToken, env);
+      if (!claimed) continue;
 
       const sent = await sendFcmNotification(
         token,
-        describeNotificationTitle(notification),
-        String(notification.message || notification.type || 'AlertSys notification'),
+        describeNotificationTitle(claimed),
+        String(claimed.message || claimed.type || 'AlertSys notification'),
         {
           notificationId: notifId,
           recipientId: uid,
-          alertId: String(notification.alertId || ''),
-          collabRequestId: String(notification.collabRequestId || ''),
-          type: String(notification.type || ''),
+          alertId: String(claimed.alertId || ''),
+          collabRequestId: String(claimed.collabRequestId || ''),
+          type: String(claimed.type || ''),
         },
         env,
       );
@@ -256,11 +288,47 @@ async function fanOutPendingNotifications(authToken, env) {
         await fetch(`${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${authToken}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pushSent: true, pushSentAt: nowIso }),
+          body: JSON.stringify({ pushSent: true, pushSentAt: nowIso, pushSending: null }),
+        });
+      } else {
+        await fetch(`${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${authToken}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pushSending: null, pushLastErrorAt: nowIso }),
         });
       }
     }
   }
+}
+
+async function claimNotificationForPush(uid, notifId, authToken, env) {
+  const url = `${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${authToken}`;
+  const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
+  if (!getRes.ok) return null;
+
+  const etag = getRes.headers.get('ETag');
+  const current = await getRes.json();
+  if (!current || current.pushSent === true || current.pushSending === true) {
+    return null;
+  }
+
+  const claimed = {
+    ...current,
+    pushSending: true,
+    pushAttemptAt: new Date().toISOString(),
+  };
+
+  const putRes = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'if-match': etag,
+    },
+    body: JSON.stringify(claimed),
+  });
+
+  if (putRes.status === 412 || !putRes.ok) return null;
+  return claimed;
 }
 
 async function sendFcmNotification(token, title, body, dataMap, env) {
@@ -312,8 +380,14 @@ async function processAlerts(env) {
   if (unsentAlerts.length === 0) return;
 
   for (const alert of unsentAlerts) {
+    const claimed = await claimAlertForPush(alert.id, authToken, env);
+    if (!claimed) continue;
+
     const tokens = await getFcmTokensForFactory(authToken, env, alert.usine);
-    if (tokens.length === 0) continue;
+    if (tokens.length === 0) {
+      await releaseAlertPushClaim(alert.id, authToken, env);
+      continue;
+    }
     let allOk = true;
     for (const token of tokens) {
       const ok = await sendFcmNotification(
@@ -325,7 +399,11 @@ async function processAlerts(env) {
       );
       if (!ok) allOk = false;
     }
-    if (allOk) await markAlertAsSent(alert.id, authToken, env);
+    if (allOk) {
+      await markAlertAsSent(alert.id, authToken, env);
+    } else {
+      await releaseAlertPushClaim(alert.id, authToken, env);
+    }
   }
 }
 

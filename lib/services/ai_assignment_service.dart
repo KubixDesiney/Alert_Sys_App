@@ -212,11 +212,13 @@ class AIAssignmentService extends ChangeNotifier {
       final settingsSnap = await _db.child(_settingsPath!).get();
       if (settingsSnap.exists) {
         final map = Map<String, dynamic>.from(settingsSnap.value as Map);
-        _factoryEnabledCache[resolvedFactory.canonicalId] = map['enabled'] == true;
+        _factoryEnabledCache[resolvedFactory.canonicalId] =
+            map['enabled'] == true;
         final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
             _defaultSkippedTtl.inMinutes;
         _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
-        await prefs.setBool('$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
+        await prefs.setBool(
+            '$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
             map['enabled'] == true);
       } else if (resolvedFactory.legacyId != null) {
         final legacySnap = await _db
@@ -224,11 +226,13 @@ class AIAssignmentService extends ChangeNotifier {
             .get();
         if (legacySnap.exists) {
           final map = Map<String, dynamic>.from(legacySnap.value as Map);
-          _factoryEnabledCache[resolvedFactory.canonicalId] = map['enabled'] == true;
+          _factoryEnabledCache[resolvedFactory.canonicalId] =
+              map['enabled'] == true;
           final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
               _defaultSkippedTtl.inMinutes;
           _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
-          await prefs.setBool('$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
+          await prefs.setBool(
+              '$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
               map['enabled'] == true);
         } else {
           _factoryEnabledCache[resolvedFactory.canonicalId] = cachedEnabled;

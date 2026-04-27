@@ -310,6 +310,7 @@ class AlertService {
       if (role == 'supervisor' || role == 'admin') {
         // Create in-app notification (Firebase only)
         final notification = {
+          'type': 'new_alert',
           'alertId': alertId,
           'alertType': alertType,
           'alertDescription': description,
