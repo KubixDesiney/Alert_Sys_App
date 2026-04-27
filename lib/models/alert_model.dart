@@ -20,6 +20,15 @@ class AlertModel {
   final bool? wasAssisted; // ✅ NEW - Track if this alert was assisted
   final String? assistedBySupervisorId; // ✅ NEW - Who supervised the assist
   final String? assistedBySupervisorName; // ✅ NEW - Name of supervisor
+  final bool aiAssigned;
+  final String? aiAssignmentReason;
+  final double? aiConfidence;
+  final DateTime? aiAssignedAt;
+  final bool aiRecommendationPending;
+  final String? aiRecommendationStatus;
+  final String? aiRecommendedSupervisorId;
+  final String? aiRecommendedSupervisorName;
+  final String? aiRecommendationReason;
   String status;
   String? superviseurId;
   String? superviseurName;
@@ -51,6 +60,15 @@ class AlertModel {
     this.wasAssisted = false,
     this.assistedBySupervisorId,
     this.assistedBySupervisorName,
+    this.aiAssigned = false,
+    this.aiAssignmentReason,
+    this.aiConfidence,
+    this.aiAssignedAt,
+    this.aiRecommendationPending = false,
+    this.aiRecommendationStatus,
+    this.aiRecommendedSupervisorId,
+    this.aiRecommendedSupervisorName,
+    this.aiRecommendationReason,
     this.status = 'disponible',
     this.superviseurId,
     this.superviseurName,
@@ -96,6 +114,17 @@ class AlertModel {
       wasAssisted: data['wasAssisted'] ?? false,
       assistedBySupervisorId: data['assistedBySupervisorId'],
       assistedBySupervisorName: data['assistedBySupervisorName'],
+      aiAssigned: data['aiAssigned'] == true,
+      aiAssignmentReason: data['aiAssignmentReason'],
+      aiConfidence: (data['aiConfidence'] as num?)?.toDouble(),
+      aiAssignedAt: data['aiAssignedAt'] != null
+          ? _parseDate(data['aiAssignedAt'])
+          : null,
+      aiRecommendationPending: data['aiRecommendationPending'] == true,
+      aiRecommendationStatus: data['aiRecommendationStatus'],
+      aiRecommendedSupervisorId: data['aiRecommendedSupervisorId'],
+      aiRecommendedSupervisorName: data['aiRecommendedSupervisorName'],
+      aiRecommendationReason: data['aiRecommendationReason'],
     );
   }
 
@@ -125,6 +154,15 @@ class AlertModel {
         'resolvedAt': resolvedAt?.toIso8601String(),
         'isEscalated': isEscalated,
         'escalatedAt': escalatedAt?.toIso8601String(),
+        'aiAssigned': aiAssigned,
+        'aiAssignmentReason': aiAssignmentReason,
+        'aiConfidence': aiConfidence,
+        'aiAssignedAt': aiAssignedAt?.toIso8601String(),
+        'aiRecommendationPending': aiRecommendationPending,
+        'aiRecommendationStatus': aiRecommendationStatus,
+        'aiRecommendedSupervisorId': aiRecommendedSupervisorId,
+        'aiRecommendedSupervisorName': aiRecommendedSupervisorName,
+        'aiRecommendationReason': aiRecommendationReason,
       };
 
   static DateTime _parseDate(dynamic raw) {
@@ -159,6 +197,15 @@ class AlertModel {
     bool clearTakenAt = false,
     bool? isEscalated,
     DateTime? escalatedAt,
+    bool? aiAssigned,
+    String? aiAssignmentReason,
+    double? aiConfidence,
+    DateTime? aiAssignedAt,
+    bool? aiRecommendationPending,
+    String? aiRecommendationStatus,
+    String? aiRecommendedSupervisorId,
+    String? aiRecommendedSupervisorName,
+    String? aiRecommendationReason,
   }) =>
       AlertModel(
         id: id,
@@ -191,5 +238,19 @@ class AlertModel {
         resolvedAt: resolvedAt ?? this.resolvedAt,
         isEscalated: isEscalated ?? this.isEscalated,
         escalatedAt: escalatedAt ?? this.escalatedAt,
+        aiAssigned: aiAssigned ?? this.aiAssigned,
+        aiAssignmentReason: aiAssignmentReason ?? this.aiAssignmentReason,
+        aiConfidence: aiConfidence ?? this.aiConfidence,
+        aiAssignedAt: aiAssignedAt ?? this.aiAssignedAt,
+        aiRecommendationPending:
+            aiRecommendationPending ?? this.aiRecommendationPending,
+        aiRecommendationStatus:
+            aiRecommendationStatus ?? this.aiRecommendationStatus,
+        aiRecommendedSupervisorId:
+            aiRecommendedSupervisorId ?? this.aiRecommendedSupervisorId,
+        aiRecommendedSupervisorName:
+            aiRecommendedSupervisorName ?? this.aiRecommendedSupervisorName,
+        aiRecommendationReason:
+            aiRecommendationReason ?? this.aiRecommendationReason,
       );
 }
