@@ -1,5 +1,9 @@
 import 'package:firebase_database/firebase_database.dart';
+import 'package:http/http.dart' as http;
 import '../models/collaboration_model.dart';
+
+const String _workerNotifyUrl =
+    'https://alert-notifier.aziz-nagati01.workers.dev/notify';
 
 class CollaborationService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -83,6 +87,9 @@ class CollaborationService {
     }
 
     await _db.update(updates);
+
+    // Trigger FCM fan-out so target supervisors receive a push immediately.
+    http.post(Uri.parse(_workerNotifyUrl)).ignore();
 
     return requestId;
   }
@@ -228,6 +235,8 @@ class CollaborationService {
         });
       }
     }
+    // Trigger FCM fan-out so the requester / admins get a push.
+    http.post(Uri.parse(_workerNotifyUrl)).ignore();
   }
 
   /// Remove one assistant from an active collaboration request (PM action).

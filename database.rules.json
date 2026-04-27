@@ -3,7 +3,7 @@
     "alerts": {
       ".read": "auth != null",
       ".write": "auth != null",
-      ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste"],
+      ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste", "push_sent"],
       "$alertId": {
         ".read": "auth != null",
         ".write": "auth != null",
@@ -33,8 +33,7 @@
         ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
         "$notifId": {
           ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-          ".write": "auth != null && (!data.exists() || auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
-          ".validate": "newData.hasChild('timestamp') && newData.hasChild('type') && newData.child('type').isString() && newData.child('timestamp').isString() && (!newData.child('pushSent').exists() || newData.child('pushSent').isBoolean())"
+          ".write": "auth != null && (!data.exists() || auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
         }
       }
     },
