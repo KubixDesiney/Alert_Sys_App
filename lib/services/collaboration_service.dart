@@ -1,92 +1,94 @@
 import 'package:firebase_database/firebase_database.dart';
 import '../models/collaboration_model.dart';
 
-
 class CollaborationService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   // In collaboration_service.dart
 
-Future<String> createCollaborationRequest({
-  required String alertId,
-  required String requesterId,
-  required String requesterName,
-  required List<String> targetSupervisorIds,
-  required List<String> targetSupervisorNames,
-  required String message,
-  required String usine,
-  required int convoyeur,
-  required int poste,
-  required String alertType,
-  required String alertDescription,
-}) async {
-  // 1. Verify that all target supervisors belong to the same factory as the alert
-  final alertSnapshot = await _db.child('alerts/$alertId').get();
-  if (!alertSnapshot.exists) {
-    throw Exception('Alert not found');
-  }
-  final alertUsine = alertSnapshot.child('usine').value as String?;
-  if (alertUsine == null) {
-    throw Exception('Alert has no factory assigned');
-  }
-
-  // Verify all target supervisors exist (cross-factory allowed — PM confirms at approval)
-  for (int i = 0; i < targetSupervisorIds.length; i++) {
-    final supId = targetSupervisorIds[i];
-    final supName = targetSupervisorNames[i];
-    final supSnapshot = await _db.child('users/$supId').get();
-    if (!supSnapshot.exists) {
-      throw Exception('Supervisor $supName not found');
+  Future<String> createCollaborationRequest({
+    required String alertId,
+    required String requesterId,
+    required String requesterName,
+    required List<String> targetSupervisorIds,
+    required List<String> targetSupervisorNames,
+    required String message,
+    required String usine,
+    required int convoyeur,
+    required int poste,
+    required String alertType,
+    required String alertDescription,
+  }) async {
+    // 1. Verify that all target supervisors belong to the same factory as the alert
+    final alertSnapshot = await _db.child('alerts/$alertId').get();
+    if (!alertSnapshot.exists) {
+      throw Exception('Alert not found');
     }
-  }
+    final alertUsine = alertSnapshot.child('usine').value as String?;
+    if (alertUsine == null) {
+      throw Exception('Alert has no factory assigned');
+    }
 
-  // 2. Original request creation (unchanged)
-  final requestId = _db.child('collaboration_requests').push().key!;
-  final request = CollaborationRequest(
-    id: requestId,
-    alertId: alertId,
-    requesterId: requesterId,
-    requesterName: requesterName,
-    targetSupervisorIds: targetSupervisorIds,
-    targetSupervisorNames: targetSupervisorNames,
-    message: message,
-    status: 'pending',
-    assistantDecision: 'pending',
-    timestamp: DateTime.now(),
-    requiresPMApproval: true,
-    pmApproved: false,
-    usine: usine,
-    convoyeur: convoyeur,
-    poste: poste,
-    alertType: alertType,
-    alertDescription: alertDescription,
-  );
+    // Verify all target supervisors exist (cross-factory allowed — PM confirms at approval)
+    for (int i = 0; i < targetSupervisorIds.length; i++) {
+      final supId = targetSupervisorIds[i];
+      final supName = targetSupervisorNames[i];
+      final supSnapshot = await _db.child('users/$supId').get();
+      if (!supSnapshot.exists) {
+        throw Exception('Supervisor $supName not found');
+      }
+    }
 
-  await _db.child('collaboration_requests/$requestId').set(request.toMap());
+    // 2. Original request creation (unchanged)
+    final requestId = _db.child('collaboration_requests').push().key!;
+    final request = CollaborationRequest(
+      id: requestId,
+      alertId: alertId,
+      requesterId: requesterId,
+      requesterName: requesterName,
+      targetSupervisorIds: targetSupervisorIds,
+      targetSupervisorNames: targetSupervisorNames,
+      message: message,
+      status: 'pending',
+      assistantDecision: 'pending',
+      timestamp: DateTime.now(),
+      requiresPMApproval: true,
+      pmApproved: false,
+      usine: usine,
+      convoyeur: convoyeur,
+      poste: poste,
+      alertType: alertType,
+      alertDescription: alertDescription,
+    );
 
-  // Update alert with collaboration request ID
-  await _db.child('alerts/$alertId').update({
-    'collaborationRequestId': requestId,
-  });
-
-  // Notify target supervisors
-  for (final targetId in targetSupervisorIds) {
-    final notification = {
-      'type': 'collaboration_request',
-      'collabRequestId': requestId,
-      'alertId': alertId,
-      'requesterName': requesterName,
-      'message': '$requesterName is requesting collaboration on alert: $alertType',
-      'timestamp': DateTime.now().toIso8601String(),
-      'status': 'pending',
+    final updates = <String, dynamic>{
+      'collaboration_requests/$requestId': request.toMap(),
+      'alerts/$alertId/collaborationRequestId': requestId,
     };
-    await _db.child('notifications/$targetId').push().set(notification);
+
+    for (final targetId in targetSupervisorIds) {
+      final notifId = _db.child('notifications/$targetId').push().key!;
+      final notification = {
+        'type': 'collaboration_request',
+        'collabRequestId': requestId,
+        'alertId': alertId,
+        'requesterName': requesterName,
+        'message':
+            '$requesterName is requesting collaboration on alert: $alertType',
+        'timestamp': DateTime.now().toIso8601String(),
+        'status': 'pending',
+        'pushSent': false,
+      };
+      updates['notifications/$targetId/$notifId'] = notification;
+    }
+
+    await _db.update(updates);
+
+    return requestId;
   }
 
-  return requestId;
-}
-
-  Future<void> cancelCollaborationRequest(String requestId, String alertId) async {
+  Future<void> cancelCollaborationRequest(
+      String requestId, String alertId) async {
     await _db.child('collaboration_requests/$requestId').remove();
     await _db.child('alerts/$alertId').update({'collaborationRequestId': null});
   }
@@ -146,7 +148,8 @@ Future<String> createCollaborationRequest({
 
     // Record this supervisor's individual decision.
     await _db
-        .child('collaboration_requests/$requestId/assistantDecisions/$responderId')
+        .child(
+            'collaboration_requests/$requestId/assistantDecisions/$responderId')
         .set(accepted ? 'accepted' : 'refused');
 
     if (accepted) {
@@ -168,6 +171,7 @@ Future<String> createCollaborationRequest({
               '$responderName accepted your collaboration request. Waiting for PM approval.',
           'timestamp': nowIso,
           'status': 'pending',
+          'pushSent': false,
         });
 
         await _notifyAdminsAboutCollabRequest(CollaborationRequest(
@@ -203,11 +207,13 @@ Future<String> createCollaborationRequest({
         'message': '$responderName declined your collaboration request.',
         'timestamp': nowIso,
         'status': 'pending',
+        'pushSent': false,
       });
 
       // If every targeted supervisor has now refused, mark request as rejected.
-      final updatedDecisions = Map<String, String>.from(request.assistantDecisions)
-        ..[responderId] = 'refused';
+      final updatedDecisions =
+          Map<String, String>.from(request.assistantDecisions)
+            ..[responderId] = 'refused';
       final allRefused = request.targetSupervisorIds
           .every((id) => updatedDecisions[id] == 'refused');
       if (allRefused) {
@@ -265,9 +271,11 @@ Future<String> createCollaborationRequest({
       'type': 'collaboration_assistant_removed',
       'collabRequestId': requestId,
       'alertId': request.alertId,
-      'message': '$removedByName removed $assistantName from the collaboration.',
+      'message':
+          '$removedByName removed $assistantName from the collaboration.',
       'timestamp': nowIso,
       'status': 'pending',
+      'pushSent': false,
     });
     // Notify removed assistant.
     await _db.child('notifications/$assistantId').push().set({
@@ -277,6 +285,7 @@ Future<String> createCollaborationRequest({
       'message': 'You were removed from the collaboration by $removedByName.',
       'timestamp': nowIso,
       'status': 'pending',
+      'pushSent': false,
     });
   }
 
@@ -335,11 +344,16 @@ Future<String> createCollaborationRequest({
         'type': 'collaboration_approved',
         'collabRequestId': requestId,
         'alertId': request.alertId,
-        'message': 'Your collaboration request has been approved by Production Manager',
+        'message':
+            'Your collaboration request has been approved by Production Manager',
         'timestamp': DateTime.now().toIso8601String(),
         'status': 'pending',
+        'pushSent': false,
       };
-      await _db.child('notifications/${request.requesterId}').push().set(notification);
+      await _db
+          .child('notifications/${request.requesterId}')
+          .push()
+          .set(notification);
 
       // Notify target supervisors
       for (final targetId in request.targetSupervisorIds) {
@@ -347,9 +361,11 @@ Future<String> createCollaborationRequest({
           'type': 'collaboration_approved',
           'collabRequestId': requestId,
           'alertId': request.alertId,
-          'message': 'Collaboration request approved. You can now work on this alert.',
+          'message':
+              'Collaboration request approved. You can now work on this alert.',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
+          'pushSent': false,
         };
         await _db.child('notifications/$targetId').push().set(notif);
       }
@@ -363,100 +379,110 @@ Future<String> createCollaborationRequest({
       }
     }
   }
-Future<void> approveCollaborationRequestWithDetails({
-  required String requestId,
-  required String approverId,
-  required String approverName,
-  required bool isPMApproval,
-  bool confirmTransfer = false,
-  bool confirmCancelOriginal = false,
-  List<String>? cancelExistingAlertIds,
-}) async {
-  final snapshot = await _db.child('collaboration_requests/$requestId').get();
-  if (!snapshot.exists) return;
 
-  final request = CollaborationRequest.fromMap(
-    requestId,
-    Map<String, dynamic>.from(snapshot.value as Map),
-  );
+  Future<void> approveCollaborationRequestWithDetails({
+    required String requestId,
+    required String approverId,
+    required String approverName,
+    required bool isPMApproval,
+    bool confirmTransfer = false,
+    bool confirmCancelOriginal = false,
+    List<String>? cancelExistingAlertIds,
+  }) async {
+    final snapshot = await _db.child('collaboration_requests/$requestId').get();
+    if (!snapshot.exists) return;
 
-  if (isPMApproval) {
-    if (request.assistantDecision != 'accepted') {
-      throw Exception('Assistant must accept before PM approval');
-    }
-    // 1. Assign assistant to the collaboration alert
-    final assistantId = request.assistantId ??
-        (request.targetSupervisorIds.isNotEmpty
-            ? request.targetSupervisorIds.first
-            : null);
-    final assistantName = request.assistantName ??
-        (request.targetSupervisorNames.isNotEmpty
-            ? request.targetSupervisorNames.first
-            : null);
+    final request = CollaborationRequest.fromMap(
+      requestId,
+      Map<String, dynamic>.from(snapshot.value as Map),
+    );
 
-    if (assistantId != null && assistantName != null) {
-      await _db.child('alerts/${request.alertId}').update({
-        'assistantId': assistantId,
-        'assistantName': assistantName,
-      });
-      print('Assigned assistant $assistantName to alert ${request.alertId}');
-    }
-
-    // 2. Return assistant's existing alerts to unclaimed (do NOT cancel them)
-    if (confirmCancelOriginal && cancelExistingAlertIds != null && cancelExistingAlertIds.isNotEmpty) {
-      for (final alertId in cancelExistingAlertIds) {
-        await _db.child('alerts/$alertId').update({
-          'status': 'disponible',
-          'superviseurId': null,
-          'superviseurName': null,
-          'assistantId': null,
-          'assistantName': null,
-          'takenAtTimestamp': null,
-        });
-        print('Returned assistant\'s alert $alertId to unclaimed queue');
+    if (isPMApproval) {
+      if (request.assistantDecision != 'accepted') {
+        throw Exception('Assistant must accept before PM approval');
       }
-    }
+      // 1. Assign assistant to the collaboration alert
+      final assistantId = request.assistantId ??
+          (request.targetSupervisorIds.isNotEmpty
+              ? request.targetSupervisorIds.first
+              : null);
+      final assistantName = request.assistantName ??
+          (request.targetSupervisorNames.isNotEmpty
+              ? request.targetSupervisorNames.first
+              : null);
 
-    // 3. Mark collaboration request as approved
-    await _db.child('collaboration_requests/$requestId').update({
-      'pmApproved': true,
-      'status': 'approved',
-      'approvedBy': approverId,
-      'approvedAt': DateTime.now().toIso8601String(),
-    });
+      if (assistantId != null && assistantName != null) {
+        await _db.child('alerts/${request.alertId}').update({
+          'assistantId': assistantId,
+          'assistantName': assistantName,
+        });
+        print('Assigned assistant $assistantName to alert ${request.alertId}');
+      }
 
-    // 4. Send notifications
-    final notification = {
-      'type': 'collaboration_approved',
-      'collabRequestId': requestId,
-      'alertId': request.alertId,
-      'message': 'Your collaboration request has been approved by Production Manager',
-      'timestamp': DateTime.now().toIso8601String(),
-      'status': 'pending',
-    };
-    await _db.child('notifications/${request.requesterId}').push().set(notification);
+      // 2. Return assistant's existing alerts to unclaimed (do NOT cancel them)
+      if (confirmCancelOriginal &&
+          cancelExistingAlertIds != null &&
+          cancelExistingAlertIds.isNotEmpty) {
+        for (final alertId in cancelExistingAlertIds) {
+          await _db.child('alerts/$alertId').update({
+            'status': 'disponible',
+            'superviseurId': null,
+            'superviseurName': null,
+            'assistantId': null,
+            'assistantName': null,
+            'takenAtTimestamp': null,
+          });
+          print('Returned assistant\'s alert $alertId to unclaimed queue');
+        }
+      }
 
-    for (final targetId in request.targetSupervisorIds) {
-      final notif = {
+      // 3. Mark collaboration request as approved
+      await _db.child('collaboration_requests/$requestId').update({
+        'pmApproved': true,
+        'status': 'approved',
+        'approvedBy': approverId,
+        'approvedAt': DateTime.now().toIso8601String(),
+      });
+
+      // 4. Send notifications
+      final notification = {
         'type': 'collaboration_approved',
         'collabRequestId': requestId,
         'alertId': request.alertId,
-        'message': 'Collaboration request approved. You are now assisting on this alert.',
+        'message':
+            'Your collaboration request has been approved by Production Manager',
         'timestamp': DateTime.now().toIso8601String(),
         'status': 'pending',
+        'pushSent': false,
       };
-      await _db.child('notifications/$targetId').push().set(notif);
+      await _db
+          .child('notifications/${request.requesterId}')
+          .push()
+          .set(notification);
+
+      for (final targetId in request.targetSupervisorIds) {
+        final notif = {
+          'type': 'collaboration_approved',
+          'collabRequestId': requestId,
+          'alertId': request.alertId,
+          'message':
+              'Collaboration request approved. You are now assisting on this alert.',
+          'timestamp': DateTime.now().toIso8601String(),
+          'status': 'pending',
+          'pushSent': false,
+        };
+        await _db.child('notifications/$targetId').push().set(notif);
+      }
+    } else {
+      // Supervisor approval (not PM) – keep simple
+      await _db.child('collaboration_requests/$requestId').update({
+        'assistantDecision': 'accepted',
+        'assistantId': approverId,
+        'assistantName': approverName,
+        'assistantRespondedAt': DateTime.now().toIso8601String(),
+      });
     }
-  } else {
-    // Supervisor approval (not PM) – keep simple
-    await _db.child('collaboration_requests/$requestId').update({
-      'assistantDecision': 'accepted',
-      'assistantId': approverId,
-      'assistantName': approverName,
-      'assistantRespondedAt': DateTime.now().toIso8601String(),
-    });
   }
-}
 
   // Reject collaboration request
   Future<void> rejectCollaborationRequest(
@@ -484,11 +510,16 @@ Future<void> approveCollaborationRequestWithDetails({
       'type': 'collaboration_rejected',
       'collabRequestId': requestId,
       'alertId': request.alertId,
-      'message': 'Your collaboration request has been rejected. ${reason.isNotEmpty ? "Reason: $reason" : ""}',
+      'message':
+          'Your collaboration request has been rejected. ${reason.isNotEmpty ? "Reason: $reason" : ""}',
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
+      'pushSent': false,
     };
-    await _db.child('notifications/${request.requesterId}').push().set(notification);
+    await _db
+        .child('notifications/${request.requesterId}')
+        .push()
+        .set(notification);
 
     // Clear alert collaboration ID
     await _db.child('alerts/${request.alertId}').update({
@@ -567,6 +598,7 @@ Future<void> approveCollaborationRequestWithDetails({
               '${request.requesterName} requested collaboration with ${request.targetSupervisorNames.join(", ")}',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
+          'pushSent': false,
         };
         await _db.child('notifications/${entry.key}').push().set(notification);
       }
@@ -580,7 +612,8 @@ Future<void> approveCollaborationRequestWithDetails({
   }
 
   // Get collaboration request by ID
-  Future<CollaborationRequest?> getCollaborationRequest(String requestId) async {
+  Future<CollaborationRequest?> getCollaborationRequest(
+      String requestId) async {
     final snapshot = await _db.child('collaboration_requests/$requestId').get();
     if (!snapshot.exists) return null;
     return CollaborationRequest.fromMap(
