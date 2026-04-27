@@ -1,0 +1,54 @@
+{
+  "rules": {
+    "alerts": {
+      ".read": "auth != null",
+      ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste"],
+      "$alertId": {
+        ".read": "auth != null",
+        ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        "aiHistory": {
+          ".read": "auth != null",
+          ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+          "$event": {
+            ".read": "auth != null",
+            ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+          }
+        }
+      }
+    },
+    "ai_decisions": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
+      ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["timestamp", "alertId", "supervisorId"],
+      "$decisionId": {
+        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
+        ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "notifications": {
+      ".read": "auth != null",
+      ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "$userId": {
+        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "users": {
+      ".read": "auth != null",
+      ".write": "auth != null || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["role", "usine", "aiOptOut"],
+      "$userId": {
+        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+    "supervisors": {
+      ".read": "auth != null",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".indexOn": ["usine", "active"]
+    },
+    ".read": false,
+    ".write": false
+  }
+}
