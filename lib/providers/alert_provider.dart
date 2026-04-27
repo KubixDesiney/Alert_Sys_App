@@ -8,6 +8,7 @@ import '../services/ai_service.dart';
 import 'package:rxdart/rxdart.dart';
 
 const String _aiRetryUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/ai-retry';
+const String _notifyUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/notify';
 
 class AlertProvider extends ChangeNotifier {
   final AlertService _service = AlertService();
@@ -74,6 +75,9 @@ class AlertProvider extends ChangeNotifier {
 
     final usineStream = _service.getAlertsForUsine(usine);
     final assistantStream = _service.getAlertsWhereAssistant(currentUserId);
+    // Alerts where this supervisor is the primary claimant (catches AI
+    // cross-factory assignments that wouldn't appear in the usine stream).
+    final supervisorStream = _service.getAlertsWhereSupervisor(currentUserId);
 
     bool firstLoad = true;
     bool fallbackActivated = false;
@@ -94,32 +98,26 @@ class AlertProvider extends ChangeNotifier {
       if (fallbackActivated) return;
       fallbackActivated = true;
       debugPrint('AlertProvider combineLatest fallback activated: $error');
-      if (stackTrace != null) {
-        debugPrint(stackTrace.toString());
-      }
-
+      if (stackTrace != null) debugPrint(stackTrace.toString());
       _alertsSubscription?.cancel();
       _alertsSubscription = _service.getAlertsForUsine(usine).listen(
         applyAlerts,
         onError: (fallbackError, fallbackStack) {
           debugPrint('AlertProvider fallback stream error: $fallbackError');
-          if (fallbackStack != null) {
-            debugPrint(fallbackStack.toString());
-          }
         },
       );
     }
 
     _alertsSubscription =
-        Rx.combineLatest2<List<AlertModel>, List<AlertModel>, List<AlertModel>>(
+        Rx.combineLatest3<List<AlertModel>, List<AlertModel>, List<AlertModel>,
+            List<AlertModel>>(
       usineStream,
       assistantStream,
-      (usineAlerts, assistantAlerts) {
-        final combined = [...usineAlerts, ...assistantAlerts];
-        // Remove duplicates by id
+      supervisorStream,
+      (usineAlerts, assistantAlerts, supervisorAlerts) {
+        final combined = [...usineAlerts, ...assistantAlerts, ...supervisorAlerts];
         final seen = <String>{};
-        final unique = combined.where((a) => seen.add(a.id)).toList();
-        return unique;
+        return combined.where((a) => seen.add(a.id)).toList();
       },
     ).listen(
       applyAlerts,
@@ -371,13 +369,15 @@ class AlertProvider extends ChangeNotifier {
           'alertDescription': alert.description,
           'requesterName': currentSuperviseurName,
           'message':
-              '🆘 ${currentSuperviseurName} needs assistance on alert: ${alert.type}',
+              '🆘 $currentSuperviseurName needs assistance on alert: ${alert.type}',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
         };
         await _service.sendHelpRequest(userId, notification);
       }
     }
+    // Trigger FCM fan-out so recipients get a push immediately.
+    http.post(Uri.parse(_notifyUrl)).ignore();
   }
 
   Future<void> acceptAssistance(String alertId) async {
@@ -435,6 +435,7 @@ class AlertProvider extends ChangeNotifier {
                 ? 'Alert marked as CRITICAL: ${alert.type}'
                 : 'Alert critical flag removed: ${alert.type}');
         final notification = {
+          'type': 'alert_critical_update',
           'alertId': alertId,
           'alertType': alert.type,
           'alertDescription': alert.description,

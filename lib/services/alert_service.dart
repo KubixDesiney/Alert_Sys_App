@@ -125,6 +125,15 @@ class AlertService {
         .map((event) => _toAlertList(event.snapshot));
   }
 
+  Stream<List<AlertModel>> getAlertsWhereSupervisor(String supervisorId) {
+    return _db
+        .child('alerts')
+        .orderByChild('superviseurId')
+        .equalTo(supervisorId)
+        .onValue
+        .map((event) => _toAlertList(event.snapshot));
+  }
+
 // Modify existing returnToQueue
   Future<void> returnToQueue(String alertId, {String? reason}) async {
     final updates = {
