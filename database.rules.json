@@ -48,6 +48,14 @@
       ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
       ".indexOn": ["usine", "active"]
     },
+    "hierarchy": {
+      ".read": "auth != null",
+      ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "$key": {
+        ".read": "auth != null",
+        ".write": "root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
     ".read": false,
     ".write": false
   }
