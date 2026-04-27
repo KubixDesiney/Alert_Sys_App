@@ -2,7 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:http/http.dart' as http;
 import 'fcm_service.dart';
+
+const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -31,6 +34,9 @@ class AuthService {
             debugPrint('FCM init after login failed: $e');
           }
         }
+        // Trigger AI retry: a newly-active supervisor may be the one
+        // needed to cover unassigned alerts. Fire-and-forget.
+        http.post(Uri.parse('$_workerBaseUrl/ai-retry')).ignore();
       } else {
         debugPrint('AuthService.login: sign-in returned null uid');
       }
