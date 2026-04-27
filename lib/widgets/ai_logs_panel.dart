@@ -11,6 +11,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../services/ai_assignment_service.dart';
 import '../theme.dart';
 import '../screens/alert_detail_screen.dart';
+import '../utils/factory_id.dart';
 
 class AILogsPanel extends StatefulWidget {
   final VoidCallback onClose;
@@ -160,8 +161,8 @@ class _AILogsPanelState extends State<AILogsPanel> {
                     ),
                     Text(
                       AIAssignmentService.instance.enabled
-                          ? 'Live · auto-assigning'
-                          : 'Idle · AI off',
+                          ? 'Live · global automation on'
+                          : 'Idle · global automation off',
                       style: TextStyle(fontSize: 10, color: t.muted),
                     ),
                   ],
@@ -775,13 +776,22 @@ class _AIDetailsDialog extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _FactoryConfig {
+  /// Canonical (sanitized) factory id used as the storage key under
+  /// `factories/{id}/aiConfig`. Kept identical between worker, client, and
+  /// dialog so all three agree on which flag they're reading/writing.
   final String id;
+
+  /// Original key from `hierarchy/factories` — kept only so we can migrate
+  /// pre-existing aiConfig nodes that were written under the unsanitized key.
+  final String legacyId;
+
   final String name;
   bool enabled;
   bool saving = false;
 
   _FactoryConfig({
     required this.id,
+    required this.legacyId,
     required this.name,
     required this.enabled,
   });
@@ -822,25 +832,43 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
       final hierarchyMap =
           Map<String, dynamic>.from(hierarchySnap.value as Map);
 
-      // Load AI enabled flag for each factory in parallel
+      // Load AI enabled flag for each factory in parallel.
+      // Prefer the sanitized id (matches the worker) and fall back to the raw
+      // hierarchy key for backwards-compat with pre-existing aiConfig nodes.
       final configs = await Future.wait(
         hierarchyMap.entries.map((e) async {
-          final factoryId = e.key;
+          final legacyId = e.key;
+          final canonicalId = sanitizeFactoryId(legacyId);
           final factoryData = e.value is Map
               ? Map<String, dynamic>.from(e.value as Map)
               : <String, dynamic>{};
-          final name = factoryData['name']?.toString() ?? factoryId;
+          final name = factoryData['name']?.toString() ?? legacyId;
 
           bool enabled = false;
           try {
-            final enabledSnap =
-                await _db.child('factories/$factoryId/aiConfig/enabled').get();
-            if (enabledSnap.exists) {
-              enabled = enabledSnap.value == true;
+            final canonSnap = await _db
+                .child('factories/$canonicalId/aiConfig/enabled')
+                .get();
+            if (canonSnap.exists) {
+              enabled = canonSnap.value == true;
+            } else if (canonicalId != legacyId) {
+              final legacySnap = await _db
+                  .child('factories/$legacyId/aiConfig/enabled')
+                  .get();
+              if (legacySnap.exists) {
+                enabled = legacySnap.value == true;
+              }
             }
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('AI[settings] read failed for $canonicalId: $e');
+          }
 
-          return _FactoryConfig(id: factoryId, name: name, enabled: enabled);
+          return _FactoryConfig(
+            id: canonicalId,
+            legacyId: legacyId,
+            name: name,
+            enabled: enabled,
+          );
         }),
       );
 

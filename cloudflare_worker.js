@@ -158,6 +158,7 @@ async function markAlertAsSent(alertId, authToken, env) {
 }
 
 async function getFcmTokensForFactory(authToken, env, factoryName) {
+  const targetFactoryId = aiSanitizeFactoryId(factoryName);
   const [usersRes, alertsRes] = await Promise.all([
     fetch(`${env.FB_DB_URL}users.json?auth=${authToken}`),
     fetch(`${env.FB_DB_URL}alerts.json?auth=${authToken}`),
@@ -179,12 +180,87 @@ async function getFcmTokensForFactory(authToken, env, factoryName) {
     for (const [uid, user] of Object.entries(usersData)) {
       if (!user.fcmToken) continue;
       if (user.role === 'supervisor' && supervisorsWithClaimedAlerts.has(uid)) continue;
-      if (user.role === 'admin' || (user.role === 'supervisor' && user.usine === factoryName)) {
+      const userFactoryId = aiSanitizeFactoryId(user.usine || user.factoryId || '');
+      if (user.role === 'admin' || (user.role === 'supervisor' && userFactoryId === targetFactoryId)) {
         tokens.push(user.fcmToken);
       }
     }
   }
   return [...new Set(tokens)];
+}
+
+function describeNotificationTitle(notification) {
+  switch (String(notification?.type || '')) {
+    case 'ai_assigned':
+      return 'AI assignment';
+    case 'collaboration_request':
+      return 'Collaboration request';
+    case 'collaboration_assistant_accepted':
+    case 'collaboration_assistant_removed':
+    case 'collaboration_removed':
+    case 'collaboration_approved':
+    case 'collaboration_rejected':
+      return 'Collaboration update';
+    case 'assistant_assigned':
+      return 'Assistant assignment';
+    case 'help_request':
+    case 'assistance_request':
+      return 'Help request';
+    case 'ai_cross_factory_recommendation':
+      return 'AI recommendation';
+    case 'ai_rejection':
+      return 'AI rejection';
+    default:
+      return 'AlertSys notification';
+  }
+}
+
+async function fanOutPendingNotifications(authToken, env) {
+  const [notificationsRes, usersRes] = await Promise.all([
+    fetch(`${env.FB_DB_URL}notifications.json?auth=${authToken}`),
+    fetch(`${env.FB_DB_URL}users.json?auth=${authToken}`),
+  ]);
+
+  if (!notificationsRes.ok || !usersRes.ok) {
+    console.error('[NOTIFY] Failed to load notifications or users for fan-out');
+    return;
+  }
+
+  const notificationsData = (await notificationsRes.json()) || {};
+  const usersData = (await usersRes.json()) || {};
+  const nowIso = new Date().toISOString();
+
+  for (const [uid, bucket] of Object.entries(notificationsData)) {
+    const user = usersData[uid];
+    const token = user && user.fcmToken ? user.fcmToken : null;
+    if (!token) continue;
+
+    for (const [notifId, notification] of Object.entries(bucket || {})) {
+      if (!notification || notification.pushSent === true) continue;
+
+      const sent = await sendFcmNotification(
+        token,
+        describeNotificationTitle(notification),
+        String(notification.message || notification.type || 'AlertSys notification'),
+        {
+          notificationId: notifId,
+          recipientId: uid,
+          alertId: String(notification.alertId || ''),
+          collabRequestId: String(notification.collabRequestId || ''),
+          type: String(notification.type || ''),
+        },
+        env,
+      );
+
+      if (sent) {
+        await fetch(`${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${authToken}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pushSent: true, pushSentAt: nowIso }),
+        });
+      }
+    }
+  }
 }
 
 async function sendFcmNotification(token, title, body, dataMap, env) {
@@ -198,8 +274,14 @@ async function sendFcmNotification(token, title, body, dataMap, env) {
         token,
         notification: { title, body },
         data: dataMap,
-        android: { priority: 'high' },
-        apns: { headers: { 'apns-priority': '10' } },
+        android: {
+          priority: 'high',
+          notification: { channel_id: 'alerts_high' },
+        },
+        apns: {
+          headers: { 'apns-priority': '10' },
+          payload: { aps: { sound: 'default' } },
+        },
       },
     };
     const res = await fetch(url, {
@@ -524,6 +606,7 @@ async function aiAssignAlert(alertId, supervisor, authToken, env) {
         aiAssigned: true,
         timestamp: nowIso,
         status: 'pending',
+        pushSent: false,
       }),
     }),
     // Audit trail in aiHistory
@@ -539,7 +622,7 @@ async function aiAssignAlert(alertId, supervisor, authToken, env) {
     }),
     // Decision snapshot
     fetch(`${env.FB_DB_URL}ai_decisions/${alertId}.json?auth=${authToken}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         alertId,
@@ -662,13 +745,18 @@ export default {
   // This covers cooldown expiry within 60 seconds of it happening.
   async scheduled(event, env, ctx) {
     console.log('Cron started');
-    ctx.waitUntil(
-      Promise.all([
-        processAlerts(env),
-        checkEscalations(env),
-        runAIAssignments(env),
-      ]),
-    );
+    ctx.waitUntil((async () => {
+      await processAlerts(env);
+      await checkEscalations(env);
+      await runAIAssignments(env);
+      let authToken;
+      try {
+        authToken = await getFirebaseToken(env);
+        await fanOutPendingNotifications(authToken, env);
+      } catch (e) {
+        console.error('[NOTIFY] Fan-out failed in cron:', e);
+      }
+    })());
   },
 
   async fetch(request, env, ctx) {
@@ -690,7 +778,16 @@ export default {
     // Called on: supervisor login, alert resolved, alert returned to queue.
     // Fire-and-forget from client side — responds immediately.
     if (url.pathname === '/ai-retry') {
-      ctx.waitUntil(runAIAssignments(env));
+      ctx.waitUntil((async () => {
+        await runAIAssignments(env);
+        let authToken;
+        try {
+          authToken = await getFirebaseToken(env);
+          await fanOutPendingNotifications(authToken, env);
+        } catch (e) {
+          console.error('[NOTIFY] Fan-out failed after ai-retry:', e);
+        }
+      })());
       return new Response(JSON.stringify({ queued: true }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -698,11 +795,15 @@ export default {
     }
 
     // Default: manual trigger runs everything
-    await Promise.all([
-      processAlerts(env),
-      checkEscalations(env),
-      runAIAssignments(env),
-    ]);
+    await processAlerts(env);
+    await checkEscalations(env);
+    await runAIAssignments(env);
+    try {
+      const authToken = await getFirebaseToken(env);
+      await fanOutPendingNotifications(authToken, env);
+    } catch (e) {
+      console.error('[NOTIFY] Fan-out failed on manual trigger:', e);
+    }
     return new Response('OK', { status: 200, headers: corsHeaders });
   },
 };

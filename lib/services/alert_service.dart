@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -76,7 +77,8 @@ class AlertService {
       'poste': poste,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
       'timestamp': now.toIso8601String(),
-      'description': description.trim().isEmpty ? _defaultDescription(type) : description,
+      'description':
+          description.trim().isEmpty ? _defaultDescription(type) : description,
       'status': 'disponible',
       'comments': [],
       'isCritical': isCritical,
@@ -98,7 +100,8 @@ class AlertService {
         body: jsonEncode({'alertId': alertId}),
       );
     } catch (e) {
-      print('Manual worker trigger failed: $e');
+      debugPrint(
+          'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e');
     }
     return alertId;
   }
@@ -152,6 +155,7 @@ class AlertService {
               'Supervisor $supervisorName suspended an alert. ${reason != null ? "Reason: $reason" : ""}',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
+          'pushSent': false,
         };
         await _db.child('notifications/${entry.key}').push().set(notification);
       }
@@ -160,7 +164,7 @@ class AlertService {
 
   Future<void> resolveAlert(String alertId, String reason, int elapsedMinutes,
       {String? assistingSupervisorId, String? assistingSupervisorName}) async {
-    final updates = {
+    final Map<String, dynamic> updates = {
       'status': 'validee',
       'elapsedTime': elapsedMinutes,
       'resolutionReason': reason,
@@ -173,6 +177,16 @@ class AlertService {
       updates['assistedBySupervisorId'] = assistingSupervisorId;
       updates['assistedBySupervisorName'] = assistingSupervisorName;
     }
+
+    updates['aiAssigned'] = false;
+    updates['aiAssignedAt'] = null;
+    updates['aiAssignmentReason'] = null;
+    updates['aiConfidence'] = null;
+    updates['aiRecommendationPending'] = false;
+    updates['aiRecommendationStatus'] = null;
+    updates['aiRecommendedSupervisorId'] = null;
+    updates['aiRecommendedSupervisorName'] = null;
+    updates['aiRecommendationReason'] = null;
 
     await _db.child('alerts/$alertId').update(updates);
   }
@@ -189,7 +203,9 @@ class AlertService {
 
   Future<void> sendHelpRequest(
       String targetUserId, Map<String, dynamic> request) async {
-    await _db.child('notifications/$targetUserId').push().set(request);
+    final notification = Map<String, dynamic>.from(request)
+      ..putIfAbsent('pushSent', () => false);
+    await _db.child('notifications/$targetUserId').push().set(notification);
   }
 
   Future<void> createHelpRequest(String alertId, String requesterId,
@@ -240,6 +256,7 @@ class AlertService {
         'message': '$assistantName accepted your assistance request',
         'timestamp': DateTime.now().toIso8601String(),
         'status': 'pending',
+        'pushSent': false,
       };
       await _db.child('notifications/$requesterId').push().set(notification);
     }
@@ -260,6 +277,7 @@ class AlertService {
       'message': 'Your assistance request was declined',
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
+      'pushSent': false,
     };
     await _db.child('notifications/$requesterId').push().set(notification);
   }
@@ -299,6 +317,7 @@ class AlertService {
           'message': 'New alert from $usine: $alertType',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
+          'pushSent': false,
         };
         await _db.child('notifications/${entry.key}').push().set(notification);
       }
