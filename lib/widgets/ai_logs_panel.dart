@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/ai_assignment_service.dart';
 import '../theme.dart';
@@ -450,6 +451,52 @@ class _LogTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (entry.status == AILogStatus.recommended) ...[
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _declineRecommendation(context),
+                          icon: const Icon(Icons.close,
+                              size: 14, color: Colors.white),
+                          label: const Text('Decline',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: t.red,
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 6, horizontal: 6),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6)),
+                            minimumSize: const Size(0, 30),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _approveRecommendation(context),
+                          icon: const Icon(Icons.check,
+                              size: 14, color: Colors.white),
+                          label: const Text('Approve',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: t.green,
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 6, horizontal: 6),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6)),
+                            minimumSize: const Size(0, 30),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -503,6 +550,70 @@ class _LogTile extends StatelessWidget {
         );
       }
     }
+  }
+
+  Future<void> _approveRecommendation(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final ok =
+        await AIAssignmentService.instance.approveCrossFactoryRecommendation(
+      alertId: entry.alertId,
+      approverId: user?.uid,
+      approverName: user?.email?.split('@').first,
+    );
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Recommendation approved and assigned'
+            : 'Recommendation is no longer pending'),
+        backgroundColor: ok ? context.appTheme.green : Colors.blueGrey,
+      ),
+    );
+  }
+
+  Future<void> _declineRecommendation(BuildContext context) async {
+    final t = context.appTheme;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Decline recommendation?'),
+        content: Text(
+          'This will reject the AI cross-factory transfer recommendation for this alert.',
+          style: TextStyle(color: t.text),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(_, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(_, true),
+            style: ElevatedButton.styleFrom(backgroundColor: t.red),
+            child: const Text('Decline', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    final declined =
+        await AIAssignmentService.instance.declineCrossFactoryRecommendation(
+      alertId: entry.alertId,
+      approverId: user?.uid,
+      approverName: user?.email?.split('@').first,
+    );
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(declined
+            ? 'Recommendation declined'
+            : 'Recommendation is no longer pending'),
+        backgroundColor: declined ? t.orange : Colors.blueGrey,
+      ),
+    );
   }
 
   Color _statusColor(AILogStatus s, AppTheme t) {

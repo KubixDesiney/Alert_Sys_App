@@ -780,6 +780,219 @@ class AIAssignmentService extends ChangeNotifier {
     }
   }
 
+  /// PM approval for cross-factory recommendation.
+  /// Returns true when the recommendation was applied.
+  Future<bool> approveCrossFactoryRecommendation({
+    required String alertId,
+    String? approverId,
+    String? approverName,
+  }) async {
+    try {
+      final snap = await _db.child('alerts/$alertId').get();
+      if (!snap.exists || snap.value == null) return false;
+
+      final data = Map<String, dynamic>.from(snap.value as Map);
+      final pending = data['aiRecommendationPending'] == true;
+      final status = '${data['status'] ?? ''}';
+      final currentSupervisor = '${data['superviseurId'] ?? ''}'.trim();
+      final recommendedId = '${data['aiRecommendedSupervisorId'] ?? ''}'.trim();
+      final recommendedName =
+          '${data['aiRecommendedSupervisorName'] ?? ''}'.trim();
+
+      if (!pending || recommendedId.isEmpty) return false;
+      if (status != 'disponible' || currentSupervisor.isNotEmpty) {
+        debugPrint(
+            'approveCrossFactoryRecommendation skipped: alert is no longer assignable ($alertId)');
+        return false;
+      }
+
+      final actorId = approverId ?? FirebaseAuth.instance.currentUser?.uid;
+      final actorName = approverName ??
+          FirebaseAuth.instance.currentUser?.email?.split('@').first ??
+          'Production Manager';
+      final now = DateTime.now();
+      final nowIso = now.toIso8601String();
+
+      await _db.child('alerts/$alertId').update({
+        'status': 'en_cours',
+        'superviseurId': recommendedId,
+        'superviseurName':
+            recommendedName.isNotEmpty ? recommendedName : 'Supervisor',
+        'takenAtTimestamp': nowIso,
+        'aiAssigned': true,
+        'aiAssignedAt': nowIso,
+        'aiRecommendationPending': false,
+        'aiRecommendationStatus': 'approved',
+        'aiRecommendationApprovedBy': actorName,
+        'aiRecommendationApprovedById': actorId,
+        'aiRecommendationApprovedAt': nowIso,
+      });
+
+      await _db.child('alerts/$alertId/aiHistory').push().set({
+        'event': 'recommended_cross_factory_approved',
+        'recommendedSupervisorId': recommendedId,
+        'recommendedSupervisorName':
+            recommendedName.isNotEmpty ? recommendedName : null,
+        'approvedBy': actorName,
+        'approvedById': actorId,
+        'timestamp': nowIso,
+      });
+
+      if (_decisionStoreAvailable) {
+        try {
+          await _db.child('ai_decisions/$alertId').update({
+            'decisionMode': 'recommendation_pm_approved',
+            'requiresPmApproval': false,
+            'assignedTo': recommendedId,
+            'assignedToName': recommendedName,
+            'approvedBy': actorName,
+            'approvedById': actorId,
+            'approvedAt': nowIso,
+            'timestamp': nowIso,
+          });
+        } catch (e) {
+          if (_isPermissionDenied(e)) {
+            _decisionStoreAvailable = false;
+          }
+        }
+      }
+
+      if (recommendedId.isNotEmpty) {
+        await _db.child('notifications/$recommendedId').push().set({
+          'type': 'ai_assigned',
+          'alertId': alertId,
+          'message':
+              'PM approved AI cross-factory transfer. Alert assigned to you.',
+          'timestamp': nowIso,
+          'status': 'pending',
+          'pushSent': false,
+        });
+      }
+
+      await _recordFeedback(
+        eventType: 'accepted_assignment',
+        alertId: alertId,
+        supervisorId: recommendedId,
+        supervisorName: recommendedName,
+        details: {
+          'acceptedByPm': true,
+          'approvedBy': actorName,
+          'approvedById': actorId,
+        },
+      );
+
+      final idx = _logs.lastIndexWhere(
+          (l) => l.alertId == alertId && l.status == AILogStatus.recommended);
+      if (idx >= 0) {
+        _logs[idx] = _logs[idx].copyWith(status: AILogStatus.success);
+      }
+
+      _supervisorCooldown[recommendedId] = now;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('approveCrossFactoryRecommendation error: $e');
+      return false;
+    }
+  }
+
+  /// PM rejection for cross-factory recommendation.
+  /// Returns true when the recommendation was declined.
+  Future<bool> declineCrossFactoryRecommendation({
+    required String alertId,
+    String? reason,
+    String? approverId,
+    String? approverName,
+  }) async {
+    try {
+      final snap = await _db.child('alerts/$alertId').get();
+      if (!snap.exists || snap.value == null) return false;
+
+      final data = Map<String, dynamic>.from(snap.value as Map);
+      final pending = data['aiRecommendationPending'] == true;
+      final recommendedId = '${data['aiRecommendedSupervisorId'] ?? ''}'.trim();
+      final recommendedName =
+          '${data['aiRecommendedSupervisorName'] ?? ''}'.trim();
+      if (!pending) return false;
+
+      final actorId = approverId ?? FirebaseAuth.instance.currentUser?.uid;
+      final actorName = approverName ??
+          FirebaseAuth.instance.currentUser?.email?.split('@').first ??
+          'Production Manager';
+      final now = DateTime.now();
+      final nowIso = now.toIso8601String();
+      final rejectionReason =
+          (reason != null && reason.trim().isNotEmpty) ? reason.trim() : null;
+
+      await _db.child('alerts/$alertId').update({
+        'aiAssigned': false,
+        'aiRecommendationPending': false,
+        'aiRecommendationStatus': 'declined',
+        'aiRecommendationDeclinedBy': actorName,
+        'aiRecommendationDeclinedById': actorId,
+        'aiRecommendationDeclinedAt': nowIso,
+        'aiRecommendationDeclineReason': rejectionReason,
+      });
+
+      await _db.child('alerts/$alertId/aiHistory').push().set({
+        'event': 'recommended_cross_factory_declined',
+        'recommendedSupervisorId': recommendedId,
+        'recommendedSupervisorName':
+            recommendedName.isNotEmpty ? recommendedName : null,
+        'declinedBy': actorName,
+        'declinedById': actorId,
+        'reason': rejectionReason,
+        'timestamp': nowIso,
+      });
+
+      if (_decisionStoreAvailable) {
+        try {
+          await _db.child('ai_decisions/$alertId').update({
+            'decisionMode': 'recommendation_pm_declined',
+            'requiresPmApproval': false,
+            'declinedBy': actorName,
+            'declinedById': actorId,
+            'declineReason': rejectionReason,
+            'declinedAt': nowIso,
+            'timestamp': nowIso,
+          });
+        } catch (e) {
+          if (_isPermissionDenied(e)) {
+            _decisionStoreAvailable = false;
+          }
+        }
+      }
+
+      final idx = _logs.lastIndexWhere(
+          (l) => l.alertId == alertId && l.status == AILogStatus.recommended);
+      if (idx >= 0) {
+        _logs[idx] = _logs[idx].copyWith(
+          status: AILogStatus.rejected,
+          rejectionReason: rejectionReason ?? 'Declined by PM',
+        );
+      }
+
+      _markAlertSkipped(alertId);
+      await _recordFeedback(
+        eventType: 'rejected_assignment',
+        alertId: alertId,
+        supervisorId: recommendedId,
+        supervisorName: recommendedName,
+        details: {
+          'rejectedByPm': true,
+          'declinedBy': actorName,
+          'declinedById': actorId,
+          'reason': rejectionReason,
+        },
+      );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('declineCrossFactoryRecommendation error: $e');
+      return false;
+    }
+  }
+
   // ── Scoring ───────────────────────────────────────────────────────────────
 
   List<AICandidate> _evaluateAll(AlertModel alert, List<_SupRecord> supervisors,
