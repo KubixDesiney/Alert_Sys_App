@@ -29,6 +29,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
   final _commentController = TextEditingController();
   final _reasonController = TextEditingController();
   bool _isAiLoading = false;
+  bool _isRecommendationActionLoading = false;
   String? _aiSuggestion;
   final _collabService = CollaborationService();
 
@@ -128,6 +129,47 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     }
   }
 
+  Future<void> _handleRecommendationDecision({
+    required AlertModel alert,
+    required bool approve,
+  }) async {
+    if (_isRecommendationActionLoading) return;
+    setState(() => _isRecommendationActionLoading = true);
+
+    try {
+      final service = AIAssignmentService.instance;
+      final ok = approve
+          ? await service.approveCrossFactoryRecommendation(alertId: alert.id)
+          : await service.declineCrossFactoryRecommendation(alertId: alert.id);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? (approve
+                  ? 'Recommendation approved. Alert assigned.'
+                  : 'Recommendation declined.')
+              : 'Recommendation is no longer pending.'),
+          backgroundColor:
+              ok ? (approve ? Colors.green : Colors.orange) : Colors.blueGrey,
+        ),
+      );
+
+      setState(() {
+        _alertFuture = _loadAlert();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Action failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isRecommendationActionLoading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AlertProvider>();
@@ -219,6 +261,52 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                               AIAssignmentService.confidenceScaleDescription(
                                   alert.aiConfidence!),
                               style: const TextStyle(color: Colors.black54),
+                            ),
+                          ],
+                          if (alert.aiRecommendationPending) ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: _isRecommendationActionLoading
+                                        ? null
+                                        : () => _handleRecommendationDecision(
+                                              alert: alert,
+                                              approve: false,
+                                            ),
+                                    icon: const Icon(Icons.close,
+                                        color: Colors.white),
+                                    label: Text(_isRecommendationActionLoading
+                                        ? 'Please wait...'
+                                        : 'Decline'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFFFFB3BA),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: _isRecommendationActionLoading
+                                        ? null
+                                        : () => _handleRecommendationDecision(
+                                              alert: alert,
+                                              approve: true,
+                                            ),
+                                    icon: const Icon(Icons.check,
+                                        color: Colors.white),
+                                    label: Text(_isRecommendationActionLoading
+                                        ? 'Please wait...'
+                                        : 'Approve'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ],

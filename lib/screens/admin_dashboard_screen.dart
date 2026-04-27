@@ -23,6 +23,7 @@ import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
+import '../services/ai_assignment_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
 import 'alerts_tree_tab.dart';
@@ -268,8 +269,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed: ${e.toString()}'),
-              backgroundColor: _red),
+              content: Text('Failed: ${e.toString()}'), backgroundColor: _red),
         );
       }
     }
@@ -578,8 +578,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     alert.id, filtered[i].id, filtered[i].fullName);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                      content: Text(
-                          'Assigned ${filtered[i].fullName} as assistant'),
+                      content:
+                          Text('Assigned ${filtered[i].fullName} as assistant'),
                       backgroundColor: _green),
                 );
               },
@@ -664,7 +664,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             title: const Row(children: [
               Icon(Icons.notification_important, size: 20, color: Colors.red),
               SizedBox(width: 8),
-              Text('Simulate Custom Alert', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Simulate Custom Alert',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ]),
             content: SingleChildScrollView(
               child: Column(
@@ -914,8 +915,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       decoration: BoxDecoration(
                           color: _navyLt,
                           borderRadius: BorderRadius.circular(10)),
-                      child: const Icon(Icons.person_add,
-                          color: _navy, size: 20)),
+                      child:
+                          const Icon(Icons.person_add, color: _navy, size: 20)),
                   const SizedBox(width: 12),
                   const Text('New Supervisor Account',
                       style: TextStyle(
@@ -981,8 +982,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         border: Border.all(color: context.appTheme.border),
                         borderRadius: BorderRadius.circular(9)),
                     child: Row(children: [
-                      const Icon(Icons.calendar_today,
-                          size: 16, color: _muted),
+                      const Icon(Icons.calendar_today, size: 16, color: _muted),
                       const SizedBox(width: 8),
                       Text(_fmtDate(hired),
                           style: const TextStyle(fontSize: 14)),
@@ -1265,7 +1265,151 @@ class _HeaderState extends State<_Header> {
                             itemCount: _notifications.length,
                             itemBuilder: (context, index) {
                               final n = _notifications[index];
-                              if (n['type'] == 'help_request') {
+                              if (n['type'] ==
+                                  'ai_cross_factory_recommendation') {
+                                final alertId = (n['alertId'] ?? '').toString();
+                                final recName =
+                                    (n['recommendedSupervisorName'] ?? '')
+                                        .toString();
+                                final recReason =
+                                    (n['reason'] ?? '').toString();
+
+                                Future<void> completeDecision(
+                                    {required bool approve}) async {
+                                  if (alertId.isEmpty) return;
+                                  final current =
+                                      FirebaseAuth.instance.currentUser;
+                                  final approverId = current?.uid;
+                                  final approverName =
+                                      current?.email?.split('@').first ??
+                                          'Production Manager';
+
+                                  final ok = approve
+                                      ? await AIAssignmentService.instance
+                                          .approveCrossFactoryRecommendation(
+                                          alertId: alertId,
+                                          approverId: approverId,
+                                          approverName: approverName,
+                                        )
+                                      : await AIAssignmentService.instance
+                                          .declineCrossFactoryRecommendation(
+                                          alertId: alertId,
+                                          approverId: approverId,
+                                          approverName: approverName,
+                                        );
+
+                                  await _db
+                                      .child(
+                                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                      .remove();
+
+                                  if (context.mounted) {
+                                    setModalState(() {
+                                      _notifications.removeWhere(
+                                          (item) => item['id'] == n['id']);
+                                      _notificationCount = _notifications
+                                          .where((x) => x['status'] != 'read')
+                                          .length;
+                                    });
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(ok
+                                            ? (approve
+                                                ? 'Recommendation approved'
+                                                : 'Recommendation declined')
+                                            : 'Recommendation was already processed'),
+                                        backgroundColor: ok
+                                            ? (approve
+                                                ? Colors.green
+                                                : Colors.orange)
+                                            : Colors.blueGrey,
+                                      ),
+                                    );
+                                  }
+                                }
+
+                                return ListTile(
+                                  title: Text(
+                                    n['message'] ??
+                                        'AI cross-factory recommendation',
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (recName.isNotEmpty)
+                                        Text('Recommended: $recName'),
+                                      if (recReason.isNotEmpty)
+                                        Text(recReason,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis),
+                                    ],
+                                  ),
+                                  trailing: SizedBox(
+                                    width: 188,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            onPressed: () => completeDecision(
+                                                approve: false),
+                                            icon: const Icon(Icons.close,
+                                                size: 14, color: Colors.white),
+                                            label: const Text('Decline',
+                                                style: TextStyle(fontSize: 11)),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  const Color(0xFFFFB3BA),
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 8),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            onPressed: () => completeDecision(
+                                              approve: true,
+                                            ),
+                                            icon: const Icon(Icons.check,
+                                                size: 14, color: Colors.white),
+                                            label: const Text('Approve',
+                                                style: TextStyle(fontSize: 11)),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 8),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  onTap: () async {
+                                    await _db
+                                        .child(
+                                            'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                                        .remove();
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => AlertDetailScreen(
+                                              alertId: alertId),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                );
+                              } else if (n['type'] == 'help_request') {
                                 return ListTile(
                                   title: Text(n['message'] ?? 'Help request'),
                                   subtitle:
