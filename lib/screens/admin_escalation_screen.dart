@@ -246,8 +246,16 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
   }
 
   Stream<List<dynamic>> _getEscalatedAlertsCount() {
-    // For now, return empty stream - will be implemented when escalated alerts are ready
-    return Stream.value([]);
+    final database = FirebaseDatabase.instance.ref();
+    return database.child('alerts').onValue.map((snapshot) {
+      if (!snapshot.snapshot.exists) return [];
+      final alertsMap = snapshot.snapshot.value;
+      if (alertsMap == null) return [];
+      final entries = Map<String, dynamic>.from(alertsMap as Map).entries.toList();
+      return entries
+          .where((entry) => entry.value['isEscalated'] == true)
+          .toList();
+    });
   }
 }
 
