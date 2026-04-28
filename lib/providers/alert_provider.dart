@@ -7,8 +7,10 @@ import '../services/alert_service.dart';
 import '../services/ai_service.dart';
 import 'package:rxdart/rxdart.dart';
 
-const String _aiRetryUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/ai-retry';
-const String _notifyUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/notify';
+const String _aiRetryUrl =
+    'https://alert-notifier.aziz-nagati01.workers.dev/ai-retry';
+const String _notifyUrl =
+    'https://alert-notifier.aziz-nagati01.workers.dev/notify';
 
 class AlertProvider extends ChangeNotifier {
   final AlertService _service = AlertService();
@@ -108,14 +110,17 @@ class AlertProvider extends ChangeNotifier {
       );
     }
 
-    _alertsSubscription =
-        Rx.combineLatest3<List<AlertModel>, List<AlertModel>, List<AlertModel>,
-            List<AlertModel>>(
+    _alertsSubscription = Rx.combineLatest3<List<AlertModel>, List<AlertModel>,
+        List<AlertModel>, List<AlertModel>>(
       usineStream,
       assistantStream,
       supervisorStream,
       (usineAlerts, assistantAlerts, supervisorAlerts) {
-        final combined = [...usineAlerts, ...assistantAlerts, ...supervisorAlerts];
+        final combined = [
+          ...usineAlerts,
+          ...assistantAlerts,
+          ...supervisorAlerts
+        ];
         final seen = <String>{};
         return combined.where((a) => seen.add(a.id)).toList();
       },
@@ -255,9 +260,19 @@ class AlertProvider extends ChangeNotifier {
       .toList();
 
   /// Alerts where this supervisor was the assistant (not the main claimant).
-  List<AlertModel> assistedAlerts(String superviseurId) => _alerts
-      .where((a) => a.status == 'validee' && a.assistantId == superviseurId)
-      .toList();
+  List<AlertModel> assistedAlerts(String superviseurId) {
+    return _alerts.where((a) {
+      if (a.status != 'validee') return false;
+      // Old single assistant check
+      if (a.assistantId == superviseurId) return true;
+      // New collaborators list check
+      if (a.collaborators != null &&
+          a.collaborators!.any((c) => c['id'] == superviseurId)) {
+        return true;
+      }
+      return false;
+    }).toList();
+  }
 
   DateTime get currentTime => _currentTime;
   String get currentSuperviseurId =>

@@ -433,31 +433,29 @@ class CollaborationService {
         print('Assigned assistant $assistantName to alert ${request.alertId}');
       }
 
-      // 2. Return assistant's existing alerts to unclaimed (do NOT cancel them)
-      if (confirmCancelOriginal &&
-          cancelExistingAlertIds != null &&
-          cancelExistingAlertIds.isNotEmpty) {
-        for (final alertId in cancelExistingAlertIds) {
-          await _db.child('alerts/$alertId').update({
-            'status': 'disponible',
-            'superviseurId': null,
-            'superviseurName': null,
-            'assistantId': null,
-            'assistantName': null,
-            'takenAtTimestamp': null,
-          });
-          print('Returned assistant\'s alert $alertId to unclaimed queue');
-        }
+         // Build list of accepted assistants
+    final List<String> acceptedIds = [];
+    final List<String> acceptedNames = [];
+    for (int i = 0; i < request.targetSupervisorIds.length; i++) {
+      final id = request.targetSupervisorIds[i];
+      final name = request.targetSupervisorNames[i];
+      final decision = request.assistantDecisions[id] ?? 'pending';
+      if (decision == 'accepted') {
+        acceptedIds.add(id);
+        acceptedNames.add(name);
       }
+    }
 
-      // 3. Mark collaboration request as approved
-      await _db.child('collaboration_requests/$requestId').update({
-        'pmApproved': true,
-        'status': 'approved',
-        'approvedBy': approverId,
-        'approvedAt': DateTime.now().toIso8601String(),
-      });
+    final collaboratorsList = List.generate(acceptedIds.length, (i) => {
+      'id': acceptedIds[i],
+      'name': acceptedNames[i],
+    });
 
+     await _db.child('alerts/${request.alertId}').update({
+      'collaborators': collaboratorsList,
+      'assistantId': null,   // use collaborators instead
+      'assistantName': null,
+    });
       // 4. Send notifications
       final notification = {
         'type': 'collaboration_approved',
