@@ -468,12 +468,32 @@ async function handleGeminiRequest(request, env) {
   }
 }
 
+// Notification types that always reach a supervisor even when they have an
+// active alert claimed. Everything else is suppressed while they are busy.
+const COLLAB_NOTIF_TYPES = new Set([
+  'collaboration_request',
+  'collaboration_assistant_accepted',
+  'collaboration_assistant_removed',
+  'collaboration_removed',
+  'collaboration_approved',
+  'collaboration_rejected',
+  'collaboration_request_admin',
+  'assistant_assigned',
+]);
+
 // ============================================================
 // Fan‑out pending notifications (used only by /notify endpoint, not cron)
 // ============================================================
 async function fanOutPendingNotifications(env, ctx) {
-  const { token, usersMap } = ctx;
+  const { token, usersMap, alertsMap } = ctx;
   const nowIso = new Date().toISOString();
+
+  // Build the set of supervisors currently handling a claimed alert so we can
+  // suppress irrelevant pushes (new alerts, AI assignments, etc.) for them.
+  const busySupervisors = new Set();
+  for (const a of Object.values(alertsMap || {})) {
+    if (a.status === 'en_cours' && a.superviseurId) busySupervisors.add(a.superviseurId);
+  }
 
   const notifRes = await fetch(`${env.FB_DB_URL}notifications.json?auth=${token}`);
   if (!notifRes.ok) return;
@@ -487,9 +507,14 @@ async function fanOutPendingNotifications(env, ctx) {
     const fcmToken = user?.fcmToken;
     if (!fcmToken) continue;
 
+    const isBusySupervisor = user.role === 'supervisor' && busySupervisors.has(uid);
+
     for (const [notifId, notif] of Object.entries(bucket || {})) {
       if (processed >= MAX_FANOUT) break outer;
       if (!notif || notif.pushSent === true || notif.pushSending === true) continue;
+
+      // Busy supervisors only receive collaboration-related pushes.
+      if (isBusySupervisor && !COLLAB_NOTIF_TYPES.has(String(notif.type || ''))) continue;
 
       const url = `${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${token}`;
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
