@@ -5,11 +5,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../screens/alert_detail_screen.dart';
+import '../providers/alert_provider.dart';
+import 'voice_command_dispatcher.dart';
+import 'voice_command_parser.dart';
+import 'voice_service.dart';
 
 class FcmService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
   static String? pendingAlertId;
+
+  // Action ID exposed to the OS for the inline-reply voice button. The
+  // notification handler matches on this string to route input transcripts
+  // through the voice command pipeline.
+  static const String voiceReplyActionId = 'voice_reply';
+  // Provider injected once at app startup; the FCM callback runs in a
+  // detached context so we can't go through `Provider.of(context)`.
+  static AlertProvider? alertProvider;
 
   static const AndroidNotificationChannel _androidChannel =
       AndroidNotificationChannel(
@@ -32,14 +44,44 @@ class FcmService {
     await _updateToken();
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings(
+    // Register an iOS notification category that exposes a text-input action.
+    // We reference this category by id ('alerts_voice') on every alert
+    // notification so the reply button appears when long-pressed.
+    final iosVoiceCategory = DarwinNotificationCategory(
+      'alerts_voice',
+      actions: <DarwinNotificationAction>[
+        DarwinNotificationAction.text(
+          voiceReplyActionId,
+          'Send',
+          buttonTitle: 'Voice command',
+          placeholder: 'Say a command',
+          options: <DarwinNotificationActionOption>{
+            DarwinNotificationActionOption.foreground,
+          },
+        ),
+      ],
+      options: <DarwinNotificationCategoryOption>{
+        DarwinNotificationCategoryOption.hiddenPreviewShowTitle,
+      },
+    );
+    final iosInit = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
+      notificationCategories: <DarwinNotificationCategory>[iosVoiceCategory],
     );
     await _localNotifications.initialize(
-      const InitializationSettings(android: androidInit, iOS: iosInit),
+      InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: (response) {
+        // Inline voice reply from the notification — fires on locked screen
+        // without launching the app UI. Parse + dispatch the same way an
+        // in-app mic press does, then speak the result back via TTS.
+        if (response.actionId == voiceReplyActionId) {
+          final spoken = response.input?.trim() ?? '';
+          if (spoken.isEmpty) return;
+          _handleVoiceReply(spoken);
+          return;
+        }
         final alertId = response.payload;
         if (alertId != null && alertId.isNotEmpty) {
           _navigateToAlertDetailById(alertId);
@@ -94,11 +136,30 @@ class FcmService {
           playSound: true,
           enableVibration: true,
           icon: '@mipmap/ic_launcher',
+          // Inline voice-reply action — visible on the lock screen because
+          // the channel is high importance. Speech-to-text is performed by
+          // the OS; we receive the transcript in the response handler.
+          actions: <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              voiceReplyActionId,
+              'Voice command',
+              icon: const DrawableResourceAndroidBitmap('@android:drawable/ic_btn_speak_now'),
+              inputs: <AndroidNotificationActionInput>[
+                AndroidNotificationActionInput(
+                  label: 'Say a command',
+                  allowFreeFormInput: true,
+                ),
+              ],
+              showsUserInterface: false,
+              cancelNotification: false,
+            ),
+          ],
         ),
         iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
+          categoryIdentifier: 'alerts_voice',
         ),
       ),
       payload: alertId.toString(),
@@ -136,6 +197,20 @@ class FcmService {
         ),
       );
     }
+  }
+
+  // Run a transcribed voice reply from the lock-screen notification action.
+  // Static so it can be invoked from the platform callback without a `this`.
+  static Future<void> _handleVoiceReply(String spoken) async {
+    final cmd = VoiceCommandParser.parse(spoken);
+    final provider = alertProvider;
+    if (provider == null) {
+      await VoiceService.instance
+          .speak('App is starting up. Please try again.');
+      return;
+    }
+    final dispatcher = VoiceCommandDispatcher(provider);
+    await dispatcher.execute(cmd);
   }
 
   void _navigateToAlertDetailById(String alertId) {

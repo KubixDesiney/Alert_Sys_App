@@ -1,5 +1,8 @@
 class AlertModel {
   final String id;
+  // Short, human-speakable, auto-incrementing number assigned at creation.
+  // Voice commands reference this (e.g. "claim alert 1025"). 0 = legacy/unmigrated.
+  final int alertNumber;
   final String type;
   final bool isCritical;
   final String? criticalNote; // ✅ NEW
@@ -41,6 +44,7 @@ class AlertModel {
 
   AlertModel({
     required this.id,
+    this.alertNumber = 0,
     required this.type,
     required this.usine,
     required this.convoyeur,
@@ -90,6 +94,7 @@ class AlertModel {
         : null;
     return AlertModel(
       id: id,
+      alertNumber: (data['alertNumber'] as num?)?.toInt() ?? 0,
       type: data['type'] ?? 'qualite',
       isCritical: data['isCritical'] ?? false,
       criticalNote: data['criticalNote'],
@@ -138,6 +143,7 @@ class AlertModel {
   }
 
   Map<String, dynamic> toMap() => {
+        'alertNumber': alertNumber,
         'type': type,
         'isCritical': isCritical,
         'criticalNote': criticalNote,
@@ -220,6 +226,7 @@ class AlertModel {
   }) =>
       AlertModel(
         id: id,
+        alertNumber: alertNumber,
         type: type,
         isCritical: isCritical ?? this.isCritical,
         criticalNote: criticalNote ?? this.criticalNote,

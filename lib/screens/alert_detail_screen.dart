@@ -7,6 +7,7 @@ import '../providers/alert_provider.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
 import '../services/ai_assignment_service.dart';
+import '../theme.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
@@ -174,7 +175,15 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<AlertProvider>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Alert Details')),
+      appBar: AppBar(
+        title: FutureBuilder<AlertModel>(
+          future: _alertFuture,
+          builder: (context, snap) {
+            final n = snap.data?.alertNumber ?? 0;
+            return Text(n > 0 ? 'Alert #$n' : 'Alert Details');
+          },
+        ),
+      ),
       body: FutureBuilder<AlertModel>(
         future: _alertFuture,
         builder: (context, snapshot) {
@@ -193,6 +202,28 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (alert.alertNumber > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: context.appTheme.navyLt,
+                                borderRadius: BorderRadius.circular(99),
+                                border: Border.all(
+                                    color: context.appTheme.navy
+                                        .withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                'Alert #${alert.alertNumber}',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: context.appTheme.navy),
+                              ),
+                            ),
+                          ),
                         Text('Type: ${alert.type}',
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),

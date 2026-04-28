@@ -12,6 +12,7 @@ import '../services/auth_service.dart';
 import '../theme.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
+import '../widgets/voice_command_button.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
 import '../models/collaboration_model.dart';
@@ -131,6 +132,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           const CollaborationProgressScreen(),
         ],
       ),
+      // Hands-free voice command launcher. Sits above the bottom nav so it's
+      // reachable on both dashboard pages without obstructing alert cards.
+      floatingActionButton: const VoiceCommandButton(),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: _DashboardBottomNav(
         currentIndex: _currentPage,
         onTap: _goToPage,
@@ -2179,6 +2184,23 @@ class _AlertRow extends StatelessWidget {
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: _navy))),
+                if (alert.alertNumber > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFE8F0F8),
+                          borderRadius: BorderRadius.circular(99)),
+                      child: Text('#${alert.alertNumber}',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _navy,
+                              fontFamily: 'monospace')),
+                    ),
+                  ),
                 if (alert.status == 'en_cours' &&
                     alert.superviseurId == currentUserId &&
                     onCriticalToggle != null)
