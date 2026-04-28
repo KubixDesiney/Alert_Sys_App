@@ -126,8 +126,10 @@ class _OverviewTabState extends State<_OverviewTab> {
         return widget.alerts;
       case 'validated':
         return widget.alerts.where((a) => a.status == 'validee').toList();
+      case 'en_cours':
+        return widget.alerts.where((a) => a.status == 'en_cours').toList();
       case 'pending':
-        return widget.alerts.where((a) => a.status != 'validee').toList();
+        return widget.alerts.where((a) => a.status == 'disponible').toList();
       case 'qualite':
         return widget.alerts.where((a) => a.type == 'qualite').toList();
       case 'critical':
@@ -176,8 +178,15 @@ class _OverviewTabState extends State<_OverviewTab> {
     };
   }
 
-  List<String> _usines() =>
-      ['all', ...widget.allAlerts.map((a) => a.usine).toSet().toList()..sort()];
+  List<String> _usines() => [
+        'all',
+        ...widget.allAlerts
+            .map((a) => a.usine)
+            .where((u) => u.isNotEmpty && u != 'all')
+            .toSet()
+            .toList()
+          ..sort()
+      ];
 
   // Use hierarchy-based convoyeurs and postes
   List<String> _convoyeursForFilter() => _convoyeurs();
@@ -394,38 +403,16 @@ class _OverviewTabState extends State<_OverviewTab> {
           const SizedBox(height: 14),
 
           // Active filter banner
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.filter_alt_outlined, size: 15, color: _blue),
-                const SizedBox(width: 6),
-                const Text(
-                  'Active filter:  ',
-                  style: TextStyle(fontSize: 12, color: _muted),
-                ),
-                _FilterChip(label: widget.timeRangeLabel, onRemove: null),
-                const SizedBox(width: 6),
-                _FilterChip(
-                  label: widget.selectedUsine == 'all'
-                      ? 'Default'
-                      : widget.selectedUsine,
-                  onRemove: widget.selectedUsine == 'all'
-                      ? null
-                      : () => widget.onUsineChange('all'),
-                ),
-                const Spacer(),
-                Text(
-                  widget.timeRangeSubtitle,
-                  style: const TextStyle(fontSize: 11, color: _muted),
-                ),
-              ],
-            ),
+          _ActiveFilterBanner(
+            timeRange: widget.timeRange,
+            timeRangeLabel: widget.timeRangeLabel,
+            selectedUsine: widget.selectedUsine,
+            filterConvoyeur: widget.filterConvoyeur,
+            filterPoste: widget.filterPoste,
+            filterType: widget.filterType,
+            filterStatus: widget.filterStatus,
+            onRemoveUsine: () => widget.onUsineChange('all'),
+            onReset: widget.onReset,
           ),
           const SizedBox(height: 20),
 
@@ -832,12 +819,16 @@ class _OverviewTabState extends State<_OverviewTab> {
                         value: widget.timeRange,
                         items: const [
                           DropdownMenuItem(
+                              value: 'all',
+                              child: Text('All Time',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
                               value: 'today',
                               child: Text('Today',
                                   style: TextStyle(fontSize: 13))),
                           DropdownMenuItem(
                               value: 'week',
-                              child: Text('Last Week',
+                              child: Text('Last 7 Days',
                                   style: TextStyle(fontSize: 13))),
                           DropdownMenuItem(
                               value: 'month',
@@ -1093,17 +1084,140 @@ class _UnclaimedStatCard extends StatelessWidget {
   }
 }
 
-// ── Helper widgets (same as original) ─────────────────────────────────────
-class _FilterChip extends StatelessWidget {
+// ── Helper widgets ──────────────────────────────────────────────────────────
+
+class _ActiveFilterBanner extends StatelessWidget {
+  final String timeRange;
+  final String timeRangeLabel;
+  final String selectedUsine;
+  final String filterConvoyeur;
+  final String filterPoste;
+  final String filterType;
+  final String filterStatus;
+  final VoidCallback onRemoveUsine;
+  final VoidCallback onReset;
+
+  const _ActiveFilterBanner({
+    required this.timeRange,
+    required this.timeRangeLabel,
+    required this.selectedUsine,
+    required this.filterConvoyeur,
+    required this.filterPoste,
+    required this.filterType,
+    required this.filterStatus,
+    required this.onRemoveUsine,
+    required this.onReset,
+  });
+
+  bool get _hasNonDefaultFilters =>
+      timeRange != 'all' ||
+      selectedUsine != 'all' ||
+      filterConvoyeur != 'all' ||
+      filterPoste != 'all' ||
+      filterType != 'all' ||
+      filterStatus != 'all';
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_hasNonDefaultFilters) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, size: 15, color: _blue),
+            const SizedBox(width: 6),
+            const Text(
+              'Showing all alerts — no filters active',
+              style: TextStyle(fontSize: 12, color: _blue, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Non-default filters active — show amber warning
+    final chips = <Widget>[];
+    if (timeRange != 'all') {
+      chips.add(_ActiveChip(label: timeRangeLabel, color: _orange));
+    }
+    if (selectedUsine != 'all') {
+      chips.add(_ActiveChip(label: selectedUsine, color: _orange, onRemove: onRemoveUsine));
+    }
+    if (filterConvoyeur != 'all') {
+      chips.add(_ActiveChip(label: 'Line $filterConvoyeur', color: _orange));
+    }
+    if (filterPoste != 'all') {
+      chips.add(_ActiveChip(label: 'Post $filterPoste', color: _orange));
+    }
+    if (filterType != 'all') {
+      chips.add(_ActiveChip(label: filterType, color: _orange));
+    }
+    if (filterStatus != 'all') {
+      chips.add(_ActiveChip(label: filterStatus, color: _orange));
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _orangeLt,
+        border: Border.all(color: _orange.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 15, color: _orange),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Filters active — some alerts may be hidden from this view',
+                  style: TextStyle(fontSize: 12, color: _orange, fontWeight: FontWeight.w600),
+                ),
+              ),
+              GestureDetector(
+                onTap: onReset,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _orange,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Reset all',
+                    style: TextStyle(fontSize: 11, color: _white, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (chips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 4, children: chips),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveChip extends StatelessWidget {
   final String label;
+  final Color color;
   final VoidCallback? onRemove;
-  const _FilterChip({required this.label, this.onRemove});
+  const _ActiveChip({required this.label, required this.color, this.onRemove});
 
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-            color: _navy, borderRadius: BorderRadius.circular(99)),
+            color: color, borderRadius: BorderRadius.circular(99)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(label,
               style: const TextStyle(
@@ -1241,7 +1355,7 @@ class _AlertHistoryRow extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
-              color: sc.withOpacity(.1),
+              color: sc.withValues(alpha: .1),
               border: Border.all(color: sc),
               borderRadius: BorderRadius.circular(99)),
           child: Text(sl,
@@ -1374,7 +1488,7 @@ class _ClickableTypeCard extends StatelessWidget {
               width: 30,
               height: 30,
               decoration: BoxDecoration(
-                  color: color.withOpacity(.1), shape: BoxShape.circle),
+                  color: color.withValues(alpha: .1), shape: BoxShape.circle),
               child: Icon(_typeIcon(type), color: color, size: 15),
             ),
           ]),

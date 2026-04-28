@@ -10,6 +10,7 @@ class VoiceService {
 
   static const String _modelAssetPath =
       'assets/models/vosk-model-small-en-us-0.15';
+  
 
   static const List<String> _grammar = [
     'claim alert',
@@ -39,6 +40,7 @@ class VoiceService {
   bool _initialized = false;
   bool _available = false; // ← new
   bool _listening = false;
+  String? lastError;
 
   /// Whether the voice system is fully ready to use.
   bool get isAvailable => _available;
@@ -69,10 +71,13 @@ class VoiceService {
 
       _available = true; // all good
       _initialized = true;
+      lastError = null;
     } catch (e, st) {
       debugPrint('VoiceService.init failed (voice disabled): $e\n$st');
       _available = false;
       _initialized = true;
+      debugPrint('VoiceService.init failed: $e\n$st');
+      lastError = '$e'; // ← store the error
       // DON’T rethrow – the app stays alive, just without voice
     }
   }
