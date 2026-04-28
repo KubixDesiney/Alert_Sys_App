@@ -18,10 +18,10 @@
       ".read": "auth != null",
       ".write": false,
       "$userId": {
-        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
         "$notifId": {
-          ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-          ".write": "auth != null && (!data.exists() || auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+          ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
+          ".write": "auth != null && (!data.exists() || auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
         }
       }
     },
@@ -31,37 +31,37 @@
       ".write": false,
       ".indexOn": ["role", "usine", "aiOptOut"],
       "$userId": {
-        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
       }
     },
 
     "hierarchy": {
       ".read": "auth != null",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
       ".indexOn": ["name"]
     },
 
     "collaboration_requests": {
-      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
       ".indexOn": ["requesterId", "status", "pmApproved", "timestamp", "alertId"]
     },
 
     "help_requests": {
-      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
       ".indexOn": ["alertId", "requesterId", "targetSupervisorId", "status", "timestamp"]
     },
 
     "escalation_settings": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "supervisors": {
       ".read": "auth != null",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
       ".indexOn": ["usine", "active"]
     },
 
@@ -69,35 +69,35 @@
       ".read": "auth != null",
       ".write": false,
       "$userId": {
-        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
       }
     },
 
     "ai_decisions": {
-      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor')",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
       ".indexOn": ["timestamp", "alertId"]
     },
 
     "ai_feedback": {
-      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "ai_master": {
       ".read": "auth != null",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "factories": {
       ".read": "auth != null",
       "$factoryId": {
         ".read": "auth != null",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
         "aiConfig": {
           ".read": "auth != null",
-          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+          ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
           "enabled": {
             ".validate": "newData.isBoolean()"
           },
