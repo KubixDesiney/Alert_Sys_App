@@ -253,6 +253,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Map<String, dynamic> _alertToMap(AlertModel alert) {
     return {
       'id': alert.id,
+      'alertNumber': alert.alertNumber,
       'type': alert.type,
       'status': alert.status,
       'description': alert.description,
@@ -1345,7 +1346,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           ),
                           Text(
                             hasActiveAlert
-                                ? 'Alert #${alertId.length > 8 ? alertId.substring(0, 8) : alertId}'
+                                ? 'Alert #${alert['alertNumber'] ?? '...'}'
                                 : 'No active alert',
                             style: TextStyle(
                               fontSize: 10,
@@ -1842,7 +1843,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      _buildHistoryRow('Alert ID', item.id),
+                                      _buildHistoryRow('Alert ID', item.alertNumber > 0 ? '#${item.alertNumber}' : item.id),
                                       _buildHistoryRow(
                                           'Title', _typeLabel(item.type)),
                                       _buildHistoryRow(
