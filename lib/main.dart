@@ -14,6 +14,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
+import 'services/voice_service.dart';
 import 'theme.dart';
 
 void main() async {
@@ -63,6 +64,14 @@ void main() async {
     debugPrint('FCM init failed: $e');
   }
 
+  // Warm up the Vosk speech model in the background. Don't await — model
+  // load is ~50MB and we don't want to block first paint. The mic button
+  // will await its own init() if the user taps before this finishes.
+  // ignore: unawaited_futures
+  VoiceService.instance.init().catchError((e) {
+    debugPrint('VoiceService init failed (non-fatal): $e');
+  });
+
   // Keep startup path light; post-launch SDK setup runs in background.
   ShorebirdCodePush();
 
@@ -88,7 +97,14 @@ class AlertSysApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AlertProvider()),
+        // Capture the AlertProvider into FcmService so the lock-screen voice
+        // reply handler (which runs without a BuildContext) can dispatch
+        // commands through the same code path the in-app mic uses.
+        ChangeNotifierProvider(create: (_) {
+          final p = AlertProvider();
+          FcmService.alertProvider = p;
+          return p;
+        }),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: Consumer<ThemeProvider>(
