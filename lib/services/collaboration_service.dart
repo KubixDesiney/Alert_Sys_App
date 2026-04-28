@@ -114,19 +114,13 @@ class CollaborationService {
     });
   }
 
-  bool _allAssistantsAccepted(CollaborationRequest r) {
-    if (r.targetSupervisorIds.isEmpty) return false;
-    return r.targetSupervisorIds.every(
-      (id) => (r.assistantDecisions[id] ?? 'pending') == 'accepted',
-    );
-  }
-
   // Get pending collaboration requests (for admin)
+  // At least one assistant accepted is enough to surface the request to PM.
   Stream<List<CollaborationRequest>> getPendingCollaborationRequests() {
     return getAllCollaborationRequests().map((requests) => requests.where((r) {
           return r.pmApproved == false &&
               r.status != 'rejected' &&
-              _allAssistantsAccepted(r);
+              r.assistantDecision == 'accepted';
         }).toList());
   }
 

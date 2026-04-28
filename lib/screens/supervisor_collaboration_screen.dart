@@ -329,22 +329,24 @@ class _SentCardState extends State<_SentCard> {
             title: 'PM Approval',
             subtitle: r.pmApproved
                 ? 'Approved by Production Manager'
-                : r.status == 'rejected' && !anyRefused
-                    ? 'Declined by Production Manager'
-                    : anyRefused
-                        ? 'Not reached — request blocked'
-                        : allAccepted
+                : r.status == 'rejected'
+                    ? (r.assistantDecision == 'refused'
+                        ? 'All assistants declined'
+                        : 'Declined by Production Manager')
+                    : r.assistantDecision == 'accepted'
+                        ? (allAccepted
                             ? 'All assistants accepted — awaiting PM'
-                            : 'Waiting for all assistants to accept',
+                            : 'Some assistants declined — awaiting PM')
+                        : 'Waiting for assistants to respond',
             state: r.pmApproved
                 ? _StepState.done
-                : (r.status == 'rejected' || anyRefused)
+                : r.status == 'rejected'
                     ? _StepState.declined
                     : _StepState.waiting,
             isLast: true,
           ),
 
-          if (!r.pmApproved && !anyRefused) ...[
+          if (!r.pmApproved && r.assistantDecision != 'accepted' && r.status != 'rejected') ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(10),
@@ -358,7 +360,7 @@ class _SentCardState extends State<_SentCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'All assistants must accept before the Production Manager reviews.',
+                    'Awaiting assistant responses before Production Manager review.',
                     style: TextStyle(fontSize: 11, color: t.blue),
                   ),
                 ),
