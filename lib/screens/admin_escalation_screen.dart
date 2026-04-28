@@ -96,14 +96,14 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.warning_amber, color: _orange, size: 24),
+                      Icon(Icons.warning_amber, color: context.appTheme.orange, size: 24),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'Escalations',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: _navy,
+                          color: context.appTheme.navy,
                         ),
                       ),
                     ],
@@ -252,9 +252,13 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
       final alertsMap = snapshot.snapshot.value;
       if (alertsMap == null) return [];
       final entries = Map<String, dynamic>.from(alertsMap as Map).entries.toList();
-      return entries
-          .where((entry) => entry.value['isEscalated'] == true)
-          .toList();
+      return entries.where((entry) {
+        final v = entry.value as Map?;
+        if (v == null) return false;
+        if (v['isEscalated'] != true) return false;
+        final status = v['status'] as String? ?? '';
+        return status != 'validee' && status != 'cancelled';
+      }).toList();
     });
   }
 }
@@ -281,11 +285,18 @@ class _EscalatedAlertsTab extends StatelessWidget {
         final List<MapEntry<String, dynamic>> entries =
             Map<String, dynamic>.from(alertsMap as Map).entries.toList();
         final escalated = entries
-            .where((entry) => entry.value['isEscalated'] == true)
+            .where((entry) {
+              final v = entry.value as Map?;
+              if (v == null || v['isEscalated'] != true) return false;
+              final status = v['status'] as String? ?? '';
+              return status != 'validee' && status != 'cancelled';
+            })
             .map(
                 (entry) => AlertModel.fromMap(entry.key, Map.from(entry.value)))
             .toList()
-          ..sort((a, b) => b.escalatedAt!.compareTo(a.escalatedAt!));
+          ..sort((a, b) =>
+              (b.escalatedAt ?? b.timestamp)
+                  .compareTo(a.escalatedAt ?? a.timestamp));
 
         if (escalated.isEmpty) {
           return _buildEmpty();
@@ -332,54 +343,80 @@ class _EscalatedAlertCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: context.appTheme.redLt,
+        color: t.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _red.withValues(alpha: 0.3)),
+        border: Border.all(color: t.red.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(color: t.red.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber, color: _red, size: 20),
+              Icon(Icons.warning_amber, color: t.red, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '${_typeLabel(alert.type)} - ${alert.description}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  '${_typeLabel(alert.type)} — ${alert.description}',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: t.text,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(children: [
-            const Icon(Icons.location_on, size: 14, color: _muted),
-            const SizedBox(width: 4),
+            Icon(Icons.location_on, size: 14, color: t.muted),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                '${alert.usine} • Line ${alert.convoyeur} • Post ${alert.poste}',
+                style: TextStyle(fontSize: 12, color: t.muted),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            Icon(Icons.access_time, size: 14, color: t.muted),
+            const SizedBox(width: 6),
             Text(
-                '${alert.usine} | Line ${alert.convoyeur} | Post ${alert.poste}'),
+              'Escalated: ${_formatDateTime(alert.escalatedAt ?? alert.timestamp)}',
+              style: TextStyle(fontSize: 12, color: t.muted),
+            ),
           ]),
-          Row(children: [
-            const Icon(Icons.access_time, size: 14, color: _muted),
-            const SizedBox(width: 4),
-            Text('Escalated at: ${_formatDateTime(alert.escalatedAt!)}'),
-          ]),
+          const SizedBox(height: 8),
           if (alert.status == 'disponible')
             Row(children: [
-              const Icon(Icons.warning_amber_rounded, size: 14, color: _red),
-              const SizedBox(width: 4),
-              const Text('Unclaimed alert exceeded threshold',
-                  style: TextStyle(color: _red, fontSize: 12)),
+              Icon(Icons.warning_amber_rounded, size: 14, color: t.red),
+              const SizedBox(width: 6),
+              Text(
+                'Unclaimed alert exceeded threshold',
+                style: TextStyle(color: t.red, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ])
           else if (alert.status == 'en_cours')
             Row(children: [
-              const Icon(Icons.hourglass_bottom, size: 14, color: _red),
-              const SizedBox(width: 4),
-              const Text('Claimed but not resolved in time',
-                  style: TextStyle(color: _red, fontSize: 12)),
+              Icon(Icons.hourglass_bottom, size: 14, color: t.orange),
+              const SizedBox(width: 6),
+              Text(
+                'Claimed but not resolved in time',
+                style: TextStyle(color: t.orange, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ]),
         ],
       ),

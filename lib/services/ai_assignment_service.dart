@@ -439,7 +439,10 @@ class AIAssignmentService extends ChangeNotifier {
             !_isSkipped(alertId: a.id);
       }).toList()
         ..sort((a, b) {
-          if (a.isCritical != b.isCritical) return a.isCritical ? -1 : 1;
+          // Priority: escalated (2) > critical (1) > normal (0), then oldest first.
+          final ap = a.isEscalated ? 2 : (a.isCritical ? 1 : 0);
+          final bp = b.isEscalated ? 2 : (b.isCritical ? 1 : 0);
+          if (ap != bp) return bp.compareTo(ap);
           return a.timestamp.compareTo(b.timestamp);
         });
 
