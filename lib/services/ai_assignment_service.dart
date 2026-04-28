@@ -108,7 +108,10 @@ class AIAssignmentService extends ChangeNotifier {
   Duration _skippedAlertTtl = _defaultSkippedTtl;
 
   final List<AILogEntry> _logs = [];
+  final Set<String> _processedHistoryIds = {};
   final Set<String> _inFlight = {};
+  StreamSubscription<DatabaseEvent>? _alertsAddedSubscription;
+  StreamSubscription<DatabaseEvent>? _alertsChangedSubscription;
   final Map<String, DateTime> _skippedAlertIds = {};
   final Map<String, DateTime> _supervisorCooldown = {};
   final Set<String> _capturedResolvedFeedback = {};
@@ -292,6 +295,8 @@ class AIAssignmentService extends ChangeNotifier {
 
     // Sync recent AI history from Firebase (Worker-made assignments, etc.)
     unawaited(syncRecentAIHistory());
+    // Start realtime listener to pick up Worker-written aiHistory immediately
+    _startRealtimeAiHistoryListener();
   }
 
   Future<void> setEnabled(bool v) async {
@@ -1523,6 +1528,7 @@ class AIAssignmentService extends ChangeNotifier {
 
   void _addLog(AILogEntry entry) {
     _logs.add(entry);
+    _processedHistoryIds.add(entry.id);
     if (_logs.length > _maxLogs) {
       _logs.removeRange(0, _logs.length - _maxLogs);
     }
@@ -1631,6 +1637,71 @@ class AIAssignmentService extends ChangeNotifier {
     }
   }
 
+  void _startRealtimeAiHistoryListener() {
+    try {
+      // Listen for new alerts (child added) and changes (child changed)
+      _alertsAddedSubscription =
+          _db.child('alerts').onChildAdded.listen(_handleAlertSnapshot);
+      _alertsChangedSubscription =
+          _db.child('alerts').onChildChanged.listen(_handleAlertSnapshot);
+    } catch (e) {
+      if (kDebugMode) print('[AI_SYNC] Failed to start realtime listener: $e');
+    }
+  }
+
+  void _handleAlertSnapshot(DatabaseEvent ev) {
+    try {
+      final alertId = ev.snapshot.key;
+      final value = ev.snapshot.value;
+      if (alertId == null || value == null) return;
+      if (value is! Map) return;
+
+      final alertMap = Map<String, dynamic>.from(value);
+      final aiHistory = alertMap['aiHistory'];
+      if (aiHistory is! Map) return;
+
+      final alertType = alertMap['type']?.toString() ?? '';
+      final alertUsine = alertMap['usine']?.toString() ?? '';
+      final alertConvoyeur = alertMap['convoyeur']?.toString() ?? '';
+      final alertPoste = alertMap['poste']?.toString() ?? '';
+      final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+
+      for (final entry in Map<String, dynamic>.from(aiHistory).entries) {
+        final histKey = entry.key;
+        final histVal = entry.value;
+        if (histVal is! Map) continue;
+
+        final logId = '${alertId}_$histKey';
+        if (_processedHistoryIds.contains(logId)) continue;
+
+        final timestamp = _parseTimestamp(histVal['timestamp']);
+        if (timestamp == null) continue;
+
+        final status = _parseLogStatus(histVal['event']);
+
+        final logEntry = AILogEntry(
+          id: logId,
+          alertId: alertId,
+          alertLabel: alertLabel,
+          alertType: alertType,
+          alertUsine: alertUsine,
+          assignedSupervisorId: histVal['supervisorId']?.toString(),
+          assignedSupervisorName: histVal['supervisorName']?.toString(),
+          reason: histVal['reason']?.toString() ?? '',
+          reasonBreakdown: [],
+          consideredCandidates: const [],
+          confidence: (histVal['confidence'] as num?)?.toDouble() ?? 0.0,
+          timestamp: timestamp,
+          status: status,
+        );
+
+        _addLog(logEntry);
+      }
+    } catch (e) {
+      if (kDebugMode) print('[AI_SYNC] Error handling alert snapshot: $e');
+    }
+  }
+
   DateTime? _parseTimestamp(dynamic value) {
     if (value == null) return null;
     if (value is DateTime) return value;
@@ -1674,6 +1745,8 @@ class AIAssignmentService extends ChangeNotifier {
   void dispose() {
     _masterSubscription?.cancel();
     _settingsSubscription?.cancel();
+    _alertsAddedSubscription?.cancel();
+    _alertsChangedSubscription?.cancel();
     super.dispose();
   }
 }
