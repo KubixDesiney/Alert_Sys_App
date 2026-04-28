@@ -48,6 +48,14 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
   }
 
   Future<void> _toggle() async {
+    if (!VoiceService.instance.isAvailable) {
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Voice not available on this device')),
+    );
+  }
+  return;
+}
     if (_listening) {
       await VoiceService.instance.stopListening();
       _stopUi();
