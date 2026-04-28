@@ -11,8 +11,10 @@ class VoiceService {
   VoiceService._();
   static final VoiceService instance = VoiceService._();
 
+  // The archive extracted into a same-named subdirectory, so the actual
+  // model root is one level deeper than the outer folder.
   static const String _modelAssetPath =
-      'assets/models/vosk-model-small-en-us-0.15';
+      'assets/models/vosk-model-small-en-us-0.15/vosk-model-small-en-us-0.15';
 
   static const List<String> _grammar = [
     'claim alert',
@@ -48,6 +50,7 @@ class VoiceService {
   Future<void> init() async {
     if (_initialized) return;
     try {
+      // Use the Vosk plugin’s built‑in loader – it handles the extraction.
       final modelPath = await ModelLoader().loadFromAssets(_modelAssetPath);
       _model = await _vosk.createModel(modelPath);
       _recognizer = await _vosk.createRecognizer(
