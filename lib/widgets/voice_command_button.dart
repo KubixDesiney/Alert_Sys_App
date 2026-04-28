@@ -48,14 +48,31 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
   }
 
   Future<void> _toggle() async {
+    // Make sure the voice service is fully initialized
+    await VoiceService.instance.init();
+
     if (!VoiceService.instance.isAvailable) {
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Voice not available on this device')),
-    );
-  }
-  return;
-}
+      final err = VoiceService.instance.lastError ?? 'Unknown error';
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Voice unavailable'),
+            content: SelectableText(
+              'The speech model could not be loaded.\n\n$err',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+
     if (_listening) {
       await VoiceService.instance.stopListening();
       _stopUi();
@@ -65,24 +82,11 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
     final provider = context.read<AlertProvider>();
     final dispatcher = VoiceCommandDispatcher(provider);
 
-    // First-tap initialization can be slow (~1-2s) while Vosk loads the model.
-    try {
-      await VoiceService.instance.init();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Voice unavailable: $e')),
-      );
-      return;
-    }
-
     setState(() => _listening = true);
     _pulse.repeat(reverse: true);
 
-    // Subscribe BEFORE we start, so we don't miss a fast result.
     await _commandSub?.cancel();
     _commandSub = VoiceService.instance.commandStream.listen((text) async {
-      // Auto-stop on first final result — a button-press session is one shot.
       if (!_listening) return;
       _stopUi();
       await VoiceService.instance.stopListening();
@@ -92,7 +96,6 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
 
     await VoiceService.instance.startListening(timeout: widget.listenDuration);
 
-    // Belt-and-braces UI stop when Vosk's internal timeout fires.
     Future.delayed(widget.listenDuration + const Duration(milliseconds: 300),
         () {
       if (mounted && _listening) _stopUi();

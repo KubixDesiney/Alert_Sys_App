@@ -17,6 +17,7 @@ class VoiceService {
   Stream<String> get commandStream => _commandsController.stream;
   bool get isListening => false;
   bool get isAvailable => false; // ← add this line
+  String? lastError;
 
   Future<void> init() async {
     if (_initialized) return;
