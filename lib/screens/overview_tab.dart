@@ -454,7 +454,7 @@ class _OverviewTabState extends State<_OverviewTab> {
               const SizedBox(width: 12),
               Expanded(
                 child: _ClickableStatCard(
-                  label: 'Validated',
+                  label: 'Fixed Alerts',
                   value: widget.solved,
                   color: _green,
                   icon: Icons.check_circle_outline,
@@ -813,12 +813,12 @@ class _OverviewTabState extends State<_OverviewTab> {
                           ),
                           DropdownMenuItem(
                             value: 'en_cours',
-                            child: Text('Being fixed...',
+                            child: Text('Claimed Alerts',
                                 style: TextStyle(fontSize: 13)),
                           ),
                           DropdownMenuItem(
                             value: 'validee',
-                            child: Text('Validated',
+                            child: Text('Fixed Alerts',
                                 style: TextStyle(fontSize: 13)),
                           ),
                         ],
@@ -944,7 +944,7 @@ class _ProgressStatCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Being fixed...',
+                  const Text('Claimed Alerts',
                       style: TextStyle(
                           fontSize: 12,
                           color: _muted,
@@ -1037,7 +1037,7 @@ class _UnclaimedStatCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Unclaimed',
+                  const Text('Received Alerts',
                       style: TextStyle(
                           fontSize: 12,
                           color: _muted,
@@ -1194,8 +1194,8 @@ class _AlertHistoryRow extends StatelessWidget {
       _ => _orange,
     };
     final sl = switch (alert.status) {
-      'validee' => 'Validated',
-      'en_cours' => 'Being fixed...',
+      'validee' => 'Fixed Alerts',
+      'en_cours' => 'Claimed Alerts',
       _ => 'Available',
     };
     return Container(
@@ -1390,7 +1390,7 @@ class _ClickableTypeCard extends StatelessWidget {
             Row(children: [
               const Icon(Icons.check_circle_outline, size: 13, color: _green),
               const SizedBox(width: 3),
-              Text('Validated',
+              Text('Fixed Alerts',
                   style: const TextStyle(fontSize: 10, color: _muted)),
             ]),
             const Spacer(),

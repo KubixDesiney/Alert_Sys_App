@@ -10,6 +10,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/ai_assignment_service.dart';
+import '../models/user_model.dart';
 import '../theme.dart';
 import '../screens/alert_detail_screen.dart';
 import '../utils/factory_id.dart';
@@ -689,14 +690,97 @@ class _ConfidenceBadge extends StatelessWidget {
   }
 }
 
-class _AIDetailsDialog extends StatelessWidget {
+class _AIDetailsDialog extends StatefulWidget {
   final AILogEntry entry;
   const _AIDetailsDialog({required this.entry});
 
   @override
+  State<_AIDetailsDialog> createState() => _AIDetailsDialogState();
+}
+
+class _AIDetailsDialogState extends State<_AIDetailsDialog> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
+  List<AICandidate> _candidates = [];
+  List<String> _reasonBreakdown = [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _candidates = widget.entry.consideredCandidates;
+    _reasonBreakdown = widget.entry.reasonBreakdown;
+    if (_candidates.isEmpty || _reasonBreakdown.isEmpty) {
+      _fetchFromFirebase();
+    }
+  }
+
+  Future<void> _fetchFromFirebase() async {
+    setState(() => _loading = true);
+    try {
+      final snap =
+          await _db.child('ai_decisions/${widget.entry.alertId}').get();
+      if (!snap.exists || snap.value == null) return;
+      final data = Map<String, dynamic>.from(snap.value as Map);
+
+      final rawBreakdown = data['breakdown'];
+      if (rawBreakdown is List && _reasonBreakdown.isEmpty) {
+        _reasonBreakdown =
+            rawBreakdown.map((e) => e.toString()).toList();
+      }
+
+      final rawCandidates = data['consideredCandidates'];
+      if (rawCandidates is List && _candidates.isEmpty) {
+        _candidates = rawCandidates
+            .where((e) => e is Map)
+            .map((e) {
+              final m = Map<String, dynamic>.from(e as Map);
+              final name = m['name']?.toString() ?? '';
+              final uid = m['supervisorId']?.toString() ?? '';
+              final usine = m['usine']?.toString() ?? '';
+              final score = (m['score'] as num?)?.toDouble() ?? 0.0;
+              final skipReason = m['skipReason']?.toString();
+              final rawReasons = m['reasons'];
+              final reasons = rawReasons is List
+                  ? rawReasons.map((r) => r.toString()).toList()
+                  : <String>[];
+              return AICandidate(
+                supervisor: UserModel(
+                  id: uid,
+                  firstName: name.contains(' ')
+                      ? name.substring(0, name.indexOf(' '))
+                      : name,
+                  lastName: name.contains(' ')
+                      ? name.substring(name.indexOf(' ') + 1)
+                      : '',
+                  email: '',
+                  phone: '',
+                  role: 'supervisor',
+                  usine: usine,
+                ),
+                score: score,
+                reasons: reasons,
+                skipReason: skipReason,
+              );
+            })
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('AIDetailsDialog fetch error: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    final whyOthers = entry.consideredCandidates
+    final entry = widget.entry;
+    final winnerScore = _candidates
+        .where((c) => c.supervisor.id == entry.assignedSupervisorId)
+        .map((c) => c.score)
+        .firstOrNull;
+    final whyOthers = _candidates
         .where((c) => c.supervisor.id != entry.assignedSupervisorId)
         .toList();
 
@@ -733,86 +817,97 @@ class _AIDetailsDialog extends StatelessWidget {
             ),
             const Divider(height: 1),
             Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _section(t, 'Alert', entry.alertLabel),
-                    const SizedBox(height: 6),
-                    if (entry.assignedSupervisorName != null)
-                      _section(t, 'Assigned to', entry.assignedSupervisorName!),
-                    if (entry.confidence > 0)
-                      _section(t, 'Confidence',
-                          '${(entry.confidence * 100).round()}% • ${AIAssignmentService.confidenceLabel(entry.confidence)}'),
-                    if (entry.confidence > 0)
-                      _section(
-                        t,
-                        'Confidence scale',
-                        AIAssignmentService.confidenceScaleDescription(
-                            entry.confidence),
-                      ),
-                    _section(t, 'Status', entry.status.name.toUpperCase()),
-                    if (entry.rejectionReason != null)
-                      _section(t, 'Rejection reason', entry.rejectionReason!),
-                    const SizedBox(height: 14),
-                    if (entry.reasonBreakdown.isNotEmpty) ...[
-                      _heading(t, 'Why this supervisor'),
-                      const SizedBox(height: 6),
-                      ...entry.reasonBreakdown.map((r) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(Icons.check, size: 14, color: t.green),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(r,
-                                      style: TextStyle(
-                                          fontSize: 12, color: t.text)),
+              child: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _section(t, 'Alert', entry.alertLabel),
+                          const SizedBox(height: 6),
+                          if (entry.assignedSupervisorName != null)
+                            _section(
+                                t, 'Assigned to', entry.assignedSupervisorName!),
+                          if (entry.confidence > 0)
+                            _section(t, 'Confidence',
+                                '${(entry.confidence * 100).round()}% • ${AIAssignmentService.confidenceLabel(entry.confidence)}'),
+                          if (entry.confidence > 0)
+                            _section(
+                              t,
+                              'Confidence scale',
+                              AIAssignmentService.confidenceScaleDescription(
+                                  entry.confidence),
+                            ),
+                          _section(t, 'Status', entry.status.name.toUpperCase()),
+                          if (entry.rejectionReason != null)
+                            _section(
+                                t, 'Rejection reason', entry.rejectionReason!),
+                          const SizedBox(height: 14),
+                          if (_reasonBreakdown.isNotEmpty) ...[
+                            _heading(t, 'Why this supervisor'),
+                            const SizedBox(height: 6),
+                            ..._reasonBreakdown.map((r) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(Icons.check,
+                                          size: 14, color: t.green),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(r,
+                                            style: TextStyle(
+                                                fontSize: 12, color: t.text)),
+                                      ),
+                                    ],
+                                  ),
+                                )),
+                            const SizedBox(height: 14),
+                          ],
+                          if (whyOthers.isNotEmpty) ...[
+                            _heading(t, 'Why not others'),
+                            const SizedBox(height: 6),
+                            ...whyOthers.map((c) {
+                              final detail = c.skipReason ??
+                                  'Score ${c.score.toStringAsFixed(0)}'
+                                      '${winnerScore != null ? ' (vs winner ${winnerScore.toStringAsFixed(0)})' : ''}';
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: t.scaffold,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: t.border),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(c.supervisor.fullName,
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: t.text)),
+                                      const SizedBox(height: 2),
+                                      Text(detail,
+                                          style: TextStyle(
+                                              fontSize: 11, color: t.muted)),
+                                    ],
+                                  ),
                                 ),
-                              ],
-                            ),
-                          )),
-                      const SizedBox(height: 14),
-                    ],
-                    if (whyOthers.isNotEmpty) ...[
-                      _heading(t, 'Why not others'),
-                      const SizedBox(height: 6),
-                      ...whyOthers.map((c) {
-                        final detail = c.skipReason ??
-                            'Score ${c.score.toStringAsFixed(0)} (vs winner ${(entry.consideredCandidates.firstWhere((x) => x.supervisor.id == entry.assignedSupervisorId, orElse: () => c).score).toStringAsFixed(0)})';
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: t.scaffold,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: t.border),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(c.supervisor.fullName,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: t.text)),
-                                const SizedBox(height: 2),
-                                Text(detail,
-                                    style: TextStyle(
-                                        fontSize: 11, color: t.muted)),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
-                  ],
-                ),
-              ),
+                              );
+                            }),
+                          ],
+                        ],
+                      ),
+                    ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

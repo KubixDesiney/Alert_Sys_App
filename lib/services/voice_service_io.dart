@@ -2,6 +2,9 @@
 // This file is never compiled for web.
 
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -13,8 +16,6 @@ class VoiceService {
 
   // The archive extracted into a same-named subdirectory, so the actual
   // model root is one level deeper than the outer folder.
-  static const String _modelAssetPath =
-      'assets/models/vosk-model-small-en-us-0.15/vosk-model-small-en-us-0.15';
 
   static const List<String> _grammar = [
     'claim alert',
@@ -50,8 +51,14 @@ class VoiceService {
   Future<void> init() async {
     if (_initialized) return;
     try {
-      // Use the Vosk plugin’s built‑in loader – it handles the extraction.
-      final modelPath = await ModelLoader().loadFromAssets(_modelAssetPath);
+      // Manually extract the Vosk model from assets to a temp directory.
+      final tempDir = await getTemporaryDirectory();
+      final modelDir = Directory('${tempDir.path}/vosk-model');
+      if (!modelDir.existsSync()) {
+        await _extractModel(modelDir.path);
+      }
+      final modelPath = modelDir.path;
+
       _model = await _vosk.createModel(modelPath);
       _recognizer = await _vosk.createRecognizer(
         model: _model!,
@@ -71,6 +78,37 @@ class VoiceService {
     } catch (e, st) {
       debugPrint('VoiceService.init failed: $e\n$st');
       rethrow;
+    }
+  }
+
+  /// Hardcoded list of every file in the Vosk model. Copy each one from
+  /// Flutter assets into [targetDir], preserving subdirectories.
+  Future<void> _extractModel(String targetDir) async {
+    const files = [
+      'assets/models/vosk-model-small-en-us-0.15/am/final.mdl',
+      'assets/models/vosk-model-small-en-us-0.15/conf/mfcc.conf',
+      'assets/models/vosk-model-small-en-us-0.15/conf/model.conf',
+      'assets/models/vosk-model-small-en-us-0.15/graph/disambig_tid.int',
+      'assets/models/vosk-model-small-en-us-0.15/graph/Gr.fst',
+      'assets/models/vosk-model-small-en-us-0.15/graph/HCLr.fst',
+      'assets/models/vosk-model-small-en-us-0.15/graph/phones/word_boundary.int',
+      'assets/models/vosk-model-small-en-us-0.15/ivector/final.dubm',
+      'assets/models/vosk-model-small-en-us-0.15/ivector/final.ie',
+      'assets/models/vosk-model-small-en-us-0.15/ivector/final.mat',
+      'assets/models/vosk-model-small-en-us-0.15/ivector/global_cmvn.stats',
+      'assets/models/vosk-model-small-en-us-0.15/ivector/online_cmvn.conf',
+      'assets/models/vosk-model-small-en-us-0.15/ivector/splice.conf',
+      'assets/models/vosk-model-small-en-us-0.15/README',
+    ];
+
+    for (final assetPath in files) {
+      final relativePath = assetPath.substring(
+        'assets/models/vosk-model-small-en-us-0.15/'.length,
+      );
+      final targetFile = File('$targetDir/$relativePath');
+      await targetFile.parent.create(recursive: true);
+      final data = await rootBundle.load(assetPath);
+      await targetFile.writeAsBytes(data.buffer.asUint8List());
     }
   }
 
