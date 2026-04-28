@@ -18,6 +18,41 @@ import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Global error handler
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('Flutter error caught: ${details.exception}');
+  };
+  // Show a red error screen instead of a white blank when a widget build fails
+  ErrorWidget.builder = (errorDetails) {
+    return Material(
+      child: Container(
+        color: const Color(
+            0xFF0F172A), // dark background (you can use a theme later)
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline,
+                  color: Color(0xFFF87171), size: 48),
+              const SizedBox(height: 12),
+              const Text('Something went wrong',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF1F5F9))),
+              const SizedBox(height: 8),
+              Text('${errorDetails.exception}',
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      ),
+    );
+  };
 
   await _safeInitFirebase();
 
