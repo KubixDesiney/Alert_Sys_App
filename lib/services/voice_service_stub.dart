@@ -1,18 +1,17 @@
-// Web stub – no Vosk, only TTS for spoken feedback.
-// The microphone button will do nothing on web, but voice reply
-// via push notification can still use platform speech-to-text.
+// Web stub – no native voice recognition, no TTS.
+// The microphone button will do nothing on web, and TTS is silent.
+// Voice reply via push notification still works because the platform
+// handles speech‑to‑text on the keyboard's mic button.
 
 import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 
 class VoiceService {
   VoiceService._();
   static final VoiceService instance = VoiceService._();
 
-  final FlutterTts _tts = FlutterTts();
   final StreamController<String> _commandsController =
       StreamController<String>.broadcast();
+
   bool _initialized = false;
 
   Stream<String> get commandStream => _commandsController.stream;
@@ -20,9 +19,6 @@ class VoiceService {
 
   Future<void> init() async {
     if (_initialized) return;
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.5);
-    await _tts.setPitch(1.0);
     _initialized = true;
   }
 
@@ -35,17 +31,10 @@ class VoiceService {
   Future<void> stopListening() async {}
 
   Future<void> speak(String text) async {
-    if (text.trim().isEmpty) return;
-    try {
-      await _tts.stop();
-      await _tts.speak(text);
-    } catch (e) {
-      debugPrint('VoiceService.speak (web): $e');
-    }
+    // TTS not available on web
   }
 
   Future<void> dispose() async {
     await _commandsController.close();
-    await _tts.stop();
   }
 }
