@@ -1,4 +1,4 @@
-// Cloudflare Worker — AlertSys
+// Cloudflare Worker — AlertSys (optimised)
 // Deploy via Cloudflare dashboard: paste into the worker editor, save and deploy.
 //
 // Required environment variables (set in Worker Settings → Variables):
@@ -8,10 +8,7 @@
 //   FIREBASE_SERVICE_ACCOUNT = <stringified JSON of your Firebase service account>
 //
 // Cron schedule: "* * * * *" (every minute)
-// Free-plan subrequest budget: 50 per invocation.
-// Worst-case cron budget:
-//   1 (auth) + 2 (data) + 7 (processAlerts 1 alert) + 5 (checkEscalations 1)
-//   + 17 (runAIAssignments 2 factories) + 13 (fanOut 3 notifs) = 45 ✅
+// ============================================================
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,20 +16,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Per-isolate caches — survive across requests in the same isolate.
+// Per‑isolate caches
 let _fbToken = null;
 let _fbTokenExpMs = 0;
 let _fcmToken = null;
 let _fcmTokenExpMs = 0;
 
 // ============================================================
-// Firebase auth — cached per isolate (50-minute TTL)
+// Subrequest budgets (keep well below 50)
+const MAX_ALERTS_TO_PUSH = 1;          // process max 1 new alert per cron tick
+const MAX_ESCALATION_CHECKS = 5;       // check up to 5 alerts for escalation
+const MAX_AI_FACTORIES = 1;            // assign AI only for one factory per tick
+const MAX_FANOUT = 2;                  // max notifications to push via fan-out (cron will skip fan‑out)
+
+// ============================================================
+// Firebase auth
 // ============================================================
 async function getFirebaseToken(env) {
   const now = Date.now();
   if (_fbToken && now < _fbTokenExpMs) return _fbToken;
 
-  if (env && env.FIREBASE_SERVICE_ACCOUNT) {
+  if (env?.FIREBASE_SERVICE_ACCOUNT) {
     try {
       const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
       const jwt = await createFirebaseAuthJWT(sa.client_email, sa.private_key);
@@ -48,10 +52,11 @@ async function getFirebaseToken(env) {
       _fbTokenExpMs = now + 50 * 60 * 1000; // 50 min
       return _fbToken;
     } catch (e) {
-      console.error('[AUTH] Service account failed, trying anon:', e.message);
+      console.error('[AUTH] Service account failed: ' + e.message);
     }
   }
 
+  // Fallback anonymous
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${env.FB_API_KEY}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -112,7 +117,7 @@ function base64UrlEncode(data) {
 }
 
 // ============================================================
-// FCM access token — cached per isolate
+// FCM access token
 // ============================================================
 async function getFcmAccessToken(env) {
   const now = Date.now();
@@ -154,7 +159,7 @@ async function getFcmAccessToken(env) {
 }
 
 // ============================================================
-// Core data loader — call ONCE per cron tick, share the result
+// Core data loader – called ONCE per cron tick, shared across tasks
 // ============================================================
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
@@ -170,7 +175,7 @@ async function loadCoreData(env) {
 }
 
 // ============================================================
-// FCM send
+// FCM send helper
 // ============================================================
 async function sendFcm(token, title, body, data, env) {
   try {
@@ -201,18 +206,17 @@ async function sendFcm(token, title, body, data, env) {
     });
     if (!res.ok) {
       const err = await res.text();
-      console.error(`[FCM] Send failed (${res.status}):`, err);
+      console.error(`[FCM] Send failed (${res.status}):` + err);
     }
     return res.ok;
   } catch (e) {
-    console.error('[FCM] Error:', e.message);
+    console.error('[FCM] Error:' + e.message);
     return false;
   }
 }
 
 // ============================================================
-// Get FCM tokens for a factory (uses pre-loaded data — no extra fetches)
-// Excludes supervisors who already have a claimed alert.
+// Get FCM tokens for a factory (uses pre‑loaded data, no extra fetch)
 // ============================================================
 function getFcmTokensForFactory(factoryName, usersMap, alertsMap) {
   const targetId = aiSanitizeFactoryId(factoryName);
@@ -240,14 +244,11 @@ function getFcmTokensForFactory(factoryName, usersMap, alertsMap) {
 }
 
 // ============================================================
-// New-alert FCM push (push_sent flag, ETag-safe)
-// Cap: 2 alerts per cron tick so they don't blow the budget.
+// New‑alert FCM push (push_sent flag, ETag‑safe, capped)
 // ============================================================
 async function processAlerts(env, ctx) {
   const { token, alertsMap, usersMap } = ctx;
-
-  // Fetch only alerts with push_sent === false (separate ordered query)
-  const url = `${env.FB_DB_URL}alerts.json?auth=${token}&orderBy="push_sent"&equalTo=false&limitToFirst=2`;
+  const url = `${env.FB_DB_URL}alerts.json?auth=${token}&orderBy="push_sent"&equalTo=false&limitToFirst=${MAX_ALERTS_TO_PUSH}`;
   const res = await fetch(url);
   if (!res.ok) return;
   const unsentData = await res.json();
@@ -261,13 +262,12 @@ async function processAlerts(env, ctx) {
   }));
 
   for (const alert of unsent) {
-    // ETag-claim to avoid double-sending
     const flagUrl = `${env.FB_DB_URL}alerts/${alert.id}/push_sent.json?auth=${token}`;
     const getRes = await fetch(flagUrl, { headers: { 'X-Firebase-ETag': 'true' } });
     if (!getRes.ok) continue;
     const etag = getRes.headers.get('ETag');
     const current = await getRes.json();
-    if (current !== false) continue; // already claimed or sent
+    if (current !== false) continue;
 
     const claimRes = await fetch(flagUrl, {
       method: 'PUT',
@@ -278,7 +278,6 @@ async function processAlerts(env, ctx) {
 
     const fcmTokens = getFcmTokensForFactory(alert.usine, usersMap, alertsMap);
     if (fcmTokens.length === 0) {
-      // Release claim so next tick tries again
       await fetch(flagUrl, { method: 'PUT', body: JSON.stringify(false) });
       continue;
     }
@@ -303,94 +302,140 @@ async function processAlerts(env, ctx) {
 }
 
 // ============================================================
-// Escalation check (uses pre-loaded data)
+// Escalation check (capped at MAX_ESCALATION_CHECKS)
 // ============================================================
 async function checkEscalations(env, ctx) {
   const { token, alertsMap, usersMap } = ctx;
 
   const settingsRes = await fetch(`${env.FB_DB_URL}escalation_settings.json?auth=${token}`);
-  if (!settingsRes.ok) return;
+  if (!settingsRes.ok) {
+    console.error('[ESCALATION] Failed to fetch escalation_settings');
+    return;
+  }
   const settings = await settingsRes.json();
-  if (!settings) return;
-
-  const now = Date.now();
-  let escalatedCount = 0;
-
-  for (const [alertId, alert] of Object.entries(alertsMap)) {
-    if (alert.isEscalated === true) continue;
-    if (alert.status === 'validee' || alert.status === 'cancelled') continue;
-
-    const threshold = settings[alert.type];
-    if (!threshold) continue;
-
-    let createdAtMs;
-    if (typeof alert.timestamp === 'number') {
-      createdAtMs = alert.timestamp;
-    } else if (typeof alert.timestamp === 'string') {
-      const parsed = Date.parse(alert.timestamp);
-      if (isNaN(parsed)) continue;
-      createdAtMs = parsed > now ? parsed - 3600000 : parsed;
-    } else {
-      continue;
-    }
-
-    let shouldEscalate = false;
-    let reason = '';
-
-    if (alert.status === 'disponible') {
-      const mins = (now - createdAtMs) / 60000;
-      if (mins >= threshold.unclaimedMinutes) {
-        shouldEscalate = true;
-        reason = `Unclaimed for ${Math.floor(mins)} minutes`;
-      }
-    } else if (alert.status === 'en_cours' && alert.takenAtTimestamp) {
-      let takenMs;
-      if (typeof alert.takenAtTimestamp === 'number') {
-        takenMs = alert.takenAtTimestamp;
-      } else {
-        const parsed = Date.parse(alert.takenAtTimestamp);
-        if (isNaN(parsed)) continue;
-        takenMs = parsed > now ? parsed - 3600000 : parsed;
-      }
-      const mins = (now - takenMs) / 60000;
-      if (mins >= threshold.claimedMinutes) {
-        shouldEscalate = true;
-        reason = `Claimed but not resolved for ${Math.floor(mins)} minutes`;
-      }
-    }
-
-    if (!shouldEscalate) continue;
-
-    await fetch(`${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isEscalated: true, escalatedAt: new Date().toISOString() }),
-    });
-
-    const fcmTokens = getFcmTokensForFactory(alert.usine || '', usersMap, alertsMap);
-    for (const tok of fcmTokens) {
-      await sendFcm(
-        tok,
-        `⚠️ Alert Escalated: ${alert.type}`,
-        `${alert.usine} — ${alert.description}\n${reason}`,
-        { alertId, type: alert.type || '', usine: alert.usine || '', escalated: 'true' },
-        env,
-      );
-    }
-    escalatedCount++;
+  if (!settings || typeof settings !== 'object') {
+    console.error('[ESCALATION] escalation_settings empty or invalid');
+    return;
   }
 
-  if (escalatedCount > 0) console.log(`[ESCALATION] Escalated ${escalatedCount} alert(s).`);
+  const now = Date.now();
+  let processed = 0;
+
+  for (const [alertId, alert] of Object.entries(alertsMap)) {
+    if (processed >= MAX_ESCALATION_CHECKS) break;
+    try {
+      if (alert.isEscalated === true) { processed++; continue; }
+      if (alert.status === 'validee' || alert.status === 'cancelled') { processed++; continue; }
+
+      // Resolve threshold robustly: exact key, lowercase, or default
+      let threshold = settings[alert.type] || settings[String(alert.type || '').toLowerCase()];
+      if (!threshold && settings.default) threshold = settings.default;
+      if (!threshold) { processed++; continue; }
+
+      // Parse creation timestamp
+      let createdAtMs;
+      if (typeof alert.timestamp === 'number') {
+        createdAtMs = alert.timestamp;
+      } else if (typeof alert.timestamp === 'string') {
+        const parsed = Date.parse(alert.timestamp);
+        if (isNaN(parsed)) { processed++; continue; }
+        createdAtMs = parsed;
+      } else {
+        processed++; continue;
+      }
+
+      let shouldEscalate = false;
+      let reason = '';
+
+      if (alert.status === 'disponible') {
+        const mins = (now - createdAtMs) / 60000;
+        if (typeof threshold.unclaimedMinutes === 'number' && mins >= threshold.unclaimedMinutes) {
+          shouldEscalate = true;
+          reason = `Unclaimed for ${Math.floor(mins)} minutes`;
+        }
+        console.log(`[ESC] check alert=${alertId} status=disponible mins=${Math.floor(mins)} threshold=${threshold.unclaimedMinutes} shouldEsc=${shouldEscalate}`);
+      } else if (alert.status === 'en_cours' && alert.takenAtTimestamp) {
+        let takenMs;
+        if (typeof alert.takenAtTimestamp === 'number') {
+          takenMs = alert.takenAtTimestamp;
+        } else {
+          const parsed = Date.parse(alert.takenAtTimestamp);
+          if (isNaN(parsed)) { processed++; continue; }
+          takenMs = parsed;
+        }
+        const mins = (now - takenMs) / 60000;
+        if (typeof threshold.claimedMinutes === 'number' && mins >= threshold.claimedMinutes) {
+          shouldEscalate = true;
+          reason = `Claimed but not resolved for ${Math.floor(mins)} minutes`;
+        }
+        console.log(`[ESC] check alert=${alertId} status=en_cours mins=${Math.floor(mins)} threshold=${threshold.claimedMinutes} shouldEsc=${shouldEscalate}`);
+      } else {
+        // Not applicable
+        processed++; continue;
+      }
+
+      if (!shouldEscalate) { processed++; continue; }
+
+      // Mark escalated and write escalatedAt
+      const patchRes = await fetch(`${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isEscalated: true, escalatedAt: new Date().toISOString() }),
+      });
+      if (!patchRes.ok) {
+        console.error(`[ESCALATION] Failed to patch alert ${alertId}: ${patchRes.status}`);
+        processed++; continue;
+      }
+
+      // Add an aiHistory audit entry to make escalation visible to clients
+      try {
+        await fetch(`${env.FB_DB_URL}alerts/${alertId}/aiHistory.json?auth=${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: 'escalated_worker', reason, timestamp: new Date().toISOString() }),
+        });
+      } catch (e) {
+        console.error('[ESCALATION] Failed to write aiHistory: ' + e.message);
+      }
+
+      const escalMsg = `⚠️ Alert Escalated: ${alert.type}`;
+      const escalBody = `${alert.usine} — ${alert.description}\n${reason}`;
+      const escalData = { alertId, type: alert.type || '', usine: alert.usine || '', escalated: 'true' };
+
+      // Notify idle supervisors + admins in the factory.
+      const fcmTokens = getFcmTokensForFactory(alert.usine || '', usersMap, alertsMap);
+      for (const tok of fcmTokens) {
+        await sendFcm(tok, escalMsg, escalBody, escalData, env);
+      }
+
+      // For claimed alerts: also push directly to the claiming supervisor —
+      // they are excluded from getFcmTokensForFactory (busy), but they need
+      // to know their own alert has escalated.
+      if (alert.status === 'en_cours' && alert.superviseurId) {
+        const claimant = usersMap[alert.superviseurId];
+        const claimantToken = claimant?.fcmToken;
+        if (claimantToken && !fcmTokens.includes(claimantToken)) {
+          await sendFcm(claimantToken, escalMsg, escalBody, escalData, env);
+        }
+      }
+
+      console.log(`[ESCALATION] Escalated alert ${alertId} (${alert.type}) reason=${reason}`);
+      processed++;
+    } catch (e) {
+      console.error('[ESCALATION] Error processing alert: ' + e.message);
+      processed++;
+    }
+  }
 }
 
 // ============================================================
 // Gemini proxy
 // ============================================================
 async function handleGeminiRequest(request, env) {
+  const fallback = '• Check equipment status.\n• Verify sensor connections.\n• Restart the affected machine.';
   try {
     const { prompt } = await request.json();
     const key = env.GEMINI_API_KEY;
-    const fallback = '• Check equipment status.\n• Verify sensor connections.\n• Restart the affected machine.';
     if (!key) {
       return new Response(JSON.stringify({ suggestion: fallback, note: 'No API key' }), {
         status: 200,
@@ -416,7 +461,6 @@ async function handleGeminiRequest(request, env) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch {
-    const fallback = '• Check equipment status.\n• Verify sensor connections.\n• Restart the affected machine.';
     return new Response(JSON.stringify({ suggestion: fallback, note: 'Error' }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -425,12 +469,8 @@ async function handleGeminiRequest(request, env) {
 }
 
 // ============================================================
-// Fan-out: scan notifications/{uid}/{notifId} for pushSent !== true
-// and send FCM. Cap: 3 per invocation to stay under subrequest limit.
-// Called from cron and from /notify endpoint.
+// Fan‑out pending notifications (used only by /notify endpoint, not cron)
 // ============================================================
-const MAX_FANOUT = 3;
-
 async function fanOutPendingNotifications(env, ctx) {
   const { token, usersMap } = ctx;
   const nowIso = new Date().toISOString();
@@ -451,7 +491,6 @@ async function fanOutPendingNotifications(env, ctx) {
       if (processed >= MAX_FANOUT) break outer;
       if (!notif || notif.pushSent === true || notif.pushSending === true) continue;
 
-      // ETag-claim to prevent double-send
       const url = `${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${token}`;
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
       if (!getRes.ok) continue;
@@ -495,10 +534,6 @@ async function fanOutPendingNotifications(env, ctx) {
       processed++;
     }
   }
-
-  if (processed >= MAX_FANOUT) {
-    console.log(`[NOTIFY] Fan-out capped at ${MAX_FANOUT} — next tick continues`);
-  }
 }
 
 function notifTitle(type) {
@@ -521,7 +556,7 @@ function notifTitle(type) {
 }
 
 // ============================================================
-// AI Assignment Engine
+// AI Assignment Engine (capped at MAX_AI_FACTORIES)
 // ============================================================
 const AI_COOLDOWN_MS = 5 * 60 * 1000;
 const AI_ACTIVE_STATUSES = new Set(['active', 'available']);
@@ -541,7 +576,6 @@ function aiResolveFactory(obj) {
   return usine ? aiSanitizeFactoryId(usine) : null;
 }
 
-// Pick most-recently-seen eligible supervisor for a factory (same-factory only).
 function aiPickSupervisor(usersMap, factoryId, busySet, now) {
   const candidates = [];
   for (const [uid, u] of Object.entries(usersMap || {})) {
@@ -567,32 +601,19 @@ function aiPickSupervisor(usersMap, factoryId, busySet, now) {
   return candidates[0] || null;
 }
 
-// Atomic ETag-based assignment. Uses PATCH on separate fields after the PUT
-// to avoid overwriting aiHistory (which is a child node, not a scalar).
 async function aiAssignAlert(alertId, supervisor, token, env) {
   const alertUrl = `${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`;
-
   const getRes = await fetch(alertUrl, { headers: { 'X-Firebase-ETag': 'true' } });
   if (!getRes.ok) return false;
   const etag = getRes.headers.get('ETag');
   const current = await getRes.json();
 
-  if (!current || current.status !== 'disponible' || current.superviseurId) {
-    console.log(`[AI] Alert ${alertId} already taken — skipping`);
-    return false;
-  }
+  if (!current || current.status !== 'disponible' || current.superviseurId) return false;
 
   const nowIso = new Date().toISOString();
-
-  // Conditional PUT — Firebase RTDB only supports if-match on PUT, not PATCH.
-  // Spreading ...current preserves all existing fields (including aiHistory child
-  // nodes that were returned by the GET) so nothing is lost on overwrite.
   const putRes = await fetch(alertUrl, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'if-match': etag,
-    },
+    headers: { 'Content-Type': 'application/json', 'if-match': etag },
     body: JSON.stringify({
       ...current,
       status: 'en_cours',
@@ -605,18 +626,11 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
     }),
   });
 
-  if (putRes.status === 412) {
-    console.log(`[AI] Alert ${alertId} concurrently modified — skipping`);
-    return false;
-  }
-  if (!putRes.ok) {
-    console.error(`[AI] Assignment PUT failed: ${putRes.status}`);
-    return false;
-  }
+  if (putRes.status === 412 || !putRes.ok) return false;
 
   const cooldownUntil = new Date(Date.now() + AI_COOLDOWN_MS).toISOString();
 
-  // Write in-app notification + push FCM immediately.
+  // Write in-app notification + send FCM
   let notifId = null;
   try {
     const notifRes = await fetch(
@@ -641,9 +655,7 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
       const payload = await notifRes.json();
       notifId = payload?.name ?? null;
     }
-  } catch (e) {
-    console.error('[AI] Notification write failed:', e.message);
-  }
+  } catch (e) { /* ignore */ }
 
   if (supervisor.fcmToken) {
     const pushed = await sendFcm(
@@ -665,7 +677,7 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
     }
   }
 
-  // Non-blocking audit trail
+  // Non‑blocking audit
   await Promise.allSettled([
     fetch(`${env.FB_DB_URL}alerts/${alertId}/aiHistory.json?auth=${token}`, {
       method: 'POST',
@@ -698,8 +710,6 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
   return true;
 }
 
-// Main AI routine. Accepts an optional pre-loaded ctx to save subrequests in cron.
-// When called from /ai-retry (no ctx), fetches its own fresh data.
 async function runAIAssignments(env, ctx) {
   const token = ctx?.token ?? (await getFirebaseToken(env));
   let alertsMap, usersMap;
@@ -712,12 +722,11 @@ async function runAIAssignments(env, ctx) {
       fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
       fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
     ]);
-    if (!ar.ok || !ur.ok) { console.error('[AI] Failed to load data'); return; }
+    if (!ar.ok || !ur.ok) return;
     alertsMap = (await ar.json()) || {};
     usersMap = (await ur.json()) || {};
   }
 
-  // Supervisors busy with an in-progress alert
   const busy = new Set();
   for (const a of Object.values(alertsMap)) {
     if (a.status === 'en_cours') {
@@ -726,7 +735,6 @@ async function runAIAssignments(env, ctx) {
     }
   }
 
-  // Group unassigned disponible alerts by factory
   const byFactory = {};
   for (const [id, a] of Object.entries(alertsMap)) {
     if (a.status !== 'disponible' || a.superviseurId) continue;
@@ -736,44 +744,39 @@ async function runAIAssignments(env, ctx) {
     byFactory[fid].push({ id, ...a });
   }
 
-  if (Object.keys(byFactory).length === 0) {
-    console.log('[AI] No unassigned alerts');
-    return;
-  }
+  if (Object.keys(byFactory).length === 0) return;
 
   const now = Date.now();
+  const factoryIds = Object.keys(byFactory);
 
-  for (const [factoryId, factoryAlerts] of Object.entries(byFactory)) {
+  // Only process up to MAX_AI_FACTORIES
+  for (let i = 0; i < Math.min(factoryIds.length, MAX_AI_FACTORIES); i++) {
+    const factoryId = factoryIds[i];
     const enaRes = await fetch(
       `${env.FB_DB_URL}factories/${factoryId}/aiConfig/enabled.json?auth=${token}`,
     );
     const enabled = enaRes.ok ? await enaRes.json() : false;
-    if (enabled !== true) {
-      console.log(`[AI] Disabled for factory ${factoryId}`);
-      continue;
-    }
+    if (enabled !== true) continue;
 
+    const factoryAlerts = byFactory[factoryId];
+    // Priority: escalated (2) > critical (1) > normal (0), then oldest first.
     factoryAlerts.sort((a, b) => {
-      if (!!a.isCritical !== !!b.isCritical) return a.isCritical ? -1 : 1;
+      const ap = a.isEscalated ? 2 : (a.isCritical ? 1 : 0);
+      const bp = b.isEscalated ? 2 : (b.isCritical ? 1 : 0);
+      if (ap !== bp) return bp - ap;
       return (Date.parse(a.timestamp || '') || 0) - (Date.parse(b.timestamp || '') || 0);
     });
 
     const sup = aiPickSupervisor(usersMap, factoryId, busy, now);
-    if (!sup) {
-      console.log(`[AI] No eligible supervisor for ${factoryId}`);
-      continue;
-    }
+    if (!sup) continue;
 
     const ok = await aiAssignAlert(factoryAlerts[0].id, sup, token, env);
-    if (ok) {
-      busy.add(sup.uid);
-      console.log(`[AI] ✅ Assigned ${factoryAlerts[0].id} → ${sup.name} (factory: ${factoryId})`);
-    }
+    if (ok) busy.add(sup.uid);
   }
 }
 
 // ============================================================
-// /config legacy
+// /config placeholder
 // ============================================================
 function handleConfigRequest() {
   return new Response(
@@ -783,11 +786,9 @@ function handleConfigRequest() {
 }
 
 // ============================================================
-// Main export
+// Main export — cron does NOT fan‑out notifications
 // ============================================================
 export default {
-  // Cron: every minute ("* * * * *" in wrangler.toml)
-  // Loads data ONCE, shares across all functions to stay under 50 subrequests.
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
       (async () => {
@@ -795,13 +796,13 @@ export default {
         try {
           coreCtx = await loadCoreData(env);
         } catch (e) {
-          console.error('[CRON] Failed to load core data:', e.message);
+          console.error('[CRON] Failed to load core data: ' + e.message);
           return;
         }
         await processAlerts(env, coreCtx);
         await checkEscalations(env, coreCtx);
         await runAIAssignments(env, coreCtx);
-        await fanOutPendingNotifications(env, coreCtx);
+        // fan‑out is only called via /notify endpoint now
       })(),
     );
   },
@@ -814,11 +815,8 @@ export default {
     }
 
     if (url.pathname === '/config') return handleConfigRequest();
-
     if (url.pathname === '/gemini-proxy') return handleGeminiRequest(request, env);
 
-    // Event-driven AI retry (lean — no fan-out, no processAlerts).
-    // Called by Flutter on: login, alert resolved, alert returned to queue.
     if (url.pathname === '/ai-retry') {
       ctx.waitUntil(runAIAssignments(env, null));
       return new Response(JSON.stringify({ queued: true }), {
@@ -827,8 +825,6 @@ export default {
       });
     }
 
-    // On-demand notification fan-out — called by Flutter after writing a
-    // cross-user notification (collaboration request, help request, etc.).
     if (url.pathname === '/notify') {
       ctx.waitUntil(
         (async () => {
@@ -836,7 +832,7 @@ export default {
             const coreCtx = await loadCoreData(env);
             await fanOutPendingNotifications(env, coreCtx);
           } catch (e) {
-            console.error('[NOTIFY] Fan-out error:', e.message);
+            console.error('[NOTIFY] Fan-out error: ' + e.message);
           }
         })(),
       );
@@ -846,16 +842,16 @@ export default {
       });
     }
 
-    // Default / manual trigger: run everything.
+    // Default / manual trigger: full run except fan‑out (call /notify separately if needed)
     try {
       const coreCtx = await loadCoreData(env);
       await processAlerts(env, coreCtx);
       await checkEscalations(env, coreCtx);
       await runAIAssignments(env, coreCtx);
-      await fanOutPendingNotifications(env, coreCtx);
     } catch (e) {
-      console.error('[MANUAL] Error:', e.message);
+      console.error('[MANUAL] Error: ' + e.message);
     }
     return new Response('OK', { status: 200, headers: corsHeaders });
   },
 };
+
