@@ -315,6 +315,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       _notifSubscription =
           _db.child('notifications/$uid').onValue.listen((event) async {
         final data = event.snapshot.value;
+        if (!mounted) return; // ← add this
         if (data == null) {
           setState(() {
             _notificationCount = 0;
