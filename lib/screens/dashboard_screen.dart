@@ -1814,6 +1814,11 @@ class _ClaimedView extends StatelessWidget {
       final isMine = a.superviseurId == currentUserId;
       final showRequestAssistance = isMine && a.assistantId == null;
       final showOfferAssistance = !isMine && a.assistantId == null;
+      final Widget? assistantsDisplay = a.collaborationRequestId != null
+          ? _CollaborationAssistantsWidget(
+              collabRequestId: a.collaborationRequestId!,
+            )
+          : null;
       return _AlertRow(
         alert: a,
         rowColor: const Color(0xFFEFF6FF),
@@ -1822,6 +1827,7 @@ class _ClaimedView extends StatelessWidget {
         statusColor: Colors.blue,
         pulseDot: !isMine,
         extraContent: _ElapsedTimer(alert: a, provider: provider),
+        assistantsDisplay: assistantsDisplay,
         onCriticalToggle: isMine ? () => _toggleCritical(a, context) : null,
         // Hold gesture opens collaboration flow while preserving existing logic.
         onRequestAssistance: showRequestAssistance
@@ -1908,6 +1914,29 @@ class _ClaimedView extends StatelessWidget {
             : null,
       );
     }).toList());
+  }
+}
+
+class _CollaborationAssistantsWidget extends StatelessWidget {
+  final String collabRequestId;
+  const _CollaborationAssistantsWidget({required this.collabRequestId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<CollaborationRequest?>(
+      stream: CollaborationService().getAllCollaborationRequests().map((list) {
+        try {
+          return list.firstWhere((r) => r.id == collabRequestId);
+        } catch (_) {
+          return null;
+        }
+      }),
+      builder: (context, snapshot) {
+        final req = snapshot.data;
+        if (req == null) return const SizedBox.shrink();
+        return _AssistantsView(request: req);
+      },
+    );
   }
 }
 
@@ -2051,6 +2080,7 @@ class _AlertRow extends StatelessWidget {
   final VoidCallback? onCriticalToggle;
   final VoidCallback? onRequestAssistance;
   final VoidCallback? onOfferAssistance;
+  final Widget? assistantsDisplay;
 
   const _AlertRow(
       {required this.alert,
@@ -2064,6 +2094,7 @@ class _AlertRow extends StatelessWidget {
       this.extraContent,
       this.onCriticalToggle,
       this.onRequestAssistance,
+      this.assistantsDisplay,
       this.onOfferAssistance});
 
   @override
@@ -2163,6 +2194,7 @@ class _AlertRow extends StatelessWidget {
                       color: Color(0xFF9CA3AF),
                       fontFamily: 'monospace')),
               if (extraContent != null) extraContent!,
+              if (assistantsDisplay != null) assistantsDisplay!,
             ],
           );
 
@@ -2393,6 +2425,49 @@ class _ElapsedTimer extends StatelessWidget {
                     color: Color(0xFF1D4ED8)),
                 overflow: TextOverflow.ellipsis)),
       ]),
+    );
+  }
+}
+
+class _AssistantsView extends StatelessWidget {
+  final CollaborationRequest? request;
+  const _AssistantsView({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    if (request == null) return const SizedBox.shrink();
+    final t = context.appTheme;
+    final accepted = <String>[];
+    for (int i = 0; i < request!.targetSupervisorIds.length; i++) {
+      final id = request!.targetSupervisorIds[i];
+      final name = request!.targetSupervisorNames[i];
+      final decision = request!.assistantDecisions[id] ?? 'pending';
+      if (decision == 'accepted') {
+        accepted.add(name);
+      }
+    }
+    if (accepted.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: accepted
+            .map((name) => Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: t.blueLt,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(name,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: t.blue)),
+                ))
+            .toList(),
+      ),
     );
   }
 }

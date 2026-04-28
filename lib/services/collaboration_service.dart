@@ -114,15 +114,20 @@ class CollaborationService {
     });
   }
 
+  bool _allAssistantsAccepted(CollaborationRequest r) {
+    if (r.targetSupervisorIds.isEmpty) return false;
+    return r.targetSupervisorIds.every(
+      (id) => (r.assistantDecisions[id] ?? 'pending') == 'accepted',
+    );
+  }
+
   // Get pending collaboration requests (for admin)
   Stream<List<CollaborationRequest>> getPendingCollaborationRequests() {
-    // Pending for PM/admin review means assistant accepted but PM not yet approved.
-    return getAllCollaborationRequests().map((requests) => requests
-        .where((r) =>
-            r.pmApproved == false &&
-            r.status != 'rejected' &&
-            r.assistantDecision == 'accepted')
-        .toList());
+    return getAllCollaborationRequests().map((requests) => requests.where((r) {
+          return r.pmApproved == false &&
+              r.status != 'rejected' &&
+              _allAssistantsAccepted(r);
+        }).toList());
   }
 
   Future<void> respondToCollaborationRequest({
