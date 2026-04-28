@@ -353,11 +353,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   shouldBuzz = true;
                 } else if (userRole == 'supervisor' &&
                     alertUsine == userUsine) {
-                  // Suppress buzz if supervisor already has a claimed alert —
-                  // they're already on-site and don't need another interruption.
                   if (mounted) {
-                    final uid =
-                        FirebaseAuth.instance.currentUser?.uid ?? '';
+                    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
                     final hasClaimed = context
                         .read<AlertProvider>()
                         .inProgressAlerts(uid)
@@ -438,6 +435,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     }
   }
 
+  // ────────────────────────────────────────────────────────────
+  // Notifications Drawer (fully theme‑aware)
+  // ────────────────────────────────────────────────────────────
   void _showNotifications() {
     showModalBottomSheet(
       context: context,
@@ -446,11 +446,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final t = context.appTheme;
             return Container(
               height: MediaQuery.of(context).size.height * 0.9,
-              decoration: const BoxDecoration(
-                color: _white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Column(
                 children: [
@@ -463,16 +465,16 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
+                            children: [
                               Text('All Notifications',
                                   style: TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.black87)),
-                              SizedBox(height: 4),
+                                      color: t.text)),
+                              const SizedBox(height: 4),
                               Text('View and manage your alerts and PM actions',
-                                  style: TextStyle(
-                                      fontSize: 14, color: Colors.grey)),
+                                  style:
+                                      TextStyle(fontSize: 14, color: t.muted)),
                             ],
                           ),
                         ),
@@ -482,19 +484,18 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                  color: _red,
+                                  color: t.red,
                                   borderRadius: BorderRadius.circular(12)),
                               child: Text('$_notificationCount unread',
                                   style: const TextStyle(
-                                      color: _white,
+                                      color: Colors.white,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12)),
                             ),
                             const SizedBox(width: 8),
                             GestureDetector(
                               onTap: () => Navigator.pop(context),
-                              child: const Icon(Icons.close,
-                                  color: Colors.black54),
+                              child: Icon(Icons.close, color: t.muted),
                             ),
                           ],
                         ),
@@ -505,12 +506,12 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                     margin: const EdgeInsets.symmetric(horizontal: 20),
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: t.scaffold,
                         borderRadius: BorderRadius.circular(30)),
                     child: TabBar(
                       controller: _tabController,
                       indicator: BoxDecoration(
-                          color: _white,
+                          color: t.card,
                           borderRadius: BorderRadius.circular(30),
                           boxShadow: const [
                             BoxShadow(
@@ -518,8 +519,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                                 blurRadius: 4,
                                 offset: Offset(0, 2))
                           ]),
-                      labelColor: _navy,
-                      unselectedLabelColor: Colors.black54,
+                      labelColor: t.navy,
+                      unselectedLabelColor: t.muted,
                       labelStyle: const TextStyle(
                           fontWeight: FontWeight.w600, fontSize: 13),
                       unselectedLabelStyle: const TextStyle(
@@ -533,11 +534,11 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                    color: _red, shape: BoxShape.circle),
+                                decoration: BoxDecoration(
+                                    color: t.red, shape: BoxShape.circle),
                                 child: Text('${_notifications.length}',
                                     style: const TextStyle(
-                                        color: _white,
+                                        color: Colors.white,
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold)),
                               ),
@@ -552,11 +553,11 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                    color: _red, shape: BoxShape.circle),
+                                decoration: BoxDecoration(
+                                    color: t.red, shape: BoxShape.circle),
                                 child: Text('${_pmActions.length}',
                                     style: const TextStyle(
-                                        color: _white,
+                                        color: Colors.white,
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold)),
                               ),
@@ -573,7 +574,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       children: [
                         // Alerts tab
                         _notifications.isEmpty
-                            ? const Center(child: Text('No alerts'))
+                            ? Center(
+                                child: Text('No alerts',
+                                    style: TextStyle(color: t.muted)))
                             : ListView.builder(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 20),
@@ -603,7 +606,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               ),
                         // PM Actions tab
                         _pmActions.isEmpty
-                            ? const Center(child: Text('No PM actions'))
+                            ? Center(
+                                child: Text('No PM actions',
+                                    style: TextStyle(color: t.muted)))
                             : ListView.builder(
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 20),
@@ -627,15 +632,17 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
+  // ── Help Request Item ──
   Widget _buildHelpRequestItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
+    final t = context.appTheme;
     final isBuzzingForThis = _isBuzzing && _buzzingNotificationId == n['id'];
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: const Color(0xFFF0F9FF),
-          border: Border.all(color: const Color(0xFFBAE6FD)),
+          color: t.blueLt,
+          border: Border.all(color: t.blue.withOpacity(0.3)),
           borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,39 +650,37 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.help_outline, color: Colors.blue, size: 24),
+              Icon(Icons.help_outline, color: t.blue, size: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(n['message'] ?? 'Help request',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: t.text)),
                     const SizedBox(height: 4),
                     Text(n['alertDescription'] ?? 'Action required',
-                        style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 13)),
+                        style: TextStyle(color: t.muted, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.access_time,
-                            size: 14, color: Colors.grey.shade500),
+                        Icon(Icons.access_time, size: 14, color: t.muted),
                         const SizedBox(width: 4),
                         Text(
                             _formatTimestamp(DateTime.parse(n['timestamp'] ??
                                 DateTime.now().toIso8601String())),
-                            style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 12)),
+                            style: TextStyle(color: t.muted, fontSize: 12)),
                         if (isBuzzingForThis) ...[
                           const SizedBox(width: 12),
-                          const Icon(Icons.vibration,
-                              size: 14, color: Colors.red),
+                          Icon(Icons.vibration, size: 14, color: t.red),
                           const SizedBox(width: 4),
-                          const Text('Phone is buzzing',
+                          Text('Phone is buzzing',
                               style: TextStyle(
                                   fontSize: 11,
-                                  color: Colors.red,
+                                  color: t.red,
                                   fontWeight: FontWeight.w500)),
                         ],
                       ],
@@ -687,8 +692,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 Container(
                     width: 10,
                     height: 10,
-                    decoration: const BoxDecoration(
-                        color: _red, shape: BoxShape.circle)),
+                    decoration:
+                        BoxDecoration(color: t.red, shape: BoxShape.circle)),
             ],
           ),
           const SizedBox(height: 16),
@@ -737,11 +742,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         backgroundColor: Colors.green));
                   }
                 },
-                icon: const Icon(Icons.check, size: 16, color: Colors.green),
-                label:
-                    const Text('Accept', style: TextStyle(color: Colors.green)),
+                icon: Icon(Icons.check, size: 16, color: t.green),
+                label: Text('Accept', style: TextStyle(color: t.green)),
                 style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.green),
+                    side: BorderSide(color: t.green),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8))),
               ),
@@ -768,11 +772,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         backgroundColor: Colors.orange));
                   }
                 },
-                icon: const Icon(Icons.close, size: 16, color: Colors.red),
-                label:
-                    const Text('Decline', style: TextStyle(color: Colors.red)),
+                icon: Icon(Icons.close, size: 16, color: t.red),
+                label: Text('Decline', style: TextStyle(color: t.red)),
                 style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.red),
+                    side: BorderSide(color: t.red),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8))),
               ),
@@ -783,12 +786,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                     await _stopBuzzing();
                     setModalState(() {});
                   },
-                  icon:
-                      const Icon(Icons.vibration, size: 16, color: Colors.red),
-                  label: const Text('Stop Buzzing',
-                      style: TextStyle(color: Colors.red)),
+                  icon: Icon(Icons.vibration, size: 16, color: t.red),
+                  label: Text('Stop Buzzing', style: TextStyle(color: t.red)),
                   style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.red),
+                      side: BorderSide(color: t.red),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8))),
                 ),
@@ -800,14 +801,16 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
+  // ── Assistance Request Item ──
   Widget _buildAssistanceRequestItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
+    final t = context.appTheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: const Color(0xFFFFF7ED),
-          border: Border.all(color: const Color(0xFFFED7AA)),
+          color: t.orangeLt,
+          border: Border.all(color: t.orange.withOpacity(0.3)),
           borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -815,30 +818,29 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.group_add, color: Colors.orange, size: 24),
+              Icon(Icons.group_add, color: t.orange, size: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(n['message'] ?? 'Assistance request',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: t.text)),
                     const SizedBox(height: 4),
                     Text(n['alertDescription'] ?? '',
-                        style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 13)),
+                        style: TextStyle(color: t.muted, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.access_time,
-                            size: 14, color: Colors.grey.shade500),
+                        Icon(Icons.access_time, size: 14, color: t.muted),
                         const SizedBox(width: 4),
                         Text(
                             _formatTimestamp(DateTime.parse(n['timestamp'] ??
                                 DateTime.now().toIso8601String())),
-                            style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 12)),
+                            style: TextStyle(color: t.muted, fontSize: 12)),
                       ],
                     ),
                   ],
@@ -848,8 +850,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 Container(
                     width: 10,
                     height: 10,
-                    decoration: const BoxDecoration(
-                        color: _red, shape: BoxShape.circle)),
+                    decoration:
+                        BoxDecoration(color: t.red, shape: BoxShape.circle)),
             ],
           ),
           const SizedBox(height: 16),
@@ -871,7 +873,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       shrinkWrap: true,
                       itemCount: supervisors.length,
                       itemBuilder: (_, i) => ListTile(
-                        leading: const Icon(Icons.person, color: _navy),
+                        leading: Icon(Icons.person, color: t.navy),
                         title: Text(supervisors[i].fullName),
                         subtitle: Text(supervisors[i].email),
                         onTap: () async {
@@ -896,7 +898,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                               content: Text(
                                   'Assigned ${supervisors[i].fullName} as assistant'),
-                              backgroundColor: Colors.green));
+                              backgroundColor: t.green));
                         },
                       ),
                     ),
@@ -910,7 +912,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               );
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
+                backgroundColor: t.orange,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8))),
@@ -922,6 +924,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
+  // ── Collaboration Request Item (FULLY COMPLETE) ──
   Widget _buildCollabRequestItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
     final t = context.appTheme;
@@ -934,13 +937,17 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
           color: t.card,
-          border: Border.all(color: const Color(0xFFE9D5FF)),
+          border: Border.all(
+              color: isUnread
+                  ? const Color(0xFFE9D5FF) // subtle purple accent
+                  : t.border),
           borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.people, color: Color(0xFF9333EA), size: 24),
+            Icon(Icons.people,
+                color: isUnread ? const Color(0xFF9333EA) : t.muted, size: 24),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -961,8 +968,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               Container(
                   width: 10,
                   height: 10,
-                  decoration:
-                      const BoxDecoration(color: Color(0xFF9333EA), shape: BoxShape.circle)),
+                  decoration: BoxDecoration(
+                      color: isUnread ? const Color(0xFF9333EA) : t.muted,
+                      shape: BoxShape.circle)),
           ]),
           const SizedBox(height: 14),
           // Inline Accept / Decline — keyed on collabRequestId
@@ -981,15 +989,18 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 final req = snap.data;
                 final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
                 final myDecision = req?.assistantDecisions[uid];
-                final decided = myDecision == 'accepted' || myDecision == 'refused';
+                final decided =
+                    myDecision == 'accepted' || myDecision == 'refused';
 
                 if (req == null) {
-                  return Text('Loading…', style: TextStyle(color: t.muted, fontSize: 12));
+                  return Text('Loading…',
+                      style: TextStyle(color: t.muted, fontSize: 12));
                 }
                 if (decided) {
                   final accepted = myDecision == 'accepted';
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: accepted
                           ? const Color(0xFF16A34A).withValues(alpha: 0.1)
@@ -997,29 +1008,33 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(children: [
-                      Icon(
-                          accepted ? Icons.check_circle : Icons.cancel,
+                      Icon(accepted ? Icons.check_circle : Icons.cancel,
                           size: 16,
-                          color: accepted ? const Color(0xFF16A34A) : Colors.red),
+                          color:
+                              accepted ? const Color(0xFF16A34A) : Colors.red),
                       const SizedBox(width: 8),
-                      Text(
-                          accepted
-                              ? 'You accepted — waiting for PM approval'
-                              : 'You declined this request',
-                          style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: accepted ? const Color(0xFF16A34A) : Colors.red)),
+                      Expanded(
+                        child: Text(
+                            accepted
+                                ? 'You accepted — waiting for PM approval'
+                                : 'You declined this request',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: accepted
+                                    ? const Color(0xFF16A34A)
+                                    : Colors.red)),
+                      ),
                     ]),
                   );
                 }
 
+                // Still pending — show accept/decline
                 return Row(children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () async {
-                        final name = FirebaseAuth.instance.currentUser
-                                ?.email
+                        final name = FirebaseAuth.instance.currentUser?.email
                                 ?.split('@')
                                 .first ??
                             'Supervisor';
@@ -1054,7 +1069,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           }
                         }
                       },
-                      icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                      icon:
+                          const Icon(Icons.close, size: 16, color: Colors.red),
                       label: const Text('Decline',
                           style: TextStyle(
                               color: Colors.red, fontWeight: FontWeight.w600)),
@@ -1069,8 +1085,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () async {
-                        final name = FirebaseAuth.instance.currentUser
-                                ?.email
+                        final name = FirebaseAuth.instance.currentUser?.email
                                 ?.split('@')
                                 .first ??
                             'Supervisor';
@@ -1106,7 +1121,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           }
                         }
                       },
-                      icon: const Icon(Icons.check_circle, size: 16),
+                      icon: const Icon(Icons.check_circle,
+                          size: 16, color: Colors.white),
                       label: const Text('Accept',
                           style: TextStyle(fontWeight: FontWeight.w600)),
                       style: ElevatedButton.styleFrom(
@@ -1124,26 +1140,29 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
+  // ── Default Notification Item ──
   Widget _buildDefaultNotificationItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
+    final t = context.appTheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: _white,
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          color: t.card,
+          border: Border.all(color: t.border),
           borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(n['message'] ?? 'Notification',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(n['alertDescription'] ?? ''),
+            style: TextStyle(fontWeight: FontWeight.bold, color: t.text)),
+        subtitle:
+            Text(n['alertDescription'] ?? '', style: TextStyle(color: t.muted)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isUnread && _buzzingNotificationId == n['id'])
               IconButton(
-                icon: const Icon(Icons.vibration, size: 18, color: Colors.red),
+                icon: Icon(Icons.vibration, size: 18, color: t.red),
                 onPressed: () async {
                   await _stopBuzzing();
                   setModalState(() {});
@@ -1151,8 +1170,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               ),
             if (isUnread)
               IconButton(
-                icon:
-                    const Icon(Icons.visibility, size: 18, color: Colors.blue),
+                icon: Icon(Icons.visibility, size: 18, color: t.blue),
                 onPressed: () async {
                   await _db
                       .child(
@@ -1170,7 +1188,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 },
               ),
             IconButton(
-              icon: const Icon(Icons.open_in_new, size: 18, color: _navy),
+              icon: Icon(Icons.open_in_new, size: 18, color: t.navy),
               onPressed: () async {
                 if (isUnread)
                   await _db
@@ -1207,14 +1225,16 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
+  // ── PM Action Item ──
   Widget _buildPmActionItem(Map<String, dynamic> action, bool isUnread,
       StateSetter setModalState, BuildContext context) {
+    final t = context.appTheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: const Color(0xFFF0FDF4),
-          border: Border.all(color: const Color(0xFFBBF7D0)),
+          color: t.greenLt,
+          border: Border.all(color: t.green.withOpacity(0.3)),
           borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1222,32 +1242,30 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.assignment_turned_in,
-                  color: Colors.green, size: 24),
+              Icon(Icons.assignment_turned_in, color: t.green, size: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(action['title'] ?? 'PM Action',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: t.text)),
                     const SizedBox(height: 4),
                     Text(action['description'] ?? '',
-                        style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 13)),
+                        style: TextStyle(color: t.muted, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Icon(Icons.access_time,
-                            size: 14, color: Colors.grey.shade500),
+                        Icon(Icons.access_time, size: 14, color: t.muted),
                         const SizedBox(width: 4),
                         Text(
                             _formatTimestamp(DateTime.parse(
                                 action['timestamp'] ??
                                     DateTime.now().toIso8601String())),
-                            style: TextStyle(
-                                color: Colors.grey.shade500, fontSize: 12)),
+                            style: TextStyle(color: t.muted, fontSize: 12)),
                       ],
                     ),
                   ],
@@ -1257,8 +1275,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 Container(
                     width: 10,
                     height: 10,
-                    decoration: const BoxDecoration(
-                        color: _red, shape: BoxShape.circle)),
+                    decoration:
+                        BoxDecoration(color: t.red, shape: BoxShape.circle)),
             ],
           ),
           const SizedBox(height: 16),
@@ -1277,13 +1295,11 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                     backgroundColor: Colors.green));
               }
             },
-            icon: const Icon(Icons.check_circle_outline,
-                size: 16, color: Colors.black87),
-            label: const Text('Mark as read',
-                style: TextStyle(color: Colors.black87)),
+            icon: Icon(Icons.check_circle_outline, size: 16, color: t.text),
+            label: Text('Mark as read', style: TextStyle(color: t.text)),
             style: OutlinedButton.styleFrom(
-                backgroundColor: _white,
-                side: BorderSide(color: Colors.grey.shade300),
+                backgroundColor: Colors.transparent,
+                side: BorderSide(color: t.border),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8))),
           ),
@@ -1310,7 +1326,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               bottom: 0,
               right: 0,
               child: Container(
-                decoration: BoxDecoration(color: t.card, shape: BoxShape.circle),
+                decoration:
+                    BoxDecoration(color: t.card, shape: BoxShape.circle),
                 child: Icon(Icons.warning, color: t.red, size: 14),
               ),
             ),
@@ -1321,11 +1338,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           Text('Supervisor',
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w700, color: t.navy)),
-          Text(widget.userName,
-              style: TextStyle(fontSize: 12, color: t.muted)),
+          Text(widget.userName, style: TextStyle(fontSize: 12, color: t.muted)),
         ]),
         const Spacer(),
-        // ── Theme toggle ──
+        // Theme toggle
         IconButton(
           icon: Icon(
             isDark ? Icons.light_mode : Icons.dark_mode,
@@ -1335,7 +1351,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           tooltip: isDark ? 'Light mode' : 'Dark mode',
           onPressed: () => context.read<ThemeProvider>().toggle(),
         ),
-        // ── Notifications ──
+        // Notifications
         Stack(clipBehavior: Clip.none, children: [
           IconButton(
               icon: Icon(Icons.notifications_none, color: t.navy, size: 28),
@@ -1347,8 +1363,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               child: Container(
                 width: 18,
                 height: 18,
-                decoration:
-                    BoxDecoration(color: t.red, shape: BoxShape.circle),
+                decoration: BoxDecoration(color: t.red, shape: BoxShape.circle),
                 child: Center(
                     child: Text('$_notificationCount',
                         style: TextStyle(
@@ -1359,7 +1374,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             ),
         ]),
         const SizedBox(width: 4),
-        // ── Logout ──
+        // Logout
         InkWell(
           onTap: widget.onLogout,
           child: Container(
@@ -1396,55 +1411,52 @@ class _SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     return GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: t.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: active ? color : t.border,
-                width: active ? 2 : 1),
-            boxShadow: active
-                ? [
-                    BoxShadow(
-                        color: color.withValues(alpha: 0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2))
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: t.muted,
-                        fontWeight: FontWeight.w500)),
-                const SizedBox(height: 4),
-                Text('$count',
-                    style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: color)),
-                const SizedBox(height: 8),
-                Text('Click to see details',
-                    style: TextStyle(fontSize: 11, color: t.muted)),
-              ]),
-              Container(
-                  width: 48,
-                  height: 48,
-                  decoration:
-                      BoxDecoration(color: bgColor, shape: BoxShape.circle),
-                  child: Icon(icon, color: color, size: 24)),
-            ],
-          ),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: active ? color : t.border, width: active ? 2 : 1),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                      color: color.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2))
+                ]
+              : [],
         ),
-      );
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: t.muted,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(height: 4),
+              Text('$count',
+                  style: TextStyle(
+                      fontSize: 26, fontWeight: FontWeight.bold, color: color)),
+              const SizedBox(height: 8),
+              Text('Click to see details',
+                  style: TextStyle(fontSize: 11, color: t.muted)),
+            ]),
+            Container(
+                width: 48,
+                height: 48,
+                decoration:
+                    BoxDecoration(color: bgColor, shape: BoxShape.circle),
+                child: Icon(icon, color: color, size: 24)),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1586,8 +1598,7 @@ class _ClaimedView extends StatelessWidget {
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         title: Row(
           children: [
-            const Icon(Icons.people,
-                color: Colors.deepPurple, size: 22),
+            const Icon(Icons.people, color: Colors.deepPurple, size: 22),
             const SizedBox(width: 8),
             const Expanded(
               child: Text(
@@ -1905,7 +1916,8 @@ class _FixedView extends StatelessWidget {
   final List<AlertModel> alerts;
   final List<AlertModel> assisted;
   final AlertProvider provider;
-  const _FixedView({required this.alerts, required this.assisted, required this.provider});
+  const _FixedView(
+      {required this.alerts, required this.assisted, required this.provider});
 
   Widget _claimantExtra(AlertModel a) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1920,7 +1932,8 @@ class _FixedView extends StatelessWidget {
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.timer, size: 15, color: Color(0xFF16A34A)),
               const SizedBox(width: 6),
-              Text('Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
+              Text(
+                  'Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
                   style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1937,7 +1950,9 @@ class _FixedView extends StatelessWidget {
                 TextSpan(
                     text: a.superviseurName,
                     style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700, color: _navy)),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _navy)),
                 if (a.assistantName != null)
                   TextSpan(
                       text: ' (assisted by ${a.assistantName})',
@@ -1984,7 +1999,9 @@ class _FixedView extends StatelessWidget {
                 TextSpan(
                     text: a.superviseurName,
                     style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700, color: _navy)),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _navy)),
               ])),
             ),
         ],

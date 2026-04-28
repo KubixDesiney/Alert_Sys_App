@@ -1213,27 +1213,39 @@ class _HeaderState extends State<_Header> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       _db.child('notifications/$uid').remove();
-      _notifSub = _db.child('notifications/$uid').onValue.listen((event) {
-        final data = event.snapshot.value;
-        if (data == null) {
+      _notifSub = _db.child('notifications/$uid').onValue.listen(
+        (event) {
+          final data = event.snapshot.value;
+          if (data == null) {
+            setState(() {
+              _notificationCount = 0;
+              _notifications = [];
+            });
+            return;
+          }
+          final map = Map<String, dynamic>.from(data as Map);
+          final list = map.entries.map((e) {
+            final m = Map<String, dynamic>.from(e.value as Map);
+            m['id'] = e.key;
+            return m;
+          }).toList();
+          final pending = list.where((n) => n['status'] != 'read').toList();
           setState(() {
-            _notificationCount = 0;
-            _notifications = [];
+            _notifications = list;
+            _notificationCount = pending.length;
           });
-          return;
-        }
-        final map = Map<String, dynamic>.from(data as Map);
-        final list = map.entries.map((e) {
-          final m = Map<String, dynamic>.from(e.value as Map);
-          m['id'] = e.key;
-          return m;
-        }).toList();
-        final pending = list.where((n) => n['status'] != 'read').toList();
-        setState(() {
-          _notifications = list;
-          _notificationCount = pending.length;
-        });
-      });
+        },
+        onError: (error) {
+          debugPrint('Notification stream error: $error');
+          // Don't crash; just treat as empty
+          if (mounted) {
+            setState(() {
+              _notifications = [];
+              _notificationCount = 0;
+            });
+          }
+        },
+      );
     }
   }
 
@@ -1249,18 +1261,27 @@ class _HeaderState extends State<_Header> {
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final theme = Theme.of(context);
+            final textColor = theme.brightness == Brightness.dark
+                ? Colors.white
+                : Colors.black87;
             return Container(
               padding: const EdgeInsets.all(16),
               height: 400,
+              color: theme.scaffoldBackgroundColor,
               child: Column(
                 children: [
-                  const Text('Notifications',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const Divider(),
+                  Text('Notifications',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: textColor)),
+                  Divider(color: theme.dividerColor),
                   Expanded(
                     child: _notifications.isEmpty
-                        ? const Center(child: Text('No notifications'))
+                        ? Center(
+                            child: Text('No notifications',
+                                style: TextStyle(color: textColor)))
                         : ListView.builder(
                             itemCount: _notifications.length,
                             itemBuilder: (context, index) {
@@ -1333,17 +1354,31 @@ class _HeaderState extends State<_Header> {
                                   title: Text(
                                     n['message'] ??
                                         'AI cross-factory recommendation',
+                                    style: TextStyle(
+                                        color: theme.brightness == Brightness.dark
+                                            ? Colors.white
+                                            : Colors.black87),
                                   ),
                                   subtitle: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
                                       if (recName.isNotEmpty)
-                                        Text('Recommended: $recName'),
+                                        Text('Recommended: $recName',
+                                            style: TextStyle(
+                                                color: theme.brightness ==
+                                                        Brightness.dark
+                                                    ? Colors.white70
+                                                    : Colors.black54)),
                                       if (recReason.isNotEmpty)
                                         Text(recReason,
                                             maxLines: 2,
-                                            overflow: TextOverflow.ellipsis),
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                color: theme.brightness ==
+                                                        Brightness.dark
+                                                    ? Colors.white70
+                                                    : Colors.black54)),
                                     ],
                                   ),
                                   trailing: SizedBox(
@@ -1411,9 +1446,16 @@ class _HeaderState extends State<_Header> {
                                 );
                               } else if (n['type'] == 'help_request') {
                                 return ListTile(
-                                  title: Text(n['message'] ?? 'Help request'),
-                                  subtitle:
-                                      const Text('Tap to accept or refuse'),
+                                  title: Text(n['message'] ?? 'Help request',
+                                      style: TextStyle(
+                                          color: theme.brightness == Brightness.dark
+                                              ? Colors.white
+                                              : Colors.black87)),
+                                  subtitle: Text('Tap to accept or refuse',
+                                      style: TextStyle(
+                                          color: theme.brightness == Brightness.dark
+                                              ? Colors.white70
+                                              : Colors.black54)),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -1496,9 +1538,16 @@ class _HeaderState extends State<_Header> {
                                 );
                               } else if (n['type'] == 'assistance_request') {
                                 return ListTile(
-                                  title: Text(
-                                      n['message'] ?? 'Assistance request'),
-                                  subtitle: Text(n['alertDescription'] ?? ''),
+                                  title: Text(n['message'] ?? 'Assistance request',
+                                      style: TextStyle(
+                                          color: theme.brightness == Brightness.dark
+                                              ? Colors.white
+                                              : Colors.black87)),
+                                  subtitle: Text(n['alertDescription'] ?? '',
+                                      style: TextStyle(
+                                          color: theme.brightness == Brightness.dark
+                                              ? Colors.white70
+                                              : Colors.black54)),
                                   trailing: ElevatedButton(
                                     onPressed: () async {
                                       final supervisors = await AuthService()

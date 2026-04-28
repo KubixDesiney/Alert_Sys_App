@@ -96,7 +96,8 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.warning_amber, color: context.appTheme.orange, size: 24),
+                      Icon(Icons.warning_amber,
+                          color: context.appTheme.orange, size: 24),
                       const SizedBox(width: 8),
                       Text(
                         'Escalations',
@@ -251,7 +252,8 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
       if (!snapshot.snapshot.exists) return [];
       final alertsMap = snapshot.snapshot.value;
       if (alertsMap == null) return [];
-      final entries = Map<String, dynamic>.from(alertsMap as Map).entries.toList();
+      final entries =
+          Map<String, dynamic>.from(alertsMap as Map).entries.toList();
       return entries.where((entry) {
         final v = entry.value as Map?;
         if (v == null) return false;
@@ -263,27 +265,35 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
   }
 }
 
-// ============================================================================
-// ESCALATED ALERTS TAB (Empty for now)
-// ============================================================================
+// Replace the old _EscalatedAlertsTab with this
 class _EscalatedAlertsTab extends StatelessWidget {
   const _EscalatedAlertsTab();
 
   @override
   Widget build(BuildContext context) {
     final database = FirebaseDatabase.instance.ref();
-    return StreamBuilder(
+    final t = context.appTheme;
+
+    return StreamBuilder<DatabaseEvent>(
       stream: database.child('alerts').onValue,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Error: ${snapshot.error}',
+                style: TextStyle(color: t.red)),
+          );
+        }
+
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return Center(child: CircularProgressIndicator(color: t.navy));
         }
+
         final alertsMap = snapshot.data!.snapshot.value;
-        if (alertsMap == null) {
-          return _buildEmpty();
-        }
+        if (alertsMap == null) return _buildEmpty(t);
+
         final List<MapEntry<String, dynamic>> entries =
             Map<String, dynamic>.from(alertsMap as Map).entries.toList();
+
         final escalated = entries
             .where((entry) {
               final v = entry.value as Map?;
@@ -291,52 +301,80 @@ class _EscalatedAlertsTab extends StatelessWidget {
               final status = v['status'] as String? ?? '';
               return status != 'validee' && status != 'cancelled';
             })
-            .map(
-                (entry) => AlertModel.fromMap(entry.key, Map.from(entry.value)))
+            .map((entry) => AlertModel.fromMap(
+                entry.key, Map<String, dynamic>.from(entry.value)))
             .toList()
-          ..sort((a, b) =>
-              (b.escalatedAt ?? b.timestamp)
-                  .compareTo(a.escalatedAt ?? a.timestamp));
+          ..sort((a, b) => (b.escalatedAt ?? b.timestamp)
+              .compareTo(a.escalatedAt ?? a.timestamp));
 
-        if (escalated.isEmpty) {
-          return _buildEmpty();
-        }
+        if (escalated.isEmpty) return _buildEmpty(t);
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: escalated.length,
-          itemBuilder: (context, index) {
+          itemBuilder: (_, index) {
             final alert = escalated[index];
-            return _EscalatedAlertCard(alert: alert);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: t.scaffold,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.red.withOpacity(0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Icon(Icons.warning_amber, color: t.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${_typeLabel(alert.type)} — ${alert.description}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: t.text,
+                        ),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 10),
+                  Text(
+                      '${alert.usine} • Line ${alert.convoyeur} • Post ${alert.poste}',
+                      style: TextStyle(color: t.muted)),
+                  const SizedBox(height: 6),
+                  Text('Escalated at: ${alert.escalatedAt ?? alert.timestamp}',
+                      style: TextStyle(color: t.muted, fontSize: 12)),
+                ],
+              ),
+            );
           },
         );
       },
     );
   }
 
-  Widget _buildEmpty() {
+  Widget _buildEmpty(AppTheme t) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.warning_amber, size: 48, color: _orange),
+          Icon(Icons.warning_amber, size: 48, color: t.orange),
           const SizedBox(height: 16),
-          const Text(
-            'No Escalated Alerts',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
+          Text('No Escalated Alerts',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.bold, color: t.text)),
           const SizedBox(height: 4),
-          Text(
-            'Alerts that exceed time thresholds will appear here',
-            style: TextStyle(fontSize: 13, color: _muted),
-          ),
+          Text('Alerts that exceed time thresholds will appear here',
+              style: TextStyle(fontSize: 13, color: t.muted)),
         ],
       ),
     );
   }
 }
 
-// Helper widget for each escalated alert
+// Updated card for each escalated alert
 class _EscalatedAlertCard extends StatelessWidget {
   final AlertModel alert;
   const _EscalatedAlertCard({required this.alert});
@@ -349,34 +387,36 @@ class _EscalatedAlertCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: t.card,
+        color: t.scaffold,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: t.red.withValues(alpha: 0.25)),
+        border: Border.all(color: t.red.withOpacity(0.25)),
         boxShadow: [
-          BoxShadow(color: t.red.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: t.red.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.warning_amber, color: t.red, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '${_typeLabel(alert.type)} — ${alert.description}',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: t.text,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Row(children: [
+            Icon(Icons.warning_amber, color: t.red, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${_typeLabel(alert.type)} — ${alert.description}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: t.text,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-            ],
-          ),
+            ),
+          ]),
           const SizedBox(height: 10),
           Row(children: [
             Icon(Icons.location_on, size: 14, color: t.muted),
@@ -406,7 +446,8 @@ class _EscalatedAlertCard extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 'Unclaimed alert exceeded threshold',
-                style: TextStyle(color: t.red, fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: t.red, fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ])
           else if (alert.status == 'en_cours')
@@ -415,7 +456,8 @@ class _EscalatedAlertCard extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 'Claimed but not resolved in time',
-                style: TextStyle(color: t.orange, fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: t.orange, fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ]),
         ],
@@ -774,8 +816,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.check_circle, size: 16),
-                label: Text(
-                    _isApproving ? 'Approving…' : 'Approve',
+                label: Text(_isApproving ? 'Approving…' : 'Approve',
                     style: const TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w600)),
                 style: ElevatedButton.styleFrom(
@@ -838,9 +879,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
         FirebaseAuth.instance.currentUser?.email?.split('@').first ?? 'PM';
 
     // Fetch alert data to get its usine
-    final alertSnapshot = await FirebaseDatabase.instance
-        .ref('alerts/${request.alertId}')
-        .get();
+    final alertSnapshot =
+        await FirebaseDatabase.instance.ref('alerts/${request.alertId}').get();
     if (!alertSnapshot.exists) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -876,8 +916,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
           .equalTo(supId)
           .once();
       if (snap.snapshot.exists) {
-        final alertsMap =
-            Map<String, dynamic>.from(snap.snapshot.value as Map);
+        final alertsMap = Map<String, dynamic>.from(snap.snapshot.value as Map);
         for (final entry in alertsMap.entries) {
           if (entry.key == request.alertId) continue;
           final a = Map<String, dynamic>.from(entry.value);
@@ -959,8 +998,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                      color: _orangeLt,
-                      borderRadius: BorderRadius.circular(8)),
+                      color: _orangeLt, borderRadius: BorderRadius.circular(8)),
                   child: const Icon(Icons.assignment_outlined,
                       color: _orange, size: 22),
                 ),
@@ -985,8 +1023,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                     decoration: BoxDecoration(
                       color: _orangeLt,
                       borderRadius: BorderRadius.circular(8),
-                      border:
-                          Border.all(color: _orange.withValues(alpha: 0.4)),
+                      border: Border.all(color: _orange.withValues(alpha: 0.4)),
                     ),
                     child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1028,9 +1065,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
               const SizedBox(height: 12),
               const Text('Do you confirm this transfer?',
                   style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: _navy)),
+                      fontSize: 14, fontWeight: FontWeight.bold, color: _navy)),
               const SizedBox(height: 20),
               Row(children: [
                 Expanded(
@@ -1089,8 +1124,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                      color: _orangeLt,
-                      borderRadius: BorderRadius.circular(8)),
+                      color: _orangeLt, borderRadius: BorderRadius.circular(8)),
                   child: const Icon(Icons.warning_amber_rounded,
                       color: _orange, size: 22),
                 ),
@@ -1120,8 +1154,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                   decoration: BoxDecoration(
                     color: _orangeLt,
                     borderRadius: BorderRadius.circular(8),
-                    border:
-                        Border.all(color: _orange.withValues(alpha: 0.4)),
+                    border: Border.all(color: _orange.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1153,8 +1186,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                                 const SizedBox(height: 4),
                                 const Text(
                                   'The original alert will be canceled and replaced by this collaboration.',
-                                  style:
-                                      TextStyle(fontSize: 11, color: _muted),
+                                  style: TextStyle(fontSize: 11, color: _muted),
                                 ),
                               ]),
                         ),
@@ -1165,9 +1197,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
               const Text(
                 'Do you confirm canceling the original alert and approving this collaboration?',
                 style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: _navy),
+                    fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
               ),
               const SizedBox(height: 20),
               Row(children: [
