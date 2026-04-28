@@ -329,10 +329,18 @@ class _SentCardState extends State<_SentCard> {
             title: 'PM Approval',
             subtitle: r.pmApproved
                 ? 'Approved by Production Manager'
-                : (allAccepted
-                    ? 'All assistants accepted — awaiting PM'
-                    : 'Waiting for all assistants to accept'),
-            state: r.pmApproved ? _StepState.done : _StepState.waiting,
+                : r.status == 'rejected' && !anyRefused
+                    ? 'Declined by Production Manager'
+                    : anyRefused
+                        ? 'Not reached — request blocked'
+                        : allAccepted
+                            ? 'All assistants accepted — awaiting PM'
+                            : 'Waiting for all assistants to accept',
+            state: r.pmApproved
+                ? _StepState.done
+                : (r.status == 'rejected' || anyRefused)
+                    ? _StepState.declined
+                    : _StepState.waiting,
             isLast: true,
           ),
 
@@ -670,7 +678,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
 // SHARED HELPERS
 // ============================================================================
 
-enum _StepState { done, failed, waiting }
+enum _StepState { done, failed, declined, waiting }
 
 class _ProgressStep extends StatelessWidget {
   final AppTheme t;
@@ -693,17 +701,26 @@ class _ProgressStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDone = state == _StepState.done;
     final isFailed = state == _StepState.failed;
+    final isDeclined = state == _StepState.declined;
     final circleColor = isDone
         ? _green
         : isFailed
             ? _red
-            : t.scaffold;
+            : isDeclined
+                ? _red.withValues(alpha: 0.12)
+                : t.scaffold;
     final borderColor = isDone
         ? _green
-        : isFailed
+        : (isFailed || isDeclined)
             ? _red
             : t.border;
-    final iconColor = isDone || isFailed ? Colors.white : t.muted;
+    final iconColor = isDone
+        ? Colors.white
+        : isFailed
+            ? Colors.white
+            : isDeclined
+                ? _red
+                : t.muted;
 
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Column(children: [
@@ -717,7 +734,7 @@ class _ProgressStep extends StatelessWidget {
           child: Icon(
             isDone
                 ? Icons.check
-                : isFailed
+                : (isFailed || isDeclined)
                     ? Icons.close
                     : icon,
             color: iconColor,
@@ -730,7 +747,11 @@ class _ProgressStep extends StatelessWidget {
             height: 36,
             margin: const EdgeInsets.symmetric(vertical: 3),
             decoration: BoxDecoration(
-                color: isDone ? _green : t.border,
+                color: isDone
+                    ? _green
+                    : isFailed
+                        ? _red.withValues(alpha: 0.4)
+                        : t.border,
                 borderRadius: BorderRadius.circular(1)),
           ),
       ]),
@@ -746,7 +767,7 @@ class _ProgressStep extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: isDone
                         ? t.navy
-                        : isFailed
+                        : (isFailed || isDeclined)
                             ? _red
                             : t.muted)),
             const SizedBox(height: 2),
