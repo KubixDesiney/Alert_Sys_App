@@ -1,4 +1,5 @@
 // lib/screens/alert_tree_visualization.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/hierarchy_service.dart';
@@ -63,6 +64,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   late AnimationController _pulseController;
   late Animation<double> _zoomAnimation;
   late Animation<double> _detailAnimation;
+
+  StreamSubscription? _hierarchySubscription;
 
   final HierarchyService _hierarchyService = HierarchyService();
   final AuthService _authService = AuthService();
@@ -144,7 +147,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   void _buildHierarchy() {
-    _hierarchyService.getFactories().listen((factories) {
+    // Cancel any previous subscription so we never accumulate listeners.
+    _hierarchySubscription?.cancel();
+    _hierarchySubscription =
+        _hierarchyService.getFactories().listen((factories) {
       // Build alert counts per location (usine|conveyor|workstation)
       final Map<String, int> alertCounts = {};
       final Map<String, Map<String, dynamic>> firstAlertData = {};
@@ -213,6 +219,33 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
       setState(() {
         _usines = usineNodes;
+
+        // Keep selected-node references and the open popup in sync with the
+        // freshly-built tree so the UI is always live, not a click-time snapshot.
+        if (_selectedUsine != null) {
+          _selectedUsine = _usines.firstWhere(
+            (u) => u.id == _selectedUsine!.id,
+            orElse: () => _selectedUsine!,
+          );
+        }
+        if (_selectedConveyor != null && _selectedUsine != null) {
+          _selectedConveyor = _selectedUsine!.children.firstWhere(
+            (c) => c.id == _selectedConveyor!.id,
+            orElse: () => _selectedConveyor!,
+          );
+        }
+        if (_selectedWorkstation != null && _selectedConveyor != null) {
+          final freshWs = _selectedConveyor!.children.firstWhere(
+            (w) => w.id == _selectedWorkstation!.id,
+            orElse: () => _selectedWorkstation!,
+          );
+          _selectedWorkstation = freshWs;
+          // Refresh the popup so it reflects the latest alert data without
+          // requiring the user to close and re-tap the station.
+          if (_popupAlertData != null) {
+            _popupAlertData = freshWs.alertData;
+          }
+        }
       });
     });
   }
@@ -303,6 +336,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   @override
   void dispose() {
+    _hierarchySubscription?.cancel();
     AIAssignmentService.instance.removeListener(_onAIChange);
     _zoomController.dispose();
     _detailController.dispose();
