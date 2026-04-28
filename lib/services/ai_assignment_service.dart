@@ -289,6 +289,9 @@ class AIAssignmentService extends ChangeNotifier {
     }
 
     notifyListeners();
+
+    // Sync recent AI history from Firebase (Worker-made assignments, etc.)
+    unawaited(syncRecentAIHistory());
   }
 
   Future<void> setEnabled(bool v) async {
@@ -1555,6 +1558,116 @@ class AIAssignmentService extends ChangeNotifier {
   void clearLogs() {
     _logs.clear();
     notifyListeners();
+  }
+
+  /// Syncs recent AI history entries from Firebase into the in-memory _logs.
+  /// Called on startup and periodically to catch Worker-made assignments.
+  Future<void> syncRecentAIHistory() async {
+    try {
+      final alertsSnap = await _db.child('alerts').get();
+      if (!alertsSnap.exists) return;
+
+      final alertsMap = Map<String, dynamic>.from(alertsSnap.value as Map);
+      final now = DateTime.now();
+      final oneHourAgo = now.subtract(const Duration(hours: 1));
+
+      for (final alertEntry in alertsMap.entries) {
+        final alertId = alertEntry.key;
+        final alertData = alertEntry.value;
+        
+        if (alertData is! Map) continue;
+        
+        // Extract alert metadata for label generation
+        final alertType = alertData['type']?.toString() ?? '';
+        final alertUsine = alertData['usine']?.toString() ?? '';
+        final alertConvoyeur = alertData['convoyeur']?.toString() ?? '';
+        final alertPoste = alertData['poste']?.toString() ?? '';
+        final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+        
+        final aiHistory = alertData['aiHistory'];
+        if (aiHistory is! Map) continue;
+
+        // Convert aiHistory entries to AILogEntry objects
+        for (final historyEntry in aiHistory.entries) {
+          final historyData = historyEntry.value;
+          if (historyData is! Map) continue;
+
+          final timestamp = _parseTimestamp(historyData['timestamp']);
+          if (timestamp == null || timestamp.isBefore(oneHourAgo)) {
+            continue; // Skip old entries
+          }
+
+          // Check if already in _logs to avoid duplicates
+          final logId = '${alertId}_${historyEntry.key}';
+          if (_logs.any((log) => log.id == logId)) {
+            continue;
+          }
+
+          // Create AILogEntry from history data
+          final event = historyData['event'];
+          final status = _parseLogStatus(event);
+
+          final logEntry = AILogEntry(
+            id: logId,
+            alertId: alertId,
+            alertLabel: alertLabel,
+            alertType: alertType,
+            alertUsine: alertUsine,
+            assignedSupervisorId: historyData['supervisorId']?.toString(),
+            assignedSupervisorName: historyData['supervisorName']?.toString(),
+            reason: historyData['reason']?.toString() ?? '',
+            reasonBreakdown: [],
+            consideredCandidates: const [],
+            confidence: (historyData['confidence'] as num?)?.toDouble() ?? 0.0,
+            timestamp: timestamp,
+            status: status,
+          );
+
+          _addLog(logEntry);
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('[AI_SYNC] Error syncing history: $e');
+    }
+  }
+
+  DateTime? _parseTimestamp(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    if (value is num) {
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  AILogStatus _parseLogStatus(dynamic event) {
+    if (event == null) return AILogStatus.skipped;
+    switch (event.toString()) {
+      case 'assigned':
+      case 'assigned_worker': // Worker-made assignments
+        return AILogStatus.success;
+      case 'skipped':
+        return AILogStatus.skipped;
+      case 'recommended':
+        return AILogStatus.recommended;
+      case 'rejected':
+        return AILogStatus.rejected;
+      case 'aborted':
+        return AILogStatus.aborted;
+      default:
+        return AILogStatus.skipped;
+    }
   }
 
   @override
