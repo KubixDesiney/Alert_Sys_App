@@ -99,7 +99,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final _auth = AuthService();
 
   // Filter state
-  String _timeRange = 'week';
+  String _timeRange = 'all';
   String _selectedUsine = 'all';
   String _filterConvoyeur = 'all';
   String _filterPoste = 'all';
@@ -123,7 +123,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _loadSavedFilters() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _timeRange = prefs.getString(_prefTimeRange) ?? 'week';
+      _timeRange = prefs.getString(_prefTimeRange) ?? 'all';
       _selectedUsine = prefs.getString(_prefUsine) ?? 'all';
     });
     _applyFilters();
@@ -147,10 +147,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             a.timestamp.month == now.month &&
             a.timestamp.day == now.day,
         'week' =>
-          a.timestamp.isAfter(now.subtract(Duration(days: now.weekday - 1))) &&
-              a.timestamp.isBefore(now
-                  .subtract(Duration(days: now.weekday - 1))
-                  .add(const Duration(days: 7))),
+          a.timestamp.isAfter(now.subtract(const Duration(days: 7))),
         'month' =>
           a.timestamp.year == now.year && a.timestamp.month == now.month,
         'year' => a.timestamp.year == now.year,
