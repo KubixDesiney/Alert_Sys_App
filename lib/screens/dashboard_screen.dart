@@ -1948,119 +1948,139 @@ class _FixedView extends StatelessWidget {
   const _FixedView(
       {required this.alerts, required this.assisted, required this.provider});
 
-  Widget _claimantExtra(AlertModel a) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-                color: const Color(0xFFDCFCE7),
-                border: Border.all(color: const Color(0xFF86EFAC)),
-                borderRadius: BorderRadius.circular(7)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.timer, size: 15, color: Color(0xFF16A34A)),
-              const SizedBox(width: 6),
-              Text(
-                  'Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
-                  style: const TextStyle(
+  Widget _claimantExtra(AlertModel a, AppTheme t) {
+    final collaboratorNames = a.collaborators
+            ?.map((c) => c['name'] ?? '')
+            .where((n) => n.isNotEmpty)
+            .toList() ??
+        [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+              color: t.greenLt,
+              border: Border.all(color: t.green.withOpacity(0.4)),
+              borderRadius: BorderRadius.circular(7)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.timer, size: 15, color: t.green),
+            const SizedBox(width: 6),
+            Text(
+                'Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w700, color: t.green)),
+          ]),
+        ),
+        if (a.superviseurName != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: 'Fixed by: ',
+                  style: TextStyle(fontSize: 12, color: t.muted)),
+              TextSpan(
+                  text: a.superviseurName,
+                  style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF16A34A))),
-            ]),
+                      color: t.navy)),
+            ])),
           ),
-          if (a.superviseurName != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text.rich(TextSpan(children: [
-                const TextSpan(
-                    text: 'Fixed by: ',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                TextSpan(
-                    text: a.superviseurName,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: _navy)),
-                if (a.assistantName != null)
-                  TextSpan(
-                      text: ' (assisted by ${a.assistantName})',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          color: _muted)),
-              ])),
+        if (collaboratorNames.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 2,
+              children: collaboratorNames
+                  .map((name) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: t.blueLt,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text('Assisted by: $name',
+                            style: TextStyle(fontSize: 12, color: t.blue)),
+                      ))
+                  .toList(),
             ),
-          // No "Assisted X" badge here — claimant is not the assistant.
-        ],
-      );
+          ),
+      ],
+    );
+  }
 
-  Widget _assistantExtra(AlertModel a) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-                color: const Color(0xFFEBF8FF),
-                border: Border.all(color: const Color(0xFF93C5FD)),
-                borderRadius: BorderRadius.circular(7)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.handshake, size: 15, color: Color(0xFF3B82F6)),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                    'Assisted ${a.assistedBySupervisorName ?? a.superviseurName ?? ""}',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF3B82F6))),
-              ),
-            ]),
-          ),
-          if (a.superviseurName != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text.rich(TextSpan(children: [
-                const TextSpan(
-                    text: 'Fixed by: ',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
-                TextSpan(
-                    text: a.superviseurName,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: _navy)),
-              ])),
+  Widget _assistantExtra(AlertModel a, AppTheme t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+              color: t.blueLt,
+              border: Border.all(color: t.blue.withOpacity(0.4)),
+              borderRadius: BorderRadius.circular(7)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.handshake, size: 15, color: t.blue),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                  'Assisted ${a.assistedBySupervisorName ?? a.superviseurName ?? ""}',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: t.blue)),
             ),
-        ],
-      );
+          ]),
+        ),
+        if (a.superviseurName != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: 'Fixed by: ',
+                  style: TextStyle(fontSize: 12, color: t.muted)),
+              TextSpan(
+                  text: a.superviseurName,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: t.navy)),
+            ])),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme; // ⬅️ This line defines t
+
     if (alerts.isEmpty && assisted.isEmpty)
-      return _empty(Icons.check_circle_outline, Colors.green, 'No fixed alerts',
+      return _empty(Icons.check_circle_outline, t.green, 'No fixed alerts',
           'Fixed alerts will appear here');
 
     return Column(children: [
-      // Own fixed alerts (current user was the claimant)
       ...alerts.map((a) => _AlertRow(
             alert: a,
-            rowColor: const Color(0xFFF0FDF4),
+            rowColor: t.greenLt,
             statusLabel: 'Fixed',
-            statusColor: const Color(0xFF16A34A),
+            statusColor: t.green,
             statusIcon: Icons.check_circle_outline,
-            extraContent: _claimantExtra(a),
+            extraContent: _claimantExtra(a, t),
           )),
-      // Alerts where current user was the assistant
       ...assisted.map((a) => _AlertRow(
             alert: a,
-            rowColor: const Color(0xFFEFF6FF),
-            borderColor: const Color(0xFF93C5FD),
+            rowColor: t.blueLt,
+            borderColor: t.blue.withOpacity(0.4),
             statusLabel: 'Assisted',
-            statusColor: const Color(0xFF3B82F6),
+            statusColor: t.blue,
             statusIcon: Icons.handshake,
-            extraContent: _assistantExtra(a),
+            extraContent: _assistantExtra(a, t),
           )),
     ]);
   }
