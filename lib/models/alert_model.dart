@@ -20,6 +20,7 @@ class AlertModel {
   final bool? wasAssisted; // ✅ NEW - Track if this alert was assisted
   final String? assistedBySupervisorId; // ✅ NEW - Who supervised the assist
   final String? assistedBySupervisorName; // ✅ NEW - Name of supervisor
+  final List<Map<String, String>>? collaborators;
   final bool aiAssigned;
   final String? aiAssignmentReason;
   final double? aiConfidence;
@@ -77,9 +78,16 @@ class AlertModel {
     this.comments = const [],
     this.resolutionReason,
     this.resolvedAt,
+    this.collaborators,
   });
 
   factory AlertModel.fromMap(String id, Map<String, dynamic> data) {
+    final rawList = data['collaborators'];
+    final List<Map<String, String>>? collaboratorsList = rawList != null
+        ? (rawList as List<dynamic>)
+            .map((e) => Map<String, String>.from(e as Map))
+            .toList()
+        : null;
     return AlertModel(
       id: id,
       type: data['type'] ?? 'qualite',
@@ -125,6 +133,7 @@ class AlertModel {
       aiRecommendedSupervisorId: data['aiRecommendedSupervisorId'],
       aiRecommendedSupervisorName: data['aiRecommendedSupervisorName'],
       aiRecommendationReason: data['aiRecommendationReason'],
+      collaborators: collaboratorsList,
     );
   }
 
@@ -163,6 +172,7 @@ class AlertModel {
         'aiRecommendedSupervisorId': aiRecommendedSupervisorId,
         'aiRecommendedSupervisorName': aiRecommendedSupervisorName,
         'aiRecommendationReason': aiRecommendationReason,
+        'collaborators': collaborators?.map((e) => e).toList(),
       };
 
   static DateTime _parseDate(dynamic raw) {
@@ -206,6 +216,7 @@ class AlertModel {
     String? aiRecommendedSupervisorId,
     String? aiRecommendedSupervisorName,
     String? aiRecommendationReason,
+    List<Map<String, String>>? collaborators,
   }) =>
       AlertModel(
         id: id,
@@ -252,5 +263,6 @@ class AlertModel {
             aiRecommendedSupervisorName ?? this.aiRecommendedSupervisorName,
         aiRecommendationReason:
             aiRecommendationReason ?? this.aiRecommendationReason,
+        collaborators: collaborators ?? this.collaborators,
       );
 }
