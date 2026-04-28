@@ -16,6 +16,19 @@ String _defaultDescription(String type) => switch (type) {
 class AlertService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
+  /// Atomically increments and returns the next short, speakable alert number.
+  /// Used for voice commands ("claim alert 1025") since Firebase push keys
+  /// are not pronounceable. Counter starts at 1000 to keep numbers 4+ digits.
+  Future<int> nextAlertNumber() async {
+    final ref = _db.child('alertCounter');
+    final result = await ref.runTransaction((current) {
+      final currentVal = (current as num?)?.toInt() ?? 999;
+      return Transaction.success(currentVal + 1);
+    });
+    final committed = result.snapshot.value;
+    return (committed as num?)?.toInt() ?? 1000;
+  }
+
   Stream<List<AlertModel>> getAlertsForUsine(String usine) {
     return _db
         .child('alerts')
@@ -66,11 +79,16 @@ class AlertService {
           'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
     }
 
+    // Allocate a short, speakable alert number BEFORE writing the alert
+    // so it's present from the first stream tick (no UI flicker from 0 → N).
+    final number = await nextAlertNumber();
+
     // Create the alert (same as before)
     final ref = _db.child('alerts').push();
     final now = DateTime.now().toUtc();
     final alertId = ref.key;
     final alertData = {
+      'alertNumber': number,
       'type': type,
       'usine': usine,
       'convoyeur': convoyeur,
@@ -310,9 +328,13 @@ class AlertService {
       return;
 
     final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
+    final alertNumber =
+        (alertSnap.child('alertNumber').value as num?)?.toInt() ?? 0;
     await _db.child('alerts/$alertId').update({'notificationSent': true});
 
     final users = await getAllUsers();
+
+    final numberPrefix = alertNumber > 0 ? '#$alertNumber ' : '';
 
     for (var entry in users.entries) {
       final role = entry.value['role'] ?? 'supervisor';
@@ -321,10 +343,11 @@ class AlertService {
         final notification = {
           'type': 'new_alert',
           'alertId': alertId,
+          'alertNumber': alertNumber,
           'alertType': alertType,
           'alertDescription': description,
           'usine': usine,
-          'message': 'New alert from $usine: $alertType',
+          'message': 'New alert ${numberPrefix}from $usine: $alertType',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
           'pushSent': false,

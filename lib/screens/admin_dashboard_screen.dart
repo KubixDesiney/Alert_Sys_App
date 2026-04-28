@@ -23,6 +23,7 @@ import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
+import '../widgets/voice_command_button.dart';
 import '../services/ai_assignment_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
@@ -348,6 +349,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     List<List<dynamic>> csvData = [
       [
         'ID',
+        'Alert #',
         'Type',
         'Usine',
         'Convoyeur',
@@ -366,6 +368,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     for (var alert in _filteredAlerts) {
       csvData.add([
         alert.id,
+        alert.alertNumber,
         _typeLabel(alert.type),
         alert.usine,
         alert.convoyeur,
@@ -415,6 +418,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     var sheet = excelFile['Alerts'];
     sheet.appendRow([
       excel.TextCellValue('ID'),
+      excel.TextCellValue('Alert #'),
       excel.TextCellValue('Type'),
       excel.TextCellValue('Usine'),
       excel.TextCellValue('Convoyeur'),
@@ -432,6 +436,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     for (var alert in _filteredAlerts) {
       sheet.appendRow([
         excel.TextCellValue(alert.id),
+        excel.IntCellValue(alert.alertNumber),
         excel.TextCellValue(_typeLabel(alert.type)),
         excel.TextCellValue(alert.usine),
         excel.IntCellValue(alert.convoyeur),
@@ -1096,11 +1101,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ? const Center(child: CircularProgressIndicator(color: _navy))
                 : _buildContent()),
       ])),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showSimulateDialog,
-        backgroundColor: _navy,
-        tooltip: 'Simulate Alert',
-        child: const Icon(Icons.add_alert),
+      // Stack the voice mic above the simulate-alert FAB so admins can also
+      // drive the app hands-free during demos / shop-floor walks.
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          const VoiceCommandButton(),
+          FloatingActionButton(
+            onPressed: _showSimulateDialog,
+            backgroundColor: _navy,
+            tooltip: 'Simulate Alert',
+            child: const Icon(Icons.add_alert),
+          ),
+        ],
       ),
     );
   }
