@@ -643,7 +643,46 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     );
   }
 
-  // ── Help Request Item ──
+  // Notification helpers
+  Future<void> _markNotificationAsRead(
+    Map<String, dynamic> notification,
+    StateSetter setModalState,
+    BuildContext modalContext,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final notificationId = notification['id']?.toString();
+    if (uid == null || notificationId == null || notificationId.isEmpty) {
+      return;
+    }
+
+    final readAt = DateTime.now().toIso8601String();
+    await _db.child('notifications/$uid/$notificationId').update({
+      'status': 'read',
+      'readAt': readAt,
+    });
+
+    if (_buzzingNotificationId == notificationId) {
+      await _stopBuzzing();
+    }
+
+    if (!mounted || !modalContext.mounted) return;
+    setModalState(() {
+      final index =
+          _notifications.indexWhere((item) => item['id'] == notificationId);
+      if (index != -1) {
+        _notifications[index] = {
+          ..._notifications[index],
+          'status': 'read',
+          'readAt': readAt,
+        };
+      }
+      _notificationCount =
+          _notifications.where((item) => item['status'] != 'read').length;
+    });
+    setState(() {});
+  }
+
+  // Help Request Item
   Widget _buildHelpRequestItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
     final t = context.appTheme;
@@ -1146,6 +1185,43 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 ]);
               },
             ),
+          if (isUnread) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await _markNotificationAsRead(n, setModalState, context);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content:
+                            const Text('Collaboration request marked as read'),
+                        backgroundColor: t.green,
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.done_all_rounded, size: 16),
+                label: const Text(
+                  'Mark as read',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF9333EA),
+                  backgroundColor:
+                      const Color(0xFF9333EA).withValues(alpha: 0.06),
+                  side: BorderSide(
+                    color: const Color(0xFF9333EA).withValues(alpha: 0.35),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -6,6 +6,7 @@ import '../services/hierarchy_service.dart';
 import '../services/auth_service.dart';
 import '../services/ai_assignment_service.dart';
 import '../models/alert_model.dart';
+import '../models/hierarchy_model.dart';
 import '../models/user_model.dart';
 import '../widgets/ai_logs_panel.dart';
 import '../theme.dart';
@@ -60,6 +61,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Offset? _popupPosition;
   double _treeScale = 1.0;
   bool _showAILogsPanel = false;
+  List<Factory> _factories = [];
 
   late AnimationController _zoomController;
   late AnimationController _detailController;
@@ -83,7 +85,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   @override
   void initState() {
     super.initState();
-    _buildHierarchy();
+    _startHierarchySubscription();
     AIAssignmentService.instance.init().then((_) {
       if (mounted) setState(() {});
       AIAssignmentService.instance.processAlerts(widget.alerts);
@@ -120,7 +122,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   void didUpdateWidget(AlertTreeVisualization oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.alerts != oldWidget.alerts) {
-      _buildHierarchy();
+      _rebuildHierarchy();
       // Feed updated alerts to AI engine for re-evaluation.
       AIAssignmentService.instance.processAlerts(widget.alerts);
     }
@@ -148,112 +150,121 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     }
   }
 
-  void _buildHierarchy() {
-    // Cancel any previous subscription so we never accumulate listeners.
+  void _startHierarchySubscription() {
     _hierarchySubscription?.cancel();
     _hierarchySubscription =
         _hierarchyService.getFactories().listen((factories) {
-      // Build alert counts per location (usine|conveyor|workstation)
-      final Map<String, int> alertCounts = {};
-      final Map<String, Map<String, dynamic>> firstAlertData = {};
-      final Map<String, int> activeAlertPriority = {};
+      _factories = factories;
+      _rebuildHierarchy();
+    });
+  }
 
-      for (var alert in widget.alerts) {
-        if (alert.status == 'disponible' || alert.status == 'en_cours') {
-          final key = '${alert.usine}|${alert.convoyeur}|${alert.poste}';
-          alertCounts[key] = (alertCounts[key] ?? 0) + 1;
-          final priority = _activeAlertPriority(alert.status);
-          if (!firstAlertData.containsKey(key) ||
-              priority > (activeAlertPriority[key] ?? 0)) {
-            firstAlertData[key] = _alertToMap(alert);
-            activeAlertPriority[key] = priority;
-          }
+  void _rebuildHierarchy() {
+    if (!mounted || _factories.isEmpty) return;
+
+    // Build alert counts per location (usine|conveyor|workstation) directly
+    // from the latest alert stream tick. This keeps status color changes from
+    // waiting on a second hierarchy event.
+    final Map<String, int> alertCounts = {};
+    final Map<String, Map<String, dynamic>> firstAlertData = {};
+    final Map<String, int> activeAlertPriority = {};
+
+    for (var alert in widget.alerts) {
+      if (alert.status == 'disponible' || alert.status == 'en_cours') {
+        final key = '${alert.usine}|${alert.convoyeur}|${alert.poste}';
+        alertCounts[key] = (alertCounts[key] ?? 0) + 1;
+        final priority = _activeAlertPriority(alert.status);
+        if (!firstAlertData.containsKey(key) ||
+            priority > (activeAlertPriority[key] ?? 0)) {
+          firstAlertData[key] = _alertToMap(alert);
+          activeAlertPriority[key] = priority;
         }
       }
+    }
 
-      final usineNodes = factories.map((factory) {
-        final conveyorNodes = factory.conveyors.values.map((conveyor) {
-          final stationNodes = conveyor.stations.values.map((station) {
-            final stationNumber =
-                int.tryParse(station.id.replaceAll('station_', '')) ?? 0;
-            final key = '${factory.name}|${conveyor.number}|$stationNumber';
-            final errorCount = alertCounts[key] ?? 0;
-            final baseStationData = <String, dynamic>{
-              'usine': factory.name,
-              'convoyeur': conveyor.number,
-              'poste': stationNumber,
-            };
-            return AlertNode(
-              id: '${factory.id}|${conveyor.id}|${station.id}',
-              label: station.name,
-              errorCount: errorCount,
-              alertData: errorCount > 0
-                  ? {
-                      ...baseStationData,
-                      ...?firstAlertData[key],
-                      'hasActiveAlert': true,
-                    }
-                  : {
-                      ...baseStationData,
-                      'hasActiveAlert': false,
-                    },
-              type: 'workstation',
-            );
-          }).toList();
-
-          final conveyorErrorCount =
-              stationNodes.fold<int>(0, (sum, s) => sum + s.errorCount);
+    final usineNodes = _factories.map((factory) {
+      final conveyorNodes = factory.conveyors.values.map((conveyor) {
+        final stationNodes = conveyor.stations.values.map((station) {
+          final stationNumber =
+              int.tryParse(station.id.replaceAll('station_', '')) ?? 0;
+          final key = '${factory.name}|${conveyor.number}|$stationNumber';
+          final errorCount = alertCounts[key] ?? 0;
+          final baseStationData = <String, dynamic>{
+            'usine': factory.name,
+            'convoyeur': conveyor.number,
+            'poste': stationNumber,
+          };
           return AlertNode(
-            id: '${factory.id}|${conveyor.id}',
-            label: 'Conveyor ${conveyor.number}',
-            errorCount: conveyorErrorCount,
-            children: stationNodes.toList(),
-            type: 'conveyor',
+            id: '${factory.id}|${conveyor.id}|${station.id}',
+            label: station.name,
+            errorCount: errorCount,
+            alertData: errorCount > 0
+                ? {
+                    ...baseStationData,
+                    ...?firstAlertData[key],
+                    'hasActiveAlert': true,
+                  }
+                : {
+                    ...baseStationData,
+                    'hasActiveAlert': false,
+                  },
+            type: 'workstation',
           );
         }).toList();
 
-        final factoryErrorCount =
-            conveyorNodes.fold<int>(0, (sum, c) => sum + c.errorCount);
+        final conveyorErrorCount =
+            stationNodes.fold<int>(0, (sum, s) => sum + s.errorCount);
         return AlertNode(
-          id: factory.id,
-          label: factory.name,
-          errorCount: factoryErrorCount,
-          children: conveyorNodes.toList(),
-          type: 'usine',
+          id: '${factory.id}|${conveyor.id}',
+          label: 'Conveyor ${conveyor.number}',
+          errorCount: conveyorErrorCount,
+          children: stationNodes.toList(),
+          type: 'conveyor',
         );
       }).toList();
 
-      setState(() {
-        _usines = usineNodes;
+      final factoryErrorCount =
+          conveyorNodes.fold<int>(0, (sum, c) => sum + c.errorCount);
+      return AlertNode(
+        id: factory.id,
+        label: factory.name,
+        errorCount: factoryErrorCount,
+        children: conveyorNodes.toList(),
+        type: 'usine',
+      );
+    }).toList();
 
-        // Keep selected-node references and the open popup in sync with the
-        // freshly-built tree so the UI is always live, not a click-time snapshot.
-        if (_selectedUsine != null) {
-          _selectedUsine = _usines.firstWhere(
-            (u) => u.id == _selectedUsine!.id,
-            orElse: () => _selectedUsine!,
-          );
-        }
-        if (_selectedConveyor != null && _selectedUsine != null) {
-          _selectedConveyor = _selectedUsine!.children.firstWhere(
-            (c) => c.id == _selectedConveyor!.id,
-            orElse: () => _selectedConveyor!,
-          );
-        }
-        if (_selectedWorkstation != null && _selectedConveyor != null) {
-          final freshWs = _selectedConveyor!.children.firstWhere(
-            (w) => w.id == _selectedWorkstation!.id,
-            orElse: () => _selectedWorkstation!,
-          );
-          _selectedWorkstation = freshWs;
-          // Refresh the popup so it reflects the latest alert data without
-          // requiring the user to close and re-tap the station.
-          if (_popupAlertData != null) {
-            _popupAlertData = freshWs.alertData;
-          }
-        }
-      });
+    setState(() {
+      _usines = usineNodes;
+      _syncSelectedNodes();
     });
+  }
+
+  void _syncSelectedNodes() {
+    // Keep selected-node references and the open popup in sync with the
+    // freshly-built tree so the UI is always live, not a click-time snapshot.
+    if (_selectedUsine != null) {
+      _selectedUsine = _usines.firstWhere(
+        (u) => u.id == _selectedUsine!.id,
+        orElse: () => _selectedUsine!,
+      );
+    }
+    if (_selectedConveyor != null && _selectedUsine != null) {
+      _selectedConveyor = _selectedUsine!.children.firstWhere(
+        (c) => c.id == _selectedConveyor!.id,
+        orElse: () => _selectedConveyor!,
+      );
+    }
+    if (_selectedWorkstation != null && _selectedConveyor != null) {
+      final freshWs = _selectedConveyor!.children.firstWhere(
+        (w) => w.id == _selectedWorkstation!.id,
+        orElse: () => _selectedWorkstation!,
+      );
+      _selectedWorkstation = freshWs;
+      if (_popupAlertData != null) {
+        _popupAlertData = freshWs.alertData;
+      }
+    }
   }
 
   Map<String, dynamic> _alertToMap(AlertModel alert) {
@@ -1184,7 +1195,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           children: [
             AnimatedContainer(
               key: ValueKey('workstation-node-${workstation.id}'),
-              duration: const Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 80),
               width: 60,
               height: 60,
               decoration: BoxDecoration(
