@@ -1,16 +1,33 @@
 import 'dart:async';
+import 'dart:ui';
 
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../firebase_options.dart';
 import '../providers/alert_provider.dart';
 import '../screens/alert_detail_screen.dart';
 import '../screens/voice_claim_screen.dart';
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  DartPluginRegistrant.ensureInitialized();
+
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+  } catch (_) {}
+
+  await FcmService.showVoiceActionNotificationForMessage(message);
+}
 
 class FcmService {
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -40,9 +57,7 @@ class FcmService {
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
-  static const MethodChannel _androidNotifications = MethodChannel(
-    'alertsys/notifications',
-  );
+  static bool _localNotificationsInitialized = false;
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -51,33 +66,8 @@ class FcmService {
     // Get token and save
     await _updateToken();
 
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    // iOS notification category exposing a "Speak command" foreground action.
-    // On iOS, tapping the action launches the app and routes the user into
-    // VoiceClaimScreen exactly the same way as on Android.
-    final iosVoiceCategory = DarwinNotificationCategory(
-      'alerts_voice',
-      actions: <DarwinNotificationAction>[
-        DarwinNotificationAction.plain(
-          voiceClaimActionId,
-          'Speak command',
-          options: <DarwinNotificationActionOption>{
-            DarwinNotificationActionOption.foreground,
-          },
-        ),
-      ],
-      options: <DarwinNotificationCategoryOption>{
-        DarwinNotificationCategoryOption.hiddenPreviewShowTitle,
-      },
-    );
-    final iosInit = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-      notificationCategories: <DarwinNotificationCategory>[iosVoiceCategory],
-    );
     await _localNotifications.initialize(
-      InitializationSettings(android: androidInit, iOS: iosInit),
+      _initializationSettings(),
       onDidReceiveNotificationResponse: (response) {
         // Voice claim action opens the dedicated screen above the keyguard.
         if (response.actionId == voiceClaimActionId) {
@@ -91,13 +81,9 @@ class FcmService {
         }
       },
     );
+    _localNotificationsInitialized = true;
     await _handleInitialNotificationLaunch();
-
-    final androidImpl = _localNotifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    await androidImpl?.createNotificationChannel(_androidChannel);
+    await _ensureAndroidChannel();
 
     // Listen for token refresh
     _fcm.onTokenRefresh.listen((newToken) async {
@@ -113,10 +99,6 @@ class FcmService {
     // Handle notification taps when app is in foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('Foreground message received: ${message.data}');
-      if (defaultTargetPlatform == TargetPlatform.android &&
-          message.data['nativeNotification'] == 'true') {
-        return;
-      }
       _handleForegroundMessage(message);
     });
   }
@@ -130,14 +112,7 @@ class FcmService {
 
     HapticFeedback.mediumImpact();
 
-    unawaited(
-      _showAlertNotification(
-        id: message.hashCode,
-        title: title,
-        body: body,
-        alertId: alertId.toString(),
-      ),
-    );
+    unawaited(showVoiceActionNotificationForMessage(message));
 
     // Lightweight in-app affordance.
     if (navigatorKey.currentContext != null) {
@@ -229,25 +204,76 @@ class FcmService {
     }
   }
 
-  Future<void> _showAlertNotification({
+  static Future<void> showVoiceActionNotificationForMessage(
+    RemoteMessage message,
+  ) async {
+    final alertId = message.data['alertId'];
+    if (alertId == null || alertId.toString().isEmpty) return;
+
+    final title =
+        message.notification?.title ?? message.data['title'] ?? 'New Alert';
+    final body =
+        message.notification?.body ??
+        message.data['body'] ??
+        'Tap to view details';
+    final id =
+        int.tryParse(message.data['notificationId']?.toString() ?? '') ??
+        message.messageId?.hashCode ??
+        message.hashCode;
+
+    await _showAlertNotification(
+      id: id,
+      title: title,
+      body: body,
+      alertId: alertId.toString(),
+    );
+  }
+
+  static InitializationSettings _initializationSettings() {
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    final iosVoiceCategory = DarwinNotificationCategory(
+      'alerts_voice',
+      actions: <DarwinNotificationAction>[
+        DarwinNotificationAction.plain(
+          voiceClaimActionId,
+          'Speak command',
+          options: <DarwinNotificationActionOption>{
+            DarwinNotificationActionOption.foreground,
+          },
+        ),
+      ],
+      options: <DarwinNotificationCategoryOption>{
+        DarwinNotificationCategoryOption.hiddenPreviewShowTitle,
+      },
+    );
+    final iosInit = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+      notificationCategories: <DarwinNotificationCategory>[iosVoiceCategory],
+    );
+    return InitializationSettings(android: androidInit, iOS: iosInit);
+  }
+
+  static Future<void> _ensureAndroidChannel() async {
+    final androidImpl = _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    await androidImpl?.createNotificationChannel(_androidChannel);
+  }
+
+  static Future<void> _showAlertNotification({
     required int id,
     required String title,
     required String body,
     required String alertId,
   }) async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      try {
-        await _androidNotifications.invokeMethod('showAlertNotification', {
-          'notificationId': id,
-          'title': title,
-          'body': body,
-          'payload': alertId,
-        });
-        return;
-      } catch (e) {
-        debugPrint('Native Android notification failed: $e');
-      }
+    if (!_localNotificationsInitialized) {
+      await _localNotifications.initialize(_initializationSettings());
+      _localNotificationsInitialized = true;
     }
+    await _ensureAndroidChannel();
 
     await _localNotifications.show(
       id,
@@ -263,6 +289,12 @@ class FcmService {
           playSound: true,
           enableVibration: true,
           icon: '@mipmap/ic_launcher',
+          // fullScreenIntent makes the notification bypass the keyguard
+          // and appear on top of the lock screen. The "Speak command" action
+          // is then tap-able without the user needing to unlock the device.
+          // Requires USE_FULL_SCREEN_INTENT permission + showWhenLocked/
+          // turnScreenOn on the activity in AndroidManifest.xml.
+          fullScreenIntent: true,
           actions: <AndroidNotificationAction>[
             AndroidNotificationAction(
               voiceClaimActionId,
