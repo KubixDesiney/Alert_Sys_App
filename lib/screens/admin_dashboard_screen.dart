@@ -146,8 +146,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         'today' => a.timestamp.year == now.year &&
             a.timestamp.month == now.month &&
             a.timestamp.day == now.day,
-        'week' =>
-          a.timestamp.isAfter(now.subtract(const Duration(days: 7))),
+        'week' => a.timestamp.isAfter(now.subtract(const Duration(days: 7))),
         'month' =>
           a.timestamp.year == now.year && a.timestamp.month == now.month,
         'year' => a.timestamp.year == now.year,
@@ -1266,6 +1265,40 @@ class _HeaderState extends State<_Header> {
     super.dispose();
   }
 
+  Future<void> _markNotificationAsRead(
+    Map<String, dynamic> notification,
+    StateSetter setModalState,
+    BuildContext modalContext,
+  ) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final notificationId = notification['id']?.toString();
+    if (uid == null || notificationId == null || notificationId.isEmpty) {
+      return;
+    }
+
+    final readAt = DateTime.now().toIso8601String();
+    await _db.child('notifications/$uid/$notificationId').update({
+      'status': 'read',
+      'readAt': readAt,
+    });
+
+    if (!mounted || !modalContext.mounted) return;
+    setModalState(() {
+      final index =
+          _notifications.indexWhere((item) => item['id'] == notificationId);
+      if (index != -1) {
+        _notifications[index] = {
+          ..._notifications[index],
+          'status': 'read',
+          'readAt': readAt,
+        };
+      }
+      _notificationCount =
+          _notifications.where((item) => item['status'] != 'read').length;
+    });
+    setState(() {});
+  }
+
   void _showNotifications() {
     showModalBottomSheet(
       context: context,
@@ -1297,6 +1330,10 @@ class _HeaderState extends State<_Header> {
                             itemCount: _notifications.length,
                             itemBuilder: (context, index) {
                               final n = _notifications[index];
+                              final notificationType =
+                                  (n['type'] ?? '').toString();
+                              final isCollabNotification =
+                                  notificationType.startsWith('collaboration_');
                               if (n['type'] ==
                                   'ai_cross_factory_recommendation') {
                                 final alertId = (n['alertId'] ?? '').toString();
@@ -1366,9 +1403,10 @@ class _HeaderState extends State<_Header> {
                                     n['message'] ??
                                         'AI cross-factory recommendation',
                                     style: TextStyle(
-                                        color: theme.brightness == Brightness.dark
-                                            ? Colors.white
-                                            : Colors.black87),
+                                        color:
+                                            theme.brightness == Brightness.dark
+                                                ? Colors.white
+                                                : Colors.black87),
                                   ),
                                   subtitle: Column(
                                     crossAxisAlignment:
@@ -1459,12 +1497,14 @@ class _HeaderState extends State<_Header> {
                                 return ListTile(
                                   title: Text(n['message'] ?? 'Help request',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white
                                               : Colors.black87)),
                                   subtitle: Text('Tap to accept or refuse',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white70
                                               : Colors.black54)),
                                   trailing: Row(
@@ -1549,14 +1589,17 @@ class _HeaderState extends State<_Header> {
                                 );
                               } else if (n['type'] == 'assistance_request') {
                                 return ListTile(
-                                  title: Text(n['message'] ?? 'Assistance request',
+                                  title: Text(
+                                      n['message'] ?? 'Assistance request',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white
                                               : Colors.black87)),
                                   subtitle: Text(n['alertDescription'] ?? '',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white70
                                               : Colors.black54)),
                                   trailing: ElevatedButton(
@@ -1647,7 +1690,45 @@ class _HeaderState extends State<_Header> {
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      if (n['status'] != 'read')
+                                      if (n['status'] != 'read' &&
+                                          isCollabNotification)
+                                        OutlinedButton.icon(
+                                          onPressed: () async {
+                                            await _markNotificationAsRead(
+                                                n, setModalState, context);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                      'Collaboration notification marked as read'),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(
+                                              Icons.done_all_rounded,
+                                              size: 16),
+                                          label: const Text('Read',
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600)),
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: _navy,
+                                            side: BorderSide(
+                                                color: theme.dividerColor),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 8),
+                                            minimumSize: const Size(0, 36),
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8)),
+                                          ),
+                                        )
+                                      else if (n['status'] != 'read')
                                         IconButton(
                                           icon: const Icon(Icons.visibility,
                                               size: 18, color: Colors.blue),
