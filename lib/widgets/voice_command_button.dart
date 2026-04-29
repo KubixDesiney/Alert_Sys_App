@@ -2,8 +2,8 @@
 // Drop it into a Stack/Positioned on any screen to enable voice commands.
 //
 // Behavior:
-//   tap → request mic, start Vosk listener for 5s, animate pulse,
-//   on first final transcript → parse → dispatch → speak result.
+//   tap -> request mic, listen for one short command window, parse,
+//   optionally ask for a missing alert number, then dispatch.
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -90,13 +90,28 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
       if (!_listening) return;
       _stopUi();
       await VoiceService.instance.stopListening();
-      final cmd = VoiceCommandParser.parse(text);
+      var cmd = VoiceCommandParser.parse(text);
+      if (_needsAlertNumber(cmd)) {
+        await VoiceService.instance.speak('What alert number?');
+        if (!mounted) return;
+
+        setState(() => _listening = true);
+        _pulse.repeat(reverse: true);
+        final numberText = await VoiceService.instance.captureOnce(
+          timeout: const Duration(seconds: 4),
+        );
+        _stopUi();
+
+        if (numberText.trim().isNotEmpty) {
+          cmd = VoiceCommandParser.parse('${cmd.rawText} $numberText');
+        }
+      }
       await dispatcher.execute(cmd);
     });
 
     await VoiceService.instance.startListening(timeout: widget.listenDuration);
 
-    Future.delayed(widget.listenDuration + const Duration(milliseconds: 300),
+    Future.delayed(widget.listenDuration + const Duration(milliseconds: 900),
         () {
       if (mounted && _listening) _stopUi();
     });
@@ -107,6 +122,13 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
     setState(() => _listening = false);
     _pulse.stop();
     _pulse.reset();
+  }
+
+  bool _needsAlertNumber(VoiceCommand cmd) {
+    return cmd.alertNumber == null &&
+        (cmd.intent == VoiceIntent.claim ||
+            cmd.intent == VoiceIntent.resolve ||
+            cmd.intent == VoiceIntent.escalate);
   }
 
   @override
