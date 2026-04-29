@@ -1,40 +1,48 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import '../screens/alert_detail_screen.dart';
+
 import '../providers/alert_provider.dart';
-import 'voice_command_dispatcher.dart';
-import 'voice_command_parser.dart';
-import 'voice_service.dart';
+import '../screens/alert_detail_screen.dart';
+import '../screens/voice_claim_screen.dart';
 
 class FcmService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
   static String? pendingAlertId;
+  static bool _hasPendingVoiceClaim = false;
+  static Timer? _pendingVoiceClaimTimer;
 
-  // Action ID exposed to the OS for the inline-reply voice button. The
-  // notification handler matches on this string to route input transcripts
-  // through the voice command pipeline.
-  static const String voiceReplyActionId = 'voice_reply';
+  // Action ID for the "Speak command" notification action. When the user
+  // taps it (works on the lock screen), Android brings the app forward and
+  // we navigate straight into VoiceClaimScreen.
+  static const String voiceClaimActionId = 'voice_claim';
+
   // Provider injected once at app startup; the FCM callback runs in a
   // detached context so we can't go through `Provider.of(context)`.
   static AlertProvider? alertProvider;
 
   static const AndroidNotificationChannel _androidChannel =
       AndroidNotificationChannel(
-    'alerts_high',
-    'Critical alerts',
-    description: 'High priority alert notifications',
-    importance: Importance.high,
-    playSound: true,
-    enableVibration: true,
-  );
+        'alerts_high',
+        'Critical alerts',
+        description: 'High priority alert notifications',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+  static const MethodChannel _androidNotifications = MethodChannel(
+    'alertsys/notifications',
+  );
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -44,17 +52,15 @@ class FcmService {
     await _updateToken();
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    // Register an iOS notification category that exposes a text-input action.
-    // We reference this category by id ('alerts_voice') on every alert
-    // notification so the reply button appears when long-pressed.
+    // iOS notification category exposing a "Speak command" foreground action.
+    // On iOS, tapping the action launches the app and routes the user into
+    // VoiceClaimScreen exactly the same way as on Android.
     final iosVoiceCategory = DarwinNotificationCategory(
       'alerts_voice',
       actions: <DarwinNotificationAction>[
-        DarwinNotificationAction.text(
-          voiceReplyActionId,
-          'Send',
-          buttonTitle: 'Voice command',
-          placeholder: 'Say a command',
+        DarwinNotificationAction.plain(
+          voiceClaimActionId,
+          'Speak command',
           options: <DarwinNotificationActionOption>{
             DarwinNotificationActionOption.foreground,
           },
@@ -73,25 +79,24 @@ class FcmService {
     await _localNotifications.initialize(
       InitializationSettings(android: androidInit, iOS: iosInit),
       onDidReceiveNotificationResponse: (response) {
-        // Inline voice reply from the notification — fires on locked screen
-        // without launching the app UI. Parse + dispatch the same way an
-        // in-app mic press does, then speak the result back via TTS.
-        if (response.actionId == voiceReplyActionId) {
-          final spoken = response.input?.trim() ?? '';
-          if (spoken.isEmpty) return;
-          _handleVoiceReply(spoken);
+        // Voice claim action opens the dedicated screen above the keyguard.
+        if (response.actionId == voiceClaimActionId) {
+          _navigateToVoiceClaim(response.payload);
           return;
         }
+        // Plain notification tap opens alert detail.
         final alertId = response.payload;
         if (alertId != null && alertId.isNotEmpty) {
           _navigateToAlertDetailById(alertId);
         }
       },
     );
+    await _handleInitialNotificationLaunch();
 
-    final androidImpl =
-        _localNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidImpl = _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidImpl?.createNotificationChannel(_androidChannel);
 
     // Listen for token refresh
@@ -108,7 +113,10 @@ class FcmService {
     // Handle notification taps when app is in foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('Foreground message received: ${message.data}');
-      // Show a dialog or snackbar and navigate when tapped
+      if (defaultTargetPlatform == TargetPlatform.android &&
+          message.data['nativeNotification'] == 'true') {
+        return;
+      }
       _handleForegroundMessage(message);
     });
   }
@@ -122,50 +130,16 @@ class FcmService {
 
     HapticFeedback.mediumImpact();
 
-    _localNotifications.show(
-      message.hashCode,
-      title,
-      body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          _androidChannel.id,
-          _androidChannel.name,
-          channelDescription: _androidChannel.description,
-          importance: Importance.high,
-          priority: Priority.high,
-          playSound: true,
-          enableVibration: true,
-          icon: '@mipmap/ic_launcher',
-          // Inline voice-reply action — visible on the lock screen because
-          // the channel is high importance. Speech-to-text is performed by
-          // the OS; we receive the transcript in the response handler.
-          actions: <AndroidNotificationAction>[
-            AndroidNotificationAction(
-              voiceReplyActionId,
-              'Voice command',
-              icon: const DrawableResourceAndroidBitmap('@android:drawable/ic_btn_speak_now'),
-              inputs: <AndroidNotificationActionInput>[
-                AndroidNotificationActionInput(
-                  label: 'Say a command',
-                  allowFreeFormInput: true,
-                ),
-              ],
-              showsUserInterface: false,
-              cancelNotification: false,
-            ),
-          ],
-        ),
-        iOS: const DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-          categoryIdentifier: 'alerts_voice',
-        ),
+    unawaited(
+      _showAlertNotification(
+        id: message.hashCode,
+        title: title,
+        body: body,
+        alertId: alertId.toString(),
       ),
-      payload: alertId.toString(),
     );
 
-    // Keep a lightweight in-app affordance too.
+    // Lightweight in-app affordance.
     if (navigatorKey.currentContext != null) {
       ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
         SnackBar(
@@ -190,7 +164,7 @@ class FcmService {
   void _navigateToAlertDetail(RemoteMessage message) {
     final alertId = message.data['alertId'];
     if (alertId != null && navigatorKey.currentState != null) {
-      print('🔔 Navigating to alert: $alertId');
+      print('Navigating to alert: $alertId');
       navigatorKey.currentState!.push(
         MaterialPageRoute(
           builder: (context) => AlertDetailScreen(alertId: alertId),
@@ -199,26 +173,116 @@ class FcmService {
     }
   }
 
-  // Run a transcribed voice reply from the lock-screen notification action.
-  // Static so it can be invoked from the platform callback without a `this`.
-  static Future<void> _handleVoiceReply(String spoken) async {
-    final cmd = VoiceCommandParser.parse(spoken);
-    final provider = alertProvider;
-    if (provider == null) {
-      await VoiceService.instance
-          .speak('App is starting up. Please try again.');
-      return;
-    }
-    final dispatcher = VoiceCommandDispatcher(provider);
-    await dispatcher.execute(cmd);
-  }
-
   void _navigateToAlertDetailById(String alertId) {
     if (navigatorKey.currentState == null) return;
     navigatorKey.currentState!.push(
       MaterialPageRoute(
         builder: (context) => AlertDetailScreen(alertId: alertId),
       ),
+    );
+  }
+
+  void _navigateToVoiceClaim(String? alertId) {
+    final state = navigatorKey.currentState;
+    if (state == null) {
+      // App not yet initialized; store payload and route once ready.
+      pendingAlertId = alertId;
+      _hasPendingVoiceClaim = true;
+      _schedulePendingVoiceClaim();
+      return;
+    }
+    pendingAlertId = null;
+    _hasPendingVoiceClaim = false;
+    _pendingVoiceClaimTimer?.cancel();
+    _pendingVoiceClaimTimer = null;
+    state.push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => VoiceClaimScreen(alertId: alertId),
+      ),
+    );
+  }
+
+  void _schedulePendingVoiceClaim() {
+    _pendingVoiceClaimTimer ??= Timer.periodic(
+      const Duration(milliseconds: 150),
+      (_) {
+        if (!_hasPendingVoiceClaim) {
+          _pendingVoiceClaimTimer?.cancel();
+          _pendingVoiceClaimTimer = null;
+          return;
+        }
+        if (navigatorKey.currentState != null) {
+          final alertId = pendingAlertId;
+          _navigateToVoiceClaim(alertId);
+        }
+      },
+    );
+  }
+
+  Future<void> _handleInitialNotificationLaunch() async {
+    final details = await _localNotifications.getNotificationAppLaunchDetails();
+    final response = details?.notificationResponse;
+    if (details?.didNotificationLaunchApp == true &&
+        response?.actionId == voiceClaimActionId) {
+      _navigateToVoiceClaim(response?.payload);
+    }
+  }
+
+  Future<void> _showAlertNotification({
+    required int id,
+    required String title,
+    required String body,
+    required String alertId,
+  }) async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await _androidNotifications.invokeMethod('showAlertNotification', {
+          'notificationId': id,
+          'title': title,
+          'body': body,
+          'payload': alertId,
+        });
+        return;
+      } catch (e) {
+        debugPrint('Native Android notification failed: $e');
+      }
+    }
+
+    await _localNotifications.show(
+      id,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _androidChannel.id,
+          _androidChannel.name,
+          channelDescription: _androidChannel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          icon: '@mipmap/ic_launcher',
+          actions: <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              voiceClaimActionId,
+              'Speak command',
+              icon: const DrawableResourceAndroidBitmap(
+                '@android:drawable/ic_btn_speak_now',
+              ),
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+          ],
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          categoryIdentifier: 'alerts_voice',
+        ),
+      ),
+      payload: alertId,
     );
   }
 
