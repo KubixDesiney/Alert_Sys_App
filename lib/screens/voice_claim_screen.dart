@@ -14,7 +14,8 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -51,7 +52,7 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   @override
   void initState() {
     super.initState();
-    _enableLockScreenMode();
+    _prepareLockScreenVoice();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runFlow());
   }
 
@@ -62,11 +63,15 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     super.dispose();
   }
 
-  Future<void> _enableLockScreenMode() async {
+  Future<void> _prepareLockScreenVoice() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
-      await _channel.invokeMethod('showOnLockScreen');
-    } catch (_) {}
+      await _channel.invokeMethod('prepareLockScreenVoice');
+    } catch (_) {
+      try {
+        await _channel.invokeMethod('showOnLockScreen');
+      } catch (_) {}
+    }
   }
 
   Future<void> _disableLockScreenMode() async {
@@ -94,7 +99,8 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     }
 
     _setStep(_Step.awaitingCommand,
-        status: 'Speak your command', hint: 'e.g. "Claim alert" or "Accept assignment"');
+        status: 'Speak your command',
+        hint: 'e.g. "Claim alert" or "Accept assignment"');
     await VoiceService.instance.speak('Speak your command.');
     if (!mounted) return;
 
@@ -208,8 +214,9 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       }
       // Cache miss — fall back to a direct DB read.
       try {
-        final snap =
-            await FirebaseDatabase.instance.ref('alerts/${widget.alertId}').get();
+        final snap = await FirebaseDatabase.instance
+            .ref('alerts/${widget.alertId}')
+            .get();
         if (snap.exists && snap.value != null) {
           return AlertModel.fromMap(
               widget.alertId!, Map<String, dynamic>.from(snap.value as Map));
@@ -273,8 +280,8 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    final listening = _step == _Step.awaitingCommand ||
-        _step == _Step.awaitingConfirm;
+    final listening =
+        _step == _Step.awaitingCommand || _step == _Step.awaitingConfirm;
 
     Color iconColor;
     IconData iconData;
@@ -318,9 +325,7 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
                 _statusLine,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: t.text,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700),
+                    color: t.text, fontSize: 22, fontWeight: FontWeight.w700),
               ),
               if (_hint.isNotEmpty) ...[
                 const SizedBox(height: 12),
