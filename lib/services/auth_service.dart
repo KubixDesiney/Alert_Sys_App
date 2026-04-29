@@ -92,29 +92,54 @@ class AuthService {
   }
 
   Future<void> assignAssistantToAlert(
-      String alertId, String assistantId, String assistantName) async {
+    String alertId,
+    String assistantId,
+    String assistantName, {
+    String? assignedById,
+    String? assignedByName,
+    int? aiMatchPercent,
+    String? aiMatchReason,
+  }) async {
+    final nowIso = DateTime.now().toIso8601String();
     await _db.child('alerts/$alertId').update({
       'assistantId': assistantId,
       'assistantName': assistantName,
+      'assistantAssignedAt': nowIso,
+      'assistantAssignedById': assignedById,
+      'assistantAssignedByName': assignedByName,
+      'assistantAiMatchPercent': aiMatchPercent,
+      'assistantAiMatchReason': aiMatchReason,
     });
 
     // Get alert details for notification
     final alertSnap = await _db.child('alerts/$alertId').get();
     final alertType = alertSnap.child('type').value ?? 'alert';
     final alertDesc = alertSnap.child('description').value ?? '';
+    final alertNumber =
+        (alertSnap.child('alertNumber').value as num?)?.toInt() ?? 0;
+    final alertLabel = alertNumber > 0 ? '#$alertNumber' : alertId;
     final claimantName =
         alertSnap.child('superviseurName').value as String? ?? 'Supervisor';
+    final assignedBy = (assignedByName != null && assignedByName.isNotEmpty)
+        ? assignedByName
+        : 'Production Manager';
 
     // Notify the assistant
     final assistantNotification = {
       'type': 'assistant_assigned',
       'alertId': alertId,
+      'alertNumber': alertNumber,
       'alertType': alertType,
       'alertDescription': alertDesc,
+      'assignedById': assignedById,
+      'assignedByName': assignedBy,
+      'aiMatchPercent': aiMatchPercent,
+      'aiMatchReason': aiMatchReason,
       'message':
-          'You have been assigned as assistant to $claimantName for alert: $alertType',
-      'timestamp': DateTime.now().toIso8601String(),
+          '$assignedBy assigned you as assistant to $claimantName for alert $alertLabel: $alertType',
+      'timestamp': nowIso,
       'status': 'pending',
+      'buzz': true,
       'pushSent': false,
     };
     await _db
@@ -128,9 +153,17 @@ class AuthService {
       final claimantNotification = {
         'type': 'assistant_assigned',
         'alertId': alertId,
-        'message': '$assistantName has been assigned as your assistant',
-        'timestamp': DateTime.now().toIso8601String(),
+        'alertNumber': alertNumber,
+        'assistantId': assistantId,
+        'assistantName': assistantName,
+        'assignedById': assignedById,
+        'assignedByName': assignedBy,
+        'aiMatchPercent': aiMatchPercent,
+        'message':
+            '$assignedBy assigned $assistantName as your assistant for alert $alertLabel',
+        'timestamp': nowIso,
         'status': 'pending',
+        'buzz': true,
         'pushSent': false,
       };
       await _db
@@ -138,6 +171,8 @@ class AuthService {
           .push()
           .set(claimantNotification);
     }
+
+    http.post(Uri.parse('$_workerBaseUrl/notify')).ignore();
   }
 
   Future<void> assignSupervisorToAlert(

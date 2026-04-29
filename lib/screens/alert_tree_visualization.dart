@@ -6,6 +6,7 @@ import '../services/hierarchy_service.dart';
 import '../services/auth_service.dart';
 import '../services/ai_assignment_service.dart';
 import '../models/alert_model.dart';
+import '../models/user_model.dart';
 import '../widgets/ai_logs_panel.dart';
 import '../theme.dart';
 
@@ -14,6 +15,7 @@ const _red = Color(0xFFDC2626);
 const _green = Color(0xFF16A34A);
 const _orange = Color(0xFFEA580C);
 const _blue = Color(0xFF2563EB);
+const _yellow = Color(0xFFEAB308);
 
 class AlertNode {
   final String id;
@@ -154,13 +156,17 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       // Build alert counts per location (usine|conveyor|workstation)
       final Map<String, int> alertCounts = {};
       final Map<String, Map<String, dynamic>> firstAlertData = {};
+      final Map<String, int> activeAlertPriority = {};
 
       for (var alert in widget.alerts) {
         if (alert.status == 'disponible' || alert.status == 'en_cours') {
           final key = '${alert.usine}|${alert.convoyeur}|${alert.poste}';
           alertCounts[key] = (alertCounts[key] ?? 0) + 1;
-          if (!firstAlertData.containsKey(key)) {
+          final priority = _activeAlertPriority(alert.status);
+          if (!firstAlertData.containsKey(key) ||
+              priority > (activeAlertPriority[key] ?? 0)) {
             firstAlertData[key] = _alertToMap(alert);
+            activeAlertPriority[key] = priority;
           }
         }
       }
@@ -1166,6 +1172,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   Widget _buildWorkstationNode(AlertNode workstation) {
     final t = _t;
     final isSelected = _selectedWorkstation?.id == workstation.id;
+    final stateColor = _workstationColor(workstation);
     return GestureDetector(
       onTapDown: (details) {
         _onWorkstationClick(workstation, details.globalPosition);
@@ -1182,17 +1189,17 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               height: 60,
               decoration: BoxDecoration(
                 color: workstation.hasError
-                    ? _red.withOpacity(isSelected ? 0.2 : 0.1)
+                    ? stateColor.withOpacity(isSelected ? 0.22 : 0.12)
                     : _green.withOpacity(0.1),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: workstation.hasError ? _red : _green,
+                  color: stateColor,
                   width: isSelected ? 3 : 2,
                 ),
                 boxShadow: [
                   if (workstation.hasError)
                     BoxShadow(
-                      color: _red.withOpacity(isSelected ? 0.4 : 0.3),
+                      color: stateColor.withOpacity(isSelected ? 0.4 : 0.3),
                       blurRadius: isSelected ? 12 : 8,
                       spreadRadius: isSelected ? 2 : 0,
                     ),
@@ -1204,7 +1211,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   Icon(
                     Icons.settings,
                     size: 28,
-                    color: workstation.hasError ? _red : _green,
+                    color: stateColor,
                   ),
                   if (workstation.hasError)
                     AnimatedBuilder(
@@ -1216,7 +1223,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: _red.withOpacity(
+                              color: stateColor.withOpacity(
                                   0.3 * (1 - _pulseController.value)),
                               width: 2,
                             ),
@@ -1259,7 +1266,6 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     // Safe type extraction
     final String alertType = (alert['type'] as String?) ?? 'unknown';
 
-    final String alertId = (alert['id'] as String?) ?? '';
     final String status = (alert['status'] as String?) ?? 'disponible';
     final String? claimedBy = alert['superviseurName'] as String?;
     final String? assistantName = alert['assistantName'] as String?;
@@ -1294,7 +1300,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         borderRadius: BorderRadius.circular(12),
         child: Container(
           width: 320,
-          constraints: const BoxConstraints(maxHeight: 400),
+          constraints: const BoxConstraints(maxHeight: 460),
           decoration: BoxDecoration(
             color: t.card,
             borderRadius: BorderRadius.circular(12),
@@ -1471,6 +1477,32 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                             ),
                           ),
                         ),
+                      if (hasActiveAlert &&
+                          status == 'en_cours' &&
+                          (alert['superviseurId']?.toString().isNotEmpty ??
+                              false))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () =>
+                                  _showAssignAssistantDialog(alert),
+                              icon:
+                                  const Icon(Icons.groups_2_outlined, size: 18),
+                              label: const Text('Assign Assistant'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _yellow,
+                                foregroundColor: const Color(0xFF111827),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
                         child: SizedBox(
@@ -1607,6 +1639,474 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         ],
       ),
     );
+  }
+
+  Future<void> _showAssignAssistantDialog(Map<String, dynamic> alert) async {
+    final targetAlert = _alertModelForPopup(alert);
+    if (targetAlert == null || targetAlert.status != 'en_cours') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This alert is no longer being fixed.')),
+      );
+      return;
+    }
+
+    final primarySupervisorId = targetAlert.superviseurId?.trim() ?? '';
+    if (primarySupervisorId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Assign a supervisor before adding an assistant.')),
+      );
+      return;
+    }
+
+    final excludedIds = <String>{
+      primarySupervisorId,
+      if ((targetAlert.assistantId ?? '').trim().isNotEmpty)
+        targetAlert.assistantId!.trim(),
+    };
+
+    final candidates =
+        await AIAssignmentService.instance.recommendAssistantsForAlert(
+      alert: targetAlert,
+      allAlerts: widget.alerts,
+      excludeSupervisorIds: excludedIds,
+    );
+
+    if (!mounted) return;
+
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No available assistant supervisors match this alert.'),
+        ),
+      );
+      return;
+    }
+
+    final bestScore =
+        candidates.first.score <= 0 ? 1.0 : candidates.first.score;
+    AICandidate selected = candidates.first;
+    bool assigning = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final t = dialogContext.appTheme;
+            final selectedPercent = _candidateMatchPercent(selected, bestScore);
+
+            Future<void> assignSelected() async {
+              if (assigning) return;
+              setDialogState(() => assigning = true);
+              try {
+                final pm = _authService.currentUser;
+                final pmName = _currentUserDisplayName();
+                await _authService.assignAssistantToAlert(
+                  targetAlert.id,
+                  selected.supervisor.id,
+                  _supervisorDisplayName(selected.supervisor),
+                  assignedById: pm?.uid,
+                  assignedByName: pmName,
+                  aiMatchPercent: selectedPercent,
+                  aiMatchReason: _assistantMatchReason(selected),
+                );
+
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${_supervisorDisplayName(selected.supervisor)} assigned as assistant.',
+                    ),
+                    backgroundColor: _green,
+                  ),
+                );
+                _closePopup();
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  setDialogState(() => assigning = false);
+                }
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Assistant assignment failed: $e'),
+                    backgroundColor: _red,
+                  ),
+                );
+              }
+            }
+
+            return Dialog(
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+              backgroundColor: Colors.transparent,
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: 620, maxHeight: 720),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: t.card,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: t.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withOpacity(dialogContext.isDark ? 0.34 : 0.16),
+                        blurRadius: 26,
+                        offset: const Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(18, 16, 12, 14),
+                        decoration: BoxDecoration(
+                          color: _yellow
+                              .withOpacity(dialogContext.isDark ? 0.18 : 0.14),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(14),
+                          ),
+                          border: Border(
+                            bottom: BorderSide(color: t.border),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: _yellow,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.groups_2_outlined,
+                                  color: Color(0xFF111827)),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Assign Assistant',
+                                    style: TextStyle(
+                                      color: t.text,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'AI-ranked available supervisors for ${_typeLabel(targetAlert.type)} at C${targetAlert.convoyeur} / W${targetAlert.poste}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: t.muted,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Close',
+                              onPressed: assigning
+                                  ? null
+                                  : () => Navigator.of(dialogContext).pop(),
+                              icon: Icon(Icons.close, color: t.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                          itemCount: candidates.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (_, index) {
+                            final candidate = candidates[index];
+                            final percent =
+                                _candidateMatchPercent(candidate, bestScore);
+                            final isSelected = candidate.supervisor.id ==
+                                selected.supervisor.id;
+                            return _buildAssistantCandidateTile(
+                              candidate: candidate,
+                              percent: percent,
+                              selected: isSelected,
+                              onTap: assigning
+                                  ? null
+                                  : () {
+                                      setDialogState(() {
+                                        selected = candidate;
+                                      });
+                                    },
+                            );
+                          },
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        decoration: BoxDecoration(
+                          border: Border(top: BorderSide(color: t.border)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${_supervisorDisplayName(selected.supervisor)} is the current ${_matchLabel(selectedPercent).toLowerCase()} at $selectedPercent%.',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: t.muted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            TextButton(
+                              onPressed: assigning
+                                  ? null
+                                  : () => Navigator.of(dialogContext).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              onPressed: assigning ? null : assignSelected,
+                              icon: assigning
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check, size: 18),
+                              label: Text(assigning ? 'Assigning' : 'Assign'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: t.navy,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAssistantCandidateTile({
+    required AICandidate candidate,
+    required int percent,
+    required bool selected,
+    required VoidCallback? onTap,
+  }) {
+    final t = _t;
+    final name = _supervisorDisplayName(candidate.supervisor);
+    final reason = _assistantMatchReason(candidate);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected
+                ? t.navy.withOpacity(context.isDark ? 0.22 : 0.08)
+                : t.scaffold,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? t.navy : t.border,
+              width: selected ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? t.navy : _yellow.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _initials(name),
+                  style: TextStyle(
+                    color: selected ? Colors.white : const Color(0xFF92400E),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        _matchChip(percent),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      candidate.supervisor.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: t.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 7,
+                        value: percent / 100,
+                        backgroundColor:
+                            t.border.withOpacity(context.isDark ? 0.5 : 0.8),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          percent >= 80
+                              ? _green
+                              : percent >= 55
+                                  ? _yellow
+                                  : _orange,
+                        ),
+                      ),
+                    ),
+                    if (reason.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        reason,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: t.text,
+                          fontSize: 11,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _matchChip(int percent) {
+    final t = _t;
+    final color = percent >= 80
+        ? _green
+        : percent >= 55
+            ? _yellow
+            : _orange;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(context.isDark ? 0.22 : 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.45)),
+      ),
+      child: Text(
+        '$percent%',
+        style: TextStyle(
+          color: percent >= 55 ? color : t.orange,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  AlertModel? _alertModelForPopup(Map<String, dynamic> alert) {
+    final alertId = alert['id']?.toString() ?? '';
+    if (alertId.isEmpty) return null;
+    for (final item in widget.alerts) {
+      if (item.id == alertId) return item;
+    }
+    return null;
+  }
+
+  int _candidateMatchPercent(AICandidate candidate, double bestScore) {
+    if (bestScore <= 0) return 100;
+    return ((candidate.score / bestScore) * 100).clamp(1, 100).round();
+  }
+
+  String _assistantMatchReason(AICandidate candidate) {
+    return candidate.reasons.take(3).join(' | ');
+  }
+
+  String _matchLabel(int percent) {
+    if (percent >= 85) return 'Excellent match';
+    if (percent >= 70) return 'Strong match';
+    if (percent >= 50) return 'Good match';
+    return 'Available match';
+  }
+
+  String _supervisorDisplayName(UserModel user) {
+    final fullName = user.fullName.trim();
+    if (fullName.isNotEmpty) return fullName;
+    if (user.email.isNotEmpty) return user.email.split('@').first;
+    return 'Supervisor';
+  }
+
+  String _currentUserDisplayName() {
+    final user = _authService.currentUser;
+    final displayName = user?.displayName?.trim() ?? '';
+    if (displayName.isNotEmpty) return displayName;
+    final email = user?.email ?? '';
+    if (email.isNotEmpty) return email.split('@').first;
+    return 'Production Manager';
+  }
+
+  String _initials(String name) {
+    final parts =
+        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return 'S';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+        .toUpperCase();
   }
 
   Future<void> _showWorkstationHistoryDialog(Map<String, dynamic> alert) async {
@@ -1843,7 +2343,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      _buildHistoryRow('Alert ID', item.alertNumber > 0 ? '#${item.alertNumber}' : item.id),
+                                      _buildHistoryRow(
+                                          'Alert ID',
+                                          item.alertNumber > 0
+                                              ? '#${item.alertNumber}'
+                                              : item.id),
                                       _buildHistoryRow(
                                           'Title', _typeLabel(item.type)),
                                       _buildHistoryRow(
@@ -1918,6 +2422,19 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         _ => _t.muted,
       };
 
+  int _activeAlertPriority(String status) => switch (status) {
+        'en_cours' => 2,
+        'disponible' => 1,
+        _ => 0,
+      };
+
+  Color _workstationColor(AlertNode workstation) {
+    if (!workstation.hasError) return _green;
+    final status = workstation.alertData?['status']?.toString() ?? '';
+    if (status == 'en_cours') return _yellow;
+    return _red;
+  }
+
   IconData _typeIcon(String type) => switch (type) {
         'qualite' => Icons.warning_amber_rounded,
         'maintenance' => Icons.build,
@@ -1936,7 +2453,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   Color _statusColor(String status) => switch (status) {
         'validee' => _green,
-        'en_cours' => _blue,
+        'en_cours' => _yellow,
         _ => _orange,
       };
 
