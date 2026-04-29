@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -47,17 +49,19 @@ class FcmService {
 
   static const AndroidNotificationChannel _androidChannel =
       AndroidNotificationChannel(
-        'alerts_high',
-        'Critical alerts',
-        description: 'High priority alert notifications',
-        importance: Importance.high,
-        playSound: true,
-        enableVibration: true,
-      );
+    'alerts_voice_critical',
+    'Critical voice alerts',
+    description: 'Urgent alerts with lock-screen voice actions',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   static bool _localNotificationsInitialized = false;
+  static bool _androidLockScreenAccessPrepared = false;
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -82,8 +86,11 @@ class FcmService {
       },
     );
     _localNotificationsInitialized = true;
-    await _handleInitialNotificationLaunch();
     await _ensureAndroidChannel();
+    final launchedFromVoiceAction = await _handleInitialNotificationLaunch();
+    if (!launchedFromVoiceAction) {
+      await _prepareAndroidLockScreenNotifications();
+    }
 
     // Listen for token refresh
     _fcm.onTokenRefresh.listen((newToken) async {
@@ -195,13 +202,16 @@ class FcmService {
     );
   }
 
-  Future<void> _handleInitialNotificationLaunch() async {
+  Future<bool> _handleInitialNotificationLaunch() async {
     final details = await _localNotifications.getNotificationAppLaunchDetails();
     final response = details?.notificationResponse;
-    if (details?.didNotificationLaunchApp == true &&
-        response?.actionId == voiceClaimActionId) {
+    final launchedFromVoiceAction = details?.didNotificationLaunchApp == true &&
+        response?.actionId == voiceClaimActionId;
+    if (launchedFromVoiceAction) {
       _navigateToVoiceClaim(response?.payload);
+      return true;
     }
+    return false;
   }
 
   static Future<void> showVoiceActionNotificationForMessage(
@@ -212,12 +222,10 @@ class FcmService {
 
     final title =
         message.notification?.title ?? message.data['title'] ?? 'New Alert';
-    final body =
-        message.notification?.body ??
+    final body = message.notification?.body ??
         message.data['body'] ??
         'Tap to view details';
-    final id =
-        int.tryParse(message.data['notificationId']?.toString() ?? '') ??
+    final id = int.tryParse(message.data['notificationId']?.toString() ?? '') ??
         message.messageId?.hashCode ??
         message.hashCode;
 
@@ -256,11 +264,38 @@ class FcmService {
   }
 
   static Future<void> _ensureAndroidChannel() async {
-    final androidImpl = _localNotifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    final androidImpl =
+        _localNotifications.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
     await androidImpl?.createNotificationChannel(_androidChannel);
+  }
+
+  static Future<void> _prepareAndroidLockScreenNotifications() async {
+    if (_androidLockScreenAccessPrepared ||
+        defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+    _androidLockScreenAccessPrepared = true;
+
+    final androidImpl =
+        _localNotifications.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImpl == null) return;
+
+    try {
+      final enabled = await androidImpl.areNotificationsEnabled();
+      if (enabled == false) {
+        await androidImpl.requestNotificationsPermission();
+      }
+    } catch (e) {
+      debugPrint('Android notification permission setup failed: $e');
+    }
+
+    try {
+      await androidImpl.requestFullScreenIntentPermission();
+    } catch (e) {
+      debugPrint('Android full-screen intent setup failed: $e');
+    }
   }
 
   static Future<void> _showAlertNotification({
@@ -284,17 +319,19 @@ class FcmService {
           _androidChannel.id,
           _androidChannel.name,
           channelDescription: _androidChannel.description,
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
           playSound: true,
           enableVibration: true,
           icon: '@mipmap/ic_launcher',
-          // fullScreenIntent makes the notification bypass the keyguard
-          // and appear on top of the lock screen. The "Speak command" action
-          // is then tap-able without the user needing to unlock the device.
-          // Requires USE_FULL_SCREEN_INTENT permission + showWhenLocked/
-          // turnScreenOn on the activity in AndroidManifest.xml.
+          ticker: title,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.alarm,
+          // fullScreenIntent lets the voice action launch above the keyguard
+          // where Android permits it. Requires USE_FULL_SCREEN_INTENT plus
+          // showWhenLocked/turnScreenOn on the activity.
           fullScreenIntent: true,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
           actions: <AndroidNotificationAction>[
             AndroidNotificationAction(
               voiceClaimActionId,
