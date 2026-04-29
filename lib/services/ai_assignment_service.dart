@@ -149,6 +149,23 @@ class AIAssignmentService extends ChangeNotifier {
     return 'Above 0.85: excellent match';
   }
 
+  Future<List<AICandidate>> recommendAssistantsForAlert({
+    required AlertModel alert,
+    required List<AlertModel> allAlerts,
+    Set<String> excludeSupervisorIds = const <String>{},
+  }) async {
+    if (!_initialized) await init();
+    await _refreshFeedbackSummary();
+
+    final supervisors = (await _fetchActiveSupervisors())
+        .where((s) => !excludeSupervisorIds.contains(s.user.id))
+        .toList();
+    final candidates = _evaluateAll(alert, supervisors, allAlerts);
+    final eligible = candidates.where((c) => c.eligible).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    return eligible;
+  }
+
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -1583,16 +1600,17 @@ class AIAssignmentService extends ChangeNotifier {
       for (final alertEntry in alertsMap.entries) {
         final alertId = alertEntry.key;
         final alertData = alertEntry.value;
-        
+
         if (alertData is! Map) continue;
-        
+
         // Extract alert metadata for label generation
         final alertType = alertData['type']?.toString() ?? '';
         final alertUsine = alertData['usine']?.toString() ?? '';
         final alertConvoyeur = alertData['convoyeur']?.toString() ?? '';
         final alertPoste = alertData['poste']?.toString() ?? '';
-        final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
-        
+        final alertLabel =
+            '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+
         final aiHistory = alertData['aiHistory'];
         if (aiHistory is! Map) continue;
 
@@ -1667,7 +1685,8 @@ class AIAssignmentService extends ChangeNotifier {
       final alertUsine = alertMap['usine']?.toString() ?? '';
       final alertConvoyeur = alertMap['convoyeur']?.toString() ?? '';
       final alertPoste = alertMap['poste']?.toString() ?? '';
-      final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+      final alertLabel =
+          '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
 
       for (final entry in Map<String, dynamic>.from(aiHistory).entries) {
         final histKey = entry.key;

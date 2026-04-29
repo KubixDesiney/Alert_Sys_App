@@ -19,7 +19,6 @@ import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
 
 const _navy = AppColors.navy;
-const _red = AppColors.redAlt;
 const _white = AppColors.white;
 const _muted = AppColors.textMuted;
 
@@ -307,6 +306,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
   bool _isBuzzing = false;
   String? _buzzingNotificationId;
+  static const Set<String> _forceBuzzNotificationTypes = {
+    'assistant_assigned',
+  };
 
   @override
   void initState() {
@@ -354,18 +356,21 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 final userInfo = await _getUserInfo();
                 final userRole = userInfo['role'];
                 final userUsine = userInfo['usine'];
+                final type = newUnread['type']?.toString() ?? '';
+                final forceBuzz = newUnread['buzz'] == true ||
+                    _forceBuzzNotificationTypes.contains(type);
                 bool shouldBuzz = false;
                 if (userRole == 'admin') {
                   shouldBuzz = true;
                 } else if (userRole == 'supervisor' &&
-                    alertUsine == userUsine) {
+                    (alertUsine == userUsine || forceBuzz)) {
                   if (mounted) {
                     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
                     final hasClaimed = context
                         .read<AlertProvider>()
                         .inProgressAlerts(uid)
                         .isNotEmpty;
-                    shouldBuzz = !hasClaimed;
+                    shouldBuzz = forceBuzz || !hasClaimed;
                   }
                 }
                 if (shouldBuzz) {
