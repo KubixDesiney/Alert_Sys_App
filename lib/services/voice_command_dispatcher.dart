@@ -1,6 +1,8 @@
 // Bridges parsed [VoiceCommand] objects to AlertProvider actions.
 // Speaks confirmations/errors via [VoiceService] so the user always hears
 // whether the command succeeded — this matters for hands-free use.
+// Reuses the existing AlertProvider methods so all claim/resolve/escalate
+// rules (in-progress checks, hierarchy notifications, etc.) keep working.
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';

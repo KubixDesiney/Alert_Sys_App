@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'firebase_options.dart';
-import 'services/config_service.dart';
 import 'providers/alert_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
@@ -14,7 +12,6 @@ import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
-import 'services/voice_service.dart';
 import 'theme.dart';
 
 void main() async {
@@ -64,15 +61,9 @@ void main() async {
     debugPrint('FCM init failed: $e');
   }
 
-  // Warm up the Vosk speech model in the background. Don't await — model
-  // load is ~50MB and we don't want to block first paint. The mic button
-  // will await its own init() if the user taps before this finishes.
-  // ignore: unawaited_futures
-  VoiceService.instance.init().catchError((e) {
-    debugPrint('VoiceService init failed (non-fatal): $e');
-  });
-
   // Keep startup path light; post-launch SDK setup runs in background.
+  // The voice service initializes lazily when the user taps the mic
+  // button or opens the voice claim screen, so no warm-up is needed.
   ShorebirdCodePush();
 
   runApp(const AlertSysApp());

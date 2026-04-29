@@ -1,10 +1,11 @@
 // Pure-logic voice command parser. No I/O, no Flutter — easy to unit test.
 //
-// Translates a Vosk transcription like "claim alert one thousand twenty five"
+// Translates a transcription like "claim alert one thousand twenty five"
 // into a structured [VoiceCommand]. Knows how to:
 //   1. Map English number words ("one thousand twenty five") to digits (1025).
 //   2. Extract the intent verb (claim / resolve / escalate / show ...).
 //   3. Pull a free-text "reason" segment for resolve commands.
+//   4. Detect yes/no confirmations (used by the notification claim flow).
 
 enum VoiceIntent {
   claim,
@@ -39,18 +40,46 @@ class VoiceCommand {
 class VoiceCommandParser {
   // Single-word values: 0..19 + tens.
   static const Map<String, int> _ones = {
-    'zero': 0, 'oh': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
-    'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
-    'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18,
+    'zero': 0,
+    'oh': 0,
+    'one': 1,
+    'won': 1,
+    'two': 2,
+    'to': 2,
+    'too': 2,
+    'three': 3,
+    'four': 4,
+    'for': 4,
+    'five': 5,
+    'six': 6,
+    'seven': 7,
+    'eight': 8,
+    'ate': 8,
+    'nine': 9,
+    'ten': 10,
+    'eleven': 11,
+    'twelve': 12,
+    'thirteen': 13,
+    'fourteen': 14,
+    'fifteen': 15,
+    'sixteen': 16,
+    'seventeen': 17,
+    'eighteen': 18,
     'nineteen': 19,
   };
   static const Map<String, int> _tens = {
-    'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
-    'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
+    'twenty': 20,
+    'thirty': 30,
+    'forty': 40,
+    'fifty': 50,
+    'sixty': 60,
+    'seventy': 70,
+    'eighty': 80,
+    'ninety': 90,
   };
   static const Map<String, int> _scales = {
-    'hundred': 100, 'thousand': 1000,
+    'hundred': 100,
+    'thousand': 1000,
   };
 
   /// Parse a finalized transcription string into a [VoiceCommand].
@@ -72,14 +101,12 @@ class VoiceCommandParser {
     if (normalized.contains('show dashboard') ||
         normalized.contains('open dashboard') ||
         normalized.contains('go to dashboard')) {
-      return VoiceCommand(
-          intent: VoiceIntent.showDashboard, rawText: raw);
+      return VoiceCommand(intent: VoiceIntent.showDashboard, rawText: raw);
     }
     if (normalized.contains('show alerts') ||
         normalized.contains('open alerts') ||
         normalized.contains('list alerts')) {
-      return VoiceCommand(
-          intent: VoiceIntent.showAlerts, rawText: raw);
+      return VoiceCommand(intent: VoiceIntent.showAlerts, rawText: raw);
     }
     if (normalized.contains('show fixed') ||
         normalized.contains('show resolved') ||
@@ -89,7 +116,11 @@ class VoiceCommandParser {
 
     // Verb extraction. We accept synonyms so the recognizer has slack.
     VoiceIntent intent = VoiceIntent.unknown;
-    if (normalized.startsWith('claim') || normalized.startsWith('take')) {
+    if (normalized.startsWith('claim') ||
+        normalized.startsWith('take') ||
+        normalized.contains('accept assignment') ||
+        normalized.contains('accept the assignment') ||
+        normalized.contains('accept this assignment')) {
       intent = VoiceIntent.claim;
     } else if (normalized.startsWith('resolve') ||
         normalized.startsWith('close') ||
@@ -126,6 +157,40 @@ class VoiceCommandParser {
     );
   }
 
+  /// Affirmative-response check for the confirmation step. Accepts "yes",
+  /// "yeah", "yep", "confirm", "confirmed", "ok", "okay", "go", "go ahead",
+  /// "claim", "do it". Anything else (including silence / empty) is "no".
+  static bool isYes(String transcript) {
+    final t = transcript.trim().toLowerCase();
+    if (t.isEmpty) return false;
+    const positives = {
+      'yes',
+      'yeah',
+      'yep',
+      'yup',
+      'sure',
+      'confirm',
+      'confirmed',
+      'ok',
+      'okay',
+      'go',
+      'go ahead',
+      'do it',
+      'claim',
+      'accept',
+      'affirmative',
+      'correct',
+    };
+    if (positives.contains(t)) return true;
+    // Phrase forms: "yes confirm", "yes do it", "claim it" etc.
+    for (final p in positives) {
+      if (t.startsWith('$p ') || t.endsWith(' $p') || t.contains(' $p ')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Extracts the first number found in [text]. Recognizes both digit
   /// runs ("1025") and English number words ("one thousand twenty five").
   static int? _extractNumber(String text) {
@@ -136,9 +201,14 @@ class VoiceCommandParser {
     }
 
     final tokens = text.split(' ');
-    int total = 0;        // accumulated value of finished segments
-    int current = 0;      // current segment being built
-    bool sawAny = false;  // did we ever consume a number word?
+    final digitSequence = _extractSpokenDigitSequence(tokens);
+    if (digitSequence != null) {
+      return digitSequence;
+    }
+
+    int total = 0; // accumulated value of finished segments
+    int current = 0; // current segment being built
+    bool sawAny = false; // did we ever consume a number word?
 
     for (final t in tokens) {
       if (_ones.containsKey(t)) {
@@ -164,5 +234,20 @@ class VoiceCommandParser {
     }
     final result = total + current;
     return sawAny ? result : null;
+  }
+
+  static int? _extractSpokenDigitSequence(List<String> tokens) {
+    final digits = <int>[];
+    for (final token in tokens) {
+      final digit = _ones[token];
+      if (digit != null && digit >= 0 && digit <= 9) {
+        digits.add(digit);
+      } else if (digits.isNotEmpty) {
+        break;
+      }
+    }
+
+    if (digits.length < 2) return null;
+    return int.tryParse(digits.join());
   }
 }
