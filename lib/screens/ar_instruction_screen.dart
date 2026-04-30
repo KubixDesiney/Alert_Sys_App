@@ -30,7 +30,6 @@ class ArInstructionScreen extends StatefulWidget {
 
 class _ArInstructionScreenState extends State<ArInstructionScreen> {
   final MobileScannerController _scannerController = MobileScannerController(
-    autoZoom: true,
     cameraResolution: const Size(1920, 1080),
     detectionSpeed: DetectionSpeed.normal,
     formats: const [BarcodeFormat.qrCode],
@@ -296,8 +295,7 @@ class _ArInstructionScreenState extends State<ArInstructionScreen> {
         MobileScanner(
           controller: _scannerController,
           onDetect: _onDetect,
-          tapToFocus: true,
-          errorBuilder: (context, error) => Center(
+          errorBuilder: (context, error, child) => Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
