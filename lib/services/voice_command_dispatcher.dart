@@ -22,25 +22,23 @@ class VoiceCommandDispatcher {
     VoiceCommand cmd, {
     Uint8List? rawAudio,
     int rawAudioSampleRate = 16000,
+    bool voiceAlreadyVerified = false,
   }) async {
+    if (!voiceAlreadyVerified) {
+      final auth = await VoiceAuthService.instance.verifyCurrentUser(
+        rawAudio: rawAudio,
+        sampleRate: rawAudioSampleRate,
+      );
+      if (!auth.verified) {
+        await VoiceService.instance.speak('Voice not recognized');
+        return;
+      }
+    }
+
     if (cmd.intent == VoiceIntent.unknown) {
       await VoiceService.instance.speak(
           'I did not understand. Try saying claim alert, resolve alert, or escalate alert.');
       return;
-    }
-
-    final auth = await VoiceAuthService.instance.verifyCurrentUser(
-      rawAudio: rawAudio,
-      sampleRate: rawAudioSampleRate,
-    );
-    if (!auth.verified) {
-      await VoiceService.instance.speak('Voice not recognized');
-      return;
-    }
-    if (auth.unenrolled) {
-      await VoiceService.instance.speak(
-        'Voice commands are allowed. For better security, enroll your voice.',
-      );
     }
 
     // Navigation intents — caller wires these up via a callback if desired.

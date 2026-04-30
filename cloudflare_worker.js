@@ -182,6 +182,9 @@ async function sendFcm(token, title, body, data, env) {
     const accessToken = await getFcmAccessToken(env);
     const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
     const url = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
+    const stringData = Object.fromEntries(
+      Object.entries(data || {}).map(([key, value]) => [key, String(value ?? '')]),
+    );
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -192,7 +195,7 @@ async function sendFcm(token, title, body, data, env) {
         message: {
           token,
           notification: { title, body },
-          data,
+          data: stringData,
           android: {
             priority: 'high',
             notification: { channel_id: 'alerts_high' },
@@ -288,7 +291,11 @@ async function processAlerts(env, ctx) {
         tok,
         `🚨 New Alert: ${alert.type}`,
         `${alert.usine} — ${alert.description}`,
-        { alertId: alert.id, type: alert.type, usine: alert.usine },
+        {
+          alertId: alert.id,
+          type: alert.type,
+          usine: alert.usine,
+        },
         env,
       );
       if (!ok) allOk = false;
@@ -879,4 +886,3 @@ export default {
     return new Response('OK', { status: 200, headers: corsHeaders });
   },
 };
-

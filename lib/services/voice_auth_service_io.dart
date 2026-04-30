@@ -26,7 +26,7 @@ class VoiceAuthService {
   VoiceAuthService._();
   static final VoiceAuthService instance = VoiceAuthService._();
 
-  static const double threshold = 0.75;
+  static const double threshold = 0.88;
   static const String _modelAsset =
       'assets/models/conformer_tisid_small.tflite';
 
@@ -58,9 +58,9 @@ class VoiceAuthService {
     final enrolled = await _loadVoiceprint(uid);
     if (enrolled == null || enrolled.isEmpty) {
       return const VoiceVerificationResult(
-        verified: true,
+        verified: false,
         unenrolled: true,
-        message: 'No enrolled voiceprint.',
+        message: 'No enrolled voiceprint. Voice verification is required.',
       );
     }
 
