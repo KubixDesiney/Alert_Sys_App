@@ -28,7 +28,6 @@ class AlertScanScreen extends StatefulWidget {
 class _AlertScanScreenState extends State<AlertScanScreen> {
   final MobileScannerController _scannerController = MobileScannerController(
     autoStart: true,
-    autoZoom: true,
     cameraResolution: const Size(1920, 1080),
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
@@ -497,8 +496,7 @@ class _CameraCard extends StatelessWidget {
           MobileScanner(
             controller: controller,
             onDetect: onDetect,
-            tapToFocus: true,
-            errorBuilder: (context, error) => Center(
+            errorBuilder: (context, error, child) => Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
