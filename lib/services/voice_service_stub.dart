@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 class VoiceService {
   VoiceService._();
@@ -26,6 +27,13 @@ class VoiceService {
     Duration timeout = const Duration(seconds: 5),
   }) async {
     return '';
+  }
+
+  Future<Uint8List?> captureRawAudio({
+    Duration duration = const Duration(milliseconds: 1800),
+    int sampleRate = 16000,
+  }) async {
+    return null;
   }
 
   Future<void> stopListening() async {}

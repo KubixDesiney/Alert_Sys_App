@@ -6,7 +6,9 @@
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'dart:typed_data';
 import '../providers/alert_provider.dart';
+import 'voice_auth_service.dart';
 import 'voice_command_parser.dart';
 import 'voice_service.dart';
 
@@ -16,11 +18,29 @@ class VoiceCommandDispatcher {
 
   /// Run a parsed command against the provider. All user feedback goes
   /// through TTS — there's no UI surface in this layer by design.
-  Future<void> execute(VoiceCommand cmd) async {
+  Future<void> execute(
+    VoiceCommand cmd, {
+    Uint8List? rawAudio,
+    int rawAudioSampleRate = 16000,
+  }) async {
     if (cmd.intent == VoiceIntent.unknown) {
       await VoiceService.instance.speak(
           'I did not understand. Try saying claim alert, resolve alert, or escalate alert.');
       return;
+    }
+
+    final auth = await VoiceAuthService.instance.verifyCurrentUser(
+      rawAudio: rawAudio,
+      sampleRate: rawAudioSampleRate,
+    );
+    if (!auth.verified) {
+      await VoiceService.instance.speak('Voice not recognized');
+      return;
+    }
+    if (auth.unenrolled) {
+      await VoiceService.instance.speak(
+        'Voice commands are allowed. For better security, enroll your voice.',
+      );
     }
 
     // Navigation intents — caller wires these up via a callback if desired.
@@ -50,8 +70,7 @@ class VoiceCommandDispatcher {
     // from the provider. If not found, abort with a spoken error.
     final match = _findByNumber(number);
     if (match == null) {
-      await VoiceService.instance
-          .speak('Alert number $number was not found.');
+      await VoiceService.instance.speak('Alert number $number was not found.');
       return;
     }
 
@@ -60,8 +79,7 @@ class VoiceCommandDispatcher {
         case VoiceIntent.claim:
           final user = FirebaseAuth.instance.currentUser;
           if (user == null) {
-            await VoiceService.instance
-                .speak('You are not signed in.');
+            await VoiceService.instance.speak('You are not signed in.');
             return;
           }
           final name = await _displayName(user.uid) ?? 'Supervisor';
@@ -83,8 +101,7 @@ class VoiceCommandDispatcher {
           break;
       }
     } catch (e) {
-      await VoiceService.instance
-          .speak('Action failed. ${_shortError(e)}');
+      await VoiceService.instance.speak('Action failed. ${_shortError(e)}');
     }
   }
 
@@ -100,8 +117,7 @@ class VoiceCommandDispatcher {
 
   Future<String?> _displayName(String uid) async {
     try {
-      final snap =
-          await FirebaseDatabase.instance.ref('users/$uid').get();
+      final snap = await FirebaseDatabase.instance.ref('users/$uid').get();
       if (!snap.exists) return null;
       final m = Map<String, dynamic>.from(snap.value as Map);
       return (m['fullName'] ?? m['name'] ?? m['email'])?.toString();
