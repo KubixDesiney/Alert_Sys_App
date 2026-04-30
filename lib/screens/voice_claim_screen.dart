@@ -106,10 +106,20 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     await VoiceService.instance.speak('Speak your command.');
     if (!mounted) return;
 
-    final cmdText = await VoiceService.instance
-        .captureOnce(timeout: const Duration(seconds: 6));
+    final commandCapture = await VoiceService.instance.captureCommandWithAudio(
+      timeout: const Duration(seconds: 6),
+      sampleRate: 16000,
+    );
     if (!mounted) return;
 
+    _setStep(_Step.working, status: 'Verifying voice', hint: '');
+    final commandVerified = await _verifyVoiceSample(
+      commandCapture.rawAudio,
+      commandCapture.sampleRate,
+    );
+    if (!mounted || !commandVerified) return;
+
+    final cmdText = commandCapture.transcript;
     final cmd = VoiceCommandParser.parse(cmdText);
     if (cmd.intent != VoiceIntent.claim) {
       _finish(
@@ -164,9 +174,6 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       );
       return;
     }
-
-    final verified = await _verifyVoiceBeforeAction();
-    if (!mounted || !verified) return;
 
     _setStep(_Step.working,
         status: 'Claiming alert…', hint: 'Alert #${target.alertNumber}');
@@ -231,35 +238,10 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     return null;
   }
 
-  Future<bool> _verifyVoiceBeforeAction() async {
-    final state = await VoiceAuthService.instance.enrollmentState();
-    if (state == VoiceEnrollmentState.unenrolled) {
-      await VoiceService.instance.speak(
-        'Voice commands are allowed. Enroll your voice for better security.',
-      );
-      return true;
-    }
-    if (state == VoiceEnrollmentState.unavailable) {
-      return true;
-    }
-
-    _setStep(
-      _Step.awaitingConfirm,
-      status: 'Verify your voice',
-      hint: 'Say your verification phrase',
-    );
-    await VoiceService.instance.speak('Say your verification phrase.');
-    if (!mounted) return false;
-
-    final Uint8List? audio = await VoiceService.instance.captureRawAudio(
-      duration: const Duration(milliseconds: 2200),
-      sampleRate: 16000,
-    );
-    if (!mounted) return false;
-
+  Future<bool> _verifyVoiceSample(Uint8List? audio, int sampleRate) async {
     final result = await VoiceAuthService.instance.verifyCurrentUser(
       rawAudio: audio,
-      sampleRate: 16000,
+      sampleRate: sampleRate,
     );
     if (!result.verified) {
       _finish(

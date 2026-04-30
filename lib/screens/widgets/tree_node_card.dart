@@ -68,15 +68,22 @@ class TreeNodeCard extends StatefulWidget {
 
 class _TreeNodeCardState extends State<TreeNodeCard>
     with TickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1500),
-  )..repeat(reverse: true);
-  late final AnimationController _ripple = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1500),
-  );
+  late final AnimationController _pulse;
+  late final AnimationController _ripple;
   bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _ripple = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+  }
 
   @override
   void didUpdateWidget(covariant TreeNodeCard old) {

@@ -9,7 +9,8 @@
       "Bash(flutter clean *)",
       "Bash(flutter build *)",
       "Bash(npx firebase-tools *)",
-      "Bash(dart analyze *)"
+      "Bash(dart analyze *)",
+      "Bash(grep \"lib\\\\\\\\\\\\\\\\\")"
     ]
   }
 }

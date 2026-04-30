@@ -5,8 +5,6 @@
 //   tap -> request mic, listen for one short command window, parse,
 //   optionally ask for a missing alert number, then dispatch.
 
-import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/alert_provider.dart';
@@ -31,7 +29,6 @@ class VoiceCommandButton extends StatefulWidget {
 class _VoiceCommandButtonState extends State<VoiceCommandButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
-  StreamSubscription<String>? _commandSub;
   bool _listening = false;
   bool _shownEnrollmentHint = false;
 
@@ -46,7 +43,6 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
 
   @override
   void dispose() {
-    _commandSub?.cancel();
     _pulse.dispose();
     super.dispose();
   }
@@ -85,44 +81,45 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
 
     final provider = context.read<AlertProvider>();
     final dispatcher = VoiceCommandDispatcher(provider);
-    final enrollmentState = await _maybeSuggestEnrollment();
+    await _maybeSuggestEnrollment();
 
     setState(() => _listening = true);
     _pulse.repeat(reverse: true);
 
-    await _commandSub?.cancel();
-    _commandSub = VoiceService.instance.commandStream.listen((text) async {
-      if (!_listening) return;
+    final capture = await VoiceService.instance.captureCommandWithAudio(
+      timeout: widget.listenDuration,
+      sampleRate: 16000,
+    );
+    _stopUi();
+    if (!mounted) return;
+
+    final auth = await VoiceAuthService.instance.verifyCurrentUser(
+      rawAudio: capture.rawAudio,
+      sampleRate: capture.sampleRate,
+    );
+    if (!auth.verified) {
+      await VoiceService.instance.speak('Voice not recognized');
+      return;
+    }
+
+    var cmd = VoiceCommandParser.parse(capture.transcript);
+    if (_needsAlertNumber(cmd)) {
+      await VoiceService.instance.speak('What alert number?');
+      if (!mounted) return;
+
+      setState(() => _listening = true);
+      _pulse.repeat(reverse: true);
+      final numberText = await VoiceService.instance.captureOnce(
+        timeout: const Duration(seconds: 4),
+      );
       _stopUi();
-      await VoiceService.instance.stopListening();
-      var cmd = VoiceCommandParser.parse(text);
-      if (_needsAlertNumber(cmd)) {
-        await VoiceService.instance.speak('What alert number?');
-        if (!mounted) return;
 
-        setState(() => _listening = true);
-        _pulse.repeat(reverse: true);
-        final numberText = await VoiceService.instance.captureOnce(
-          timeout: const Duration(seconds: 4),
-        );
-        _stopUi();
-
-        if (numberText.trim().isNotEmpty) {
-          cmd = VoiceCommandParser.parse('${cmd.rawText} $numberText');
-        }
+      if (numberText.trim().isNotEmpty) {
+        cmd = VoiceCommandParser.parse('${cmd.rawText} $numberText');
       }
-      final rawAudio = enrollmentState == VoiceEnrollmentState.enrolled
-          ? await _captureVerificationSample()
-          : null;
-      await dispatcher.execute(cmd, rawAudio: rawAudio);
-    });
+    }
 
-    await VoiceService.instance.startListening(timeout: widget.listenDuration);
-
-    Future.delayed(widget.listenDuration + const Duration(milliseconds: 900),
-        () {
-      if (mounted && _listening) _stopUi();
-    });
+    await dispatcher.execute(cmd, voiceAlreadyVerified: true);
   }
 
   Future<VoiceEnrollmentState> _maybeSuggestEnrollment() async {
@@ -136,7 +133,7 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text(
-            'Voice commands are available. Enroll your voice for biometric protection.'),
+            'Enroll your voice before using biometric voice commands.'),
         action: SnackBarAction(
           label: 'Enroll',
           onPressed: _openEnrollment,
@@ -144,19 +141,6 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
       ),
     );
     return state;
-  }
-
-  Future<Uint8List?> _captureVerificationSample() async {
-    await VoiceService.instance.speak('Say your verification phrase.');
-    if (!mounted) return null;
-    setState(() => _listening = true);
-    _pulse.repeat(reverse: true);
-    final audio = await VoiceService.instance.captureRawAudio(
-      duration: const Duration(milliseconds: 2200),
-      sampleRate: 16000,
-    );
-    _stopUi();
-    return audio;
   }
 
   void _openEnrollment() {
