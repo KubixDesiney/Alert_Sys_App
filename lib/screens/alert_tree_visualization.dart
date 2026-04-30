@@ -239,7 +239,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     final next = (scale * factor).clamp(0.5, 3.0);
     if ((next - scale).abs() < 0.01) return;
     _zoomBtnFrom = current;
-    _zoomBtnTo = Matrix4.identity()..scaleByDouble(next, next, next, 1);
+    _zoomBtnTo = Matrix4.diagonal3Values(next, next, next);
     _zoomBtnAnim.forward(from: 0);
   }
 
