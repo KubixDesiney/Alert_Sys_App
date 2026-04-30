@@ -232,38 +232,45 @@ class _ManagementSubTab extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-          child: TextField(
-            controller: searchCtrl,
-            onChanged: onSearchChanged,
-            decoration: InputDecoration(
-              hintText: 'Search supervisor by name...',
-              prefixIcon: const Icon(Icons.search, color: _muted),
-              suffixIcon: searchQuery.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close, size: 18, color: _muted),
-                      onPressed: () {
-                        searchCtrl.clear();
-                        onSearchChanged('');
-                      },
-                    ),
-              filled: true,
-              fillColor: _white,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _navy, width: 1.4),
-              ),
-            ),
+          child: Builder(
+            builder: (context) {
+              final t = context.appTheme;
+              return TextField(
+                controller: searchCtrl,
+                onChanged: onSearchChanged,
+                style: TextStyle(color: t.text, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Search supervisor by name...',
+                  hintStyle: TextStyle(color: t.muted),
+                  prefixIcon: Icon(Icons.search, color: t.muted),
+                  suffixIcon: searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: Icon(Icons.close, size: 18, color: t.muted),
+                          onPressed: () {
+                            searchCtrl.clear();
+                            onSearchChanged('');
+                          },
+                        ),
+                  filled: true,
+                  fillColor: t.scaffold,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: t.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: t.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: t.navy, width: 1.4),
+                  ),
+                ),
+              );
+            },
           ),
         ),
         Expanded(
