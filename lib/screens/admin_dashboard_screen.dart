@@ -1090,28 +1090,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
           child: Column(children: [
-        _Header(activeSups: _activeSups, onLogout: _logout),
+        _Header(
+          activeSups: _activeSups,
+          onLogout: _logout,
+          onSimulateAlert: _showSimulateDialog,
+        ),
         _PillTabBar(tab: _tab, onSelect: (i) => setState(() => _tab = i)),
         Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _navy))
                 : _buildContent()),
       ])),
-      // Stack the voice mic above the simulate-alert FAB so admins can also
-      // drive the app hands-free during demos / shop-floor walks.
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          const VoiceCommandButton(),
-          FloatingActionButton(
-            onPressed: _showSimulateDialog,
-            backgroundColor: _navy,
-            tooltip: 'Simulate Alert',
-            child: const Icon(Icons.add_alert),
-          ),
-        ],
-      ),
+      floatingActionButton: const VoiceCommandButton(),
     );
   }
 
@@ -1189,7 +1179,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           onRefresh: _loadSupervisors,
         );
       case 2:
-        return AlertsTreeTab(alerts: _alerts);
+        return AlertsTreeTab(
+          alerts: _alerts,
+          onAssignAssistant: _assignAssistant,
+        );
       case 3:
         return const AdminEscalationScreen();
       case 4:
@@ -1206,7 +1199,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 class _Header extends StatefulWidget {
   final int activeSups;
   final VoidCallback onLogout;
-  const _Header({required this.activeSups, required this.onLogout});
+  final VoidCallback onSimulateAlert;
+  const _Header({
+    required this.activeSups,
+    required this.onLogout,
+    required this.onSimulateAlert,
+  });
   @override
   State<_Header> createState() => _HeaderState();
 }
@@ -1276,23 +1274,11 @@ class _HeaderState extends State<_Header> {
       return;
     }
 
-    final readAt = DateTime.now().toIso8601String();
-    await _db.child('notifications/$uid/$notificationId').update({
-      'status': 'read',
-      'readAt': readAt,
-    });
+    await _db.child('notifications/$uid/$notificationId').remove();
 
     if (!mounted || !modalContext.mounted) return;
     setModalState(() {
-      final index =
-          _notifications.indexWhere((item) => item['id'] == notificationId);
-      if (index != -1) {
-        _notifications[index] = {
-          ..._notifications[index],
-          'status': 'read',
-          'readAt': readAt,
-        };
-      }
+      _notifications.removeWhere((item) => item['id'] == notificationId);
       _notificationCount =
           _notifications.where((item) => item['status'] != 'read').length;
     });
@@ -1838,6 +1824,11 @@ class _HeaderState extends State<_Header> {
               style: TextStyle(fontSize: 11, color: t.muted)),
         ]),
         const Spacer(),
+        IconButton(
+          icon: Icon(Icons.add_alert_outlined, color: t.muted, size: 22),
+          tooltip: 'Simulate Alert',
+          onPressed: widget.onSimulateAlert,
+        ),
         // ── Theme toggle ──
         IconButton(
           icon: Icon(

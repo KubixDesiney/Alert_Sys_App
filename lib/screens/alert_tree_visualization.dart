@@ -1,23 +1,47 @@
 // lib/screens/alert_tree_visualization.dart
+//
+// Modern, fluid alert tree:
+//   • InteractiveViewer (pinch-zoom + pan) replacing manual Transform.scale.
+//   • Curved Bezier connectors between layers (BezierConnectorPainter).
+//   • Card-style nodes with status badges and selection ring (TreeNodeCard).
+//   • Modal DraggableScrollableSheet for alert detail (showTreeAlertSheet).
+//   • Search + filter + density + tree/heatmap toggle (TreeFilterBar).
+//   • Live status header with active counts and pulsing "Live" dot.
+//   • Real-time ripple animation on stations that just received a new alert.
+//   • AI assignment ON/OFF/Logs surfaced as a collapsible bottom pill.
+//
+// Data flow unchanged from the legacy implementation:
+//   HierarchyService.getFactories() → factories list
+//   widget.alerts (passed from AdminDashboardScreen) → alert counts per location
+//   AIAssignmentService.instance → AI auto-assignment + logs
+
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../services/hierarchy_service.dart';
-import '../services/auth_service.dart';
-import '../services/ai_assignment_service.dart';
+
 import '../models/alert_model.dart';
 import '../models/hierarchy_model.dart';
-import '../models/user_model.dart';
-import '../widgets/ai_logs_panel.dart';
+import '../services/ai_assignment_service.dart';
+import '../services/hierarchy_service.dart';
+import '../services/work_instruction_service.dart';
 import '../theme.dart';
+import '../utils/alert_meta.dart';
+import '../widgets/ai_logs_panel.dart';
+import 'widgets/tree_alert_sheet.dart';
+import 'widgets/tree_connector_painter.dart';
+import 'widgets/tree_filter_bar.dart';
+import 'widgets/tree_heatmap_view.dart';
+import 'widgets/tree_node_card.dart';
 
-// Alert/status accent palette
-const _red = Color(0xFFDC2626);
+// Accent palette retained for the AI ON segment.
 const _green = Color(0xFF16A34A);
-const _orange = Color(0xFFEA580C);
-const _blue = Color(0xFF2563EB);
-const _yellow = Color(0xFFEAB308);
 
+// =============================================================================
+// AlertNode — public model kept for backward compat with anything else that
+// might import it from this file. The new tree uses local layout records but
+// the shape is the same.
+// =============================================================================
 class AlertNode {
   final String id;
   final String label;
@@ -26,7 +50,7 @@ class AlertNode {
   final Map<String, dynamic>? alertData;
   final String type; // 'usine', 'conveyor', 'workstation'
 
-  AlertNode({
+  const AlertNode({
     required this.id,
     required this.label,
     this.errorCount = 0,
@@ -38,10 +62,18 @@ class AlertNode {
   bool get hasError => errorCount > 0;
 }
 
+// =============================================================================
+// Public widget
+// =============================================================================
 class AlertTreeVisualization extends StatefulWidget {
   final List<AlertModel> alerts;
+  final Future<void> Function(AlertModel alert)? onAssignAssistant;
 
-  const AlertTreeVisualization({super.key, required this.alerts});
+  const AlertTreeVisualization({
+    super.key,
+    required this.alerts,
+    this.onAssignAssistant,
+  });
 
   @override
   State<AlertTreeVisualization> createState() => _AlertTreeVisualizationState();
@@ -49,395 +81,216 @@ class AlertTreeVisualization extends StatefulWidget {
 
 class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     with TickerProviderStateMixin {
-  static const double _minTreeScale = 0.7;
-  static const double _maxTreeScale = 1.8;
-  static const double _treeScaleStep = 0.1;
-
-  List<AlertNode> _usines = [];
-  AlertNode? _selectedUsine;
-  AlertNode? _selectedConveyor;
-  AlertNode? _selectedWorkstation;
-  Map<String, dynamic>? _popupAlertData;
-  Offset? _popupPosition;
-  double _treeScale = 1.0;
-  bool _showAILogsPanel = false;
+  // ---------------- Data ----------------
+  final HierarchyService _hierarchyService = HierarchyService();
+  final WorkInstructionService _workInstructionService =
+      WorkInstructionService();
+  StreamSubscription<List<Factory>>? _hierarchySub;
   List<Factory> _factories = [];
 
-  late AnimationController _zoomController;
-  late AnimationController _detailController;
-  late AnimationController _pulseController;
-  late Animation<double> _zoomAnimation;
-  late Animation<double> _detailAnimation;
+  // ---------------- Selection ----------------
+  String? _selectedUsineId;
+  String? _selectedConveyorId;
 
-  StreamSubscription? _hierarchySubscription;
+  // ---------------- Filter / view state ----------------
+  TreeFilterState _filter = const TreeFilterState();
 
-  final HierarchyService _hierarchyService = HierarchyService();
-  final AuthService _authService = AuthService();
+  // ---------------- AI panel ----------------
+  bool _aiPanelExpanded = false;
+  bool _showAILogsPanel = false;
+
+  // ---------------- Pinch-zoom ----------------
+  final TransformationController _transform = TransformationController();
+  late final AnimationController _zoomBtnAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  );
+  Matrix4 _zoomBtnFrom = Matrix4.identity();
+  Matrix4 _zoomBtnTo = Matrix4.identity();
+
+  // ---------------- Connector flow animation ----------------
+  late final AnimationController _flowAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
+
+  // ---------------- Live ticker (for "Updated x ago") ----------------
+  late final Timer _ticker;
+  DateTime _lastUpdate = DateTime.now();
+
+  // ---------------- Ripple tracking ----------------
+  Set<String> _knownAlertIds = {};
+  final Map<String, DateTime> _lastRippleAt = {};
+  final Set<String> _rippleStations = {}; // location keys currently rippling
 
   AppTheme get _t => context.appTheme;
-  Color get _lineColor => context.isDark
-      ? Colors.white.withOpacity(0.65)
-      : const Color(0xFF111827).withOpacity(0.88);
-  Color get _lineSoftColor => context.isDark
-      ? Colors.white.withOpacity(0.45)
-      : const Color(0xFF111827).withOpacity(0.55);
 
+  // ---------------------------------------------------------------------------
   @override
   void initState() {
     super.initState();
-    _startHierarchySubscription();
+    _knownAlertIds = widget.alerts.map((a) => a.id).toSet();
+
+    _hierarchySub = _hierarchyService.getFactories().listen((factories) {
+      if (!mounted) return;
+      setState(() {
+        _factories = factories;
+        _lastUpdate = DateTime.now();
+      });
+    });
+
     AIAssignmentService.instance.init().then((_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
       AIAssignmentService.instance.processAlerts(widget.alerts);
     });
     AIAssignmentService.instance.addListener(_onAIChange);
 
-    _zoomController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
+    _zoomBtnAnim.addListener(_onZoomBtnTick);
 
-    _detailController = AnimationController(
-      duration: const Duration(milliseconds: 500),
-      vsync: this,
-    );
-
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    )..repeat(reverse: true);
-
-    _zoomAnimation = CurvedAnimation(
-      parent: _zoomController,
-      curve: Curves.easeInOutCubic,
-    );
-
-    _detailAnimation = CurvedAnimation(
-      parent: _detailController,
-      curve: Curves.easeOutCubic,
-    );
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
-  void didUpdateWidget(AlertTreeVisualization oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.alerts != oldWidget.alerts) {
-      _rebuildHierarchy();
-      // Feed updated alerts to AI engine for re-evaluation.
+  void didUpdateWidget(covariant AlertTreeVisualization old) {
+    super.didUpdateWidget(old);
+    if (!identical(widget.alerts, old.alerts)) {
+      _detectNewAlertsForRipple();
       AIAssignmentService.instance.processAlerts(widget.alerts);
+      _lastUpdate = DateTime.now();
     }
+  }
+
+  @override
+  void dispose() {
+    _ticker.cancel();
+    _hierarchySub?.cancel();
+    AIAssignmentService.instance.removeListener(_onAIChange);
+    _zoomBtnAnim.removeListener(_onZoomBtnTick);
+    _zoomBtnAnim.dispose();
+    _flowAnim.dispose();
+    _transform.dispose();
+    super.dispose();
   }
 
   void _onAIChange() {
     if (mounted) setState(() {});
   }
 
-  Future<void> _toggleAI(bool on) async {
-    await AIAssignmentService.instance.setEnabled(on);
-    if (on) {
-      AIAssignmentService.instance.processAlerts(widget.alerts);
+  // ---------------------------------------------------------------------------
+  // Ripple handling: pulse a station node when a new alert lands there.
+  // ---------------------------------------------------------------------------
+  void _detectNewAlertsForRipple() {
+    final newIds = widget.alerts.map((a) => a.id).toSet();
+    final added = newIds.difference(_knownAlertIds);
+    if (added.isEmpty) {
+      _knownAlertIds = newIds;
+      return;
     }
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(on
-              ? 'Global AI ON — all factories auto-assignment enabled'
-              : 'Global AI OFF — auto-assignment disabled for all factories'),
-          backgroundColor: on ? _t.green : _t.muted,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  void _startHierarchySubscription() {
-    _hierarchySubscription?.cancel();
-    _hierarchySubscription =
-        _hierarchyService.getFactories().listen((factories) {
-      _factories = factories;
-      _rebuildHierarchy();
-    });
-  }
-
-  void _rebuildHierarchy() {
-    if (!mounted || _factories.isEmpty) return;
-
-    // Build alert counts per location (usine|conveyor|workstation) directly
-    // from the latest alert stream tick. This keeps status color changes from
-    // waiting on a second hierarchy event.
-    final Map<String, int> alertCounts = {};
-    final Map<String, Map<String, dynamic>> firstAlertData = {};
-    final Map<String, int> activeAlertPriority = {};
-
-    for (var alert in widget.alerts) {
-      if (alert.status == 'disponible' || alert.status == 'en_cours') {
-        final key = '${alert.usine}|${alert.convoyeur}|${alert.poste}';
-        alertCounts[key] = (alertCounts[key] ?? 0) + 1;
-        final priority = _activeAlertPriority(alert.status);
-        if (!firstAlertData.containsKey(key) ||
-            priority > (activeAlertPriority[key] ?? 0)) {
-          firstAlertData[key] = _alertToMap(alert);
-          activeAlertPriority[key] = priority;
-        }
+    final now = DateTime.now();
+    for (final a in widget.alerts.where((a) => added.contains(a.id))) {
+      final key = _locationKey(a.usine, a.convoyeur, a.poste);
+      final last = _lastRippleAt[key];
+      if (last != null && now.difference(last) < const Duration(seconds: 2)) {
+        continue;
       }
+      _lastRippleAt[key] = now;
+      _rippleStations.add(key);
+      Future.delayed(const Duration(milliseconds: 1600), () {
+        if (!mounted) return;
+        setState(() => _rippleStations.remove(key));
+      });
     }
-
-    final usineNodes = _factories.map((factory) {
-      final conveyorNodes = factory.conveyors.values.map((conveyor) {
-        final stationNodes = conveyor.stations.values.map((station) {
-          final stationNumber =
-              int.tryParse(station.id.replaceAll('station_', '')) ?? 0;
-          final key = '${factory.name}|${conveyor.number}|$stationNumber';
-          final errorCount = alertCounts[key] ?? 0;
-          final baseStationData = <String, dynamic>{
-            'usine': factory.name,
-            'convoyeur': conveyor.number,
-            'poste': stationNumber,
-          };
-          return AlertNode(
-            id: '${factory.id}|${conveyor.id}|${station.id}',
-            label: station.name,
-            errorCount: errorCount,
-            alertData: errorCount > 0
-                ? {
-                    ...baseStationData,
-                    ...?firstAlertData[key],
-                    'hasActiveAlert': true,
-                  }
-                : {
-                    ...baseStationData,
-                    'hasActiveAlert': false,
-                  },
-            type: 'workstation',
-          );
-        }).toList();
-
-        final conveyorErrorCount =
-            stationNodes.fold<int>(0, (sum, s) => sum + s.errorCount);
-        return AlertNode(
-          id: '${factory.id}|${conveyor.id}',
-          label: 'Conveyor ${conveyor.number}',
-          errorCount: conveyorErrorCount,
-          children: stationNodes.toList(),
-          type: 'conveyor',
-        );
-      }).toList();
-
-      final factoryErrorCount =
-          conveyorNodes.fold<int>(0, (sum, c) => sum + c.errorCount);
-      return AlertNode(
-        id: factory.id,
-        label: factory.name,
-        errorCount: factoryErrorCount,
-        children: conveyorNodes.toList(),
-        type: 'usine',
-      );
-    }).toList();
-
-    setState(() {
-      _usines = usineNodes;
-      _syncSelectedNodes();
-    });
+    _knownAlertIds = newIds;
   }
 
-  void _syncSelectedNodes() {
-    // Keep selected-node references and the open popup in sync with the
-    // freshly-built tree so the UI is always live, not a click-time snapshot.
-    if (_selectedUsine != null) {
-      _selectedUsine = _usines.firstWhere(
-        (u) => u.id == _selectedUsine!.id,
-        orElse: () => _selectedUsine!,
-      );
-    }
-    if (_selectedConveyor != null && _selectedUsine != null) {
-      _selectedConveyor = _selectedUsine!.children.firstWhere(
-        (c) => c.id == _selectedConveyor!.id,
-        orElse: () => _selectedConveyor!,
-      );
-    }
-    if (_selectedWorkstation != null && _selectedConveyor != null) {
-      final freshWs = _selectedConveyor!.children.firstWhere(
-        (w) => w.id == _selectedWorkstation!.id,
-        orElse: () => _selectedWorkstation!,
-      );
-      _selectedWorkstation = freshWs;
-      if (_popupAlertData != null) {
-        _popupAlertData = freshWs.alertData;
-      }
-    }
+  String _locationKey(String usine, int conveyor, int station) =>
+      '$usine|$conveyor|$station';
+
+  Color _nodeAccent(
+    AppTheme t, {
+    required int activeCount,
+    required int inProgressCount,
+    required bool isCritical,
+    required Color idle,
+  }) {
+    final unclaimedCount =
+        (activeCount - inProgressCount).clamp(0, activeCount);
+    if (isCritical || unclaimedCount > 0) return t.red;
+    if (inProgressCount > 0) return t.yellow;
+    return idle;
   }
 
-  Map<String, dynamic> _alertToMap(AlertModel alert) {
-    return {
-      'id': alert.id,
-      'alertNumber': alert.alertNumber,
-      'type': alert.type,
-      'status': alert.status,
-      'description': alert.description,
-      'usine': alert.usine,
-      'convoyeur': alert.convoyeur,
-      'poste': alert.poste,
-      'superviseurId': alert.superviseurId,
-      'superviseurName': alert.superviseurName,
-      'assistantId': alert.assistantId,
-      'assistantName': alert.assistantName,
-      'timestamp': alert.timestamp.toString(),
-      'isCritical': alert.isCritical,
-    };
+  // ---------------------------------------------------------------------------
+  // Zoom controls
+  // ---------------------------------------------------------------------------
+  void _onZoomBtnTick() {
+    _transform.value = Matrix4Tween(begin: _zoomBtnFrom, end: _zoomBtnTo)
+        .animate(
+            CurvedAnimation(parent: _zoomBtnAnim, curve: Curves.easeOutCubic))
+        .value;
   }
 
-  void _onUsineClick(AlertNode usine) {
-    setState(() {
-      if (_selectedUsine?.id == usine.id) {
-        _selectedUsine = null;
-        _selectedConveyor = null;
-        _selectedWorkstation = null;
-        _popupAlertData = null;
-        _detailController.reverse();
-        _zoomController.reverse();
-      } else {
-        _selectedUsine = usine;
-        _selectedConveyor = null;
-        _selectedWorkstation = null;
-        _popupAlertData = null;
-        _detailController.reverse();
-        _zoomController.forward(from: 0);
-      }
-    });
+  void _animateZoom(double factor) {
+    final current = _transform.value.clone();
+    final scale = current.getMaxScaleOnAxis();
+    final next = (scale * factor).clamp(0.5, 3.0);
+    if ((next - scale).abs() < 0.01) return;
+    _zoomBtnFrom = current;
+    _zoomBtnTo = Matrix4.identity()..scaleByDouble(next, next, next, 1);
+    _zoomBtnAnim.forward(from: 0);
   }
 
-  void _onConveyorClick(AlertNode conveyor) {
-    setState(() {
-      if (_selectedConveyor?.id == conveyor.id) {
-        _selectedConveyor = null;
-        _selectedWorkstation = null;
-        _popupAlertData = null;
-        _detailController.reverse();
-      } else {
-        _selectedConveyor = conveyor;
-        _selectedWorkstation = null;
-        _popupAlertData = null;
-        _detailController.forward(from: 0);
-      }
-    });
+  void _resetZoom() {
+    _zoomBtnFrom = _transform.value.clone();
+    _zoomBtnTo = Matrix4.identity();
+    _zoomBtnAnim.forward(from: 0);
   }
 
-  void _onWorkstationClick(AlertNode workstation, Offset globalPosition) {
-    setState(() {
-      _selectedWorkstation = workstation;
-      _popupAlertData = workstation.alertData;
-      _popupPosition = globalPosition;
-    });
-  }
-
-  void _closePopup() {
-    setState(() {
-      _popupAlertData = null;
-      _popupPosition = null;
-      _selectedWorkstation = null;
-    });
-  }
-
-  void _zoomInTree() {
-    setState(() {
-      _treeScale =
-          (_treeScale + _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
-    });
-  }
-
-  void _zoomOutTree() {
-    setState(() {
-      _treeScale =
-          (_treeScale - _treeScaleStep).clamp(_minTreeScale, _maxTreeScale);
-    });
-  }
-
-  @override
-  void dispose() {
-    _hierarchySubscription?.cancel();
-    AIAssignmentService.instance.removeListener(_onAIChange);
-    _zoomController.dispose();
-    _detailController.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
-
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final t = _t;
+    final tree = _buildTreeData();
+
     return Stack(
       children: [
-        GestureDetector(
-          onTap: () {
-            if (_popupAlertData != null) {
-              _closePopup();
-            } else if (_selectedConveyor != null) {
-              setState(() {
-                _selectedConveyor = null;
-                _selectedWorkstation = null;
-              });
-            } else if (_selectedUsine != null) {
-              setState(() {
-                _selectedUsine = null;
-                _selectedConveyor = null;
-                _selectedWorkstation = null;
-                _zoomController.reverse();
-              });
-            }
-          },
-          child: Container(
-            color: t.scaffold,
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(
-                  child: AnimatedBuilder(
-                    animation:
-                        Listenable.merge([_zoomAnimation, _detailAnimation]),
-                    builder: (context, child) {
-                      return SingleChildScrollView(
-                        child: Center(
-                          child: Transform.scale(
-                            scale: _treeScale,
-                            alignment: Alignment.topCenter,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Level 1: Factories
-                                if (_selectedUsine == null)
-                                  _buildUsineLayer(_zoomAnimation.value)
-                                else
-                                  _buildConveyorLayerWithParent(
-                                      _zoomAnimation.value),
-                                // Level 3: Workstations (visible when conveyor selected)
-                                if (_selectedConveyor != null)
-                                  Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _buildInterLayerConnector(height: 42),
-                                      _buildWorkstationLayerWithParent(
-                                          _detailAnimation.value),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+        Container(
+          color: t.scaffold,
+          child: Column(
+            children: [
+              _liveHeader(t, tree),
+              TreeFilterBar(
+                state: _filter,
+                onChanged: (next) => setState(() => _filter = next),
+              ),
+              if (_filter.hasFilters) _filterSummaryBar(t, tree),
+              Expanded(
+                child: tree.factories.isEmpty
+                    ? _emptyState(t)
+                    : (_filter.heatmap
+                        ? _buildHeatmap(tree)
+                        : _buildTreeCanvas(tree)),
+              ),
+            ],
           ),
         ),
+        if (!_filter.heatmap && tree.factories.isNotEmpty)
+          Positioned(
+            right: 16,
+            bottom: 88,
+            child: _zoomControls(t),
+          ),
         Positioned(
-          right: 16,
-          bottom: 16,
-          child: _buildZoomControls(),
+          left: 12,
+          right: 12,
+          bottom: 12,
+          child: _aiBottomPill(t),
         ),
-        if (_popupAlertData != null && _popupPosition != null)
-          _buildAlertPopup(),
         if (_showAILogsPanel)
           AILogsPanel(
             onClose: () => setState(() => _showAILogsPanel = false),
@@ -447,14 +300,421 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     );
   }
 
-  Widget _buildZoomControls() {
+  // ---------------------------------------------------------------------------
+  // Live status header
+  // ---------------------------------------------------------------------------
+  Widget _liveHeader(AppTheme t, _TreeData tree) {
+    final activeTotal = tree.totalActive;
+    final stationsAffected = tree.stationsWithActive;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: t.card,
+        border: Border(bottom: BorderSide(color: t.border)),
+      ),
+      child: Row(
+        children: [
+          _LivePulseDot(color: t.green),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.account_tree, size: 16, color: t.navy),
+                    const SizedBox(width: 6),
+                    Text(
+                      _scopeTitle(),
+                      style: TextStyle(
+                        color: t.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$activeTotal active across $stationsAffected '
+                  'station${stationsAffected == 1 ? '' : 's'} '
+                  '· Updated ${_relative(_lastUpdate)}',
+                  style: TextStyle(color: t.muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          if (_selectedUsineId != null || _selectedConveyorId != null)
+            IconButton(
+              tooltip: 'Reset view',
+              icon: Icon(Icons.close, size: 18, color: t.muted),
+              onPressed: () => setState(() {
+                _selectedUsineId = null;
+                _selectedConveyorId = null;
+                _resetZoom();
+              }),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _scopeTitle() {
+    if (_selectedUsineId == null) return 'All Plants';
+    final f = _factoryById(_selectedUsineId!);
+    if (f == null) return 'All Plants';
+    if (_selectedConveyorId == null) return f.name;
+    final c = f.conveyors.values.firstWhere(
+      (c) => '${f.id}|${c.id}' == _selectedConveyorId,
+      orElse: () => f.conveyors.values.first,
+    );
+    return '${f.name} · Conveyor ${c.number}';
+  }
+
+  Widget _filterSummaryBar(AppTheme t, _TreeData tree) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: t.navyLt.withValues(alpha: 0.5),
+      child: Row(
+        children: [
+          Icon(Icons.filter_alt, size: 14, color: t.navy),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '${tree.matchingNodeCount} of ${tree.totalNodeCount} nodes match filters',
+              style: TextStyle(
+                color: t.navy,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _filter = const TreeFilterState()),
+            child: Text(
+              'Clear',
+              style: TextStyle(color: t.navy, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tree canvas (InteractiveViewer + Stack + connectors)
+  // ---------------------------------------------------------------------------
+  Widget _buildTreeCanvas(_TreeData tree) {
+    final layout = _layoutTree(tree);
+    return InteractiveViewer(
+      transformationController: _transform,
+      panEnabled: true,
+      scaleEnabled: true,
+      minScale: 0.5,
+      maxScale: 3.0,
+      boundaryMargin: const EdgeInsets.all(400),
+      constrained: false,
+      child: SizedBox(
+        width: layout.size.width,
+        height: layout.size.height,
+        child: AnimatedBuilder(
+          animation: _flowAnim,
+          builder: (context, _) {
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: BezierConnectorPainter(
+                      edges: layout.edges,
+                      inactive: _t.border,
+                      active: _t.red.withValues(alpha: 0.7),
+                      flowPhase: _flowAnim.value,
+                    ),
+                  ),
+                ),
+                ...layout.placements.map((p) => Positioned(
+                      left: p.left,
+                      top: p.top,
+                      child: p.widget,
+                    )),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Heatmap
+  // ---------------------------------------------------------------------------
+  Widget _buildHeatmap(_TreeData tree) {
+    final cells = <HeatmapCell>[];
+    final scopeFactories = _selectedUsineId == null
+        ? _factories
+        : _factories.where((f) => f.id == _selectedUsineId).toList();
+
+    for (final f in scopeFactories) {
+      for (final c in f.conveyors.values) {
+        for (final s in c.stations.values) {
+          final stationNumber =
+              int.tryParse(s.id.replaceAll('station_', '')) ?? 0;
+          final stationAlerts = widget.alerts.where((a) =>
+              a.usine == f.name &&
+              a.convoyeur == c.number &&
+              a.poste == stationNumber);
+          final active =
+              stationAlerts.where((a) => isActiveStatus(a.status)).toList();
+          final critical = active.where((a) => a.isCritical).toList();
+          if (active.isEmpty && critical.isEmpty) {
+            cells.add(HeatmapCell(
+              factoryName: f.name,
+              conveyor: c.number,
+              station: stationNumber,
+              label: s.name,
+              activeCount: 0,
+              inProgressCount: 0,
+              criticalCount: 0,
+              topAlert: null,
+            ));
+          } else {
+            active.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+            cells.add(HeatmapCell(
+              factoryName: f.name,
+              conveyor: c.number,
+              station: stationNumber,
+              label: s.name,
+              activeCount: active.length,
+              inProgressCount:
+                  active.where((a) => a.status == 'en_cours').length,
+              criticalCount: critical.length,
+              topAlert: active.isNotEmpty ? active.first : null,
+            ));
+          }
+        }
+      }
+    }
+
+    return TreeHeatmapView(
+      cells: cells,
+      scopeLabel: _selectedUsineId == null ? null : _scopeTitle(),
+      onStationTap: (cell) => _showStationActions(
+        usine: cell.factoryName,
+        convoyeur: cell.conveyor,
+        poste: cell.station,
+        stationLabel: cell.label,
+        activeAlert: cell.topAlert,
+      ),
+    );
+  }
+
+  void _showStationActions({
+    required String usine,
+    required int convoyeur,
+    required int poste,
+    required String stationLabel,
+    AlertModel? activeAlert,
+  }) {
     final t = _t;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: t.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.62,
+          minChildSize: 0.34,
+          maxChildSize: 0.9,
+          builder: (_, controller) {
+            return StreamBuilder<List<AlertModel>>(
+              stream: _workInstructionService.historyAtLocation(
+                usine: usine,
+                convoyeur: convoyeur,
+                poste: poste,
+              ),
+              builder: (context, snapshot) {
+                final history = snapshot.data ?? const <AlertModel>[];
+                final current = activeAlert ??
+                    history.cast<AlertModel?>().firstWhere(
+                          (a) => a != null && isActiveStatus(a.status),
+                          orElse: () => null,
+                        );
+                return ListView(
+                  controller: controller,
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: t.border,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: t.navyLt,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(Icons.settings, color: t.navy),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                stationLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                '$usine - Conveyor $convoyeur - Workstation $poste',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: t.muted, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (current != null)
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.open_in_new, size: 16),
+                            label: const Text('Open Alert'),
+                            onPressed: () {
+                              Navigator.pop(sheetContext);
+                              showTreeAlertSheet(context, current);
+                            },
+                          ),
+                        if (current != null && widget.onAssignAssistant != null)
+                          FilledButton.icon(
+                            icon: const Icon(Icons.group_add, size: 16),
+                            label: const Text('Assign Assistant'),
+                            onPressed: () async {
+                              Navigator.pop(sheetContext);
+                              await widget.onAssignAssistant!(current);
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Icon(Icons.history, size: 18, color: t.navy),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Workstation History',
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (history.isNotEmpty)
+                          Text(
+                            '${history.length}',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (history.isEmpty)
+                      _StationEmptyHistory(t: t)
+                    else
+                      ...history.map((a) => _StationHistoryTile(alert: a)),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Empty state
+  // ---------------------------------------------------------------------------
+  Widget _emptyState(AppTheme t) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: t.navyLt,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.factory, size: 32, color: t.navy),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'No factories configured',
+              style: TextStyle(
+                color: t.text,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Add a factory in the Hierarchy tab to start tracking alerts.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: t.muted, fontSize: 12.5, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zoom controls
+  // ---------------------------------------------------------------------------
+  Widget _zoomControls(AppTheme t) {
     return Material(
       elevation: 6,
       borderRadius: BorderRadius.circular(14),
       color: t.card,
       child: Container(
-        padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
           color: t.card,
           borderRadius: BorderRadius.circular(14),
@@ -465,17 +725,19 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           children: [
             IconButton(
               tooltip: 'Zoom in',
-              onPressed: _treeScale < _maxTreeScale ? _zoomInTree : null,
+              onPressed: () => _animateZoom(1.2),
               icon: Icon(Icons.add, color: t.navy),
             ),
-            Container(
-              width: 24,
-              height: 1,
-              color: t.border,
+            Container(width: 24, height: 1, color: t.border),
+            IconButton(
+              tooltip: 'Reset',
+              onPressed: _resetZoom,
+              icon: Icon(Icons.center_focus_strong, color: t.navy, size: 18),
             ),
+            Container(width: 24, height: 1, color: t.border),
             IconButton(
               tooltip: 'Zoom out',
-              onPressed: _treeScale > _minTreeScale ? _zoomOutTree : null,
+              onPressed: () => _animateZoom(0.8),
               icon: Icon(Icons.remove, color: t.navy),
             ),
           ],
@@ -484,150 +746,157 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     );
   }
 
-  Widget _buildHeader() {
-    final t = _t;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: t.card,
-        border: Border(bottom: BorderSide(color: t.border)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.account_tree, color: t.navy, size: 24),
-              const SizedBox(width: 12),
-              Expanded(child: _buildBreadcrumb()),
-              if (_selectedUsine != null || _selectedConveyor != null)
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onPressed: () {
-                    setState(() {
-                      _selectedUsine = null;
-                      _selectedConveyor = null;
-                      _selectedWorkstation = null;
-                      _popupAlertData = null;
-                      _zoomController.reverse();
-                    });
-                  },
-                  tooltip: 'Reset view',
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _buildAIControlBar(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAIControlBar() {
-    final t = _t;
+  // ---------------------------------------------------------------------------
+  // AI bottom pill
+  // ---------------------------------------------------------------------------
+  Widget _aiBottomPill(AppTheme t) {
     final isOn = AIAssignmentService.instance.enabled;
     final logCount = AIAssignmentService.instance.logs.length;
-    final backendSettingsOk =
-        AIAssignmentService.instance.isUsingBackendSettings;
+    final backendOk = AIAssignmentService.instance.isUsingBackendSettings;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: isOn
-            ? t.greenLt.withOpacity(context.isDark ? 0.32 : 0.55)
-            : t.scaffold,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: isOn ? t.green.withOpacity(0.45) : t.border, width: 1),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: isOn ? t.green : t.navy,
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: const Icon(Icons.smart_toy_outlined,
-                size: 16, color: Colors.white),
+    return Material(
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(16),
+      color: t.card,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isOn ? t.green.withValues(alpha: 0.5) : t.border,
+            width: 1,
           ),
-          const SizedBox(width: 10),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'AI Assignment',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: t.navy,
-                ),
-              ),
-              Text(
-                isOn
-                    ? 'Active — auto-assigning new alerts'
-                    : 'Off — manual assignment only',
-                style: TextStyle(
-                    fontSize: 10,
-                    color: isOn ? t.green : t.muted,
-                    fontWeight: FontWeight.w600),
-              ),
-              if (!backendSettingsOk)
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
                 Container(
-                  margin: const EdgeInsets.only(top: 3),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
-                    color: t.orangeLt.withOpacity(context.isDark ? 0.32 : 1),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: t.orange.withOpacity(0.35)),
+                    color: isOn ? t.green : t.navy,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Row(
+                  child: const Icon(Icons.smart_toy_outlined,
+                      size: 16, color: Colors.white),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning_amber_rounded,
-                          size: 10, color: t.orange),
-                      const SizedBox(width: 4),
+                      Row(
+                        children: [
+                          Text(
+                            'AI Assignment',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: t.text,
+                            ),
+                          ),
+                          if (!backendOk) ...[
+                            const SizedBox(width: 6),
+                            _localFallbackBadge(t),
+                          ],
+                        ],
+                      ),
                       Text(
-                        'LOCAL FALLBACK MODE',
+                        isOn
+                            ? 'Auto-assigning new alerts'
+                            : 'Manual assignment only',
                         style: TextStyle(
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w800,
-                          color: t.orange,
-                          letterSpacing: 0.25,
+                          fontSize: 10.5,
+                          color: isOn ? t.green : t.muted,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ),
-            ],
-          ),
-          const Spacer(),
-          _aiSegment(
-            icon: Icons.power_settings_new,
-            label: 'ON',
-            active: isOn,
-            activeColor: _green,
-            onTap: isOn ? null : () => _toggleAI(true),
-          ),
-          const SizedBox(width: 6),
-          _aiSegment(
-            icon: Icons.stop_circle_outlined,
-            label: 'OFF',
-            active: !isOn,
-            activeColor: t.muted,
-            onTap: !isOn ? null : () => _toggleAI(false),
-          ),
-          const SizedBox(width: 6),
-          _aiSegment(
-            icon: Icons.receipt_long,
-            label: 'AI-LOGS',
-            active: _showAILogsPanel,
-            activeColor: t.navy,
-            badge: logCount > 0 ? '$logCount' : null,
-            onTap: () => setState(() => _showAILogsPanel = !_showAILogsPanel),
+                IconButton(
+                  tooltip: _aiPanelExpanded ? 'Collapse' : 'Expand',
+                  icon: Icon(
+                    _aiPanelExpanded ? Icons.expand_more : Icons.expand_less,
+                    color: t.navy,
+                  ),
+                  onPressed: () =>
+                      setState(() => _aiPanelExpanded = !_aiPanelExpanded),
+                ),
+              ],
+            ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _aiPanelExpanded
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(2, 8, 2, 4),
+                      child: Row(
+                        children: [
+                          _aiSegment(
+                            icon: Icons.power_settings_new,
+                            label: 'ON',
+                            active: isOn,
+                            activeColor: _green,
+                            onTap: isOn ? null : () => _toggleAI(true),
+                          ),
+                          const SizedBox(width: 6),
+                          _aiSegment(
+                            icon: Icons.stop_circle_outlined,
+                            label: 'OFF',
+                            active: !isOn,
+                            activeColor: t.muted,
+                            onTap: !isOn ? null : () => _toggleAI(false),
+                          ),
+                          const SizedBox(width: 6),
+                          _aiSegment(
+                            icon: Icons.receipt_long,
+                            label: 'AI-LOGS',
+                            active: _showAILogsPanel,
+                            activeColor: t.navy,
+                            badge: logCount > 0 ? '$logCount' : null,
+                            onTap: () => setState(
+                                () => _showAILogsPanel = !_showAILogsPanel),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _localFallbackBadge(AppTheme t) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: t.orangeLt,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: t.orange.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 9, color: t.orange),
+          const SizedBox(width: 3),
+          Text(
+            'LOCAL FALLBACK',
+            style: TextStyle(
+              fontSize: 8,
+              fontWeight: FontWeight.w800,
+              color: t.orange,
+              letterSpacing: 0.25,
+            ),
           ),
         ],
       ),
@@ -643,1961 +912,785 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     VoidCallback? onTap,
   }) {
     final t = _t;
-    final bg = active ? activeColor : t.card;
+    final bg = active ? activeColor : t.scaffold;
     final fg = active ? Colors.white : t.muted;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(8),
-            border:
-                Border.all(color: active ? activeColor : t.border, width: 1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 13, color: fg),
-              const SizedBox(width: 5),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: fg,
-                      letterSpacing: 0.4)),
-              if (badge != null) ...[
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(8),
+              border:
+                  Border.all(color: active ? activeColor : t.border, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 13, color: fg),
                 const SizedBox(width: 5),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: active
-                        ? Colors.white.withOpacity(0.25)
-                        : activeColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: fg,
+                    letterSpacing: 0.3,
                   ),
-                  child: Text(badge,
-                      style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: active ? Colors.white : activeColor)),
                 ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBreadcrumb() {
-    final t = _t;
-    final parts = <Widget>[];
-    parts.add(
-      Text(
-        'All Plants',
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight:
-              _selectedUsine == null ? FontWeight.bold : FontWeight.w500,
-          color: _selectedUsine == null ? t.navy : t.muted,
-        ),
-      ),
-    );
-
-    if (_selectedUsine != null) {
-      parts.add(Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Icon(Icons.chevron_right, size: 16, color: t.muted),
-      ));
-      parts.add(
-        Text(
-          _selectedUsine!.label,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight:
-                _selectedConveyor == null ? FontWeight.bold : FontWeight.w500,
-            color: _selectedConveyor == null ? t.navy : t.muted,
-          ),
-        ),
-      );
-    }
-
-    if (_selectedConveyor != null) {
-      parts.add(Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8),
-        child: Icon(Icons.chevron_right, size: 16, color: t.muted),
-      ));
-      parts.add(
-        Text(
-          _selectedConveyor!.label,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: t.navy,
-          ),
-        ),
-      );
-    }
-
-    return Row(children: parts);
-  }
-
-  Widget _buildConveyorLayerWithParent(double progress) {
-    if (_selectedUsine == null) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final conveyors = _selectedUsine!.children;
-        final spacing = constraints.maxWidth / (conveyors.length + 1);
-        final selectedIndex =
-            conveyors.indexWhere((c) => c.id == _selectedConveyor?.id);
-        final selectedX =
-            selectedIndex >= 0 ? spacing * (selectedIndex + 1) : null;
-        return Padding(
-          padding: EdgeInsets.only(bottom: _selectedConveyor != null ? 0 : 16),
-          child: SizedBox(
-            height: 200,
-            child: CustomPaint(
-              painter: _ConveyorTreePainter(
-                conveyors: conveyors,
-                spacing: spacing,
-                selectedX: selectedX,
-                animation: _zoomAnimation,
-                lineColor: _lineColor,
-              ),
-              child: Stack(
-                children: [
-                  // Parent badge at top center
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _buildUsineNodeSmall(_selectedUsine!),
+                if (badge != null) ...[
+                  const SizedBox(width: 5),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: active
+                          ? Colors.white.withValues(alpha: 0.25)
+                          : activeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      badge,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: active ? Colors.white : activeColor,
+                      ),
                     ),
                   ),
-                  // Conveyor nodes
-                  ...conveyors.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final conveyor = entry.value;
-                    final x = spacing * (index + 1);
-                    final isSelected = _selectedConveyor?.id == conveyor.id;
-                    return Positioned(
-                      left: x - 35,
-                      top: 50,
-                      child: GestureDetector(
-                        onTap: () => _onConveyorClick(conveyor),
-                        child: AnimatedScale(
-                          scale: isSelected ? 0.94 : 1,
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeOutBack,
-                          child: _buildConveyorNode(conveyor),
-                        ),
-                      ),
-                    );
-                  }).toList(),
                 ],
-              ),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildWorkstationLayerWithParent(double progress) {
-    if (_selectedConveyor == null) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final workstations = _selectedConveyor!.children;
-        final parentConveyors = _selectedUsine?.children ?? const <AlertNode>[];
-        final selectedParentIndex =
-            parentConveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
-        final parentSpacing = parentConveyors.isEmpty
-            ? constraints.maxWidth / 2
-            : constraints.maxWidth / (parentConveyors.length + 1);
-        final parentX = selectedParentIndex >= 0
-            ? parentSpacing * (selectedParentIndex + 1)
-            : constraints.maxWidth / 2;
-        final spacing = constraints.maxWidth / (workstations.length + 1);
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: SizedBox(
-            height: 200,
-            child: CustomPaint(
-              painter: _WorkstationTreePainter(
-                workstations: workstations,
-                spacing: spacing,
-                parentX: parentX,
-                animation: _detailAnimation,
-                lineColor: _lineColor,
-              ),
-              child: Stack(
-                children: [
-                  // Workstation nodes
-                  ...workstations.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final workstation = entry.value;
-                    final x = spacing * (index + 1);
-                    return Positioned(
-                      left: x - 30,
-                      top: 50,
-                      child: GestureDetector(
-                        onTap: () =>
-                            _onWorkstationClick(workstation, Offset(x, 50)),
-                        child: _buildWorkstationNode(workstation),
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+  Future<void> _toggleAI(bool on) async {
+    await AIAssignmentService.instance.setEnabled(on);
+    if (on) AIAssignmentService.instance.processAlerts(widget.alerts);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(on
+            ? 'Global AI ON — auto-assignment enabled'
+            : 'Global AI OFF — manual assignment only'),
+        backgroundColor: on ? _t.green : _t.muted,
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
-  Widget _buildInterLayerConnector({double height = 42}) {
-    if (_selectedUsine == null || _selectedConveyor == null) {
-      return SizedBox(height: height);
+  // ---------------------------------------------------------------------------
+  // Tree data + layout
+  // ---------------------------------------------------------------------------
+  _TreeData _buildTreeData() {
+    // alerts indexed by location
+    final activeAtLocation = <String, List<AlertModel>>{};
+    final inProgressAtLocation = <String, List<AlertModel>>{};
+    final resolvedAtLocation = <String, List<AlertModel>>{};
+    final criticalAtLocation = <String, List<AlertModel>>{};
+    final topActiveAtLocation = <String, AlertModel>{};
+
+    for (final a in widget.alerts) {
+      final key = _locationKey(a.usine, a.convoyeur, a.poste);
+      if (a.status == 'disponible' || a.status == 'en_cours') {
+        activeAtLocation.putIfAbsent(key, () => []).add(a);
+        if (a.status == 'en_cours') {
+          inProgressAtLocation.putIfAbsent(key, () => []).add(a);
+        }
+        if (a.isCritical) {
+          criticalAtLocation.putIfAbsent(key, () => []).add(a);
+        }
+        final cur = topActiveAtLocation[key];
+        if (cur == null ||
+            (a.status == 'en_cours' && cur.status != 'en_cours') ||
+            (a.status == cur.status && a.timestamp.isAfter(cur.timestamp))) {
+          topActiveAtLocation[key] = a;
+        }
+      } else if (a.status == 'validee') {
+        resolvedAtLocation.putIfAbsent(key, () => []).add(a);
+      }
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final conveyors = _selectedUsine!.children;
-        final selectedIndex =
-            conveyors.indexWhere((c) => c.id == _selectedConveyor!.id);
-        if (selectedIndex < 0 || conveyors.isEmpty) {
-          return SizedBox(height: height);
+    int totalActive = 0;
+    final affectedStations = <String>{};
+    int totalNodes = 0;
+    int matchingNodes = 0;
+    final search = _filter.search.toLowerCase();
+
+    bool nodeMatchesSearch(String label) =>
+        search.isEmpty || label.toLowerCase().contains(search);
+
+    bool alertsMatchFilters(List<AlertModel> alerts) {
+      if (_filter.types.isEmpty &&
+          _filter.statuses.isEmpty &&
+          !_filter.criticalOnly) {
+        return true;
+      }
+      return alerts.any((a) {
+        if (_filter.types.isNotEmpty && !_filter.types.contains(a.type)) {
+          return false;
+        }
+        if (_filter.statuses.isNotEmpty &&
+            !_filter.statuses.contains(a.status)) {
+          return false;
+        }
+        if (_filter.criticalOnly && !a.isCritical) return false;
+        return true;
+      });
+    }
+
+    for (final a in widget.alerts.where((a) => isActiveStatus(a.status))) {
+      totalActive++;
+      affectedStations.add(_locationKey(a.usine, a.convoyeur, a.poste));
+    }
+
+    final nodes = <_LayoutNode>[];
+    for (final f in _factories) {
+      totalNodes++;
+      int factoryActive = 0;
+      int factoryInProgress = 0;
+      int factoryResolved = 0;
+      int factoryCritical = 0;
+      bool factoryMatches = nodeMatchesSearch(f.name);
+
+      final conveyorNodes = <_LayoutNode>[];
+      for (final c in f.conveyors.values) {
+        totalNodes++;
+        int conveyorActive = 0;
+        int conveyorInProgress = 0;
+        int conveyorResolved = 0;
+        int conveyorCritical = 0;
+        bool conveyorMatches =
+            nodeMatchesSearch('Conveyor ${c.number}') || factoryMatches;
+
+        final stationNodes = <_LayoutNode>[];
+        for (final s in c.stations.values) {
+          totalNodes++;
+          final stationNumber =
+              int.tryParse(s.id.replaceAll('station_', '')) ?? 0;
+          final key = _locationKey(f.name, c.number, stationNumber);
+          final activeList = activeAtLocation[key] ?? const [];
+          final inProgressList = inProgressAtLocation[key] ?? const [];
+          final resolvedList = resolvedAtLocation[key] ?? const [];
+          final criticalList = criticalAtLocation[key] ?? const [];
+
+          factoryActive += activeList.length;
+          conveyorActive += activeList.length;
+          factoryInProgress += inProgressList.length;
+          conveyorInProgress += inProgressList.length;
+          factoryResolved += resolvedList.length;
+          conveyorResolved += resolvedList.length;
+          factoryCritical += criticalList.length;
+          conveyorCritical += criticalList.length;
+
+          final matchesText = nodeMatchesSearch(s.name) || conveyorMatches;
+          final allLocationAlerts = [
+            ...activeList,
+            ...resolvedList,
+          ];
+          final matches = matchesText && alertsMatchFilters(allLocationAlerts);
+          if (matches) matchingNodes++;
+
+          stationNodes.add(_LayoutNode(
+            id: '${f.id}|${c.id}|${s.id}',
+            label: s.name,
+            type: 'workstation',
+            activeCount: activeList.length,
+            inProgressCount: inProgressList.length,
+            resolvedCount: resolvedList.length,
+            isCritical: criticalList.isNotEmpty,
+            matches: matches,
+            topActiveAlert: topActiveAtLocation[key],
+            payload: {
+              'usine': f.name,
+              'convoyeur': c.number,
+              'poste': stationNumber,
+            },
+          ));
         }
 
-        final spacing = constraints.maxWidth / (conveyors.length + 1);
-        final selectedX = spacing * (selectedIndex + 1);
+        final conveyorAlerts = stationNodes
+            .expand((s) =>
+                activeAtLocation[_locationKey(
+                  f.name,
+                  c.number,
+                  s.payload['poste'] as int,
+                )] ??
+                const <AlertModel>[])
+            .toList();
+        final conveyorMatchesFilters = alertsMatchFilters(conveyorAlerts);
+        final conveyorVisible = conveyorMatches && conveyorMatchesFilters;
+        if (conveyorVisible) matchingNodes++;
+        conveyorNodes.add(_LayoutNode(
+          id: '${f.id}|${c.id}',
+          label: 'Conveyor ${c.number}',
+          type: 'conveyor',
+          activeCount: conveyorActive,
+          inProgressCount: conveyorInProgress,
+          resolvedCount: conveyorResolved,
+          isCritical: conveyorCritical > 0,
+          matches: conveyorVisible,
+          children: stationNodes,
+        ));
+      }
 
-        return SizedBox(
-          width: double.infinity,
-          height: height,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: selectedX - 2,
-                top: -1,
-                child: Container(
-                  width: 4,
-                  height: height + 2,
-                  decoration: BoxDecoration(
-                    color: _lineColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+      final factoryAlerts =
+          widget.alerts.where((a) => a.usine == f.name).toList();
+      final factoryMatchesFilters = alertsMatchFilters(factoryAlerts);
+      final factoryVisible = factoryMatches && factoryMatchesFilters;
+      if (factoryVisible) matchingNodes++;
 
-  Widget _buildUsineLayer(double progress) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final spacing = constraints.maxWidth / (_usines.length + 1);
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: SizedBox(
-            height: 200,
-            child: CustomPaint(
-              painter: _UsineTreePainter(
-                usines: _usines,
-                spacing: spacing,
-                animation: _pulseController,
-                lineColor: _lineColor,
-                lineSoftColor: _lineSoftColor,
-              ),
-              child: Stack(
-                children: _usines.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final usine = entry.value;
-                  final x = spacing * (index + 1);
-                  final isSelected = _selectedUsine?.id == usine.id;
-                  return Positioned(
-                    left: x - 40,
-                    top: 50,
-                    child: GestureDetector(
-                      onTap: () => _onUsineClick(usine),
-                      child: AnimatedScale(
-                        scale: isSelected ? 0.94 : 1,
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOutBack,
-                        child: _buildUsineNode(usine),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildUsineNodeSmall(AlertNode usine) {
-    final t = _t;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: usine.hasError ? _red : t.navy, width: 2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.factory, size: 20, color: usine.hasError ? _red : t.navy),
-          const SizedBox(width: 8),
-          Text(
-            usine.label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: usine.hasError ? _red : t.navy,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Node builders (same as original, but using the updated AlertNode fields)
-  Widget _buildUsineNode(AlertNode usine) {
-    final t = _t;
-    return GestureDetector(
-      onTap: () => _onUsineClick(usine),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              key: ValueKey('usine-node-${usine.id}'),
-              duration: const Duration(milliseconds: 300),
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: usine.hasError
-                    ? _red.withOpacity(0.1)
-                    : t.navy.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: usine.hasError ? _red : t.navy,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: (usine.hasError ? _red : t.navy).withOpacity(0.2),
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(
-                    Icons.factory,
-                    size: 40,
-                    color: usine.hasError ? _red : t.navy,
-                  ),
-                  if (usine.hasError)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: AnimatedBuilder(
-                        animation: _pulseController,
-                        builder: (context, child) {
-                          return Container(
-                            width: 12 + (_pulseController.value * 4),
-                            height: 12 + (_pulseController.value * 4),
-                            decoration: BoxDecoration(
-                              color: _red,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _red.withOpacity(0.6),
-                                  blurRadius: 8 * _pulseController.value,
-                                  spreadRadius: 2 * _pulseController.value,
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: t.card,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: t.border),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    usine.label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: t.navy,
-                    ),
-                  ),
-                  if (usine.hasError)
-                    Text(
-                      '${usine.errorCount} alert${usine.errorCount > 1 ? 's' : ''}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: _red,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConveyorNode(AlertNode conveyor) {
-    final t = _t;
-    return GestureDetector(
-      onTap: () => _onConveyorClick(conveyor),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              key: ValueKey('conveyor-node-${conveyor.id}'),
-              duration: const Duration(milliseconds: 300),
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                color: conveyor.hasError
-                    ? _orange.withOpacity(0.1)
-                    : _blue.withOpacity(0.1),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: conveyor.hasError ? _orange : _blue,
-                  width: 3,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color:
-                        (conveyor.hasError ? _orange : _blue).withOpacity(0.3),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(
-                    Icons.linear_scale,
-                    size: 32,
-                    color: conveyor.hasError ? _orange : _blue,
-                  ),
-                  if (conveyor.hasError)
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: AnimatedBuilder(
-                        animation: _pulseController,
-                        builder: (context, child) {
-                          return Container(
-                            width: 10 + (_pulseController.value * 3),
-                            height: 10 + (_pulseController.value * 3),
-                            decoration: BoxDecoration(
-                              color: _orange,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _orange.withOpacity(0.6),
-                                  blurRadius: 6 * _pulseController.value,
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: t.card,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: t.border),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    conveyor.label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: t.navy,
-                    ),
-                  ),
-                  if (conveyor.hasError)
-                    Text(
-                      '${conveyor.errorCount}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: _orange,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWorkstationNode(AlertNode workstation) {
-    final t = _t;
-    final isSelected = _selectedWorkstation?.id == workstation.id;
-    final stateColor = _workstationColor(workstation);
-    return GestureDetector(
-      onTapDown: (details) {
-        _onWorkstationClick(workstation, details.globalPosition);
-      },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              key: ValueKey('workstation-node-${workstation.id}'),
-              duration: const Duration(milliseconds: 80),
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: workstation.hasError
-                    ? stateColor.withOpacity(isSelected ? 0.22 : 0.12)
-                    : _green.withOpacity(0.1),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: stateColor,
-                  width: isSelected ? 3 : 2,
-                ),
-                boxShadow: [
-                  if (workstation.hasError)
-                    BoxShadow(
-                      color: stateColor.withOpacity(isSelected ? 0.4 : 0.3),
-                      blurRadius: isSelected ? 12 : 8,
-                      spreadRadius: isSelected ? 2 : 0,
-                    ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(
-                    Icons.settings,
-                    size: 28,
-                    color: stateColor,
-                  ),
-                  if (workstation.hasError)
-                    AnimatedBuilder(
-                      animation: _pulseController,
-                      builder: (context, child) {
-                        return Container(
-                          width: 60 + (_pulseController.value * 8),
-                          height: 60 + (_pulseController.value * 8),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: stateColor.withOpacity(
-                                  0.3 * (1 - _pulseController.value)),
-                              width: 2,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: t.card,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: t.border),
-              ),
-              child: Text(
-                workstation.label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: t.navy,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAlertPopup() {
-    final t = _t;
-    final alert = _popupAlertData!;
-    final screenSize = MediaQuery.of(context).size;
-    final hasActiveAlert = (alert['hasActiveAlert'] as bool?) ?? false;
-
-    // Safe type extraction
-    final String alertType = (alert['type'] as String?) ?? 'unknown';
-
-    final String status = (alert['status'] as String?) ?? 'disponible';
-    final String? claimedBy = alert['superviseurName'] as String?;
-    final String? assistantName = alert['assistantName'] as String?;
-    final bool isCritical = (alert['isCritical'] as bool?) ?? false;
-
-    final String usine = (alert['usine'] as String?) ?? 'Unknown';
-    final String convoyeur = (alert['convoyeur'] as num?)?.toString() ?? '-';
-    final String poste = (alert['poste'] as num?)?.toString() ?? '-';
-
-    final String description = hasActiveAlert
-        ? (alert['description'] as String?) ?? 'No description'
-        : 'No active alert on this workstation right now. Use history to view previous alerts.';
-
-    double left = _popupPosition!.dx + 20;
-    double top = _popupPosition!.dy - 100;
-
-    if (left + 320 > screenSize.width) {
-      left = _popupPosition!.dx - 340;
-    }
-    if (top < 20) {
-      top = 20;
-    }
-    if (top + 200 > screenSize.height) {
-      top = screenSize.height - 220;
+      nodes.add(_LayoutNode(
+        id: f.id,
+        label: f.name,
+        type: 'usine',
+        activeCount: factoryActive,
+        inProgressCount: factoryInProgress,
+        resolvedCount: factoryResolved,
+        isCritical: factoryCritical > 0,
+        matches: factoryVisible,
+        children: conveyorNodes,
+      ));
     }
 
-    return Positioned(
-      left: left,
-      top: top,
-      child: Material(
-        elevation: 8,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 320,
-          constraints: const BoxConstraints(maxHeight: 460),
-          decoration: BoxDecoration(
-            color: t.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isCritical ? _red : t.border, width: 2),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _typeColor(alertType).withOpacity(0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(10),
-                    topRight: Radius.circular(10),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: _typeColor(alertType),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _typeIcon(alertType),
-                        size: 16,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            hasActiveAlert
-                                ? _typeLabel(alertType)
-                                : 'Workstation',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: hasActiveAlert
-                                  ? _typeColor(alertType)
-                                  : t.navy,
-                            ),
-                          ),
-                          Text(
-                            hasActiveAlert
-                                ? 'Alert #${alert['alertNumber'] ?? '...'}'
-                                : 'No active alert',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: t.muted,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: _closePopup,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (hasActiveAlert && isCritical)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(8),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: _red.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: _red),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.warning, color: _red, size: 16),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'CRITICAL ALERT',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: _red,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      _buildInfoRow('Location', usine),
-                      _buildInfoRow('Line', convoyeur),
-                      _buildInfoRow('Workstation', poste),
-                      const SizedBox(height: 8),
-                      const Divider(height: 1),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Description',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        description,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: t.text,
-                        ),
-                      ),
-                      if (hasActiveAlert) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _statusColor(status).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: _statusColor(status)),
-                          ),
-                          child: Text(
-                            _statusLabel(status),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: _statusColor(status),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _buildInfoRow(
-                          'Claim status',
-                          _statusSummary(status, claimedBy, assistantName),
-                        ),
-                        if (claimedBy != null && claimedBy.isNotEmpty)
-                          _buildInfoRow('Claimed by', claimedBy),
-                        if (assistantName != null && assistantName.isNotEmpty)
-                          _buildInfoRow('Assisted by', assistantName),
-                      ],
-                      if (hasActiveAlert && status == 'disponible')
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () =>
-                                  _showAssignSupervisorDialog(alert),
-                              icon:
-                                  const Icon(Icons.person_add_alt_1, size: 18),
-                              label: const Text('Assign Supervisor'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: t.navy,
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (hasActiveAlert &&
-                          status == 'en_cours' &&
-                          (alert['superviseurId']?.toString().isNotEmpty ??
-                              false))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () =>
-                                  _showAssignAssistantDialog(alert),
-                              icon:
-                                  const Icon(Icons.groups_2_outlined, size: 18),
-                              label: const Text('Assign Assistant'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _yellow,
-                                foregroundColor: const Color(0xFF111827),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () =>
-                                _showWorkstationHistoryDialog(alert),
-                            icon: const Icon(Icons.history, size: 18),
-                            label: const Text('Show Workstation History'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: t.navy,
-                              side: BorderSide(color: t.navy.withOpacity(0.35)),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return _TreeData(
+      factories: _factories,
+      rootNodes: nodes,
+      totalActive: totalActive,
+      stationsWithActive: affectedStations.length,
+      totalNodeCount: totalNodes,
+      matchingNodeCount: matchingNodes,
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    final t = _t;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Text(
-            '$label:',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: t.muted,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 11,
-              color: t.text,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _statusSummary(
-      String status, String? claimedBy, String? assistantName) {
-    if (status == 'disponible') {
-      return 'Unclaimed';
-    }
-    if (claimedBy != null &&
-        assistantName != null &&
-        assistantName.isNotEmpty) {
-      return 'Claimed by $claimedBy and assisted by $assistantName';
-    }
-    if (claimedBy != null) {
-      return 'Claimed by $claimedBy';
-    }
-    return 'Being fixed...';
-  }
-
-  Future<void> _showAssignSupervisorDialog(Map<String, dynamic> alert) async {
-    final supervisors = await _authService.getActiveSupervisors();
-    final filtered = supervisors
-        .where((supervisor) => supervisor.usine == alert['usine'])
-        .toList();
-
-    if (!mounted) return;
-
-    if (filtered.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('No active supervisors available for this factory')),
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Assign Supervisor'),
-        content: SizedBox(
-          width: 320,
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: filtered.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, index) {
-              final supervisor = filtered[index];
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.person, color: _t.navy),
-                title: Text(supervisor.fullName),
-                subtitle: Text(supervisor.email),
-                onTap: () async {
-                  Navigator.of(dialogContext).pop();
-                  await _authService.assignSupervisorToAlert(
-                    alert['id'] as String,
-                    supervisor.id,
-                    supervisor.fullName,
-                  );
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Assigned to ${supervisor.fullName}'),
-                      backgroundColor: _green,
-                    ),
-                  );
-                  _closePopup();
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showAssignAssistantDialog(Map<String, dynamic> alert) async {
-    final targetAlert = _alertModelForPopup(alert);
-    if (targetAlert == null || targetAlert.status != 'en_cours') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This alert is no longer being fixed.')),
-      );
-      return;
-    }
-
-    final primarySupervisorId = targetAlert.superviseurId?.trim() ?? '';
-    if (primarySupervisorId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Assign a supervisor before adding an assistant.')),
-      );
-      return;
-    }
-
-    final excludedIds = <String>{
-      primarySupervisorId,
-      if ((targetAlert.assistantId ?? '').trim().isNotEmpty)
-        targetAlert.assistantId!.trim(),
-    };
-
-    final candidates =
-        await AIAssignmentService.instance.recommendAssistantsForAlert(
-      alert: targetAlert,
-      allAlerts: widget.alerts,
-      excludeSupervisorIds: excludedIds,
-    );
-
-    if (!mounted) return;
-
-    if (candidates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No available assistant supervisors match this alert.'),
-        ),
-      );
-      return;
-    }
-
-    final bestScore =
-        candidates.first.score <= 0 ? 1.0 : candidates.first.score;
-    AICandidate selected = candidates.first;
-    bool assigning = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            final t = dialogContext.appTheme;
-            final selectedPercent = _candidateMatchPercent(selected, bestScore);
-
-            Future<void> assignSelected() async {
-              if (assigning) return;
-              setDialogState(() => assigning = true);
-              try {
-                final pm = _authService.currentUser;
-                final pmName = _currentUserDisplayName();
-                await _authService.assignAssistantToAlert(
-                  targetAlert.id,
-                  selected.supervisor.id,
-                  _supervisorDisplayName(selected.supervisor),
-                  assignedById: pm?.uid,
-                  assignedByName: pmName,
-                  aiMatchPercent: selectedPercent,
-                  aiMatchReason: _assistantMatchReason(selected),
-                );
-
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop();
-                }
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      '${_supervisorDisplayName(selected.supervisor)} assigned as assistant.',
-                    ),
-                    backgroundColor: _green,
-                  ),
-                );
-                _closePopup();
-              } catch (e) {
-                if (dialogContext.mounted) {
-                  setDialogState(() => assigning = false);
-                }
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Assistant assignment failed: $e'),
-                    backgroundColor: _red,
-                  ),
-                );
-              }
-            }
-
-            return Dialog(
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
-              backgroundColor: Colors.transparent,
-              child: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxWidth: 620, maxHeight: 720),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: t.card,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: t.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black
-                            .withOpacity(dialogContext.isDark ? 0.34 : 0.16),
-                        blurRadius: 26,
-                        offset: const Offset(0, 18),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 12, 14),
-                        decoration: BoxDecoration(
-                          color: _yellow
-                              .withOpacity(dialogContext.isDark ? 0.18 : 0.14),
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(14),
-                          ),
-                          border: Border(
-                            bottom: BorderSide(color: t.border),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                color: _yellow,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(Icons.groups_2_outlined,
-                                  color: Color(0xFF111827)),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Assign Assistant',
-                                    style: TextStyle(
-                                      color: t.text,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    'AI-ranked available supervisors for ${_typeLabel(targetAlert.type)} at C${targetAlert.convoyeur} / W${targetAlert.poste}',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: t.muted,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Close',
-                              onPressed: assigning
-                                  ? null
-                                  : () => Navigator.of(dialogContext).pop(),
-                              icon: Icon(Icons.close, color: t.muted),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                          itemCount: candidates.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (_, index) {
-                            final candidate = candidates[index];
-                            final percent =
-                                _candidateMatchPercent(candidate, bestScore);
-                            final isSelected = candidate.supervisor.id ==
-                                selected.supervisor.id;
-                            return _buildAssistantCandidateTile(
-                              candidate: candidate,
-                              percent: percent,
-                              selected: isSelected,
-                              onTap: assigning
-                                  ? null
-                                  : () {
-                                      setDialogState(() {
-                                        selected = candidate;
-                                      });
-                                    },
-                            );
-                          },
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                        decoration: BoxDecoration(
-                          border: Border(top: BorderSide(color: t.border)),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${_supervisorDisplayName(selected.supervisor)} is the current ${_matchLabel(selectedPercent).toLowerCase()} at $selectedPercent%.',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: t.muted,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            TextButton(
-                              onPressed: assigning
-                                  ? null
-                                  : () => Navigator.of(dialogContext).pop(),
-                              child: const Text('Cancel'),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton.icon(
-                              onPressed: assigning ? null : assignSelected,
-                              icon: assigning
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.check, size: 18),
-                              label: Text(assigning ? 'Assigning' : 'Assign'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: t.navy,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildAssistantCandidateTile({
-    required AICandidate candidate,
-    required int percent,
-    required bool selected,
-    required VoidCallback? onTap,
-  }) {
-    final t = _t;
-    final name = _supervisorDisplayName(candidate.supervisor);
-    final reason = _assistantMatchReason(candidate);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: selected
-                ? t.navy.withOpacity(context.isDark ? 0.22 : 0.08)
-                : t.scaffold,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected ? t.navy : t.border,
-              width: selected ? 1.4 : 1,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? t.navy : _yellow.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  _initials(name),
-                  style: TextStyle(
-                    color: selected ? Colors.white : const Color(0xFF92400E),
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: t.text,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        _matchChip(percent),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      candidate.supervisor.email,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: t.muted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        minHeight: 7,
-                        value: percent / 100,
-                        backgroundColor:
-                            t.border.withOpacity(context.isDark ? 0.5 : 0.8),
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          percent >= 80
-                              ? _green
-                              : percent >= 55
-                                  ? _yellow
-                                  : _orange,
-                        ),
-                      ),
-                    ),
-                    if (reason.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        reason,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: t.text,
-                          fontSize: 11,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _matchChip(int percent) {
-    final t = _t;
-    final color = percent >= 80
-        ? _green
-        : percent >= 55
-            ? _yellow
-            : _orange;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withOpacity(context.isDark ? 0.22 : 0.14),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.45)),
-      ),
-      child: Text(
-        '$percent%',
-        style: TextStyle(
-          color: percent >= 55 ? color : t.orange,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-
-  AlertModel? _alertModelForPopup(Map<String, dynamic> alert) {
-    final alertId = alert['id']?.toString() ?? '';
-    if (alertId.isEmpty) return null;
-    for (final item in widget.alerts) {
-      if (item.id == alertId) return item;
+  Factory? _factoryById(String id) {
+    for (final f in _factories) {
+      if (f.id == id) return f;
     }
     return null;
   }
 
-  int _candidateMatchPercent(AICandidate candidate, double bestScore) {
-    if (bestScore <= 0) return 100;
-    return ((candidate.score / bestScore) * 100).clamp(1, 100).round();
-  }
+  // Layout: compute positions for visible nodes given the current selection.
+  _Layout _layoutTree(_TreeData tree) {
+    const cardW = 168.0;
+    const cardH = 92.0;
+    const spacingX = 32.0;
+    const layerGap = 80.0;
+    const padding = 28.0;
 
-  String _assistantMatchReason(AICandidate candidate) {
-    return candidate.reasons.take(3).join(' | ');
-  }
+    final placements = <_Placement>[];
+    final edges = <TreeConnectorEdge>[];
 
-  String _matchLabel(int percent) {
-    if (percent >= 85) return 'Excellent match';
-    if (percent >= 70) return 'Strong match';
-    if (percent >= 50) return 'Good match';
-    return 'Available match';
-  }
-
-  String _supervisorDisplayName(UserModel user) {
-    final fullName = user.fullName.trim();
-    if (fullName.isNotEmpty) return fullName;
-    if (user.email.isNotEmpty) return user.email.split('@').first;
-    return 'Supervisor';
-  }
-
-  String _currentUserDisplayName() {
-    final user = _authService.currentUser;
-    final displayName = user?.displayName?.trim() ?? '';
-    if (displayName.isNotEmpty) return displayName;
-    final email = user?.email ?? '';
-    if (email.isNotEmpty) return email.split('@').first;
-    return 'Production Manager';
-  }
-
-  String _initials(String name) {
-    final parts =
-        name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return 'S';
-    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
-    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
-        .toUpperCase();
-  }
-
-  Future<void> _showWorkstationHistoryDialog(Map<String, dynamic> alert) async {
-    final usine = alert['usine']?.toString() ?? '';
-    final convoyeur = int.tryParse('${alert['convoyeur']}') ?? -1;
-    final poste = int.tryParse('${alert['poste']}') ?? -1;
-
-    final workstationAlerts = widget.alerts
-        .where(
-          (a) =>
-              a.usine == usine && a.convoyeur == convoyeur && a.poste == poste,
-        )
-        .toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-    if (!mounted) return;
-
-    final searchController = TextEditingController();
-    String selectedStatus = 'all';
-    String selectedDateFilter = '7_days';
-    DateTimeRange? customRange;
-    String query = '';
-
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final t = context.appTheme;
-            final normalizedQuery = query.trim().toLowerCase();
-            final now = DateTime.now();
-
-            bool dateMatches(DateTime timestamp) {
-              final ts = timestamp.toLocal();
-              switch (selectedDateFilter) {
-                case 'today':
-                  return ts.year == now.year &&
-                      ts.month == now.month &&
-                      ts.day == now.day;
-                case '7_days':
-                  return !ts.isBefore(now.subtract(const Duration(days: 7)));
-                case '15_days':
-                  return !ts.isBefore(now.subtract(const Duration(days: 15)));
-                case '1_month':
-                  return !ts.isBefore(now.subtract(const Duration(days: 30)));
-                case 'custom':
-                  if (customRange == null) return true;
-                  final start = DateTime(
-                    customRange!.start.year,
-                    customRange!.start.month,
-                    customRange!.start.day,
-                  );
-                  final end = DateTime(
-                    customRange!.end.year,
-                    customRange!.end.month,
-                    customRange!.end.day,
-                    23,
-                    59,
-                    59,
-                  );
-                  return !ts.isBefore(start) && !ts.isAfter(end);
-                default:
-                  return true;
-              }
-            }
-
-            final filtered = workstationAlerts.where((a) {
-              final statusMatch =
-                  selectedStatus == 'all' || a.status == selectedStatus;
-              final dateMatch = dateMatches(a.timestamp);
-              final searchMatch = normalizedQuery.isEmpty ||
-                  a.id.toLowerCase().contains(normalizedQuery) ||
-                  _typeLabel(a.type).toLowerCase().contains(normalizedQuery) ||
-                  a.description.toLowerCase().contains(normalizedQuery);
-              return statusMatch && dateMatch && searchMatch;
-            }).toList();
-
-            return AlertDialog(
-              title:
-                  Text('Workstation History - $usine / C$convoyeur / W$poste'),
-              content: SizedBox(
-                width: 760,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: 260,
-                          child: TextField(
-                            controller: searchController,
-                            decoration: const InputDecoration(
-                              labelText: 'Filter (ID, title, description)',
-                              prefixIcon: Icon(Icons.search),
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            onChanged: (value) {
-                              setDialogState(() {
-                                query = value;
-                              });
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: 180,
-                          child: DropdownButtonFormField<String>(
-                            value: selectedStatus,
-                            decoration: const InputDecoration(
-                              labelText: 'Status',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'all', child: Text('All statuses')),
-                              DropdownMenuItem(
-                                  value: 'disponible',
-                                  child: Text('Available')),
-                              DropdownMenuItem(
-                                  value: 'en_cours',
-                                  child: Text('Being fixed...')),
-                              DropdownMenuItem(
-                                  value: 'validee', child: Text('Fixed')),
-                            ],
-                            onChanged: (value) {
-                              if (value == null) return;
-                              setDialogState(() {
-                                selectedStatus = value;
-                              });
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: 220,
-                          child: DropdownButtonFormField<String>(
-                            value: selectedDateFilter,
-                            decoration: const InputDecoration(
-                              labelText: 'Date range',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'today', child: Text('Today')),
-                              DropdownMenuItem(
-                                  value: '7_days', child: Text('7 days')),
-                              DropdownMenuItem(
-                                  value: '15_days', child: Text('15 days')),
-                              DropdownMenuItem(
-                                  value: '1_month', child: Text('1 month')),
-                              DropdownMenuItem(
-                                  value: 'custom', child: Text('Custom range')),
-                            ],
-                            onChanged: (value) async {
-                              if (value == null) return;
-                              if (value == 'custom') {
-                                final picked = await showDateRangePicker(
-                                  context: dialogContext,
-                                  initialDateRange: customRange,
-                                  firstDate: DateTime(2020),
-                                  lastDate: DateTime.now().add(
-                                    const Duration(days: 1),
-                                  ),
-                                );
-                                if (picked == null) return;
-                                setDialogState(() {
-                                  selectedDateFilter = 'custom';
-                                  customRange = picked;
-                                });
-                                return;
-                              }
-
-                              setDialogState(() {
-                                selectedDateFilter = value;
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (selectedDateFilter == 'custom' && customRange != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          'Custom range: ${DateFormat('dd/MM/yyyy').format(customRange!.start)} - ${DateFormat('dd/MM/yyyy').format(customRange!.end)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: t.muted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Showing ${filtered.length} of ${workstationAlerts.length} alerts',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: t.muted,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Flexible(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 20),
-                                child: Text(
-                                  'No alerts match the current filters.',
-                                  style: TextStyle(color: t.muted),
-                                ),
-                              ),
-                            )
-                          : ListView.separated(
-                              shrinkWrap: true,
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 14),
-                              itemBuilder: (_, index) {
-                                final item = filtered[index];
-                                return Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: t.scaffold,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: t.border),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      _buildHistoryRow(
-                                          'Alert ID',
-                                          item.alertNumber > 0
-                                              ? '#${item.alertNumber}'
-                                              : item.id),
-                                      _buildHistoryRow(
-                                          'Title', _typeLabel(item.type)),
-                                      _buildHistoryRow(
-                                          'Description', item.description),
-                                      _buildHistoryRow(
-                                        'Date',
-                                        DateFormat('dd/MM/yyyy HH:mm:ss')
-                                            .format(item.timestamp),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Close'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    searchController.dispose();
-  }
-
-  Widget _buildHistoryRow(String label, String value) {
     final t = _t;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 92,
-            child: Text(
-              '$label:',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: t.muted,
+
+    // ---- Layer 1: factories (always shown) ----
+    final factoryNodes = tree.rootNodes;
+    double rowWidth(int count) =>
+        count <= 0 ? 0 : count * cardW + (count - 1) * spacingX;
+    final l1Width = rowWidth(factoryNodes.length);
+    var cursorX = padding;
+    final factoryCenters = <String, Offset>{};
+    final factoryY = padding;
+
+    for (final f in factoryNodes) {
+      final left = cursorX;
+      final selected = _selectedUsineId == f.id;
+      final dimmed = !f.matches;
+      final accent = _nodeAccent(
+        t,
+        activeCount: f.activeCount,
+        inProgressCount: f.inProgressCount,
+        isCritical: f.isCritical,
+        idle: t.navy,
+      );
+      placements.add(_Placement(
+        left: left,
+        top: factoryY.toDouble(),
+        widget: SizedBox(
+          width: cardW,
+          child: TreeNodeCard(
+            icon: Icons.factory,
+            title: f.label,
+            subtitle:
+                '${f.children.length} conveyor${f.children.length == 1 ? '' : 's'}',
+            activeCount: f.activeCount,
+            inProgressCount: f.inProgressCount,
+            resolvedCount: f.resolvedCount,
+            hasError: f.activeCount > 0,
+            isCritical: f.isCritical,
+            isSelected: selected,
+            isDimmed: dimmed,
+            accent: accent,
+            density: _filter.density,
+            onTap: () => setState(() {
+              if (_selectedUsineId == f.id) {
+                _selectedUsineId = null;
+                _selectedConveyorId = null;
+              } else {
+                _selectedUsineId = f.id;
+                _selectedConveyorId = null;
+              }
+            }),
+          ),
+        ),
+      ));
+      factoryCenters[f.id] = Offset(left + cardW / 2, factoryY + cardH);
+      cursorX += cardW + spacingX;
+    }
+
+    var totalWidth = padding * 2 + l1Width;
+    var totalHeight = padding + cardH;
+
+    // ---- Layer 2: conveyors of selected factory ----
+    if (_selectedUsineId != null) {
+      final selectedF = factoryNodes.cast<_LayoutNode?>().firstWhere(
+            (f) => f?.id == _selectedUsineId,
+            orElse: () => null,
+          );
+      if (selectedF == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() {
+            _selectedUsineId = null;
+            _selectedConveyorId = null;
+          });
+        });
+        return _Layout(
+          placements: placements,
+          edges: edges,
+          size: Size(totalWidth, totalHeight),
+        );
+      }
+      final conveyors = selectedF.children;
+      if (conveyors.isNotEmpty) {
+        final l2Width = rowWidth(conveyors.length);
+        final visibleContentWidth = l1Width > l2Width ? l1Width : l2Width;
+        // Position centered under the parent factory.
+        final parentCenter = factoryCenters[selectedF.id]!;
+        final conveyorY = factoryY + cardH + layerGap;
+        var cx = parentCenter.dx - l2Width / 2;
+        // Clamp to keep within a reasonable canvas width.
+        cx = cx
+            .clamp(padding, padding + visibleContentWidth - l2Width)
+            .toDouble();
+
+        final conveyorCenters = <String, Offset>{};
+        for (final c in conveyors) {
+          final left = cx;
+          final selected = _selectedConveyorId == c.id;
+          final accent = _nodeAccent(
+            t,
+            activeCount: c.activeCount,
+            inProgressCount: c.inProgressCount,
+            isCritical: c.isCritical,
+            idle: t.blue,
+          );
+          placements.add(_Placement(
+            left: left,
+            top: conveyorY.toDouble(),
+            widget: SizedBox(
+              width: cardW,
+              child: TreeNodeCard(
+                icon: Icons.linear_scale,
+                title: c.label,
+                subtitle:
+                    '${c.children.length} station${c.children.length == 1 ? '' : 's'}',
+                activeCount: c.activeCount,
+                inProgressCount: c.inProgressCount,
+                resolvedCount: c.resolvedCount,
+                hasError: c.activeCount > 0,
+                isCritical: c.isCritical,
+                isSelected: selected,
+                isDimmed: !c.matches,
+                accent: accent,
+                density: _filter.density,
+                onTap: () => setState(() {
+                  _selectedConveyorId =
+                      _selectedConveyorId == c.id ? null : c.id;
+                }),
               ),
             ),
-          ),
+          ));
+          conveyorCenters[c.id] = Offset(left + cardW / 2, conveyorY + cardH);
+
+          edges.add(TreeConnectorEdge(
+            from: parentCenter,
+            to: Offset(left + cardW / 2, conveyorY.toDouble()),
+            active: c.activeCount > 0,
+          ));
+
+          cx += cardW + spacingX;
+        }
+        totalHeight = conveyorY + cardH + padding;
+        totalWidth = totalWidth < (padding * 2 + visibleContentWidth)
+            ? padding * 2 + visibleContentWidth
+            : totalWidth;
+
+        // ---- Layer 3: workstations of selected conveyor ----
+        if (_selectedConveyorId != null) {
+          final selectedC = conveyors.cast<_LayoutNode?>().firstWhere(
+                (c) => c?.id == _selectedConveyorId,
+                orElse: () => null,
+              );
+          if (selectedC == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() => _selectedConveyorId = null);
+            });
+            return _Layout(
+              placements: placements,
+              edges: edges,
+              size: Size(totalWidth, totalHeight),
+            );
+          }
+          final stations = selectedC.children;
+          if (stations.isNotEmpty) {
+            // Stations may be many — wrap into rows of up to 6.
+            const perRow = 6;
+            final rows = <List<_LayoutNode>>[];
+            for (var i = 0; i < stations.length; i += perRow) {
+              rows.add(stations.sublist(
+                  i, (i + perRow).clamp(0, stations.length).toInt()));
+            }
+
+            final parentConveyorCenter = conveyorCenters[selectedC.id]!;
+            final stationY = conveyorY + cardH + layerGap;
+            var rowY = stationY;
+            for (final row in rows) {
+              final stationRowWidth = rowWidth(row.length);
+              var sx = parentConveyorCenter.dx - stationRowWidth / 2;
+              sx = sx.clamp(padding, double.infinity).toDouble();
+              for (final s in row) {
+                final left = sx;
+                final activeAlert = s.topActiveAlert;
+                final hasError = s.activeCount > 0;
+                final accent = _nodeAccent(
+                  t,
+                  activeCount: s.activeCount,
+                  inProgressCount: s.inProgressCount,
+                  isCritical: s.isCritical,
+                  idle: t.green,
+                );
+                final stationKey = _locationKey(
+                  s.payload['usine'] as String,
+                  s.payload['convoyeur'] as int,
+                  s.payload['poste'] as int,
+                );
+                placements.add(_Placement(
+                  left: left,
+                  top: rowY.toDouble(),
+                  widget: SizedBox(
+                    width: cardW,
+                    child: TreeNodeCard(
+                      icon: Icons.settings,
+                      title: s.label,
+                      subtitle: hasError
+                          ? '${s.activeCount} active alert${s.activeCount == 1 ? '' : 's'}'
+                          : 'Healthy',
+                      activeCount: s.activeCount,
+                      inProgressCount: s.inProgressCount,
+                      resolvedCount: s.resolvedCount,
+                      hasError: hasError,
+                      isCritical: s.isCritical,
+                      isSelected: false,
+                      isDimmed: !s.matches,
+                      ripple: _rippleStations.contains(stationKey),
+                      accent: accent,
+                      density: _filter.density,
+                      onTap: () => _showStationActions(
+                        usine: s.payload['usine'] as String,
+                        convoyeur: s.payload['convoyeur'] as int,
+                        poste: s.payload['poste'] as int,
+                        stationLabel: s.label,
+                        activeAlert: activeAlert,
+                      ),
+                    ),
+                  ),
+                ));
+
+                edges.add(TreeConnectorEdge(
+                  from: parentConveyorCenter,
+                  to: Offset(left + cardW / 2, rowY.toDouble()),
+                  active: hasError,
+                ));
+
+                sx += cardW + spacingX;
+              }
+              rowY += cardH + 24;
+              final rowExtent = sx - spacingX + padding;
+              totalWidth = totalWidth < rowExtent ? rowExtent : totalWidth;
+            }
+            totalHeight = rowY + padding;
+          }
+        }
+      }
+    }
+
+    return _Layout(
+      placements: placements,
+      edges: edges,
+      size: Size(totalWidth, totalHeight),
+    );
+  }
+
+  String _relative(DateTime dt) {
+    final d = DateTime.now().difference(dt);
+    if (d.inSeconds < 60) return 'just now';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 24) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
+  }
+}
+
+// =============================================================================
+// Internal types
+// =============================================================================
+class _LayoutNode {
+  final String id;
+  final String label;
+  final String type;
+  final int activeCount;
+  final int inProgressCount;
+  final int resolvedCount;
+  final bool isCritical;
+  final bool matches;
+  final List<_LayoutNode> children;
+  final AlertModel? topActiveAlert;
+  final Map<String, dynamic> payload;
+
+  const _LayoutNode({
+    required this.id,
+    required this.label,
+    required this.type,
+    this.activeCount = 0,
+    this.inProgressCount = 0,
+    this.resolvedCount = 0,
+    this.isCritical = false,
+    this.matches = true,
+    this.children = const [],
+    this.topActiveAlert,
+    this.payload = const {},
+  });
+}
+
+class _TreeData {
+  final List<Factory> factories;
+  final List<_LayoutNode> rootNodes;
+  final int totalActive;
+  final int stationsWithActive;
+  final int totalNodeCount;
+  final int matchingNodeCount;
+
+  const _TreeData({
+    required this.factories,
+    required this.rootNodes,
+    required this.totalActive,
+    required this.stationsWithActive,
+    required this.totalNodeCount,
+    required this.matchingNodeCount,
+  });
+}
+
+class _Placement {
+  final double left;
+  final double top;
+  final Widget widget;
+  const _Placement({
+    required this.left,
+    required this.top,
+    required this.widget,
+  });
+}
+
+class _Layout {
+  final List<_Placement> placements;
+  final List<TreeConnectorEdge> edges;
+  final Size size;
+  const _Layout({
+    required this.placements,
+    required this.edges,
+    required this.size,
+  });
+}
+
+class _StationEmptyHistory extends StatelessWidget {
+  final AppTheme t;
+  const _StationEmptyHistory({required this.t});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: t.scaffold,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: t.border),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.inbox_outlined, color: t.muted, size: 18),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 11,
-                color: t.text,
-                fontWeight: FontWeight.w600,
-              ),
+              'No alerts have been recorded at this workstation yet.',
+              style: TextStyle(color: t.muted, fontSize: 12.5),
             ),
           ),
         ],
       ),
     );
   }
-
-  Color _typeColor(String type) => switch (type) {
-        'qualite' => _red,
-        'maintenance' => _blue,
-        'defaut_produit' => _green,
-        'manque_ressource' => _orange,
-        _ => _t.muted,
-      };
-
-  int _activeAlertPriority(String status) => switch (status) {
-        'en_cours' => 2,
-        'disponible' => 1,
-        _ => 0,
-      };
-
-  Color _workstationColor(AlertNode workstation) {
-    if (!workstation.hasError) return _green;
-    final status = workstation.alertData?['status']?.toString() ?? '';
-    if (status == 'en_cours') return _yellow;
-    return _red;
-  }
-
-  IconData _typeIcon(String type) => switch (type) {
-        'qualite' => Icons.warning_amber_rounded,
-        'maintenance' => Icons.build,
-        'defaut_produit' => Icons.cancel,
-        'manque_ressource' => Icons.inventory_2,
-        _ => Icons.notifications_outlined,
-      };
-
-  String _typeLabel(String type) => switch (type) {
-        'qualite' => 'Quality Issues',
-        'maintenance' => 'Maintenance',
-        'defaut_produit' => 'Damaged Product',
-        'manque_ressource' => 'Resource Deficiency',
-        _ => type,
-      };
-
-  Color _statusColor(String status) => switch (status) {
-        'validee' => _green,
-        'en_cours' => _yellow,
-        _ => _orange,
-      };
-
-  String _statusLabel(String status) => switch (status) {
-        'validee' => 'Fixed',
-        'en_cours' => 'Being fixed...',
-        _ => 'Available',
-      };
 }
 
-// Custom painters for connecting lines (same as original)
-class _UsineTreePainter extends CustomPainter {
-  final List<AlertNode> usines;
-  final double spacing;
-  final Animation<double> animation;
-  final Color lineColor;
-  final Color lineSoftColor;
-  _UsineTreePainter(
-      {required this.usines,
-      required this.spacing,
-      required this.animation,
-      required this.lineColor,
-      required this.lineSoftColor})
-      : super(repaint: animation);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Color.lerp(
-              lineSoftColor, lineColor, animation.value.clamp(0.0, 1.0)) ??
-          lineSoftColor
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    const parentY = 30.0;
-    const childY = 50.0;
-    for (var i = 0; i < usines.length; i++) {
-      final childX = spacing * (i + 1);
-      final path = Path()
-        ..moveTo(childX, parentY)
-        ..cubicTo(childX, parentY + 10, childX, childY - 10, childX, childY);
-      final metric = path.computeMetrics().first;
-      canvas.drawPath(
-          metric.extractPath(0, metric.length * animation.value), paint);
-    }
-  }
+class _StationHistoryTile extends StatelessWidget {
+  final AlertModel alert;
+  const _StationHistoryTile({required this.alert});
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final type = typeMeta(alert.type, t);
+    final status = statusMeta(alert.status, t);
+    return Material(
+      color: t.scaffold,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => showTreeAlertSheet(context, alert),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: t.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: type.bg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(type.icon, color: type.color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: t.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat('MMM d, h:mm a').format(alert.timestamp),
+                      style: TextStyle(color: t.muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: status.bg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  status.label,
+                  style: TextStyle(
+                    color: status.color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _ConveyorTreePainter extends CustomPainter {
-  final List<AlertNode> conveyors;
-  final double spacing;
-  final double? selectedX;
-  final Animation<double> animation;
-  final Color lineColor;
-  _ConveyorTreePainter({
-    required this.conveyors,
-    required this.spacing,
-    required this.selectedX,
-    required this.animation,
-    required this.lineColor,
-  }) : super(repaint: animation);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final parentX = size.width / 2;
-    const parentY = 38.0;
-    const childY = 50.0;
-    for (var i = 0; i < conveyors.length; i++) {
-      final childX = spacing * (i + 1);
-      final path = Path();
-      path.moveTo(parentX, parentY);
-      path.cubicTo(parentX, parentY + 6, childX, childY - 6, childX, childY);
-      final metric = path.computeMetrics().first;
-      canvas.drawPath(
-          metric.extractPath(0, metric.length * animation.value), paint);
-    }
-
-    if (selectedX != null) {
-      const selectedNodeBottomY = 120.0;
-      final bridgePath = Path()
-        ..moveTo(selectedX!, selectedNodeBottomY)
-        ..lineTo(selectedX!, size.height);
-      final bridgeMetric = bridgePath.computeMetrics().first;
-      canvas.drawPath(
-          bridgeMetric.extractPath(0, bridgeMetric.length * animation.value),
-          paint);
-    }
-  }
+// =============================================================================
+// Live "pulsing" green dot — used in the live status header.
+// =============================================================================
+class _LivePulseDot extends StatefulWidget {
+  final Color color;
+  const _LivePulseDot({required this.color});
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  State<_LivePulseDot> createState() => _LivePulseDotState();
 }
 
-class _WorkstationTreePainter extends CustomPainter {
-  final List<AlertNode> workstations;
-  final double spacing;
-  final double parentX;
-  final Animation<double> animation;
-  final Color lineColor;
-  _WorkstationTreePainter({
-    required this.workstations,
-    required this.spacing,
-    required this.parentX,
-    required this.animation,
-    required this.lineColor,
-  }) : super(repaint: animation);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    const parentY = 0.0;
-    const childY = 50.0;
+class _LivePulseDotState extends State<_LivePulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat(reverse: true);
 
-    for (var i = 0; i < workstations.length; i++) {
-      final childX = spacing * (i + 1);
-      final path = Path();
-      path.moveTo(parentX, parentY);
-      path.cubicTo(parentX, parentY + 14, childX, childY - 10, childX, childY);
-      final metric = path.computeMetrics().first;
-      canvas.drawPath(
-          metric.extractPath(0, metric.length * animation.value), paint);
-    }
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final v = _c.value;
+        return SizedBox(
+          width: 14,
+          height: 14,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.color.withValues(alpha: 0.15 + v * 0.1),
+                ),
+              ),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.color,
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(alpha: 0.5),
+                      blurRadius: 6 + v * 4,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
