@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -15,6 +16,10 @@ import '../firebase_options.dart';
 import '../providers/alert_provider.dart';
 import '../screens/alert_detail_screen.dart';
 import '../screens/voice_claim_screen.dart';
+import 'voice_auth_service.dart';
+import 'voice_command_dispatcher.dart';
+import 'voice_command_parser.dart';
+import 'voice_lock_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -67,6 +72,9 @@ class FcmService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<void> init() async {
+    // Pre-warm the TFLite speaker model so the first voice verification is fast.
+    unawaited(VoiceAuthService.instance.preload());
+
     // Get token and save
     await _updateToken();
 
@@ -165,9 +173,17 @@ class FcmService {
   }
 
   void _navigateToVoiceClaim(String? alertId) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(_startAndroidVoiceLockFlow(alertId));
+      return;
+    }
+    _navigateToVoiceClaimScreen(alertId);
+  }
+
+  // iOS / fallback: push VoiceClaimScreen above the keyguard.
+  void _navigateToVoiceClaimScreen(String? alertId) {
     final state = navigatorKey.currentState;
     if (state == null) {
-      // App not yet initialized; store payload and route once ready.
       pendingAlertId = alertId;
       _hasPendingVoiceClaim = true;
       _schedulePendingVoiceClaim();
@@ -183,6 +199,37 @@ class FcmService {
         builder: (_) => VoiceClaimScreen(alertId: alertId),
       ),
     );
+  }
+
+  Future<void> _startAndroidVoiceLockFlow(String? alertId) async {
+    final result = await VoiceLockService.startVoiceLockFlow();
+    if (result == null) {
+      _navigateToVoiceClaimScreen(alertId);
+      return;
+    }
+
+    final provider = alertProvider;
+    if (provider == null) return;
+
+    final cmd = VoiceCommandParser.parse(result.transcript);
+
+    Uint8List? audioBytes;
+    if (result.audioPath.isNotEmpty) {
+      try {
+        audioBytes = await File(result.audioPath).readAsBytes();
+      } catch (_) {}
+    }
+
+    // VoiceCommandDispatcher handles voice auth internally.
+    try {
+      await VoiceCommandDispatcher(provider).execute(cmd, rawAudio: audioBytes);
+    } catch (_) {}
+
+    if (result.audioPath.isNotEmpty) {
+      try {
+        File(result.audioPath).deleteSync();
+      } catch (_) {}
+    }
   }
 
   void _schedulePendingVoiceClaim() {
@@ -335,7 +382,7 @@ class FcmService {
           actions: <AndroidNotificationAction>[
             AndroidNotificationAction(
               voiceClaimActionId,
-              'Speak command',
+              'Voice command',
               icon: const DrawableResourceAndroidBitmap(
                 '@android:drawable/ic_btn_speak_now',
               ),

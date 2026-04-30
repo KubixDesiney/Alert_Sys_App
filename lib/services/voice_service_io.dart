@@ -5,9 +5,11 @@
 // auto-stops within [timeout].
 
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -170,6 +172,29 @@ class VoiceService {
       try {
         await _speech.stop();
       } catch (_) {}
+      await _releaseAndroidAudioSession();
+    }
+  }
+
+  Future<Uint8List?> captureRawAudio({
+    Duration duration = const Duration(milliseconds: 1800),
+    int sampleRate = 16000,
+  }) async {
+    if (!await _ensureMicPermission()) return null;
+    await _releaseAndroidAudioSession();
+    try {
+      final audio = await _audioChannel.invokeMethod<Uint8List>(
+        'recordPcm16',
+        {
+          'durationMs': duration.inMilliseconds,
+          'sampleRate': sampleRate,
+        },
+      );
+      return audio;
+    } catch (e) {
+      debugPrint('VoiceService.captureRawAudio: $e');
+      return null;
+    } finally {
       await _releaseAndroidAudioSession();
     }
   }

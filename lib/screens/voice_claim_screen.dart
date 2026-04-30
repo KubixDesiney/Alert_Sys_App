@@ -11,17 +11,19 @@
 // + turn the screen on via a method channel into MainActivity.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:provider/provider.dart';
 
 import '../models/alert_model.dart';
 import '../providers/alert_provider.dart';
+import '../services/voice_auth_service.dart';
 import '../services/voice_command_parser.dart';
 import '../services/voice_service.dart';
 import '../theme.dart';
@@ -163,6 +165,9 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       return;
     }
 
+    final verified = await _verifyVoiceBeforeAction();
+    if (!mounted || !verified) return;
+
     _setStep(_Step.working,
         status: 'Claiming alert…', hint: 'Alert #${target.alertNumber}');
 
@@ -224,6 +229,47 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       } catch (_) {}
     }
     return null;
+  }
+
+  Future<bool> _verifyVoiceBeforeAction() async {
+    final state = await VoiceAuthService.instance.enrollmentState();
+    if (state == VoiceEnrollmentState.unenrolled) {
+      await VoiceService.instance.speak(
+        'Voice commands are allowed. Enroll your voice for better security.',
+      );
+      return true;
+    }
+    if (state == VoiceEnrollmentState.unavailable) {
+      return true;
+    }
+
+    _setStep(
+      _Step.awaitingConfirm,
+      status: 'Verify your voice',
+      hint: 'Say your verification phrase',
+    );
+    await VoiceService.instance.speak('Say your verification phrase.');
+    if (!mounted) return false;
+
+    final Uint8List? audio = await VoiceService.instance.captureRawAudio(
+      duration: const Duration(milliseconds: 2200),
+      sampleRate: 16000,
+    );
+    if (!mounted) return false;
+
+    final result = await VoiceAuthService.instance.verifyCurrentUser(
+      rawAudio: audio,
+      sampleRate: 16000,
+    );
+    if (!result.verified) {
+      _finish(
+        success: false,
+        message: 'Voice not recognized',
+        speak: 'Voice not recognized',
+      );
+      return false;
+    }
+    return true;
   }
 
   Future<String?> _displayName(String uid) async {
