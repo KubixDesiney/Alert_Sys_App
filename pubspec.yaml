@@ -35,7 +35,7 @@ dependencies:
   # AR Work Instructions — camera passthrough + QR scanning for the
   # ar_instruction_screen.dart flow. mobile_scanner replaces the unmaintained
   # qr_code_scanner (broken on AGP 8+).
-  mobile_scanner: 7.2.0
+  mobile_scanner: ^6.0.11
 
   flutter:
     sdk: flutter
