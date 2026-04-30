@@ -5,6 +5,7 @@
 // auto-stops within [timeout].
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
@@ -18,6 +19,8 @@ class VoiceService {
   VoiceService._();
   static final VoiceService instance = VoiceService._();
   static const MethodChannel _audioChannel = MethodChannel('alertsys/audio');
+  static const MethodChannel _voiceLockChannel =
+      MethodChannel('alertsys/voice_lock');
 
   final stt.SpeechToText _speech = stt.SpeechToText();
   final FlutterTts _tts = FlutterTts();
@@ -176,6 +179,67 @@ class VoiceService {
     }
   }
 
+  /// Captures the user's command transcript and the raw PCM audio from the
+  /// same utterance so speaker verification can happen before command parsing.
+  Future<VoiceCommandCapture> captureCommandWithAudio({
+    Duration timeout = const Duration(seconds: 5),
+    int sampleRate = 16000,
+  }) async {
+    if (!_initialized) await init();
+    if (!_available) {
+      return VoiceCommandCapture.empty(sampleRate: sampleRate);
+    }
+    if (!await _ensureMicPermission()) {
+      return VoiceCommandCapture.empty(sampleRate: sampleRate);
+    }
+
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      _listening = true;
+      try {
+        final result = await _voiceLockChannel.invokeMapMethod<String, dynamic>(
+          'startVoiceLockFlow',
+          {'timeoutMs': timeout.inMilliseconds},
+        );
+        if (result == null) {
+          return VoiceCommandCapture.empty(sampleRate: sampleRate);
+        }
+
+        Uint8List? rawAudio;
+        final audioPath = result['audioPath']?.toString() ?? '';
+        if (audioPath.isNotEmpty) {
+          final file = File(audioPath);
+          try {
+            rawAudio = await file.readAsBytes();
+          } catch (e) {
+            debugPrint('VoiceService.captureCommandWithAudio read failed: $e');
+          } finally {
+            try {
+              await file.delete();
+            } catch (_) {}
+          }
+        }
+
+        return VoiceCommandCapture(
+          transcript: result['transcript']?.toString() ?? '',
+          rawAudio: rawAudio,
+          sampleRate: sampleRate,
+        );
+      } catch (e) {
+        debugPrint('VoiceService.captureCommandWithAudio: $e');
+      } finally {
+        _listening = false;
+        await _releaseAndroidAudioSession();
+      }
+    }
+
+    final transcript = await captureOnce(timeout: timeout);
+    return VoiceCommandCapture(
+      transcript: transcript,
+      rawAudio: null,
+      sampleRate: sampleRate,
+    );
+  }
+
   Future<Uint8List?> captureRawAudio({
     Duration duration = const Duration(milliseconds: 1800),
     int sampleRate = 16000,
@@ -251,4 +315,20 @@ class VoiceService {
       debugPrint('VoiceService audio cleanup failed: $e');
     }
   }
+}
+
+class VoiceCommandCapture {
+  final String transcript;
+  final Uint8List? rawAudio;
+  final int sampleRate;
+
+  const VoiceCommandCapture({
+    required this.transcript,
+    required this.rawAudio,
+    required this.sampleRate,
+  });
+
+  const VoiceCommandCapture.empty({required this.sampleRate})
+      : transcript = '',
+        rawAudio = null;
 }

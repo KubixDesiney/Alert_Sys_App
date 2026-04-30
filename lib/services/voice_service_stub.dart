@@ -29,6 +29,13 @@ class VoiceService {
     return '';
   }
 
+  Future<VoiceCommandCapture> captureCommandWithAudio({
+    Duration timeout = const Duration(seconds: 5),
+    int sampleRate = 16000,
+  }) async {
+    return VoiceCommandCapture.empty(sampleRate: sampleRate);
+  }
+
   Future<Uint8List?> captureRawAudio({
     Duration duration = const Duration(milliseconds: 1800),
     int sampleRate = 16000,
@@ -43,4 +50,20 @@ class VoiceService {
   Future<void> dispose() async {
     await _commandsController.close();
   }
+}
+
+class VoiceCommandCapture {
+  final String transcript;
+  final Uint8List? rawAudio;
+  final int sampleRate;
+
+  const VoiceCommandCapture({
+    required this.transcript,
+    required this.rawAudio,
+    required this.sampleRate,
+  });
+
+  const VoiceCommandCapture.empty({required this.sampleRate})
+      : transcript = '',
+        rawAudio = null;
 }

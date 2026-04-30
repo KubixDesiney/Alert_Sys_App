@@ -20,7 +20,7 @@ class VoiceAuthService {
   VoiceAuthService._();
   static final VoiceAuthService instance = VoiceAuthService._();
 
-  static const double threshold = 0.75;
+  static const double threshold = 0.88;
 
   Future<VoiceEnrollmentState> enrollmentState() async {
     return VoiceEnrollmentState.unavailable;
@@ -31,7 +31,7 @@ class VoiceAuthService {
     int sampleRate = 16000,
   }) async {
     return const VoiceVerificationResult(
-      verified: true,
+      verified: false,
       unenrolled: true,
       message: 'Voice biometrics are unavailable on this platform.',
     );

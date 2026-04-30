@@ -1,12 +1,23 @@
 {
   "rules": {
+
     "alerts": {
       ".read": "auth != null",
-      ".write": "auth != null",
+      ".write": false,
       ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste", "push_sent"],
       "$alertId": {
         ".read": "auth != null",
-        ".write": "auth != null",
+        ".write": "auth != null || (auth == null && !data.exists() && newData.hasChildren(['adresse','convoyeur','poste','timestamp','type','usine']) && newData.child('adresse').isString() && newData.child('convoyeur').isNumber() && newData.child('poste').isNumber() && newData.child('timestamp').isString() && newData.child('type').isString() && newData.child('usine').isString())",
+        "adresse": { ".validate": "newData.isString()" },
+        "convoyeur": { ".validate": "newData.isNumber()" },
+        "poste": { ".validate": "newData.isNumber()" },
+        "timestamp": { ".validate": "newData.isString()" },
+        "type": { ".validate": "newData.isString()" },
+        "usine": { ".validate": "newData.isString()" },
+        "description": { ".validate": "!newData.exists() || newData.isString()" },
+        "status": { ".validate": "!newData.exists() || newData.isString()" },
+        "push_sent": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "isCritical": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "aiHistory": {
           ".read": "auth != null",
           ".write": "auth != null"
@@ -14,16 +25,47 @@
       }
     },
 
-    "notifications": {
+    "work_instructions": {
       ".read": "auth != null",
-      ".write": false,
-      "$userId": {
-        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
-        "$notifId": {
-          ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
-          ".write": "auth != null && (!data.exists() || auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+      "$alertType": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+        "steps": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+          "$stepId": {
+            ".read": "auth != null",
+            ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+          }
         }
       }
+    },
+
+    "notifications": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        "$notifId": {
+          ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+          ".write": "auth != null && ((auth.uid === $userId) || root.child('users').child(auth.uid).child('role').val() === 'admin' || (root.child('users').child(auth.uid).child('role').val() === 'supervisor' && !data.exists()))"
+        }
+      }
+    },
+
+    "pm_actions": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+
+    "alertCounter": {
+      ".read": true,
+      ".write": "auth != null"
     },
 
     "users": {
@@ -65,15 +107,6 @@
       ".indexOn": ["usine", "active"]
     },
 
-    "pm_actions": {
-      ".read": "auth != null",
-      ".write": false,
-      "$userId": {
-        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
-        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
-      }
-    },
-
     "ai_decisions": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
@@ -98,12 +131,8 @@
         "aiConfig": {
           ".read": "auth != null",
           ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
-          "enabled": {
-            ".validate": "newData.isBoolean()"
-          },
-          "skippedAlertTtlMinutes": {
-            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 240)"
-          }
+          "enabled": { ".validate": "newData.isBoolean()" },
+          "skippedAlertTtlMinutes": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 240)" }
         }
       }
     },
