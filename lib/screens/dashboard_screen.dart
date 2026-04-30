@@ -12,6 +12,7 @@ import '../services/auth_service.dart';
 import '../theme.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
+import 'alert_scan_screen.dart';
 import '../widgets/voice_command_button.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
@@ -128,6 +129,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             usine: _usine,
             onLogout: _logout,
           ),
+          AlertScanScreen(isActive: _currentPage == 1),
           const CollaborationProgressScreen(),
         ],
       ),
@@ -655,11 +657,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       return;
     }
 
-    final readAt = DateTime.now().toIso8601String();
-    await _db.child('notifications/$uid/$notificationId').update({
-      'status': 'read',
-      'readAt': readAt,
-    });
+    await _db.child('notifications/$uid/$notificationId').remove();
 
     if (_buzzingNotificationId == notificationId) {
       await _stopBuzzing();
@@ -667,15 +665,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
     if (!mounted || !modalContext.mounted) return;
     setModalState(() {
-      final index =
-          _notifications.indexWhere((item) => item['id'] == notificationId);
-      if (index != -1) {
-        _notifications[index] = {
-          ..._notifications[index],
-          'status': 'read',
-          'readAt': readAt,
-        };
-      }
+      _notifications.removeWhere((item) => item['id'] == notificationId);
       _notificationCount =
           _notifications.where((item) => item['status'] != 'read').length;
     });
@@ -2720,10 +2710,16 @@ class _DashboardBottomNav extends StatelessWidget {
                 onTap: () => onTap(0),
               ),
               _NavBtn(
-                icon: Icons.handshake,
-                label: 'Collab Progress',
+                icon: Icons.qr_code_scanner,
+                label: 'Alert Scan',
                 selected: currentIndex == 1,
                 onTap: () => onTap(1),
+              ),
+              _NavBtn(
+                icon: Icons.handshake,
+                label: 'Collab Progress',
+                selected: currentIndex == 2,
+                onTap: () => onTap(2),
               ),
             ],
           ),
