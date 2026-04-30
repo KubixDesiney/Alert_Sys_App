@@ -6,9 +6,12 @@
 //   optionally ask for a missing alert number, then dispatch.
 
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/alert_provider.dart';
+import '../screens/voice_enrollment_screen.dart';
+import '../services/voice_auth_service.dart';
 import '../services/voice_command_dispatcher.dart';
 import '../services/voice_command_parser.dart';
 import '../services/voice_service.dart';
@@ -30,6 +33,7 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
   late final AnimationController _pulse;
   StreamSubscription<String>? _commandSub;
   bool _listening = false;
+  bool _shownEnrollmentHint = false;
 
   @override
   void initState() {
@@ -81,6 +85,7 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
 
     final provider = context.read<AlertProvider>();
     final dispatcher = VoiceCommandDispatcher(provider);
+    final enrollmentState = await _maybeSuggestEnrollment();
 
     setState(() => _listening = true);
     _pulse.repeat(reverse: true);
@@ -106,7 +111,10 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
           cmd = VoiceCommandParser.parse('${cmd.rawText} $numberText');
         }
       }
-      await dispatcher.execute(cmd);
+      final rawAudio = enrollmentState == VoiceEnrollmentState.enrolled
+          ? await _captureVerificationSample()
+          : null;
+      await dispatcher.execute(cmd, rawAudio: rawAudio);
     });
 
     await VoiceService.instance.startListening(timeout: widget.listenDuration);
@@ -115,6 +123,47 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
         () {
       if (mounted && _listening) _stopUi();
     });
+  }
+
+  Future<VoiceEnrollmentState> _maybeSuggestEnrollment() async {
+    final state = await VoiceAuthService.instance.enrollmentState();
+    if (!mounted ||
+        _shownEnrollmentHint ||
+        state != VoiceEnrollmentState.unenrolled) {
+      return state;
+    }
+    _shownEnrollmentHint = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+            'Voice commands are available. Enroll your voice for biometric protection.'),
+        action: SnackBarAction(
+          label: 'Enroll',
+          onPressed: _openEnrollment,
+        ),
+      ),
+    );
+    return state;
+  }
+
+  Future<Uint8List?> _captureVerificationSample() async {
+    await VoiceService.instance.speak('Say your verification phrase.');
+    if (!mounted) return null;
+    setState(() => _listening = true);
+    _pulse.repeat(reverse: true);
+    final audio = await VoiceService.instance.captureRawAudio(
+      duration: const Duration(milliseconds: 2200),
+      sampleRate: 16000,
+    );
+    _stopUi();
+    return audio;
+  }
+
+  void _openEnrollment() {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const VoiceEnrollmentScreen()),
+    );
   }
 
   void _stopUi() {
@@ -165,6 +214,7 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
                 child: InkWell(
                   customBorder: const CircleBorder(),
                   onTap: _toggle,
+                  onLongPress: _openEnrollment,
                   child: SizedBox(
                     width: size,
                     height: size,
