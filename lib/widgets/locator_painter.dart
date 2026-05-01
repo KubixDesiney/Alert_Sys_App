@@ -2,8 +2,8 @@
 //
 // Renders the FactoryMap (entrance, conveyor edges, station nodes) on the
 // supervisor's locator screen. When `claimedNodeKey` is set, draws an animated
-// blue arrow from the entrance to that node along the saved edge graph (BFS
-// fallback to straight line) and pulses the target station.
+// blue arrow from the entrance to that node along a grid route that avoids
+// conveyor lines and station nodes, then pulses the target station.
 
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -27,6 +27,36 @@ class LocatorNodeBadge {
     this.alertNumber,
     this.assetLabel,
   });
+}
+
+const _routeDirections = <_RouteDelta>[
+  _RouteDelta(-1, 0),
+  _RouteDelta(0, 1),
+  _RouteDelta(1, 0),
+  _RouteDelta(0, -1),
+];
+
+class _RouteDelta {
+  final int row;
+  final int col;
+
+  const _RouteDelta(this.row, this.col);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _RouteDelta && other.row == row && other.col == col;
+
+  @override
+  int get hashCode => Object.hash(row, col);
+}
+
+class _RouteState {
+  final MapCell cell;
+  final int direction;
+  final double cost;
+  final double priority;
+
+  const _RouteState(this.cell, this.direction, this.cost, this.priority);
 }
 
 class FactoryMapLocatorPainter extends CustomPainter {
@@ -153,12 +183,28 @@ class FactoryMapLocatorPainter extends CustomPainter {
     for (final node in map.nodes) {
       final c = _center(node.cell, ox, oy, s);
       final color = factoryMapConveyorColor(node.conveyorNumber, theme);
-      final radius = s * 0.32;
       final isTarget = claimedNodeKey == node.key;
       final badge = badges[node.key];
       final statusColor = badge == null
           ? color
           : _statusColor(badge.status, theme, fallback: color);
+      final fontSize = node.label.length > 5 ? 10.0 : 11.0;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: node.label,
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: fontSize,
+              fontWeight: FontWeight.w900),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final radius = math
+          .min(
+            s * 0.47,
+            math.max(s * 0.38, tp.width / 2 + 8),
+          )
+          .toDouble();
 
       if (isTarget) {
         final ring = radius + 10 + math.sin(pulse * math.pi * 2) * 6;
@@ -192,16 +238,6 @@ class FactoryMapLocatorPainter extends CustomPainter {
           ..strokeWidth = 2
           ..color = theme.card,
       );
-      final tp = TextPainter(
-        text: TextSpan(
-          text: node.label,
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w900),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
       tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
     }
   }
@@ -271,10 +307,14 @@ class FactoryMapLocatorPainter extends CustomPainter {
     }
   }
 
-  /// BFS over the saved edge graph from the cell containing the entrance to
-  /// the target node. Returns the cells of intermediate nodes (target last).
-  /// Falls back to an empty list (caller draws straight line) if disconnected.
+  /// Prefer a walkable floor route over the saved conveyor graph. The returned
+  /// cells exclude the entrance and include the target.
   List<MapCell> _findRoute(MapCell entrance, MapNode target) {
+    final gridRoute = _findGridRoute(entrance, target.cell);
+    if (gridRoute.length >= 2) {
+      return _compressRoute(gridRoute).skip(1).toList();
+    }
+
     // The entrance is a free-floating cell, not a node, so we connect it to
     // its nearest node and BFS from there.
     if (map.nodes.isEmpty) return [];
@@ -321,6 +361,153 @@ class FactoryMapLocatorPainter extends CustomPainter {
     }
     return stack;
   }
+
+  List<MapCell> _findGridRoute(MapCell start, MapCell goal) {
+    final blocked = _buildRouteObstacles(start, goal);
+    final open = <_RouteState>[
+      _RouteState(start, -1, 0, _heuristic(start, goal)),
+    ];
+    final startKey = _stateKey(start, -1);
+    final bestCost = <String, double>{startKey: 0};
+    final previous = <String, String?>{startKey: null};
+    final cells = <String, MapCell>{startKey: start};
+    String? goalKey;
+
+    while (open.isNotEmpty) {
+      var bestIndex = 0;
+      for (var i = 1; i < open.length; i++) {
+        if (open[i].priority < open[bestIndex].priority) {
+          bestIndex = i;
+        }
+      }
+
+      final current = open.removeAt(bestIndex);
+      final currentKey = _stateKey(current.cell, current.direction);
+      final knownCost = bestCost[currentKey];
+      if (knownCost == null || current.cost > knownCost) continue;
+
+      if (current.cell == goal) {
+        goalKey = currentKey;
+        break;
+      }
+
+      for (var direction = 0;
+          direction < _routeDirections.length;
+          direction++) {
+        final delta = _routeDirections[direction];
+        final next = MapCell(
+          current.cell.row + delta.row,
+          current.cell.col + delta.col,
+        );
+        if (!_insideGrid(next)) continue;
+        if (blocked.contains(next) && next != goal) continue;
+
+        final turnCost =
+            current.direction == -1 || current.direction == direction ? 0 : 6;
+        final nextCost =
+            current.cost + 10 + turnCost + _clearancePenalty(next, blocked);
+        final nextKey = _stateKey(next, direction);
+        if (nextCost >= (bestCost[nextKey] ?? double.infinity)) continue;
+
+        bestCost[nextKey] = nextCost.toDouble();
+        previous[nextKey] = currentKey;
+        cells[nextKey] = next;
+        open.add(_RouteState(
+          next,
+          direction,
+          nextCost.toDouble(),
+          nextCost + _heuristic(next, goal),
+        ));
+      }
+    }
+
+    if (goalKey == null) return const [];
+    final reversed = <MapCell>[];
+    String? cursor = goalKey;
+    while (cursor != null) {
+      final cell = cells[cursor];
+      if (cell != null) reversed.add(cell);
+      cursor = previous[cursor];
+    }
+    return reversed.reversed.toList();
+  }
+
+  Set<MapCell> _buildRouteObstacles(MapCell start, MapCell goal) {
+    final blocked = <MapCell>{};
+    for (final node in map.nodes) {
+      blocked.add(node.cell);
+    }
+    for (final edge in map.edges) {
+      final from = map.nodeByKey(edge.fromKey);
+      final to = map.nodeByKey(edge.toKey);
+      if (from == null || to == null) continue;
+      _addSegmentCells(blocked, from.cell, to.cell);
+    }
+    blocked
+      ..remove(start)
+      ..remove(goal);
+    return blocked;
+  }
+
+  void _addSegmentCells(Set<MapCell> blocked, MapCell from, MapCell to) {
+    final rowDelta = to.row - from.row;
+    final colDelta = to.col - from.col;
+    final steps = math.max(rowDelta.abs(), colDelta.abs()) * 6;
+    if (steps == 0) {
+      blocked.add(from);
+      return;
+    }
+    for (var i = 0; i <= steps; i++) {
+      final t = i / steps;
+      final row = (from.row + rowDelta * t).round();
+      final col = (from.col + colDelta * t).round();
+      final cell = MapCell(row, col);
+      if (_insideGrid(cell)) blocked.add(cell);
+    }
+  }
+
+  List<MapCell> _compressRoute(List<MapCell> route) {
+    if (route.length <= 2) return route;
+    final compressed = <MapCell>[route.first];
+    var previousDelta = _deltaBetween(route[0], route[1]);
+    for (var i = 1; i < route.length - 1; i++) {
+      final nextDelta = _deltaBetween(route[i], route[i + 1]);
+      if (nextDelta != previousDelta) {
+        compressed.add(route[i]);
+      }
+      previousDelta = nextDelta;
+    }
+    compressed.add(route.last);
+    return compressed;
+  }
+
+  _RouteDelta _deltaBetween(MapCell a, MapCell b) =>
+      _RouteDelta(b.row - a.row, b.col - a.col);
+
+  bool _insideGrid(MapCell cell) =>
+      cell.row >= 0 &&
+      cell.col >= 0 &&
+      cell.row < map.rows &&
+      cell.col < map.cols;
+
+  double _heuristic(MapCell a, MapCell b) =>
+      ((a.row - b.row).abs() + (a.col - b.col).abs()) * 10.0;
+
+  double _clearancePenalty(MapCell cell, Set<MapCell> blocked) {
+    var penalty = 0.0;
+    for (var dr = -1; dr <= 1; dr++) {
+      for (var dc = -1; dc <= 1; dc++) {
+        if (dr == 0 && dc == 0) continue;
+        final nearby = MapCell(cell.row + dr, cell.col + dc);
+        if (!blocked.contains(nearby)) continue;
+        penalty += dr == 0 || dc == 0 ? 2.0 : 1.0;
+      }
+    }
+    return penalty;
+  }
+
+  String _stateKey(MapCell cell, int direction) =>
+      '${cell.row},${cell.col},$direction';
 
   void _drawArrowHead(Canvas canvas, Offset tip, double angle, Color color) {
     const size = 16.0;
