@@ -420,7 +420,7 @@ class _Header extends StatelessWidget {
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
-              value: selectedId,
+              initialValue: selectedId,
               isDense: true,
               decoration: const InputDecoration(
                 labelText: 'Factory',
@@ -788,7 +788,16 @@ class _MapCanvas extends StatefulWidget {
 }
 
 class _MapCanvasState extends State<_MapCanvas> {
+  final GlobalKey _viewerKey = GlobalKey();
+  final TransformationController _transformController =
+      TransformationController();
   MapCell? _hoverCell;
+
+  @override
+  void dispose() {
+    _transformController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -797,7 +806,7 @@ class _MapCanvasState extends State<_MapCanvas> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final cellSize = math.max(
-          24.0,
+          46.0,
           math.min(
             constraints.maxWidth / widget.map.cols,
             constraints.maxHeight / widget.map.rows,
@@ -823,8 +832,11 @@ class _MapCanvasState extends State<_MapCanvas> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 3,
+              key: _viewerKey,
+              transformationController: _transformController,
+              constrained: false,
+              minScale: 0.35,
+              maxScale: 4,
               boundaryMargin: const EdgeInsets.all(160),
               child: SizedBox(
                 width: width,
@@ -832,16 +844,14 @@ class _MapCanvasState extends State<_MapCanvas> {
                 child: DragTarget<MapNode>(
                   onWillAcceptWithDetails: (_) => true,
                   onMove: (details) {
-                    final box = context.findRenderObject() as RenderBox?;
-                    if (box == null) return;
-                    final local = box.globalToLocal(details.offset);
+                    final local = _sceneOffsetFromGlobal(details.offset);
+                    if (local == null) return;
                     setState(() => _hoverCell = _cellAt(local, cellSize));
                   },
                   onLeave: (_) => setState(() => _hoverCell = null),
                   onAcceptWithDetails: (details) {
-                    final box = context.findRenderObject() as RenderBox?;
-                    if (box == null) return;
-                    final local = box.globalToLocal(details.offset);
+                    final local = _sceneOffsetFromGlobal(details.offset);
+                    if (local == null) return;
                     final cell = _cellAt(local, cellSize);
                     if (cell == null) return;
                     final existing = widget.map.nodes
@@ -899,6 +909,13 @@ class _MapCanvasState extends State<_MapCanvas> {
         );
       },
     );
+  }
+
+  Offset? _sceneOffsetFromGlobal(Offset globalOffset) {
+    final box = _viewerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    final viewportOffset = box.globalToLocal(globalOffset);
+    return _transformController.toScene(viewportOffset);
   }
 
   MapCell? _cellAt(Offset pos, double cellSize) {
@@ -1084,8 +1101,24 @@ class _MapCanvasPainter extends CustomPainter {
     for (final node in map.nodes) {
       final color = _conveyorColor(node.conveyorNumber, theme);
       final center = _center(node.cell);
-      final radius = cellSize * 0.34;
       final isConnectFrom = connectFromKey == node.key;
+      final fontSize = node.label.length > 5 ? 10.5 : 11.5;
+      final txt = TextPainter(
+        text: TextSpan(
+          text: node.label,
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: fontSize,
+              fontWeight: FontWeight.w900),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final radius = math
+          .min(
+            cellSize * 0.48,
+            math.max(cellSize * 0.40, txt.width / 2 + 8),
+          )
+          .toDouble();
 
       if (isConnectFrom) {
         canvas.drawCircle(center, radius + 8,
@@ -1100,16 +1133,6 @@ class _MapCanvasPainter extends CustomPainter {
           ..strokeWidth = 2
           ..color = isConnectFrom ? theme.text : theme.card,
       );
-      final txt = TextPainter(
-        text: TextSpan(
-          text: node.label,
-          style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10,
-              fontWeight: FontWeight.w900),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
       txt.paint(canvas,
           center - Offset(txt.width / 2, txt.height / 2));
     }

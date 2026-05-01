@@ -6,6 +6,7 @@
 // station's circle, which pulses blue.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -162,11 +163,13 @@ class _LocatorScreenState extends State<LocatorScreen>
                 padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
                 child: LayoutBuilder(builder: (context, c) {
                   final wide = c.maxWidth >= 880;
+                  final compact = c.maxWidth < 640;
                   final canvas = _MapCard(
                     map: map,
                     pulse: _pulse,
                     claimedKey: claimedKey,
                     badges: badges,
+                    compact: compact,
                   );
                   final side = _SidePanel(
                     factory: factory,
@@ -182,14 +185,24 @@ class _LocatorScreenState extends State<LocatorScreen>
                           SizedBox(width: 320, child: side),
                         ])
                       : Column(children: [
-                          Expanded(child: canvas),
-                          const SizedBox(height: 10),
-                          SizedBox(height: 200, child: side),
+                          Expanded(flex: compact ? 7 : 5, child: canvas),
+                          SizedBox(height: compact ? 8 : 10),
+                          SizedBox(
+                            height: compact ? 138 : 200,
+                            child: compact
+                                ? _MobileRoutePanel(
+                                    claim: claim,
+                                    claimedNode: claimedNode,
+                                    badges: badges,
+                                    map: map,
+                                  )
+                                : side,
+                          ),
                         ]);
                 }),
               ),
             ),
-            if (claim == null)
+            if (claim == null && MediaQuery.sizeOf(context).width >= 640)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -237,6 +250,87 @@ class _LocatorHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
+    final compact = MediaQuery.sizeOf(context).width < 640;
+    final pills = [
+      _Pill(
+          icon: Icons.pin_drop_outlined,
+          label: '$mapped mapped',
+          color: mapped > 0 ? t.green : t.muted),
+      _Pill(
+          icon: hasMap
+              ? Icons.check_circle_outline_rounded
+              : Icons.dashboard_outlined,
+          label: hasMap ? 'Map ready' : 'No map',
+          color: hasMap ? t.green : t.orange),
+      _Pill(
+          icon: hasClaim ? Icons.navigation_rounded : Icons.navigation_outlined,
+          label: hasClaim ? 'Route on' : 'No route',
+          color: hasClaim ? t.blue : t.muted),
+    ];
+
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [t.green, t.blue],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(Icons.map_rounded,
+                      color: Colors.white, size: 21),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Locator',
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                          )),
+                      Text(factory.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: t.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          )),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var i = 0; i < pills.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 6),
+                    pills[i],
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Row(
@@ -274,50 +368,60 @@ class _LocatorHeader extends StatelessWidget {
               ],
             ),
           ),
-          Wrap(
-            spacing: 8,
-            children: [
-              _Pill(
-                  icon: Icons.pin_drop_outlined,
-                  label: '$mapped mapped',
-                  color: mapped > 0 ? t.green : t.muted),
-              _Pill(
-                  icon: hasMap
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.dashboard_outlined,
-                  label: hasMap ? 'Map ready' : 'No map',
-                  color: hasMap ? t.green : t.orange),
-              _Pill(
-                  icon: hasClaim
-                      ? Icons.navigation_rounded
-                      : Icons.navigation_outlined,
-                  label: hasClaim ? 'Route on' : 'No route',
-                  color: hasClaim ? t.blue : t.muted),
-            ],
-          ),
+          Wrap(spacing: 8, children: pills),
         ],
       ),
     );
   }
 }
 
-class _MapCard extends StatelessWidget {
+class _MapCard extends StatefulWidget {
   final FactoryMap map;
   final AnimationController pulse;
   final String? claimedKey;
   final Map<String, LocatorNodeBadge> badges;
+  final bool compact;
 
   const _MapCard({
     required this.map,
     required this.pulse,
     required this.claimedKey,
     required this.badges,
+    required this.compact,
   });
+
+  @override
+  State<_MapCard> createState() => _MapCardState();
+}
+
+class _MapCardState extends State<_MapCard> {
+  late final TransformationController _controller = TransformationController();
+  Size? _viewportSize;
+  Size? _canvasSize;
+  double? _cellSize;
+  Object? _lastViewSignature;
+  bool _needsInitialView = true;
+
+  @override
+  void didUpdateWidget(covariant _MapCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.map != widget.map ||
+        oldWidget.claimedKey != widget.claimedKey ||
+        oldWidget.compact != widget.compact) {
+      _needsInitialView = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    if (map.isEmpty) {
+    if (widget.map.isEmpty) {
       return Container(
         decoration: BoxDecoration(
           color: t.card,
@@ -332,41 +436,268 @@ class _MapCard extends StatelessWidget {
         ),
       );
     }
-    return Container(
-      decoration: BoxDecoration(
-        color: t.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.border),
-        boxShadow: [
-          BoxShadow(
-            color:
-                Colors.black.withValues(alpha: context.isDark ? 0.22 : 0.07),
-            blurRadius: 22,
-            offset: const Offset(0, 8),
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportSize = Size(
+          constraints.maxWidth,
+          constraints.maxHeight,
+        );
+        final cellSize = widget.compact ? 56.0 : 42.0;
+        final canvasSize = Size(
+          math.max(viewportSize.width, widget.map.cols * cellSize),
+          math.max(viewportSize.height, widget.map.rows * cellSize),
+        );
+        _viewportSize = viewportSize;
+        _canvasSize = canvasSize;
+        _cellSize = cellSize;
+        _scheduleInitialView(viewportSize, canvasSize, cellSize);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: t.card,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: t.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black
+                    .withValues(alpha: context.isDark ? 0.22 : 0.07),
+                blurRadius: 22,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: InteractiveViewer(
-          minScale: 0.6,
-          maxScale: 4,
-          boundaryMargin: const EdgeInsets.all(120),
-          child: AnimatedBuilder(
-            animation: pulse,
-            builder: (context, _) {
-              return CustomPaint(
-                size: Size.infinite,
-                painter: FactoryMapLocatorPainter(
-                  map: map,
-                  theme: t,
-                  isDark: context.isDark,
-                  badges: badges,
-                  claimedNodeKey: claimedKey,
-                  pulse: pulse.value,
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: InteractiveViewer(
+                  transformationController: _controller,
+                  constrained: false,
+                  minScale: _minScale(viewportSize, canvasSize),
+                  maxScale: widget.compact ? 5 : 4,
+                  boundaryMargin: EdgeInsets.all(widget.compact ? 180 : 120),
+                  child: SizedBox(
+                    width: canvasSize.width,
+                    height: canvasSize.height,
+                    child: AnimatedBuilder(
+                      animation: widget.pulse,
+                      builder: (context, _) {
+                        return CustomPaint(
+                          size: canvasSize,
+                          painter: FactoryMapLocatorPainter(
+                            map: widget.map,
+                            theme: t,
+                            isDark: context.isDark,
+                            badges: widget.badges,
+                            claimedNodeKey: widget.claimedKey,
+                            pulse: widget.pulse.value,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
-              );
-            },
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: Column(
+                  children: [
+                    if (widget.claimedKey != null) ...[
+                      _MapControlButton(
+                        icon: Icons.my_location_rounded,
+                        tooltip: 'Focus route',
+                        onTap: _focusRouteFromLastLayout,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    _MapControlButton(
+                      icon: Icons.fit_screen_rounded,
+                      tooltip: 'Show full map',
+                      onTap: _showOverviewFromLastLayout,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _scheduleInitialView(Size viewport, Size canvas, double cellSize) {
+    final signature = Object.hash(
+      widget.map.factoryId,
+      widget.map.updatedAt,
+      widget.map.nodes.length,
+      widget.map.edges.length,
+      widget.claimedKey,
+      widget.compact,
+      viewport.width.round(),
+      viewport.height.round(),
+    );
+    if (!_needsInitialView && _lastViewSignature == signature) return;
+    _lastViewSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _lastViewSignature != signature) return;
+      _focusBest(viewport, canvas, cellSize);
+      _needsInitialView = false;
+    });
+  }
+
+  void _focusBest(Size viewport, Size canvas, double cellSize) {
+    if (!_focusRoute(viewport, canvas, cellSize)) {
+      _showOverview(viewport, canvas);
+    }
+  }
+
+  bool _focusRoute(Size viewport, Size canvas, double cellSize) {
+    final claimedKey = widget.claimedKey;
+    if (claimedKey == null) return false;
+    final target = widget.map.nodeByKey(claimedKey);
+    if (target == null) return false;
+
+    final points = <Offset>[_cellCenter(target.cell, canvas, cellSize)];
+    final entrance = widget.map.entrance;
+    if (entrance != null) {
+      points.add(_cellCenter(entrance, canvas, cellSize));
+    }
+
+    var bounds = Rect.fromCircle(center: points.first, radius: cellSize);
+    for (final point in points.skip(1)) {
+      bounds = bounds.expandToInclude(
+        Rect.fromCircle(center: point, radius: cellSize),
+      );
+    }
+    final padding = widget.compact ? cellSize * 2.0 : cellSize * 1.4;
+    final padded = bounds.inflate(padding);
+    final fitScale = math.min(
+      viewport.width / math.max(padded.width, 1),
+      viewport.height / math.max(padded.height, 1),
+    );
+    final scale = fitScale.clamp(
+      _minScale(viewport, canvas),
+      widget.compact ? 1.25 : 1.0,
+    ).toDouble();
+    _controller.value = _matrixFor(padded.center, viewport, canvas, scale);
+    return true;
+  }
+
+  void _showOverview(Size viewport, Size canvas) {
+    final fitScale = math.min(
+      viewport.width / math.max(canvas.width, 1),
+      viewport.height / math.max(canvas.height, 1),
+    );
+    final scale = fitScale.clamp(_minScale(viewport, canvas), 1.0).toDouble();
+    _controller.value = _matrixFor(
+      Offset(canvas.width / 2, canvas.height / 2),
+      viewport,
+      canvas,
+      scale,
+    );
+  }
+
+  void _focusRouteFromLastLayout() {
+    final viewport = _viewportSize;
+    final canvas = _canvasSize;
+    final cellSize = _cellSize;
+    if (viewport == null || canvas == null || cellSize == null) return;
+    _focusBest(viewport, canvas, cellSize);
+  }
+
+  void _showOverviewFromLastLayout() {
+    final viewport = _viewportSize;
+    final canvas = _canvasSize;
+    if (viewport == null || canvas == null) return;
+    _showOverview(viewport, canvas);
+  }
+
+  double _minScale(Size viewport, Size canvas) {
+    final fitScale = math.min(
+      viewport.width / math.max(canvas.width, 1),
+      viewport.height / math.max(canvas.height, 1),
+    );
+    return math
+        .min(fitScale, widget.compact ? 0.28 : 0.45)
+        .clamp(0.16, 1.0)
+        .toDouble();
+  }
+
+  Offset _cellCenter(MapCell cell, Size canvas, double cellSize) {
+    final ox = (canvas.width - widget.map.cols * cellSize) / 2;
+    final oy = (canvas.height - widget.map.rows * cellSize) / 2;
+    return Offset(
+      ox + cell.col * cellSize + cellSize / 2,
+      oy + cell.row * cellSize + cellSize / 2,
+    );
+  }
+
+  Matrix4 _matrixFor(
+    Offset center,
+    Size viewport,
+    Size canvas,
+    double scale,
+  ) {
+    final tx = _boundTranslation(
+      viewport.width / 2 - center.dx * scale,
+      viewport.width,
+      canvas.width,
+      scale,
+    );
+    final ty = _boundTranslation(
+      viewport.height / 2 - center.dy * scale,
+      viewport.height,
+      canvas.height,
+      scale,
+    );
+    return Matrix4.identity()
+      ..translateByDouble(tx, ty, 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1);
+  }
+
+  double _boundTranslation(
+    double value,
+    double viewportExtent,
+    double canvasExtent,
+    double scale,
+  ) {
+    final contentExtent = canvasExtent * scale;
+    if (contentExtent <= viewportExtent) {
+      return (viewportExtent - contentExtent) / 2;
+    }
+    return value.clamp(viewportExtent - contentExtent, 0).toDouble();
+  }
+}
+
+class _MapControlButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _MapControlButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: t.card.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(10),
+        elevation: 3,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Icon(icon, color: t.navy, size: 22),
           ),
         ),
       ),
@@ -507,6 +838,226 @@ class _SidePanel extends StatelessWidget {
                       );
                     }).toList(),
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileRoutePanel extends StatelessWidget {
+  final AlertModel? claim;
+  final MapNode? claimedNode;
+  final Map<String, LocatorNodeBadge> badges;
+  final FactoryMap map;
+
+  const _MobileRoutePanel({
+    required this.claim,
+    required this.claimedNode,
+    required this.badges,
+    required this.map,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final activeBadges = badges.entries.where((entry) {
+      return entry.value.status != LocatorNodeStatus.idle;
+    }).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.border),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        children: [
+          _mobileRouteCard(context),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 34,
+            child: activeBadges.isEmpty
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: _MobileStatusChip(
+                      label: 'All idle',
+                      color: t.green,
+                      icon: Icons.check_circle_outline_rounded,
+                    ),
+                  )
+                : ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: activeBadges.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 7),
+                    itemBuilder: (context, index) {
+                      final entry = activeBadges[index];
+                      final node = map.nodeByKey(entry.key);
+                      if (node == null) return const SizedBox.shrink();
+                      final badge = entry.value;
+                      final color = _badgeColor(badge.status, t);
+                      final number = badge.alertNumber;
+                      return _MobileStatusChip(
+                        label: number == null
+                            ? node.label
+                            : '${node.label} #$number',
+                        color: color,
+                        icon: _statusIcon(badge.status),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileRouteCard(BuildContext context) {
+    final t = context.appTheme;
+    final claim = this.claim;
+    final missingNode = claim != null && claimedNode == null;
+    final color = claim == null
+        ? t.orange
+        : missingNode
+            ? t.red
+            : t.blue;
+    final icon = claim == null
+        ? Icons.map_outlined
+        : missingNode
+            ? Icons.report_gmailerrorred_outlined
+            : Icons.navigation_rounded;
+    final title = claim == null
+        ? 'No active claim'
+        : missingNode
+            ? 'Station missing'
+            : 'Route to ${claimedNode!.label}';
+    final subtitle = claim == null
+        ? 'Claim an alert to unlock route focus.'
+        : missingNode
+            ? 'C${claim.convoyeur}S${claim.poste} is not on the map.'
+            : _typeLabel(claim.type);
+
+    final card = Container(
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: color, size: 27),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: t.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: t.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (claim != null && claim.alertNumber != 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: t.card,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: color.withValues(alpha: 0.25)),
+              ),
+              child: Text(
+                '#${claim.alertNumber}',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          if (claim != null) ...[
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right_rounded, color: t.muted),
+          ],
+        ],
+      ),
+    );
+
+    if (claim == null) return card;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => AlertDetailScreen(alertId: claim.id)),
+      ),
+      child: card,
+    );
+  }
+}
+
+class _MobileStatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  const _MobileStatusChip({
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: t.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ],
       ),
@@ -662,6 +1213,14 @@ Color _badgeColor(LocatorNodeStatus s, AppTheme t) => switch (s) {
       LocatorNodeStatus.inProgress => t.blue,
       LocatorNodeStatus.resolved => t.green,
       LocatorNodeStatus.idle => t.mutedDk,
+    };
+
+IconData _statusIcon(LocatorNodeStatus s) => switch (s) {
+      LocatorNodeStatus.critical => Icons.priority_high_rounded,
+      LocatorNodeStatus.available => Icons.notifications_active_outlined,
+      LocatorNodeStatus.inProgress => Icons.engineering_outlined,
+      LocatorNodeStatus.resolved => Icons.check_circle_outline_rounded,
+      LocatorNodeStatus.idle => Icons.radio_button_unchecked_rounded,
     };
 
 String _typeLabel(String type) => switch (type) {
