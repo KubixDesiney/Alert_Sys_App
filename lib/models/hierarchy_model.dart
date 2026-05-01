@@ -81,16 +81,12 @@ class Station {
   final String name;
   final String address;
   final String assetId;
-  final double? x;
-  final double? y;
 
   Station({
     required this.id,
     required this.name,
     required this.address,
     required this.assetId,
-    this.x,
-    this.y,
   });
 
   factory Station.fromMap(String id, Map<Object?, Object?> map) {
@@ -100,38 +96,14 @@ class Station {
           map['name']?.toString() ?? 'Station ${id.replaceAll('station_', '')}',
       address: map['address']?.toString() ?? '',
       assetId: map['assetId']?.toString().trim() ?? '',
-      x: _parseCoordinate(map['x']),
-      y: _parseCoordinate(map['y']),
     );
   }
 
-  bool get hasCoordinates => x != null && y != null;
-
   Map<String, dynamic> toMap() {
-    final map = <String, dynamic>{
+    return {
       'name': name,
       'address': address,
       'assetId': assetId,
     };
-    if (x != null) map['x'] = x;
-    if (y != null) map['y'] = y;
-    return map;
   }
-
-  static double? _parseCoordinate(Object? value) {
-    if (value is num) return value.toDouble();
-    if (value is String) {
-      return double.tryParse(value.trim().replaceAll(',', '.'));
-    }
-    return null;
-  }
-}
-
-class StationCoordinates {
-  final double? x;
-  final double? y;
-
-  const StationCoordinates({this.x, this.y});
-
-  bool get isEmpty => x == null && y == null;
 }
