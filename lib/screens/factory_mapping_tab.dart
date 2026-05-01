@@ -655,7 +655,7 @@ class _StationPalette extends StatelessWidget {
                               children: stations.map((s) {
                                 final stationNumber = _stationNum(s);
                                 final node = MapNode(
-                                  key: '${c.id}/${s.id}',
+                                  key: MapNode.composeKey(c.id, s.id),
                                   conveyorId: c.id,
                                   stationId: s.id,
                                   conveyorNumber: c.number,

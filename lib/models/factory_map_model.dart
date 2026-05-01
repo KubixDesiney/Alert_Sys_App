@@ -40,7 +40,7 @@ class MapCell {
 
 @immutable
 class MapNode {
-  /// `${conveyorId}/${stationId}` - unique within a factory map.
+  /// Firebase-safe unique key for a station node in the map.
   final String key;
   final String conveyorId;
   final String stationId;
@@ -59,6 +59,26 @@ class MapNode {
 
   String get label => 'C${conveyorNumber}S$stationNumber';
 
+  static String composeKey(String conveyorId, String stationId) =>
+      '${conveyorId}|${stationId}';
+
+  static String _normalizeKey(
+    String rawKey,
+    String conveyorId,
+    String stationId,
+  ) {
+    if (conveyorId.isNotEmpty && stationId.isNotEmpty) {
+      return composeKey(conveyorId, stationId);
+    }
+    if (rawKey.contains('/')) {
+      final parts = rawKey.split('/');
+      if (parts.length == 2) {
+        return composeKey(parts[0], parts[1]);
+      }
+    }
+    return rawKey;
+  }
+
   MapNode copyWith({MapCell? cell}) => MapNode(
         key: key,
         conveyorId: conveyorId,
@@ -72,7 +92,7 @@ class MapNode {
     final conveyorId = map['conveyorId']?.toString() ?? '';
     final stationId = map['stationId']?.toString() ?? '';
     return MapNode(
-      key: key,
+      key: _normalizeKey(key, conveyorId, stationId),
       conveyorId: conveyorId,
       stationId: stationId,
       conveyorNumber: (map['conveyorNumber'] as num?)?.toInt() ??
@@ -202,11 +222,14 @@ class FactoryMap {
         entranceData is Map ? MapCell.fromMap(entranceData) : null;
 
     final nodes = <MapNode>[];
+    final keyAliases = <String, String>{};
     final nodesData = map['nodes'];
     if (nodesData is Map) {
       Map<Object?, Object?>.from(nodesData).forEach((k, v) {
         if (k is! String || v is! Map) return;
-        nodes.add(MapNode.fromMap(k, Map<Object?, Object?>.from(v)));
+        final node = MapNode.fromMap(k, Map<Object?, Object?>.from(v));
+        nodes.add(node);
+        keyAliases[k] = node.key;
       });
     } else if (nodesData is List) {
       for (final v in nodesData) {
@@ -214,7 +237,9 @@ class FactoryMap {
         final m = Map<Object?, Object?>.from(v);
         final key = m['key']?.toString();
         if (key == null) continue;
-        nodes.add(MapNode.fromMap(key, m));
+        final node = MapNode.fromMap(key, m);
+        nodes.add(node);
+        keyAliases[key] = node.key;
       }
     }
 
@@ -222,11 +247,27 @@ class FactoryMap {
     final edgesData = map['edges'];
     if (edgesData is List) {
       for (final v in edgesData) {
-        if (v is Map) edges.add(MapEdge.fromMap(Map<Object?, Object?>.from(v)));
+        if (v is! Map) continue;
+        final edge = MapEdge.fromMap(Map<Object?, Object?>.from(v));
+        edges.add(
+          MapEdge(
+            fromKey: keyAliases[edge.fromKey] ?? edge.fromKey,
+            toKey: keyAliases[edge.toKey] ?? edge.toKey,
+            conveyorNumber: edge.conveyorNumber,
+          ),
+        );
       }
     } else if (edgesData is Map) {
       Map<Object?, Object?>.from(edgesData).forEach((_, v) {
-        if (v is Map) edges.add(MapEdge.fromMap(Map<Object?, Object?>.from(v)));
+        if (v is! Map) return;
+        final edge = MapEdge.fromMap(Map<Object?, Object?>.from(v));
+        edges.add(
+          MapEdge(
+            fromKey: keyAliases[edge.fromKey] ?? edge.fromKey,
+            toKey: keyAliases[edge.toKey] ?? edge.toKey,
+            conveyorNumber: edge.conveyorNumber,
+          ),
+        );
       });
     }
 
