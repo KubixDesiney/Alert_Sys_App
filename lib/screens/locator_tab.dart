@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/alert_model.dart';
@@ -45,6 +46,7 @@ class _LocatorScreenState extends State<LocatorScreen>
   List<Factory> _factories = const [];
   FactoryMap? _map;
   String? _trackedFactoryId;
+  MapCell? _supervisorPosition;
 
   @override
   void initState() {
@@ -93,6 +95,7 @@ class _LocatorScreenState extends State<LocatorScreen>
     _trackedFactoryId = factoryId;
     _mapSub?.cancel();
     _map = null;
+    _supervisorPosition = null;
     _mapSub = _service.streamFactoryMap(factoryId).listen((m) {
       if (!mounted) return;
       setState(() => _map = m);
@@ -132,8 +135,7 @@ class _LocatorScreenState extends State<LocatorScreen>
               a.convoyeur == node.conveyorNumber &&
               a.poste == node.stationNumber)
           .toList()
-        ..sort((a, b) =>
-            _alertPriority(b).compareTo(_alertPriority(a)));
+        ..sort((a, b) => _alertPriority(b).compareTo(_alertPriority(a)));
       if (stationAlerts.isEmpty) continue;
       final top = stationAlerts.first;
       badges[node.key] = LocatorNodeBadge(
@@ -143,9 +145,8 @@ class _LocatorScreenState extends State<LocatorScreen>
       );
     }
 
-    final claimedNode = claim == null
-        ? null
-        : map.nodeForStation(claim.convoyeur, claim.poste);
+    final claimedNode =
+        claim == null ? null : map.nodeForStation(claim.convoyeur, claim.poste);
     final claimedKey = claimedNode?.key;
 
     return Container(
@@ -172,6 +173,14 @@ class _LocatorScreenState extends State<LocatorScreen>
                     claimedKey: claimedKey,
                     badges: badges,
                     compact: compact,
+                    supervisorPosition: _supervisorPosition,
+                    onSupervisorPositionChanged: (cell) {
+                      setState(() => _supervisorPosition = cell);
+                      HapticFeedback.mediumImpact();
+                    },
+                    onSupervisorPositionCleared: () {
+                      setState(() => _supervisorPosition = null);
+                    },
                   );
                   final side = _SidePanel(
                     factory: factory,
@@ -197,6 +206,7 @@ class _LocatorScreenState extends State<LocatorScreen>
                                     claimedNode: claimedNode,
                                     badges: badges,
                                     map: map,
+                                    supervisorPosition: _supervisorPosition,
                                   )
                                 : side,
                           ),
@@ -383,6 +393,9 @@ class _MapCard extends StatefulWidget {
   final String? claimedKey;
   final Map<String, LocatorNodeBadge> badges;
   final bool compact;
+  final MapCell? supervisorPosition;
+  final ValueChanged<MapCell> onSupervisorPositionChanged;
+  final VoidCallback onSupervisorPositionCleared;
 
   const _MapCard({
     required this.map,
@@ -390,6 +403,9 @@ class _MapCard extends StatefulWidget {
     required this.claimedKey,
     required this.badges,
     required this.compact,
+    required this.supervisorPosition,
+    required this.onSupervisorPositionChanged,
+    required this.onSupervisorPositionCleared,
   });
 
   @override
@@ -409,6 +425,7 @@ class _MapCardState extends State<_MapCard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.map != widget.map ||
         oldWidget.claimedKey != widget.claimedKey ||
+        oldWidget.supervisorPosition != widget.supervisorPosition ||
         oldWidget.compact != widget.compact) {
       _needsInitialView = true;
     }
@@ -482,21 +499,30 @@ class _MapCardState extends State<_MapCard> {
                   child: SizedBox(
                     width: canvasSize.width,
                     height: canvasSize.height,
-                    child: AnimatedBuilder(
-                      animation: widget.pulse,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          size: canvasSize,
-                          painter: FactoryMapLocatorPainter(
-                            map: widget.map,
-                            theme: t,
-                            isDark: context.isDark,
-                            badges: widget.badges,
-                            claimedNodeKey: widget.claimedKey,
-                            pulse: widget.pulse.value,
-                          ),
-                        );
-                      },
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onLongPressStart: (details) => _setPositionFromScene(
+                        details.localPosition,
+                        canvasSize,
+                        cellSize,
+                      ),
+                      child: AnimatedBuilder(
+                        animation: widget.pulse,
+                        builder: (context, _) {
+                          return CustomPaint(
+                            size: canvasSize,
+                            painter: FactoryMapLocatorPainter(
+                              map: widget.map,
+                              theme: t,
+                              isDark: context.isDark,
+                              badges: widget.badges,
+                              claimedNodeKey: widget.claimedKey,
+                              routeStart: widget.supervisorPosition,
+                              pulse: widget.pulse.value,
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -514,12 +540,27 @@ class _MapCardState extends State<_MapCard> {
                       ),
                       const SizedBox(height: 8),
                     ],
+                    if (widget.supervisorPosition != null) ...[
+                      _MapControlButton(
+                        icon: Icons.home_work_outlined,
+                        tooltip: 'Use entrance',
+                        onTap: widget.onSupervisorPositionCleared,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     _MapControlButton(
                       icon: Icons.fit_screen_rounded,
                       tooltip: 'Show full map',
                       onTap: _showOverviewFromLastLayout,
                     ),
                   ],
+                ),
+              ),
+              Positioned(
+                left: 10,
+                bottom: 10,
+                child: _RouteStartChip(
+                  usingCustomPosition: widget.supervisorPosition != null,
                 ),
               ),
             ],
@@ -536,6 +577,7 @@ class _MapCardState extends State<_MapCard> {
       widget.map.nodes.length,
       widget.map.edges.length,
       widget.claimedKey,
+      widget.supervisorPosition,
       widget.compact,
       viewport.width.round(),
       viewport.height.round(),
@@ -562,9 +604,9 @@ class _MapCardState extends State<_MapCard> {
     if (target == null) return false;
 
     final points = <Offset>[_cellCenter(target.cell, canvas, cellSize)];
-    final entrance = widget.map.entrance;
-    if (entrance != null) {
-      points.add(_cellCenter(entrance, canvas, cellSize));
+    final start = widget.supervisorPosition ?? widget.map.entrance;
+    if (start != null) {
+      points.add(_cellCenter(start, canvas, cellSize));
     }
 
     var bounds = Rect.fromCircle(center: points.first, radius: cellSize);
@@ -579,10 +621,12 @@ class _MapCardState extends State<_MapCard> {
       viewport.width / math.max(padded.width, 1),
       viewport.height / math.max(padded.height, 1),
     );
-    final scale = fitScale.clamp(
-      _minScale(viewport, canvas),
-      widget.compact ? 1.25 : 1.0,
-    ).toDouble();
+    final scale = fitScale
+        .clamp(
+          _minScale(viewport, canvas),
+          widget.compact ? 1.25 : 1.0,
+        )
+        .toDouble();
     _controller.value = _matrixFor(padded.center, viewport, canvas, scale);
     return true;
   }
@@ -614,6 +658,24 @@ class _MapCardState extends State<_MapCard> {
     final canvas = _canvasSize;
     if (viewport == null || canvas == null) return;
     _showOverview(viewport, canvas);
+  }
+
+  void _setPositionFromScene(Offset sceneOffset, Size canvas, double cellSize) {
+    final cell = _cellAtScene(sceneOffset, canvas, cellSize);
+    if (cell == null) return;
+    widget.onSupervisorPositionChanged(cell);
+  }
+
+  MapCell? _cellAtScene(Offset sceneOffset, Size canvas, double cellSize) {
+    final ox = (canvas.width - widget.map.cols * cellSize) / 2;
+    final oy = (canvas.height - widget.map.rows * cellSize) / 2;
+    final local = sceneOffset - Offset(ox, oy);
+    if (local.dx < 0 || local.dy < 0) return null;
+    final col = (local.dx / cellSize).floor();
+    final row = (local.dy / cellSize).floor();
+    if (row < 0 || col < 0) return null;
+    if (row >= widget.map.rows || col >= widget.map.cols) return null;
+    return MapCell(row, col);
   }
 
   double _minScale(Size viewport, Size canvas) {
@@ -707,6 +769,54 @@ class _MapControlButton extends StatelessWidget {
   }
 }
 
+class _RouteStartChip extends StatelessWidget {
+  final bool usingCustomPosition;
+
+  const _RouteStartChip({required this.usingCustomPosition});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final color = usingCustomPosition ? t.blue : t.green;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: t.card.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: context.isDark ? 0.24 : 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            usingCustomPosition
+                ? Icons.person_pin_circle_outlined
+                : Icons.door_front_door_outlined,
+            size: 17,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            usingCustomPosition ? 'Start: You' : 'Start: Entrance',
+            style: TextStyle(
+              color: t.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SidePanel extends StatelessWidget {
   final Factory factory;
   final AlertModel? claim;
@@ -770,10 +880,9 @@ class _SidePanel extends StatelessWidget {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                        color: t.card,
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Icon(Icons.navigation_rounded,
-                        color: t.blue, size: 26),
+                        color: t.card, borderRadius: BorderRadius.circular(10)),
+                    child:
+                        Icon(Icons.navigation_rounded, color: t.blue, size: 26),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -834,8 +943,7 @@ class _SidePanel extends StatelessWidget {
                           ),
                           if (e.value.alertNumber != null)
                             Text('#${e.value.alertNumber}',
-                                style: TextStyle(
-                                    color: t.muted, fontSize: 11)),
+                                style: TextStyle(color: t.muted, fontSize: 11)),
                         ]),
                       );
                     }).toList(),
@@ -852,12 +960,14 @@ class _MobileRoutePanel extends StatelessWidget {
   final MapNode? claimedNode;
   final Map<String, LocatorNodeBadge> badges;
   final FactoryMap map;
+  final MapCell? supervisorPosition;
 
   const _MobileRoutePanel({
     required this.claim,
     required this.claimedNode,
     required this.badges,
     required this.map,
+    required this.supervisorPosition,
   });
 
   @override
@@ -934,11 +1044,13 @@ class _MobileRoutePanel extends StatelessWidget {
         : missingNode
             ? 'Station missing'
             : 'Route to ${claimedNode!.label}';
+    final startLabel =
+        supervisorPosition == null ? 'Entrance' : 'Your position';
     final subtitle = claim == null
         ? 'Claim an alert to unlock route focus.'
         : missingNode
             ? 'C${claim.convoyeur}S${claim.poste} is not on the map.'
-            : _typeLabel(claim.type);
+            : '$startLabel -> ${_typeLabel(claim.type)}';
 
     final card = Container(
       height: 76,
@@ -1178,8 +1290,7 @@ class _Empty extends StatelessWidget {
 
 AlertModel? _activeClaim(List<AlertModel> alerts, String supervisorId) {
   final claims = alerts
-      .where((a) =>
-          a.status == 'en_cours' && a.superviseurId == supervisorId)
+      .where((a) => a.status == 'en_cours' && a.superviseurId == supervisorId)
       .toList()
     ..sort((a, b) {
       final at = a.takenAtTimestamp ?? a.timestamp;
