@@ -13,6 +13,7 @@ import '../theme.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'alert_scan_screen.dart';
+import 'locator_tab.dart';
 import '../widgets/voice_command_button.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
@@ -129,7 +130,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             usine: _usine,
             onLogout: _logout,
           ),
-          AlertScanScreen(isActive: _currentPage == 1),
+          LocatorScreen(supervisorId: _superviseurId, factoryName: _usine),
+          AlertScanScreen(isActive: _currentPage == 2),
           const CollaborationProgressScreen(),
         ],
       ),
@@ -2710,16 +2712,22 @@ class _DashboardBottomNav extends StatelessWidget {
                 onTap: () => onTap(0),
               ),
               _NavBtn(
-                icon: Icons.qr_code_scanner,
-                label: 'Alert Scan',
+                icon: Icons.map,
+                label: 'Locator',
                 selected: currentIndex == 1,
                 onTap: () => onTap(1),
               ),
               _NavBtn(
-                icon: Icons.handshake,
-                label: 'Collab Progress',
+                icon: Icons.qr_code_scanner,
+                label: 'Alert Scan',
                 selected: currentIndex == 2,
                 onTap: () => onTap(2),
+              ),
+              _NavBtn(
+                icon: Icons.handshake,
+                label: 'Collab Progress',
+                selected: currentIndex == 3,
+                onTap: () => onTap(3),
               ),
             ],
           ),
