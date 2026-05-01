@@ -2,11 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
-import 'package:http/http.dart' as http;
 import 'fcm_service.dart';
-
-const String _workerBaseUrl =
-    'https://alert-notifier.aziz-nagati01.workers.dev';
+import 'offline_account_cache.dart';
+import 'worker_trigger_queue.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -27,6 +25,20 @@ class AuthService {
           'lastSeen': DateTime.now().toIso8601String(),
         };
         await _db.child('users/$uid').update(updates);
+        try {
+          final accountSnapshot = await _db.child('users/$uid').get();
+          if (accountSnapshot.value is Map) {
+            final account =
+                Map<String, dynamic>.from(accountSnapshot.value as Map);
+            await OfflineAccountCache.save(
+              uid: uid,
+              role: account['role']?.toString(),
+              usine: account['usine']?.toString(),
+            );
+          }
+        } catch (e) {
+          debugPrint('AuthService.login: account cache skipped: $e');
+        }
         // Initialize FCM after sign-in
         if (!kIsWeb) {
           try {
@@ -36,8 +48,8 @@ class AuthService {
           }
         }
         // Trigger AI retry: a newly-active supervisor may be the one
-        // needed to cover unassigned alerts. Fire-and-forget.
-        http.post(Uri.parse('$_workerBaseUrl/ai-retry')).ignore();
+        // needed to cover unassigned alerts.
+        await WorkerTriggerQueue.instance.enqueueAiRetry();
       } else {
         debugPrint('AuthService.login: sign-in returned null uid');
       }
@@ -172,7 +184,7 @@ class AuthService {
           .set(claimantNotification);
     }
 
-    http.post(Uri.parse('$_workerBaseUrl/notify')).ignore();
+    await WorkerTriggerQueue.instance.enqueueNotify();
   }
 
   Future<void> assignSupervisorToAlert(

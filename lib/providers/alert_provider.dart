@@ -1,16 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
 import '../models/alert_model.dart';
 import '../services/alert_service.dart';
 import '../services/ai_service.dart';
+import '../services/worker_trigger_queue.dart';
 import 'package:rxdart/rxdart.dart';
-
-const String _aiRetryUrl =
-    'https://alert-notifier.aziz-nagati01.workers.dev/ai-retry';
-const String _notifyUrl =
-    'https://alert-notifier.aziz-nagati01.workers.dev/notify';
 
 class AlertProvider extends ChangeNotifier {
   final AlertService _service = AlertService();
@@ -342,7 +337,7 @@ class AlertProvider extends ChangeNotifier {
       assistingSupervisorName: alert.superviseurName,
     );
     // Supervisor is now free — trigger AI to assign the next waiting alert.
-    http.post(Uri.parse(_aiRetryUrl)).ignore();
+    await WorkerTriggerQueue.instance.enqueueAiRetry();
   }
 
   Future<void> addComment(String alertId, String comment) async {
@@ -392,7 +387,7 @@ class AlertProvider extends ChangeNotifier {
       }
     }
     // Trigger FCM fan-out so recipients get a push immediately.
-    http.post(Uri.parse(_notifyUrl)).ignore();
+    await WorkerTriggerQueue.instance.enqueueNotify();
   }
 
   Future<void> acceptAssistance(String alertId) async {
