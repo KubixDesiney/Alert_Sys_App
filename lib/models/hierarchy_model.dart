@@ -80,18 +80,22 @@ class Station {
   final String id;
   final String name;
   final String address;
+  final String assetId;
 
   Station({
     required this.id,
     required this.name,
     required this.address,
+    required this.assetId,
   });
 
   factory Station.fromMap(String id, Map<Object?, Object?> map) {
     return Station(
       id: id,
-      name: map['name']?.toString() ?? 'Station ${id.replaceAll('station_', '')}',
+      name:
+          map['name']?.toString() ?? 'Station ${id.replaceAll('station_', '')}',
       address: map['address']?.toString() ?? '',
+      assetId: map['assetId']?.toString().trim() ?? '',
     );
   }
 
@@ -99,6 +103,7 @@ class Station {
     return {
       'name': name,
       'address': address,
+      'assetId': assetId,
     };
   }
 }

@@ -10,6 +10,7 @@ class AlertModel {
   final int convoyeur;
   final int poste;
   final String adresse;
+  final String? assetId;
   final DateTime timestamp;
   final String description;
   final String? assistantId;
@@ -50,6 +51,7 @@ class AlertModel {
     required this.convoyeur,
     required this.poste,
     required this.adresse,
+    this.assetId,
     required this.timestamp,
     required this.description,
     this.isEscalated = false,
@@ -92,6 +94,8 @@ class AlertModel {
             .map((e) => Map<String, String>.from(e as Map))
             .toList()
         : null;
+    final rawAssetId = data['assetId'] ?? data['asset_id'] ?? data['machineId'];
+    final assetId = rawAssetId?.toString().trim();
     return AlertModel(
       id: id,
       alertNumber: (data['alertNumber'] as num?)?.toInt() ?? 0,
@@ -102,6 +106,7 @@ class AlertModel {
       convoyeur: (data['convoyeur'] as num?)?.toInt() ?? 1,
       poste: (data['poste'] as num?)?.toInt() ?? 1,
       adresse: data['adresse'] ?? data['poste_id'] ?? '',
+      assetId: assetId == null || assetId.isEmpty ? null : assetId,
       timestamp: _parseDate(data['timestamp']),
       description: data['description'] ?? data['message'] ?? '',
       assistantId: data['assistantId'],
@@ -151,6 +156,7 @@ class AlertModel {
         'convoyeur': convoyeur,
         'poste': poste,
         'adresse': adresse,
+        'assetId': assetId,
         'timestamp': timestamp.toIso8601String(),
         'description': description,
         'assistantId': assistantId,
@@ -205,6 +211,7 @@ class AlertModel {
     DateTime? resolvedAt,
     String? assistantId,
     String? assistantName,
+    String? assetId,
     String? helpRequestId,
     String? helpRequesterId,
     String? helpRequesterName,
@@ -234,6 +241,7 @@ class AlertModel {
         convoyeur: convoyeur,
         poste: poste,
         adresse: adresse,
+        assetId: assetId ?? this.assetId,
         timestamp: timestamp,
         description: description,
         assistantId: assistantId ?? this.assistantId,

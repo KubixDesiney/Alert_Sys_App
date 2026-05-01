@@ -117,6 +117,7 @@ class _ArInstructionScreenState extends State<ArInstructionScreen> {
       usine: loc.usine,
       convoyeur: loc.convoyeur,
       poste: loc.poste,
+      assetId: loc.assetId,
     )
         .listen(
       _onAlertChanged,
@@ -332,11 +333,13 @@ class _ArInstructionScreenState extends State<ArInstructionScreen> {
 // QR payload
 // =============================================================================
 class _ScannedLocation {
+  final String? assetId;
   final String usine;
   final int convoyeur;
   final int poste;
 
   const _ScannedLocation({
+    this.assetId,
     required this.usine,
     required this.convoyeur,
     required this.poste,
@@ -346,11 +349,15 @@ class _ScannedLocation {
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return null;
+      final rawAssetId =
+          decoded['assetId'] ?? decoded['asset_id'] ?? decoded['machineId'];
+      final assetId = rawAssetId?.toString().trim();
       final usine = decoded['usine']?.toString();
       final convoyeur = (decoded['convoyeur'] as num?)?.toInt();
       final poste = (decoded['poste'] as num?)?.toInt();
       if (usine == null || convoyeur == null || poste == null) return null;
       return _ScannedLocation(
+        assetId: assetId == null || assetId.isEmpty ? null : assetId,
         usine: usine,
         convoyeur: convoyeur,
         poste: poste,
@@ -361,7 +368,10 @@ class _ScannedLocation {
   }
 
   @override
-  String toString() => '$usine • Conveyor $convoyeur • Post $poste';
+  String toString() {
+    final assetPrefix = assetId == null ? '' : '$assetId - ';
+    return '$assetPrefix$usine - Conveyor $convoyeur - Post $poste';
+  }
 }
 
 // =============================================================================

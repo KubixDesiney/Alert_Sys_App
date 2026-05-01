@@ -82,6 +82,8 @@ class AlertService {
     // Allocate a short, speakable alert number BEFORE writing the alert
     // so it's present from the first stream tick (no UI flicker from 0 → N).
     final number = await nextAlertNumber();
+    final assetId =
+        await hierarchyService.getAssetIdForLocation(usine, convoyeur, poste);
 
     // Create the alert (same as before)
     final ref = _db.child('alerts').push();
@@ -94,6 +96,7 @@ class AlertService {
       'convoyeur': convoyeur,
       'poste': poste,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
+      if (assetId != null) 'assetId': assetId,
       'timestamp': now.toIso8601String(),
       'description':
           description.trim().isEmpty ? _defaultDescription(type) : description,

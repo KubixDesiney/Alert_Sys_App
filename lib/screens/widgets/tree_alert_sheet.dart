@@ -72,13 +72,18 @@ class _TreeAlertSheet extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       alert.description,
-                      style: TextStyle(color: t.text, fontSize: 14, height: 1.4),
+                      style:
+                          TextStyle(color: t.text, fontSize: 14, height: 1.4),
                     ),
                     const SizedBox(height: 14),
                   ],
                   _section(t, 'Location & Timing'),
                   const SizedBox(height: 6),
                   _wrap([
+                    if (alert.assetId != null && alert.assetId!.isNotEmpty)
+                      _chip(t, Icons.precision_manufacturing_outlined,
+                          alert.assetId!,
+                          tone: t.navy),
                     _chip(t, Icons.factory, alert.usine),
                     _chip(t, Icons.linear_scale, 'Conveyor ${alert.convoyeur}'),
                     _chip(t, Icons.settings, 'Post ${alert.poste}'),
@@ -313,8 +318,7 @@ class _TreeAlertSheet extends StatelessWidget {
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     )),
-                Text(role,
-                    style: TextStyle(color: t.muted, fontSize: 11)),
+                Text(role, style: TextStyle(color: t.muted, fontSize: 11)),
               ],
             ),
           ),
@@ -452,12 +456,14 @@ class _TreeAlertSheet extends StatelessWidget {
     );
   }
 
-  String _shortId(String id) =>
-      id.length <= 8 ? id : '${id.substring(0, 4)}…${id.substring(id.length - 4)}';
+  String _shortId(String id) => id.length <= 8
+      ? id
+      : '${id.substring(0, 4)}…${id.substring(id.length - 4)}';
 
   String _formatDateTime(DateTime dt) {
     final now = DateTime.now();
-    return DateFormat(dt.year == now.year ? 'MMM d, h:mm a' : 'MMM d yyyy, h:mm a')
+    return DateFormat(
+            dt.year == now.year ? 'MMM d, h:mm a' : 'MMM d yyyy, h:mm a')
         .format(dt);
   }
 

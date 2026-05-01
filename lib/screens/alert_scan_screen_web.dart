@@ -82,6 +82,7 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
       usine: loc.usine,
       convoyeur: loc.convoyeur,
       poste: loc.poste,
+      assetId: loc.assetId,
     )
         .listen(
       (alerts) {
@@ -157,10 +158,12 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
 }
 
 class _ScannedLocation {
+  final String? assetId;
   final String usine;
   final int convoyeur;
   final int poste;
   const _ScannedLocation({
+    this.assetId,
     required this.usine,
     required this.convoyeur,
     required this.poste,
@@ -198,6 +201,12 @@ class _ScannedLocation {
   }
 
   static _ScannedLocation? _fromMap(Map<Object?, Object?> data) {
+    final assetId = _firstString(data, const [
+      'assetId',
+      'asset_id',
+      'machineId',
+      'machine_id',
+    ]);
     final encodedLocation = _firstString(data, const [
       'adresse',
       'address',
@@ -207,7 +216,14 @@ class _ScannedLocation {
     if (encodedLocation != null) {
       final loc =
           _fromAddress(encodedLocation) ?? _fromLocationKey(encodedLocation);
-      if (loc != null) return loc;
+      if (loc != null) {
+        return _ScannedLocation(
+          assetId: assetId,
+          usine: loc.usine,
+          convoyeur: loc.convoyeur,
+          poste: loc.poste,
+        );
+      }
     }
     final usine = _firstString(data, const [
       'usine',
@@ -232,7 +248,12 @@ class _ScannedLocation {
       'workstationNumber',
     ]);
     if (usine == null || convoyeur == null || poste == null) return null;
-    return _ScannedLocation(usine: usine, convoyeur: convoyeur, poste: poste);
+    return _ScannedLocation(
+      assetId: assetId,
+      usine: usine,
+      convoyeur: convoyeur,
+      poste: poste,
+    );
   }
 
   static _ScannedLocation? _fromAddress(String raw) {
@@ -280,7 +301,10 @@ class _ScannedLocation {
   }
 
   @override
-  String toString() => '$usine - Conveyor $convoyeur - Post $poste';
+  String toString() {
+    final assetPrefix = assetId == null ? '' : '$assetId - ';
+    return '$assetPrefix$usine - Conveyor $convoyeur - Post $poste';
+  }
 }
 
 class _Header extends StatelessWidget {
