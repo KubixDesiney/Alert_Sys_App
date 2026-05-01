@@ -1,11 +1,17 @@
+// lib/screens/locator_tab.dart
+//
+// Supervisor-facing locator. Renders the FactoryMap built by the production
+// manager (live, via streamFactoryMap). When the supervisor has claimed an
+// alert, an animated blue arrow runs from the factory entrance to that
+// station's circle, which pulses blue.
+
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/alert_model.dart';
+import '../models/factory_map_model.dart';
 import '../models/hierarchy_model.dart';
 import '../providers/alert_provider.dart';
 import '../services/hierarchy_service.dart';
@@ -29,340 +35,158 @@ class LocatorScreen extends StatefulWidget {
 
 class _LocatorScreenState extends State<LocatorScreen>
     with SingleTickerProviderStateMixin {
-  final HierarchyService _hierarchyService = HierarchyService();
-  late final AnimationController _pulseController;
-  Offset? _manualPosition;
-  bool _loadingManualPosition = true;
+  final HierarchyService _service = HierarchyService();
+  late final AnimationController _pulse;
+  StreamSubscription<List<Factory>>? _factoriesSub;
+  StreamSubscription<FactoryMap>? _mapSub;
+  List<Factory> _factories = const [];
+  FactoryMap? _map;
+  String? _trackedFactoryId;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
+    _pulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 1800),
     )..repeat();
-    unawaited(_loadManualPosition());
-  }
-
-  @override
-  void didUpdateWidget(covariant LocatorScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.factoryName != widget.factoryName) {
-      unawaited(_loadManualPosition());
-    }
+    _factoriesSub = _service.getFactories().listen((list) {
+      if (!mounted) return;
+      setState(() => _factories = list);
+    });
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _pulse.dispose();
+    _factoriesSub?.cancel();
+    _mapSub?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadManualPosition() async {
-    setState(() => _loadingManualPosition = true);
-    final prefs = await SharedPreferences.getInstance();
-    final x = prefs.getDouble(_manualXKey);
-    final y = prefs.getDouble(_manualYKey);
-    if (!mounted) return;
-    setState(() {
-      _manualPosition = x == null || y == null ? null : Offset(x, y);
-      _loadingManualPosition = false;
+  Factory? _resolveFactory(AlertModel? claim) {
+    final factories = _factories;
+    if (claim != null) {
+      for (final f in factories) {
+        if (_matches(f, claim.usine)) return f;
+      }
+    }
+    for (final f in factories) {
+      if (_matches(f, widget.factoryName)) return f;
+    }
+    return factories.isEmpty ? null : factories.first;
+  }
+
+  bool _matches(Factory f, String value) {
+    final n = _normalize(value);
+    return n == _normalize(f.id) || n == _normalize(f.name);
+  }
+
+  String _normalize(String v) =>
+      v.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
+  void _ensureMapStream(String factoryId) {
+    if (_trackedFactoryId == factoryId) return;
+    _trackedFactoryId = factoryId;
+    _mapSub?.cancel();
+    _map = null;
+    _mapSub = _service.streamFactoryMap(factoryId).listen((m) {
+      if (!mounted) return;
+      setState(() => _map = m);
     });
   }
-
-  Future<void> _saveManualPosition(Offset? position) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (position == null) {
-      await prefs.remove(_manualXKey);
-      await prefs.remove(_manualYKey);
-    } else {
-      await prefs.setDouble(_manualXKey, position.dx);
-      await prefs.setDouble(_manualYKey, position.dy);
-    }
-    if (!mounted) return;
-    setState(() => _manualPosition = position);
-  }
-
-  String get _manualKeyPrefix {
-    return widget.factoryName.trim().toLowerCase().replaceAll(
-          RegExp(r'[^a-z0-9]+'),
-          '_',
-        );
-  }
-
-  String get _manualXKey => 'locator_${_manualKeyPrefix}_manual_x';
-  String get _manualYKey => 'locator_${_manualKeyPrefix}_manual_y';
-
-  @override
-  Widget build(BuildContext context) {
-    final alerts = context.watch<AlertProvider>().allAlerts;
-    final myClaim = _activeClaimForSupervisor(alerts, widget.supervisorId);
-
-    return Container(
-      color: context.appTheme.scaffold,
-      child: SafeArea(
-        bottom: false,
-        child: StreamBuilder<List<Factory>>(
-          stream: _hierarchyService.getFactories(),
-          builder: (context, snapshot) {
-            final factories = snapshot.data ?? const <Factory>[];
-            final factory = _resolveFactory(factories, myClaim);
-
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                factory == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (factory == null) {
-              return _LocatorEmptyState(
-                icon: Icons.factory_outlined,
-                title: 'Factory map unavailable',
-                message:
-                    'No hierarchy entry matched ${widget.factoryName}. Check the supervisor factory assignment.',
-              );
-            }
-
-            final factoryAlerts = alerts
-                .where((alert) => _matchesFactory(factory, alert.usine))
-                .toList();
-            final pins = _buildPins(factory, factoryAlerts, myClaim);
-            final targetPin = myClaim == null
-                ? null
-                : pins.cast<LocatorStationPin?>().firstWhere(
-                      (pin) =>
-                          pin?.conveyorNumber == myClaim.convoyeur &&
-                          pin?.stationNumber == myClaim.poste,
-                      orElse: () => null,
-                    );
-            final missingCount = _missingCoordinateCount(factory);
-
-            return _LocatorContent(
-              factory: factory,
-              pins: pins,
-              missingCoordinateCount: missingCount,
-              claim: myClaim,
-              targetPin: targetPin,
-              manualPosition: _loadingManualPosition ? null : _manualPosition,
-              loadingManualPosition: _loadingManualPosition,
-              pulseController: _pulseController,
-              onSetManualPosition: _showManualPositionDialog,
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Factory? _resolveFactory(List<Factory> factories, AlertModel? claim) {
-    if (claim != null) {
-      final claimFactory = factories.cast<Factory?>().firstWhere(
-            (factory) =>
-                factory != null && _matchesFactory(factory, claim.usine),
-            orElse: () => null,
-          );
-      if (claimFactory != null) return claimFactory;
-    }
-
-    return factories.cast<Factory?>().firstWhere(
-          (factory) =>
-              factory != null && _matchesFactory(factory, widget.factoryName),
-          orElse: () => null,
-        );
-  }
-
-  Future<void> _showManualPositionDialog() async {
-    final xController = TextEditingController(
-      text: _manualPosition == null ? '' : _formatCoord(_manualPosition!.dx),
-    );
-    final yController = TextEditingController(
-      text: _manualPosition == null ? '' : _formatCoord(_manualPosition!.dy),
-    );
-    String? error;
-
-    final result = await showDialog<_ManualPositionResult>(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final t = context.appTheme;
-          return AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.my_location_rounded, color: t.blue),
-                const SizedBox(width: 8),
-                const Expanded(child: Text('Set Current Position')),
-              ],
-            ),
-            content: SizedBox(
-              width: 420,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Enter your current factory coordinates in metres.',
-                    style: TextStyle(color: t.muted, fontSize: 12),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _ManualCoordinateField(
-                          controller: xController,
-                          label: 'X',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _ManualCoordinateField(
-                          controller: yController,
-                          label: 'Y',
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(error!, style: TextStyle(color: t.red, fontSize: 12)),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(
-                  context,
-                  const _ManualPositionResult.cancel(),
-                ),
-                child: const Text('Cancel'),
-              ),
-              TextButton.icon(
-                onPressed: () => Navigator.pop(
-                  context,
-                  const _ManualPositionResult.useEntrance(),
-                ),
-                icon: const Icon(Icons.restart_alt_rounded, size: 16),
-                label: const Text('Use Entrance'),
-              ),
-              FilledButton.icon(
-                onPressed: () {
-                  final x = _parseCoord(xController.text);
-                  final y = _parseCoord(yController.text);
-                  if (x == null || y == null) {
-                    setDialogState(() {
-                      error = 'Enter valid decimal values for X and Y.';
-                    });
-                    return;
-                  }
-                  Navigator.pop(
-                    context,
-                    _ManualPositionResult(position: Offset(x, y)),
-                  );
-                },
-                icon: const Icon(Icons.check_rounded, size: 16),
-                label: const Text('Save'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    xController.dispose();
-    yController.dispose();
-    if (!mounted) return;
-    if (result == null || result.cancelled) return;
-    await _saveManualPosition(result.position);
-  }
-}
-
-class _ManualPositionResult {
-  final Offset? position;
-  final bool cancelled;
-
-  const _ManualPositionResult({this.position}) : cancelled = false;
-  const _ManualPositionResult.cancel()
-      : position = null,
-        cancelled = true;
-  const _ManualPositionResult.useEntrance()
-      : position = null,
-        cancelled = false;
-}
-
-class _LocatorContent extends StatelessWidget {
-  final Factory factory;
-  final List<LocatorStationPin> pins;
-  final int missingCoordinateCount;
-  final AlertModel? claim;
-  final LocatorStationPin? targetPin;
-  final Offset? manualPosition;
-  final bool loadingManualPosition;
-  final AnimationController pulseController;
-  final VoidCallback onSetManualPosition;
-
-  const _LocatorContent({
-    required this.factory,
-    required this.pins,
-    required this.missingCoordinateCount,
-    required this.claim,
-    required this.targetPin,
-    required this.manualPosition,
-    required this.loadingManualPosition,
-    required this.pulseController,
-    required this.onSetManualPosition,
-  });
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 900;
-        final map = _LocatorMapCard(
-          pins: pins,
-          targetPin: targetPin,
-          manualPosition: manualPosition,
-          pulseController: pulseController,
-        );
-        final panel = _LocatorSidePanel(
-          factory: factory,
-          claim: claim,
-          targetPin: targetPin,
-          pins: pins,
-          missingCoordinateCount: missingCoordinateCount,
-          manualPosition: manualPosition,
-          loadingManualPosition: loadingManualPosition,
-          onSetManualPosition: onSetManualPosition,
-        );
+    final alerts = context.watch<AlertProvider>().allAlerts;
+    final claim = _activeClaim(alerts, widget.supervisorId);
+    final factory = _resolveFactory(claim);
 
-        return Column(
+    if (_factories.isEmpty) {
+      return Center(child: CircularProgressIndicator(color: t.navy));
+    }
+    if (factory == null) {
+      return _Empty(
+        icon: Icons.factory_outlined,
+        title: 'No factory',
+        message: 'No matching factory for ${widget.factoryName}.',
+      );
+    }
+    _ensureMapStream(factory.id);
+
+    final map = _map;
+    if (map == null) {
+      return Center(child: CircularProgressIndicator(color: t.navy));
+    }
+
+    final factoryAlerts =
+        alerts.where((a) => _matches(factory, a.usine)).toList();
+    final badges = <String, LocatorNodeBadge>{};
+    for (final node in map.nodes) {
+      final stationAlerts = factoryAlerts
+          .where((a) =>
+              a.convoyeur == node.conveyorNumber &&
+              a.poste == node.stationNumber)
+          .toList()
+        ..sort((a, b) =>
+            _alertPriority(b).compareTo(_alertPriority(a)));
+      if (stationAlerts.isEmpty) continue;
+      final top = stationAlerts.first;
+      badges[node.key] = LocatorNodeBadge(
+        key: node.key,
+        status: _statusFor(top),
+        alertNumber: top.alertNumber == 0 ? null : top.alertNumber,
+      );
+    }
+
+    final claimedNode = claim == null
+        ? null
+        : map.nodeForStation(claim.convoyeur, claim.poste);
+    final claimedKey = claimedNode?.key;
+
+    return Container(
+      color: t.scaffold,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
           children: [
             _LocatorHeader(
               factory: factory,
-              pinCount: pins.length,
-              missingCoordinateCount: missingCoordinateCount,
+              mapped: map.nodes.length,
+              hasMap: !map.isEmpty,
               hasClaim: claim != null,
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                child: wide
-                    ? Row(
-                        children: [
-                          Expanded(child: map),
-                          const SizedBox(width: 14),
-                          SizedBox(width: 350, child: panel),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          Expanded(child: map),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            height: math.min(210, constraints.maxHeight * 0.34),
-                            child: panel,
-                          ),
-                        ],
-                      ),
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                child: LayoutBuilder(builder: (context, c) {
+                  final wide = c.maxWidth >= 880;
+                  final canvas = _MapCard(
+                    map: map,
+                    pulse: _pulse,
+                    claimedKey: claimedKey,
+                    badges: badges,
+                  );
+                  final side = _SidePanel(
+                    factory: factory,
+                    claim: claim,
+                    claimedNode: claimedNode,
+                    badges: badges,
+                    map: map,
+                  );
+                  return wide
+                      ? Row(children: [
+                          Expanded(child: canvas),
+                          const SizedBox(width: 12),
+                          SizedBox(width: 320, child: side),
+                        ])
+                      : Column(children: [
+                          Expanded(child: canvas),
+                          const SizedBox(height: 10),
+                          SizedBox(height: 200, child: side),
+                        ]);
+                }),
               ),
             ),
             if (claim == null)
@@ -379,7 +203,7 @@ class _LocatorContent extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'No claimed alert. Claim an alert first to see its location.',
+                        'No claimed alert. Claim one to see its route on the map.',
                         style: TextStyle(
                           color: t.text,
                           fontSize: 12,
@@ -391,22 +215,22 @@ class _LocatorContent extends StatelessWidget {
                 ),
               ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
 class _LocatorHeader extends StatelessWidget {
   final Factory factory;
-  final int pinCount;
-  final int missingCoordinateCount;
+  final int mapped;
+  final bool hasMap;
   final bool hasClaim;
 
   const _LocatorHeader({
     required this.factory,
-    required this.pinCount,
-    required this.missingCoordinateCount,
+    required this.mapped,
+    required this.hasMap,
     required this.hasClaim,
   });
 
@@ -421,62 +245,54 @@ class _LocatorHeader extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: t.greenLt,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: t.green.withValues(alpha: 0.22)),
+              gradient: LinearGradient(
+                colors: [t.green, t.blue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(Icons.map_rounded, color: t.green),
+            child: const Icon(Icons.map_rounded, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Locator',
-                  style: TextStyle(
-                    color: t.text,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  factory.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: t.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                Text('Locator',
+                    style: TextStyle(
+                      color: t.text,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    )),
+                Text(factory.name,
+                    style: TextStyle(
+                      color: t.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    )),
               ],
             ),
           ),
           Wrap(
             spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.end,
             children: [
-              _LocatorPill(
-                icon: Icons.pin_drop_outlined,
-                label: '$pinCount mapped',
-                color: pinCount > 0 ? t.green : t.muted,
-              ),
-              if (missingCoordinateCount > 0)
-                _LocatorPill(
-                  icon: Icons.edit_location_alt_outlined,
-                  label: '$missingCoordinateCount unset',
-                  color: t.orange,
-                ),
-              _LocatorPill(
-                icon: hasClaim
-                    ? Icons.navigation_rounded
-                    : Icons.navigation_outlined,
-                label: hasClaim ? 'Route ready' : 'No route',
-                color: hasClaim ? t.blue : t.muted,
-              ),
+              _Pill(
+                  icon: Icons.pin_drop_outlined,
+                  label: '$mapped mapped',
+                  color: mapped > 0 ? t.green : t.muted),
+              _Pill(
+                  icon: hasMap
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.dashboard_outlined,
+                  label: hasMap ? 'Map ready' : 'No map',
+                  color: hasMap ? t.green : t.orange),
+              _Pill(
+                  icon: hasClaim
+                      ? Icons.navigation_rounded
+                      : Icons.navigation_outlined,
+                  label: hasClaim ? 'Route on' : 'No route',
+                  color: hasClaim ? t.blue : t.muted),
             ],
           ),
         ],
@@ -485,299 +301,214 @@ class _LocatorHeader extends StatelessWidget {
   }
 }
 
-class _LocatorMapCard extends StatelessWidget {
-  final List<LocatorStationPin> pins;
-  final LocatorStationPin? targetPin;
-  final Offset? manualPosition;
-  final AnimationController pulseController;
+class _MapCard extends StatelessWidget {
+  final FactoryMap map;
+  final AnimationController pulse;
+  final String? claimedKey;
+  final Map<String, LocatorNodeBadge> badges;
 
-  const _LocatorMapCard({
-    required this.pins,
-    required this.targetPin,
-    required this.manualPosition,
-    required this.pulseController,
+  const _MapCard({
+    required this.map,
+    required this.pulse,
+    required this.claimedKey,
+    required this.badges,
   });
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    if (pins.isEmpty) {
+    if (map.isEmpty) {
       return Container(
         decoration: BoxDecoration(
           color: t.card,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: t.border),
         ),
-        child: _LocatorEmptyState(
-          icon: Icons.edit_location_alt_outlined,
-          title: 'Coordinates not set',
+        child: _Empty(
+          icon: Icons.dashboard_customize_outlined,
+          title: 'Map not configured',
           message:
-              'Ask an admin to enter station X/Y coordinates in the Hierarchy screen.',
+              'Ask the production manager to build this factory in Hierarchy → Factory Mapping.',
         ),
       );
     }
-
     return Container(
       decoration: BoxDecoration(
         color: t.card,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: t.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: context.isDark ? 0.20 : 0.07),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
+            color:
+                Colors.black.withValues(alpha: context.isDark ? 0.22 : 0.07),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final width = math.max(1000.0, constraints.maxWidth);
-            final height = math.max(760.0, constraints.maxHeight);
-            return Stack(
-              children: [
-                InteractiveViewer(
-                  minScale: 0.55,
-                  maxScale: 4.0,
-                  boundaryMargin: const EdgeInsets.all(260),
-                  constrained: false,
-                  child: SizedBox(
-                    width: width,
-                    height: height,
-                    child: AnimatedBuilder(
-                      animation: pulseController,
-                      builder: (context, _) {
-                        return CustomPaint(
-                          painter: LocatorMapPainter(
-                            theme: t,
-                            isDark: context.isDark,
-                            stations: pins,
-                            entrance: Offset.zero,
-                            currentPosition: manualPosition,
-                            targetStation: targetPin,
-                            pulse: pulseController.value,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+        borderRadius: BorderRadius.circular(14),
+        child: InteractiveViewer(
+          minScale: 0.6,
+          maxScale: 4,
+          boundaryMargin: const EdgeInsets.all(120),
+          child: AnimatedBuilder(
+            animation: pulse,
+            builder: (context, _) {
+              return CustomPaint(
+                size: Size.infinite,
+                painter: FactoryMapLocatorPainter(
+                  map: map,
+                  theme: t,
+                  isDark: context.isDark,
+                  badges: badges,
+                  claimedNodeKey: claimedKey,
+                  pulse: pulse.value,
                 ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: _MapLegend(),
-                ),
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 }
 
-class _LocatorSidePanel extends StatelessWidget {
+class _SidePanel extends StatelessWidget {
   final Factory factory;
   final AlertModel? claim;
-  final LocatorStationPin? targetPin;
-  final List<LocatorStationPin> pins;
-  final int missingCoordinateCount;
-  final Offset? manualPosition;
-  final bool loadingManualPosition;
-  final VoidCallback onSetManualPosition;
+  final MapNode? claimedNode;
+  final Map<String, LocatorNodeBadge> badges;
+  final FactoryMap map;
 
-  const _LocatorSidePanel({
+  const _SidePanel({
     required this.factory,
     required this.claim,
-    required this.targetPin,
-    required this.pins,
-    required this.missingCoordinateCount,
-    required this.manualPosition,
-    required this.loadingManualPosition,
-    required this.onSetManualPosition,
+    required this.claimedNode,
+    required this.badges,
+    required this.map,
   });
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
     return Container(
-      width: double.infinity,
       decoration: BoxDecoration(
         color: t.card,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: t.border),
       ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _RouteSummaryCard(claim: claim, targetPin: targetPin),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _MiniMetric(
-                    icon: Icons.door_front_door_outlined,
-                    label: manualPosition == null ? 'Entrance' : 'Manual',
-                    value: manualPosition == null
-                        ? '0.00, 0.00'
-                        : '${_formatCoord(manualPosition!.dx)}, ${_formatCoord(manualPosition!.dy)}',
-                    color: manualPosition == null ? t.green : t.blue,
-                  ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (claim == null)
+            _InfoBlock(
+              icon: Icons.map_outlined,
+              color: t.orange,
+              title: 'No active claim',
+              message: 'Claim an alert to view its blue route.',
+            )
+          else if (claimedNode == null)
+            _InfoBlock(
+              icon: Icons.report_gmailerrorred_outlined,
+              color: t.red,
+              title: 'Station not on map',
+              message:
+                  'C${claim!.convoyeur}S${claim!.poste} has not been placed yet.',
+            )
+          else
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => AlertDetailScreen(alertId: claim!.id)),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: t.blueLt,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: t.blue.withValues(alpha: 0.28)),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _MiniMetric(
-                    icon: Icons.edit_location_alt_outlined,
-                    label: 'Unset',
-                    value: '$missingCoordinateCount',
-                    color: missingCoordinateCount == 0 ? t.green : t.orange,
+                child: Row(children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                        color: t.card,
+                        borderRadius: BorderRadius.circular(10)),
+                    child: Icon(Icons.navigation_rounded,
+                        color: t.blue, size: 26),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: loadingManualPosition ? null : onSetManualPosition,
-                icon: const Icon(Icons.my_location_rounded, size: 16),
-                label: const Text('Set Current Position'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(claimedNode!.label,
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            )),
+                        Text(_typeLabel(claim!.type),
+                            style: TextStyle(color: t.muted, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: t.muted),
+                ]),
               ),
             ),
-            const SizedBox(height: 14),
-            Text(
-              'Live station status',
+          const SizedBox(height: 14),
+          Text('Live station status',
               style: TextStyle(
                 color: t.text,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ..._statusRows(context),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _statusRows(BuildContext context) {
-    final activePins = pins
-        .where((pin) => pin.status != LocatorStationStatus.idle || pin.isTarget)
-        .toList()
-      ..sort((a, b) {
-        if (a.isTarget != b.isTarget) return a.isTarget ? -1 : 1;
-        return _statusPriority(b.status).compareTo(_statusPriority(a.status));
-      });
-    if (activePins.isEmpty) {
-      return [
-        _StationStatusRow(
-          color: context.appTheme.muted,
-          title: 'All mapped stations idle',
-          subtitle: factory.name,
-        ),
-      ];
-    }
-    return activePins.take(8).map((pin) {
-      return _StationStatusRow(
-        color: _statusColor(context.appTheme, pin.status),
-        title: pin.label,
-        subtitle: pin.alertNumber == null
-            ? _statusText(pin.status)
-            : '${_statusText(pin.status)} #${pin.alertNumber}',
-      );
-    }).toList();
-  }
-}
-
-class _RouteSummaryCard extends StatelessWidget {
-  final AlertModel? claim;
-  final LocatorStationPin? targetPin;
-
-  const _RouteSummaryCard({
-    required this.claim,
-    required this.targetPin,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    final claim = this.claim;
-    if (claim == null) {
-      return _InfoBlock(
-        icon: Icons.map_outlined,
-        color: t.orange,
-        title: 'No claimed alert',
-        message: 'Claim an alert first to see its route.',
-      );
-    }
-    if (targetPin == null) {
-      return _InfoBlock(
-        icon: Icons.edit_location_alt_outlined,
-        color: t.red,
-        title: 'Station has no coordinates',
-        message: 'C${claim.convoyeur}S${claim.poste} needs X/Y values.',
-      );
-    }
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => AlertDetailScreen(alertId: claim.id)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: t.blueLt,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: t.blue.withValues(alpha: 0.28)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: t.card,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(Icons.navigation_rounded, color: t.blue, size: 28),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    targetPin!.label,
-                    style: TextStyle(
-                      color: t.text,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+              )),
+          const SizedBox(height: 8),
+          Expanded(
+            child: badges.isEmpty
+                ? Center(
+                    child: Text('All mapped stations idle',
+                        style: TextStyle(color: t.muted)))
+                : ListView(
+                    children: badges.entries.map((e) {
+                      final node = map.nodeByKey(e.key);
+                      if (node == null) return const SizedBox.shrink();
+                      final color = _badgeColor(e.value.status, t);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              node.label,
+                              style: TextStyle(
+                                  color: t.text,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          if (e.value.alertNumber != null)
+                            Text('#${e.value.alertNumber}',
+                                style: TextStyle(
+                                    color: t.muted, fontSize: 11)),
+                        ]),
+                      );
+                    }).toList(),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${targetPin!.assetLabel} - ${_typeLabel(claim.type)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: t.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: t.muted),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -802,211 +533,36 @@ class _InfoBlock extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: context.isDark ? 0.15 : 0.10),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.26)),
+        color: color.withValues(alpha: context.isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
+      child: Row(children: [
+        Icon(icon, color: color, size: 22),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
                   style: TextStyle(
-                    color: t.text,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(message, style: TextStyle(color: t.muted, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniMetric extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _MiniMetric({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: t.scaffold,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: t.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(color: t.muted, fontSize: 11)),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: t.text,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              fontFamily: 'monospace',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StationStatusRow extends StatelessWidget {
-  final Color color;
-  final String title;
-  final String subtitle;
-
-  const _StationStatusRow({
-    required this.color,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Container(
-            width: 11,
-            height: 11,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(color: color.withValues(alpha: 0.24), blurRadius: 10),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: t.text,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: t.muted, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MapLegend extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: t.card.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: t.border),
-      ),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 6,
-        children: [
-          _LegendDot(color: t.mutedDk, label: 'Idle'),
-          _LegendDot(color: t.orange, label: 'Open'),
-          _LegendDot(color: t.blue, label: 'In progress'),
-          _LegendDot(color: t.green, label: 'Resolved'),
-          _LegendDot(color: t.red, label: 'Critical'),
-        ],
-      ),
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-
-  const _LegendDot({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: TextStyle(
-            color: t.muted,
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
+                      color: t.text,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13)),
+              Text(message, style: TextStyle(color: t.muted, fontSize: 12)),
+            ],
           ),
         ),
-      ],
+      ]),
     );
   }
 }
 
-class _LocatorPill extends StatelessWidget {
+class _Pill extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-
-  const _LocatorPill({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
+  const _Pill({required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -1018,61 +574,23 @@ class _LocatorPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withValues(alpha: 0.24)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: color),
-          const SizedBox(width: 5),
-          Text(
-            label,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 5),
+        Text(label,
             style: TextStyle(
-              color: t.text,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
+                color: t.text, fontSize: 11, fontWeight: FontWeight.w900)),
+      ]),
     );
   }
 }
 
-class _ManualCoordinateField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-
-  const _ManualCoordinateField({
-    required this.controller,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(
-        signed: true,
-        decimal: true,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        suffixText: 'm',
-        border: const OutlineInputBorder(),
-      ),
-    );
-  }
-}
-
-class _LocatorEmptyState extends StatelessWidget {
+class _Empty extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
-
-  const _LocatorEmptyState({
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
+  const _Empty(
+      {required this.icon, required this.title, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -1080,125 +598,35 @@ class _LocatorEmptyState extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: t.navyLt,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: t.navy, size: 28),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+                color: t.navyLt, borderRadius: BorderRadius.circular(12)),
+            child: Icon(icon, color: t.navy, size: 28),
+          ),
+          const SizedBox(height: 12),
+          Text(title,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: t.text,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              message,
+                  color: t.text, fontSize: 16, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 5),
+          Text(message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: t.muted, fontSize: 12),
-            ),
-          ],
-        ),
+              style: TextStyle(color: t.muted, fontSize: 12)),
+        ]),
       ),
     );
   }
 }
 
-List<LocatorStationPin> _buildPins(
-  Factory factory,
-  List<AlertModel> alerts,
-  AlertModel? claim,
-) {
-  final conveyors = factory.conveyors.values.toList()
-    ..sort((a, b) => a.number.compareTo(b.number));
-  final pins = <LocatorStationPin>[];
-  for (final conveyor in conveyors) {
-    final stations = conveyor.stations.values.toList()
-      ..sort((a, b) => _stationNumber(a).compareTo(_stationNumber(b)));
-    for (final station in stations) {
-      if (!station.hasCoordinates) continue;
-      final stationNumber = _stationNumber(station);
-      final stationAlerts = alerts
-          .where(
-            (alert) =>
-                alert.convoyeur == conveyor.number &&
-                alert.poste == stationNumber,
-          )
-          .toList()
-        ..sort(_sortAlertsForStatus);
-      final topAlert = stationAlerts.isEmpty ? null : stationAlerts.first;
-      final isTarget = claim != null &&
-          claim.convoyeur == conveyor.number &&
-          claim.poste == stationNumber;
-      pins.add(
-        LocatorStationPin(
-          id: '${conveyor.id}/${station.id}',
-          label: 'C${conveyor.number}S$stationNumber',
-          assetLabel: station.assetId.trim().isEmpty
-              ? 'ID pending'
-              : 'ID#${station.assetId.trim()}',
-          conveyorNumber: conveyor.number,
-          stationNumber: stationNumber,
-          x: station.x!,
-          y: station.y!,
-          status: _statusForAlert(topAlert),
-          isTarget: isTarget,
-          alertNumber:
-              topAlert?.alertNumber == 0 ? null : topAlert?.alertNumber,
-        ),
-      );
-    }
-  }
-  return pins;
-}
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-int _sortAlertsForStatus(AlertModel a, AlertModel b) {
-  final byPriority = _alertPriority(b).compareTo(_alertPriority(a));
-  if (byPriority != 0) return byPriority;
-  return b.timestamp.compareTo(a.timestamp);
-}
-
-int _alertPriority(AlertModel alert) {
-  if (alert.isCritical && alert.status != 'validee') return 50;
-  return switch (alert.status) {
-    'disponible' => 40,
-    'en_cours' => 30,
-    'validee' => 20,
-    _ => 0,
-  };
-}
-
-LocatorStationStatus _statusForAlert(AlertModel? alert) {
-  if (alert == null) return LocatorStationStatus.idle;
-  if (alert.isCritical && alert.status != 'validee') {
-    return LocatorStationStatus.critical;
-  }
-  return switch (alert.status) {
-    'disponible' => LocatorStationStatus.available,
-    'en_cours' => LocatorStationStatus.inProgress,
-    'validee' => LocatorStationStatus.resolved,
-    _ => LocatorStationStatus.idle,
-  };
-}
-
-AlertModel? _activeClaimForSupervisor(
-  List<AlertModel> alerts,
-  String supervisorId,
-) {
+AlertModel? _activeClaim(List<AlertModel> alerts, String supervisorId) {
   final claims = alerts
-      .where((alert) =>
-          alert.status == 'en_cours' && alert.superviseurId == supervisorId)
+      .where((a) =>
+          a.status == 'en_cours' && a.superviseurId == supervisorId)
       .toList()
     ..sort((a, b) {
       final at = a.takenAtTimestamp ?? a.timestamp;
@@ -1208,71 +636,38 @@ AlertModel? _activeClaimForSupervisor(
   return claims.isEmpty ? null : claims.first;
 }
 
-int _missingCoordinateCount(Factory factory) {
-  return factory.conveyors.values
-      .expand((conveyor) => conveyor.stations.values)
-      .where((station) => !station.hasCoordinates)
-      .length;
-}
-
-bool _matchesFactory(Factory factory, String value) {
-  final normalized = _normalize(value);
-  return normalized == _normalize(factory.id) ||
-      normalized == _normalize(factory.name);
-}
-
-String _normalize(String value) {
-  return value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
-}
-
-int _stationNumber(Station station) {
-  return int.tryParse(station.id.replaceFirst('station_', '')) ?? 0;
-}
-
-double? _parseCoord(String value) {
-  return double.tryParse(value.trim().replaceAll(',', '.'));
-}
-
-String _formatCoord(double value) {
-  return value.toStringAsFixed(2);
-}
-
-int _statusPriority(LocatorStationStatus status) {
-  return switch (status) {
-    LocatorStationStatus.critical => 5,
-    LocatorStationStatus.available => 4,
-    LocatorStationStatus.inProgress => 3,
-    LocatorStationStatus.resolved => 2,
-    LocatorStationStatus.idle => 1,
+int _alertPriority(AlertModel a) {
+  if (a.isCritical && a.status != 'validee') return 50;
+  return switch (a.status) {
+    'disponible' => 40,
+    'en_cours' => 30,
+    'validee' => 20,
+    _ => 0,
   };
 }
 
-Color _statusColor(AppTheme t, LocatorStationStatus status) {
-  return switch (status) {
-    LocatorStationStatus.critical => t.red,
-    LocatorStationStatus.available => t.orange,
-    LocatorStationStatus.inProgress => t.blue,
-    LocatorStationStatus.resolved => t.green,
-    LocatorStationStatus.idle => t.mutedDk,
+LocatorNodeStatus _statusFor(AlertModel a) {
+  if (a.isCritical && a.status != 'validee') return LocatorNodeStatus.critical;
+  return switch (a.status) {
+    'disponible' => LocatorNodeStatus.available,
+    'en_cours' => LocatorNodeStatus.inProgress,
+    'validee' => LocatorNodeStatus.resolved,
+    _ => LocatorNodeStatus.idle,
   };
 }
 
-String _statusText(LocatorStationStatus status) {
-  return switch (status) {
-    LocatorStationStatus.critical => 'Critical',
-    LocatorStationStatus.available => 'Open',
-    LocatorStationStatus.inProgress => 'In progress',
-    LocatorStationStatus.resolved => 'Resolved',
-    LocatorStationStatus.idle => 'Idle',
-  };
-}
+Color _badgeColor(LocatorNodeStatus s, AppTheme t) => switch (s) {
+      LocatorNodeStatus.critical => t.red,
+      LocatorNodeStatus.available => t.orange,
+      LocatorNodeStatus.inProgress => t.blue,
+      LocatorNodeStatus.resolved => t.green,
+      LocatorNodeStatus.idle => t.mutedDk,
+    };
 
-String _typeLabel(String type) {
-  return switch (type) {
-    'qualite' => 'Quality',
-    'maintenance' => 'Maintenance',
-    'defaut_produit' => 'Damaged product',
-    'manque_ressource' => 'Resource shortage',
-    _ => type,
-  };
-}
+String _typeLabel(String type) => switch (type) {
+      'qualite' => 'Quality',
+      'maintenance' => 'Maintenance',
+      'defaut_produit' => 'Damaged product',
+      'manque_ressource' => 'Resource shortage',
+      _ => type,
+    };

@@ -1,4 +1,5 @@
 import 'package:firebase_database/firebase_database.dart';
+import '../models/factory_map_model.dart';
 import '../models/hierarchy_model.dart';
 
 class HierarchyService {
@@ -360,21 +361,31 @@ class HierarchyService {
     );
   }
 
-  Future<void> updateStationCoordinates({
-    required String factoryId,
-    required Map<String, Map<String, StationCoordinates>> coordinates,
-  }) async {
-    final updates = <String, Object?>{};
-    for (final conveyorEntry in coordinates.entries) {
-      for (final stationEntry in conveyorEntry.value.entries) {
-        final basePath =
-            'hierarchy/factories/$factoryId/conveyors/${conveyorEntry.key}/stations/${stationEntry.key}';
-        updates['$basePath/x'] = stationEntry.value.x;
-        updates['$basePath/y'] = stationEntry.value.y;
-      }
-    }
-    if (updates.isEmpty) return;
-    await _db.update(updates);
+  // ── Factory Mapping ────────────────────────────────────────────────────────
+  // Persists the production manager's drag-and-drop map at
+  // hierarchy/factories/{factoryId}/map/. Streamed live to supervisors so any
+  // edit (place, move, connect, delete) shows up immediately on their locator.
+
+  Stream<FactoryMap> streamFactoryMap(String factoryId) {
+    return _db
+        .child('hierarchy/factories/$factoryId/map')
+        .onValue
+        .map((event) => FactoryMap.fromMap(factoryId, event.snapshot.value));
+  }
+
+  Future<FactoryMap> getFactoryMap(String factoryId) async {
+    final snap = await _db.child('hierarchy/factories/$factoryId/map').get();
+    return FactoryMap.fromMap(factoryId, snap.value);
+  }
+
+  Future<void> saveFactoryMap(FactoryMap map) async {
+    await _db
+        .child('hierarchy/factories/${map.factoryId}/map')
+        .set(map.toMap());
+  }
+
+  Future<void> clearFactoryMap(String factoryId) async {
+    await _db.child('hierarchy/factories/$factoryId/map').remove();
   }
 
   Future<String> moveStation({
