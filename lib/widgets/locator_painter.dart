@@ -65,6 +65,7 @@ class FactoryMapLocatorPainter extends CustomPainter {
   final bool isDark;
   final Map<String, LocatorNodeBadge> badges;
   final String? claimedNodeKey;
+  final MapCell? routeStart;
   final double pulse;
 
   FactoryMapLocatorPainter({
@@ -73,6 +74,7 @@ class FactoryMapLocatorPainter extends CustomPainter {
     required this.isDark,
     required this.badges,
     required this.claimedNodeKey,
+    required this.routeStart,
     required this.pulse,
   });
 
@@ -87,14 +89,14 @@ class FactoryMapLocatorPainter extends CustomPainter {
     _drawEdges(canvas, ox, oy, cellSize);
     _drawRoute(canvas, ox, oy, cellSize);
     _drawEntrance(canvas, ox, oy, cellSize);
+    _drawCurrentPosition(canvas, ox, oy, cellSize);
     _drawNodes(canvas, ox, oy, cellSize);
   }
 
   Offset _center(MapCell cell, double ox, double oy, double s) =>
       Offset(ox + cell.col * s + s / 2, oy + cell.row * s + s / 2);
 
-  void _drawSurface(
-      Canvas canvas, Size size, double ox, double oy, double s) {
+  void _drawSurface(Canvas canvas, Size size, double ox, double oy, double s) {
     final paint = Paint()
       ..shader = ui.Gradient.linear(
         Offset.zero,
@@ -179,6 +181,46 @@ class FactoryMapLocatorPainter extends CustomPainter {
     tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
   }
 
+  void _drawCurrentPosition(Canvas canvas, double ox, double oy, double s) {
+    final cell = routeStart;
+    if (cell == null) return;
+    final c = _center(cell, ox, oy, s);
+    final radius = math.max(14.0, s * 0.34);
+    final wave = math.sin(pulse * math.pi * 2);
+
+    canvas.drawCircle(
+      c,
+      radius + 10 + wave * 3,
+      Paint()..color = theme.blue.withValues(alpha: 0.16),
+    );
+    canvas.drawCircle(
+      c,
+      radius,
+      Paint()..color = theme.blue,
+    );
+    canvas.drawCircle(
+      c,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..color = Colors.white,
+    );
+
+    final tp = TextPainter(
+      text: const TextSpan(
+        text: 'YOU',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
+  }
+
   void _drawNodes(Canvas canvas, double ox, double oy, double s) {
     for (final node in map.nodes) {
       final c = _center(node.cell, ox, oy, s);
@@ -229,7 +271,8 @@ class FactoryMapLocatorPainter extends CustomPainter {
         );
       }
 
-      canvas.drawCircle(c, radius, Paint()..color = isTarget ? theme.blue : statusColor);
+      canvas.drawCircle(
+          c, radius, Paint()..color = isTarget ? theme.blue : statusColor);
       canvas.drawCircle(
         c,
         radius,
@@ -243,21 +286,21 @@ class FactoryMapLocatorPainter extends CustomPainter {
   }
 
   void _drawRoute(Canvas canvas, double ox, double oy, double s) {
-    final entrance = map.entrance;
+    final start = routeStart ?? map.entrance;
     final target = claimedNodeKey;
-    if (entrance == null || target == null) return;
+    if (start == null || target == null) return;
     final targetNode = map.nodeByKey(target);
     if (targetNode == null) return;
 
-    final pathCells = _findRoute(entrance, targetNode);
+    final pathCells = _findRoute(start, targetNode);
     final points = <Offset>[
-      _center(entrance, ox, oy, s),
+      _center(start, ox, oy, s),
       ...pathCells.map((cell) => _center(cell, ox, oy, s)),
     ];
     if (points.length < 2) {
       points
         ..clear()
-        ..add(_center(entrance, ox, oy, s))
+        ..add(_center(start, ox, oy, s))
         ..add(_center(targetNode.cell, ox, oy, s));
     }
 
@@ -300,66 +343,74 @@ class FactoryMapLocatorPainter extends CustomPainter {
       final m = metrics.first;
       final t = m.getTangentForOffset(m.length * pulse);
       if (t != null) {
-        canvas.drawCircle(
-            t.position, 12, Paint()..color = theme.blue.withValues(alpha: 0.25));
+        canvas.drawCircle(t.position, 12,
+            Paint()..color = theme.blue.withValues(alpha: 0.25));
         canvas.drawCircle(t.position, 6, Paint()..color = theme.blue);
       }
     }
   }
 
   /// Prefer a walkable floor route over the saved conveyor graph. The returned
-  /// cells exclude the entrance and include the target.
-  List<MapCell> _findRoute(MapCell entrance, MapNode target) {
-    final gridRoute = _findGridRoute(entrance, target.cell);
+  /// cells exclude the start and include the target.
+  List<MapCell> _findRoute(MapCell start, MapNode target) {
+    final gridRoute = _findGridRoute(start, target.cell);
     if (gridRoute.length >= 2) {
       return _compressRoute(gridRoute).skip(1).toList();
     }
 
-    // The entrance is a free-floating cell, not a node, so we connect it to
-    // its nearest node and BFS from there.
-    if (map.nodes.isEmpty) return [];
-    MapNode nearestToEntrance = map.nodes.first;
-    double best = double.infinity;
-    for (final n in map.nodes) {
-      final dx = (n.cell.col - entrance.col).toDouble();
-      final dy = (n.cell.row - entrance.row).toDouble();
-      final d = dx * dx + dy * dy;
-      if (d < best) {
-        best = d;
-        nearestToEntrance = n;
+    if (start == target.cell) return [target.cell];
+    return _orthogonalFallback(start, target.cell);
+  }
+
+  List<MapCell> _orthogonalFallback(MapCell start, MapCell goal) {
+    final horizontalFirst = MapCell(start.row, goal.col);
+    final verticalFirst = MapCell(goal.row, start.col);
+    final blocked = _buildRouteObstacles(start, goal);
+    final horizontalCost = _fallbackCost(start, horizontalFirst, goal, blocked);
+    final verticalCost = _fallbackCost(start, verticalFirst, goal, blocked);
+
+    if (horizontalCost <= verticalCost && horizontalCost < double.infinity) {
+      return [horizontalFirst, goal];
+    }
+    if (verticalCost < double.infinity) {
+      return [verticalFirst, goal];
+    }
+    return [goal];
+  }
+
+  double _fallbackCost(
+    MapCell start,
+    MapCell corner,
+    MapCell goal,
+    Set<MapCell> blocked,
+  ) {
+    if (!_insideGrid(corner)) return double.infinity;
+    final cells = [
+      ..._cellsOnAxis(start, corner),
+      ..._cellsOnAxis(corner, goal),
+    ];
+    var cost = 0.0;
+    for (final cell in cells) {
+      if (cell != start && cell != goal && blocked.contains(cell)) {
+        cost += 1000;
       }
+      cost += _clearancePenalty(cell, blocked);
     }
-    if (nearestToEntrance.key == target.key) {
-      return [target.cell];
+    return cost + cells.length;
+  }
+
+  List<MapCell> _cellsOnAxis(MapCell from, MapCell to) {
+    final cells = <MapCell>[];
+    final rowStep = (to.row - from.row).sign;
+    final colStep = (to.col - from.col).sign;
+    var row = from.row;
+    var col = from.col;
+    while (row != to.row || col != to.col) {
+      if (row != to.row) row += rowStep;
+      if (col != to.col) col += colStep;
+      cells.add(MapCell(row, col));
     }
-    final adjacency = <String, List<String>>{};
-    for (final e in map.edges) {
-      adjacency.putIfAbsent(e.fromKey, () => []).add(e.toKey);
-      adjacency.putIfAbsent(e.toKey, () => []).add(e.fromKey);
-    }
-    final prev = <String, String?>{nearestToEntrance.key: null};
-    final queue = <String>[nearestToEntrance.key];
-    while (queue.isNotEmpty) {
-      final cur = queue.removeAt(0);
-      if (cur == target.key) break;
-      for (final next in adjacency[cur] ?? const <String>[]) {
-        if (prev.containsKey(next)) continue;
-        prev[next] = cur;
-        queue.add(next);
-      }
-    }
-    if (!prev.containsKey(target.key)) {
-      // Disconnected: at least connect entrance → nearest → target.
-      return [nearestToEntrance.cell, target.cell];
-    }
-    final stack = <MapCell>[];
-    String? cursor = target.key;
-    while (cursor != null) {
-      final n = map.nodeByKey(cursor);
-      if (n != null) stack.insert(0, n.cell);
-      cursor = prev[cursor];
-    }
-    return stack;
+    return cells;
   }
 
   List<MapCell> _findGridRoute(MapCell start, MapCell goal) {
@@ -538,7 +589,8 @@ class FactoryMapLocatorPainter extends CustomPainter {
     }
   }
 
-  Color _statusColor(LocatorNodeStatus s, AppTheme t, {required Color fallback}) {
+  Color _statusColor(LocatorNodeStatus s, AppTheme t,
+      {required Color fallback}) {
     return switch (s) {
       LocatorNodeStatus.critical => t.red,
       LocatorNodeStatus.available => t.orange,
@@ -553,6 +605,7 @@ class FactoryMapLocatorPainter extends CustomPainter {
       old.map != map ||
       old.pulse != pulse ||
       old.claimedNodeKey != claimedNodeKey ||
+      old.routeStart != routeStart ||
       old.isDark != isDark ||
       old.badges.length != badges.length;
 }
