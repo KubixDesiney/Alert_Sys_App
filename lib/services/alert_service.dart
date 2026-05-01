@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
+import 'worker_trigger_queue.dart';
 
 String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
@@ -88,7 +86,7 @@ class AlertService {
     // Create the alert (same as before)
     final ref = _db.child('alerts').push();
     final now = DateTime.now().toUtc();
-    final alertId = ref.key;
+    final alertId = ref.key!;
     final alertData = {
       'alertNumber': number,
       'type': type,
@@ -113,17 +111,7 @@ class AlertService {
       'elapsedTime': null,
     };
     await ref.set(alertData);
-    // Trigger the Cloudflare Worker to send notifications immediately
-    try {
-      await http.post(
-        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev/'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'alertId': alertId}),
-      );
-    } catch (e) {
-      debugPrint(
-          'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e');
-    }
+    await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
     return alertId;
   }
 

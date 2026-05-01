@@ -13,6 +13,9 @@ import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
+import 'services/offline_account_cache.dart';
+import 'services/offline_database_service.dart';
+import 'services/worker_trigger_queue.dart';
 import 'theme.dart';
 
 void main() async {
@@ -54,14 +57,16 @@ void main() async {
   };
 
   await _safeInitFirebase();
+  await OfflineDatabaseService.configure();
+  WorkerTriggerQueue.instance.start();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   final fcm = FcmService();
-  try {
-    await fcm.init();
-  } catch (e) {
-    debugPrint('FCM init failed: $e');
-  }
+  unawaited(
+    fcm.init().timeout(const Duration(seconds: 8)).catchError((Object e) {
+      debugPrint('FCM init failed: $e');
+    }),
+  );
 
   // Keep startup path light; post-launch SDK setup runs in background.
   // The voice service initializes lazily when the user taps the mic
@@ -155,6 +160,7 @@ class RoleRouter extends StatefulWidget {
 class _RoleRouterState extends State<RoleRouter> {
   String? _role;
   bool _loading = true;
+  bool _offlineAccountUnavailable = false;
   static const _accountLoadTimeout = Duration(seconds: 8);
 
   @override
@@ -164,6 +170,8 @@ class _RoleRouterState extends State<RoleRouter> {
   }
 
   Future<void> _loadRole() async {
+    final cachedRole = await OfflineAccountCache.roleFor(widget.uid);
+
     try {
       final accountSnapshot = await FirebaseDatabase.instance
           .ref('users/${widget.uid}')
@@ -174,40 +182,88 @@ class _RoleRouterState extends State<RoleRouter> {
       });
       if (!mounted) return;
       if (!accountSnapshot.exists || accountSnapshot.value == null) {
+        if (cachedRole != null && !(await _isDatabaseConnected())) {
+          debugPrint('Account record unavailable offline. Using cached role.');
+          setState(() {
+            _role = cachedRole;
+            _loading = false;
+            _offlineAccountUnavailable = false;
+          });
+          return;
+        }
+
         debugPrint('Account record missing. Signing out.');
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
         setState(() {
           _loading = false;
           _role = null;
+          _offlineAccountUnavailable = false;
         });
         return;
       }
 
       final data = Map<String, dynamic>.from(accountSnapshot.value as Map);
       final role = data['role']?.toString();
-      if (role == null || (role != 'admin' && role != 'supervisor')) {
+      if (!OfflineAccountCache.isValidRole(role)) {
         debugPrint('Invalid role value for account. Signing out.');
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
         setState(() {
           _loading = false;
           _role = null;
+          _offlineAccountUnavailable = false;
         });
         return;
       }
+      await OfflineAccountCache.save(
+        uid: widget.uid,
+        role: role,
+        usine: data['usine']?.toString(),
+      );
+      if (!mounted) return;
       setState(() {
         _role = role;
         _loading = false;
+        _offlineAccountUnavailable = false;
       });
     } catch (e) {
       if (!mounted) return;
-      await FirebaseAuth.instance.signOut();
-      if (!mounted) return;
+      final connected = await _isDatabaseConnected();
+      if (cachedRole != null && (e is TimeoutException || !connected)) {
+        debugPrint('Account load failed; using cached role: $e');
+        setState(() {
+          _role = cachedRole;
+          _loading = false;
+          _offlineAccountUnavailable = false;
+        });
+        return;
+      }
+
+      if (connected) {
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+      }
+
+      debugPrint('Account load failed without an offline fallback: $e');
       setState(() {
         _loading = false;
         _role = null;
+        _offlineAccountUnavailable = !connected;
       });
+    }
+  }
+
+  Future<bool> _isDatabaseConnected() async {
+    try {
+      final event = await FirebaseDatabase.instance
+          .ref('.info/connected')
+          .onValue
+          .first
+          .timeout(const Duration(seconds: 2));
+      return event.snapshot.value == true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -217,6 +273,43 @@ class _RoleRouterState extends State<RoleRouter> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_role == null) {
+      if (_offlineAccountUnavailable) {
+        return Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.wifi_off, size: 44),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Offline account data is not cached yet.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Connect once so AlertSys can save this account for offline startup.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () {
+                      setState(() {
+                        _loading = true;
+                        _offlineAccountUnavailable = false;
+                      });
+                      _loadRole();
+                    },
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       return const LoginScreen();
     }
     if (_role == 'admin') {
