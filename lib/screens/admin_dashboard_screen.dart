@@ -292,6 +292,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     // ✅ 2. Original alert creation (unchanged)
+    final assetId =
+        await hierarchyService.getAssetIdForLocation(usine, convoyeur, poste);
     final ref = _db.ref('alerts').push();
     final now = DateTime.now();
     final alertId = ref.key;
@@ -301,6 +303,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'convoyeur': convoyeur,
       'poste': poste,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
+      if (assetId != null) 'assetId': assetId,
       'timestamp': now.toIso8601String(),
       'description': description,
       'status': 'disponible',

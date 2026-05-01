@@ -9,6 +9,7 @@ class HeatmapCell {
   final int conveyor;
   final int station;
   final String label;
+  final String? assetId;
   final int activeCount;
   final int inProgressCount;
   final int criticalCount;
@@ -19,6 +20,7 @@ class HeatmapCell {
     required this.conveyor,
     required this.station,
     required this.label,
+    this.assetId,
     required this.activeCount,
     this.inProgressCount = 0,
     required this.criticalCount,
@@ -213,6 +215,19 @@ class _Tile extends StatelessWidget {
                       : Colors.white.withValues(alpha: 0.85),
                 ),
               ),
+              if (cell.assetId != null && cell.assetId!.trim().isNotEmpty)
+                Text(
+                  cell.assetId!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: cell.intensity == 0
+                        ? t.muted
+                        : Colors.white.withValues(alpha: 0.78),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               const Spacer(),
               if (cell.activeCount > 0 || cell.criticalCount > 0)
                 Row(

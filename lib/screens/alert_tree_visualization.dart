@@ -473,6 +473,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               conveyor: c.number,
               station: stationNumber,
               label: s.name,
+              assetId: s.assetId,
               activeCount: 0,
               inProgressCount: 0,
               criticalCount: 0,
@@ -485,6 +486,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               conveyor: c.number,
               station: stationNumber,
               label: s.name,
+              assetId: s.assetId,
               activeCount: active.length,
               inProgressCount:
                   active.where((a) => a.status == 'en_cours').length,
@@ -504,6 +506,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         convoyeur: cell.conveyor,
         poste: cell.station,
         stationLabel: cell.label,
+        assetId: cell.assetId,
         activeAlert: cell.topAlert,
       ),
     );
@@ -514,6 +517,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     required int convoyeur,
     required int poste,
     required String stationLabel,
+    String? assetId,
     AlertModel? activeAlert,
   }) {
     final t = _t;
@@ -536,6 +540,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 usine: usine,
                 convoyeur: convoyeur,
                 poste: poste,
+                assetId: assetId,
               ),
               builder: (context, snapshot) {
                 final history = snapshot.data ?? const <AlertModel>[];
@@ -591,6 +596,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(color: t.muted, fontSize: 12),
                               ),
+                              if (assetId != null && assetId.trim().isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: _AssetChip(t: t, assetId: assetId),
+                                ),
                             ],
                           ),
                         ),
@@ -627,7 +637,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         Icon(Icons.history, size: 18, color: t.navy),
                         const SizedBox(width: 8),
                         Text(
-                          'Workstation History',
+                          assetId != null && assetId.trim().isNotEmpty
+                              ? 'Asset History'
+                              : 'Workstation History',
                           style: TextStyle(
                             color: t.text,
                             fontSize: 14,
@@ -1091,7 +1103,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           factoryCritical += criticalList.length;
           conveyorCritical += criticalList.length;
 
-          final matchesText = nodeMatchesSearch(s.name) || conveyorMatches;
+          final matchesText = nodeMatchesSearch(s.name) ||
+              nodeMatchesSearch(s.assetId) ||
+              conveyorMatches;
           final allLocationAlerts = [
             ...activeList,
             ...resolvedList,
@@ -1113,6 +1127,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               'usine': f.name,
               'convoyeur': c.number,
               'poste': stationNumber,
+              'assetId': s.assetId,
             },
           ));
         }
@@ -1410,6 +1425,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         convoyeur: s.payload['convoyeur'] as int,
                         poste: s.payload['poste'] as int,
                         stationLabel: s.label,
+                        assetId: s.payload['assetId'] as String?,
                         activeAlert: activeAlert,
                       ),
                     ),
@@ -1519,6 +1535,40 @@ class _Layout {
     required this.edges,
     required this.size,
   });
+}
+
+class _AssetChip extends StatelessWidget {
+  final AppTheme t;
+  final String assetId;
+
+  const _AssetChip({required this.t, required this.assetId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: t.navyLt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: t.navy.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.precision_manufacturing_outlined, size: 13, color: t.navy),
+          const SizedBox(width: 5),
+          SelectableText(
+            assetId,
+            style: TextStyle(
+              color: t.navy,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StationEmptyHistory extends StatelessWidget {

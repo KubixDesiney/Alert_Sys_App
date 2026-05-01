@@ -4,13 +4,14 @@
     "alerts": {
       ".read": "auth != null",
       ".write": false,
-      ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste", "push_sent"],
+      ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste", "assetId", "push_sent"],
       "$alertId": {
         ".read": "auth != null",
         ".write": "auth != null || (auth == null && !data.exists() && newData.hasChildren(['adresse','convoyeur','poste','timestamp','type','usine']) && newData.child('adresse').isString() && newData.child('convoyeur').isNumber() && newData.child('poste').isNumber() && newData.child('timestamp').isString() && newData.child('type').isString() && newData.child('usine').isString())",
         "adresse": { ".validate": "newData.isString()" },
         "convoyeur": { ".validate": "newData.isNumber()" },
         "poste": { ".validate": "newData.isNumber()" },
+        "assetId": { ".validate": "!newData.exists() || newData.isString()" },
         "timestamp": { ".validate": "newData.isString()" },
         "type": { ".validate": "newData.isString()" },
         "usine": { ".validate": "newData.isString()" },
@@ -66,6 +67,11 @@
     "alertCounter": {
       ".read": true,
       ".write": "auth != null"
+    },
+
+    "assetCounter": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "users": {
