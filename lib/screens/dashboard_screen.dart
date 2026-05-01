@@ -9,6 +9,7 @@ import '../providers/alert_provider.dart';
 import '../providers/theme_provider.dart';
 import '../models/alert_model.dart';
 import '../services/auth_service.dart';
+import '../services/offline_account_cache.dart';
 import '../theme.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
@@ -82,10 +83,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<String> _fetchSupervisorUsine() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return 'Usine A';
-    final snapshot =
-        await FirebaseDatabase.instance.ref('users/${user.uid}/usine').once();
-    final value = snapshot.snapshot.value;
-    return (value as String?) ?? 'Usine A';
+    final cachedUsine = await OfflineAccountCache.usineFor(user.uid);
+    try {
+      final snapshot = await FirebaseDatabase.instance
+          .ref('users/${user.uid}/usine')
+          .once()
+          .timeout(const Duration(seconds: 5));
+      final value = snapshot.snapshot.value?.toString().trim();
+      if (value != null && value.isNotEmpty) {
+        await OfflineAccountCache.save(uid: user.uid, usine: value);
+        return value;
+      }
+    } catch (e) {
+      debugPrint('Supervisor factory load failed; using cached value: $e');
+    }
+    return cachedUsine ?? 'Usine A';
   }
 
   Future<void> _logout() async {

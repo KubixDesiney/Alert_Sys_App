@@ -18,12 +18,12 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../providers/alert_provider.dart';
 import 'alert_detail_screen.dart';
-import 'package:http/http.dart' as http;
 import 'admin_escalation_screen.dart';
 import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
+import '../services/worker_trigger_queue.dart';
 import '../widgets/voice_command_button.dart';
 import '../services/ai_assignment_service.dart';
 import '../providers/theme_provider.dart';
@@ -296,7 +296,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         await hierarchyService.getAssetIdForLocation(usine, convoyeur, poste);
     final ref = _db.ref('alerts').push();
     final now = DateTime.now();
-    final alertId = ref.key;
+    final alertId = ref.key!;
     await ref.set({
       'type': type,
       'usine': usine,
@@ -319,19 +319,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'elapsedTime': null,
     });
 
-    // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
+    // Queue the Cloudflare Worker trigger for online/offline delivery.
     try {
-      await http.post(
-        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
+      await WorkerTriggerQueue.instance.enqueuePost(
+        Uri.parse(WorkerTriggerQueue.workerBaseUrl),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+        jsonBody: {
           'type': type,
           'description': description,
           'alertId': alertId,
-        }),
+        },
       );
     } catch (e) {
-      debugPrint('Manual worker trigger failed: $e');
+      debugPrint('Manual worker trigger queue failed: $e');
     }
   }
 
