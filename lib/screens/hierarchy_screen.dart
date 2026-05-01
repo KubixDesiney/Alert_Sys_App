@@ -240,6 +240,276 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     }
   }
 
+  int? _nextAvailableStationNumber(Conveyor conveyor) {
+    for (int i = 1; i <= _service.maxStations; i++) {
+      if (!conveyor.stations.containsKey('station_$i')) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _showMoveStationDialog(Station station) async {
+    final currentFactory = _selectedFactory;
+    final currentConveyor = _selectedConveyor;
+    final assetId = station.assetId.trim();
+    if (currentFactory == null || currentConveyor == null || assetId.isEmpty) {
+      return;
+    }
+
+    String destinationFactoryId = currentFactory.id;
+    String destinationConveyorId = currentConveyor.id;
+    String? error;
+    bool moving = false;
+
+    final moved = await showDialog<bool>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          final t = context.appTheme;
+          final destinationFactory = _factories.cast<Factory?>().firstWhere(
+                (factory) => factory?.id == destinationFactoryId,
+                orElse: () => null,
+              );
+          final destinationConveyors =
+              destinationFactory?.conveyors.values.toList() ??
+                  const <Conveyor>[];
+          if (!destinationConveyors
+              .any((conveyor) => conveyor.id == destinationConveyorId)) {
+            destinationConveyorId = destinationConveyors.isNotEmpty
+                ? destinationConveyors.first.id
+                : '';
+          }
+          final destinationConveyor =
+              destinationConveyors.cast<Conveyor?>().firstWhere(
+                    (conveyor) => conveyor?.id == destinationConveyorId,
+                    orElse: () => null,
+                  );
+          final nextStationNumber = destinationConveyor == null
+              ? null
+              : _nextAvailableStationNumber(destinationConveyor);
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.drive_file_move_outline, color: t.navy),
+                const SizedBox(width: 8),
+                const Text('Move Station'),
+              ],
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Current location',
+                    style: TextStyle(
+                      color: t.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${currentFactory.name} > Conveyor ${currentConveyor.number} > ${station.name}',
+                    style: TextStyle(color: t.muted),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Asset ID: $assetId',
+                    style: TextStyle(
+                      color: t.navy,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: destinationFactoryId,
+                    decoration: const InputDecoration(
+                      labelText: 'Destination Factory',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _factories
+                        .map(
+                          (factory) => DropdownMenuItem<String>(
+                            value: factory.id,
+                            child: Text(factory.name),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: moving
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              destinationFactoryId = value;
+                              error = null;
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: destinationConveyorId.isEmpty
+                        ? null
+                        : destinationConveyorId,
+                    decoration: const InputDecoration(
+                      labelText: 'Destination Conveyor',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: destinationConveyors
+                        .map(
+                          (conveyor) => DropdownMenuItem<String>(
+                            value: conveyor.id,
+                            child: Text('Conveyor ${conveyor.number}'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: moving
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setStateDialog(() {
+                              destinationConveyorId = value;
+                              error = null;
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    nextStationNumber == null
+                        ? 'Selected conveyor is full.'
+                        : 'The station will be placed in slot $nextStationNumber and its address will be updated automatically.',
+                    style: TextStyle(color: t.muted, fontSize: 12),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      error!,
+                      style: TextStyle(color: t.red, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: moving ? null : () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: moving
+                    ? null
+                    : () async {
+                        if (destinationFactoryId == currentFactory.id &&
+                            destinationConveyorId == currentConveyor.id) {
+                          setStateDialog(() {
+                            error = 'Select a different destination.';
+                          });
+                          return;
+                        }
+                        if (destinationConveyor == null) {
+                          setStateDialog(() {
+                            error = 'Select a destination conveyor.';
+                          });
+                          return;
+                        }
+                        if (nextStationNumber == null) {
+                          setStateDialog(() {
+                            error =
+                                'The selected conveyor has no free station slots.';
+                          });
+                          return;
+                        }
+
+                        setStateDialog(() {
+                          moving = true;
+                          error = null;
+                        });
+
+                        try {
+                          await _service.moveStation(
+                            currentFactoryId: currentFactory.id,
+                            currentConveyorId: currentConveyor.id,
+                            stationId: station.id,
+                            destinationFactoryId: destinationFactoryId,
+                            destinationConveyorId: destinationConveyorId,
+                          );
+                          if (!context.mounted) return;
+                          Navigator.pop(context, true);
+                        } catch (e) {
+                          setStateDialog(() {
+                            error = e.toString();
+                            moving = false;
+                          });
+                        }
+                      },
+                child: moving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Move'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (moved == true) {
+      _loadFactories();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${station.name} moved successfully'),
+          backgroundColor: _green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openCoordinateEditor() async {
+    final factory = _selectedFactory;
+    if (factory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a factory before setting coordinates.'),
+          backgroundColor: _red,
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _CoordinateEditorScreen(
+          factory: factory,
+          service: _service,
+        ),
+      ),
+    );
+  }
+
+  String _coordinateSummary(Factory factory) {
+    final stations = factory.conveyors.values
+        .expand((conveyor) => conveyor.stations.values)
+        .toList();
+    if (stations.isEmpty) return 'No stations mapped';
+    final mapped = stations.where((station) => station.hasCoordinates).length;
+    return '$mapped/${stations.length} mapped';
+  }
+
+  String _formatCoord(double? value) {
+    if (value == null) return '--';
+    return value.toStringAsFixed(2);
+  }
+
   // ------------------- Add Factory Dialog -------------------
   Future<void> _showAddFactoryDialog() async {
     final nameController = TextEditingController();
@@ -636,15 +906,44 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           Padding(
                             padding: const EdgeInsets.all(12),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  'Factories (${_factories.length})',
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: _navy),
+                                Expanded(
+                                  child: Text(
+                                    'Factories (${_factories.length})',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: _navy),
+                                  ),
                                 ),
+                                if (_selectedFactory != null) ...[
+                                  Tooltip(
+                                    message:
+                                        _coordinateSummary(_selectedFactory!),
+                                    child: TextButton.icon(
+                                      onPressed: _openCoordinateEditor,
+                                      icon: const Icon(
+                                        Icons.edit_location_alt_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Set Coordinates'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: _navy,
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 0,
+                                        ),
+                                        textStyle: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
+                                ],
                                 IconButton(
                                   icon: const Icon(Icons.add,
                                       size: 18, color: _green),
@@ -879,6 +1178,30 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                                         TextOverflow.ellipsis,
                                                   ),
                                                 ),
+                                                if (station.assetId
+                                                    .trim()
+                                                    .isNotEmpty)
+                                                  TextButton.icon(
+                                                    onPressed: () =>
+                                                        _showMoveStationDialog(
+                                                            station),
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .drive_file_move_outline,
+                                                      size: 16,
+                                                    ),
+                                                    label: const Text('Move'),
+                                                    style: TextButton.styleFrom(
+                                                      foregroundColor: _navy,
+                                                      visualDensity:
+                                                          VisualDensity.compact,
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 0,
+                                                      ),
+                                                    ),
+                                                  ),
                                                 IconButton(
                                                   icon: const Icon(
                                                     Icons.qr_code_2,
@@ -925,6 +1248,20 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                                     fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  station.hasCoordinates
+                                                      ? 'Coordinates: x ${_formatCoord(station.x)} / y ${_formatCoord(station.y)}'
+                                                      : 'Coordinates not set',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color:
+                                                        station.hasCoordinates
+                                                            ? _green
+                                                            : _muted,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
                                               ],
                                             ),
                                           );
@@ -940,6 +1277,788 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CoordinateEditorScreen extends StatefulWidget {
+  final Factory factory;
+  final HierarchyService service;
+
+  const _CoordinateEditorScreen({
+    required this.factory,
+    required this.service,
+  });
+
+  @override
+  State<_CoordinateEditorScreen> createState() =>
+      _CoordinateEditorScreenState();
+}
+
+class _CoordinateEditorScreenState extends State<_CoordinateEditorScreen> {
+  final List<_CoordinateDraftRow> _rows = [];
+  final Map<String, String> _errors = {};
+  bool _saving = false;
+  bool _dirty = false;
+
+  static const Map<String, List<double>> _deltaSample = {
+    'conveyor_1/station_1': [-3.30, 2.20],
+    'conveyor_1/station_2': [-3.30, 4.40],
+    'conveyor_1/station_3': [-3.30, 6.60],
+    'conveyor_2/station_1': [2.20, 2.20],
+    'conveyor_2/station_2': [2.20, 4.95],
+    'conveyor_2/station_3': [2.20, 7.15],
+    'conveyor_3/station_1': [0.00, 2.75],
+    'conveyor_3/station_2': [0.00, 3.025],
+    'conveyor_3/station_3': [0.00, 3.575],
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _rows.addAll(_buildRows(widget.factory));
+  }
+
+  @override
+  void dispose() {
+    for (final row in _rows) {
+      row.dispose();
+    }
+    super.dispose();
+  }
+
+  List<_CoordinateDraftRow> _buildRows(Factory factory) {
+    final conveyors = factory.conveyors.values.toList()
+      ..sort((a, b) => a.number.compareTo(b.number));
+    final rows = <_CoordinateDraftRow>[];
+    for (final conveyor in conveyors) {
+      final stations = conveyor.stations.values.toList()
+        ..sort((a, b) => _stationNumber(a).compareTo(_stationNumber(b)));
+      for (final station in stations) {
+        rows.add(
+          _CoordinateDraftRow(
+            conveyor: conveyor,
+            station: station,
+            xController: TextEditingController(text: _formatInitial(station.x)),
+            yController: TextEditingController(text: _formatInitial(station.y)),
+          ),
+        );
+      }
+    }
+    return rows;
+  }
+
+  int _stationNumber(Station station) {
+    return int.tryParse(station.id.replaceFirst('station_', '')) ?? 0;
+  }
+
+  String _formatInitial(double? value) {
+    if (value == null) return '';
+    final rounded = value.toStringAsFixed(3);
+    return rounded
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  bool get _isDeltaFactory {
+    final id = widget.factory.id.trim().toUpperCase();
+    final name = widget.factory.name.trim().toUpperCase();
+    return id.contains('DELTA') || name.contains('DELTA');
+  }
+
+  int get _mappedCount {
+    return _rows.where((row) {
+      return row.xController.text.trim().isNotEmpty &&
+          row.yController.text.trim().isNotEmpty;
+    }).length;
+  }
+
+  Map<Conveyor, List<_CoordinateDraftRow>> get _rowsByConveyor {
+    final grouped = <Conveyor, List<_CoordinateDraftRow>>{};
+    for (final row in _rows) {
+      grouped.putIfAbsent(row.conveyor, () => []).add(row);
+    }
+    return grouped;
+  }
+
+  void _markDirty(_CoordinateDraftRow row) {
+    if (!_dirty || _errors.containsKey(row.key)) {
+      setState(() {
+        _dirty = true;
+        _errors.remove(row.key);
+      });
+    } else {
+      _dirty = true;
+    }
+  }
+
+  double? _parseCoordinate(String text) {
+    final normalized = text.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+
+  Future<void> _saveAll() async {
+    final errors = <String, String>{};
+    final updates = <String, Map<String, StationCoordinates>>{};
+
+    for (final row in _rows) {
+      final xText = row.xController.text.trim();
+      final yText = row.yController.text.trim();
+      final xEmpty = xText.isEmpty;
+      final yEmpty = yText.isEmpty;
+
+      if (xEmpty != yEmpty) {
+        errors[row.key] = 'Enter both X and Y, or leave both empty.';
+        continue;
+      }
+
+      final x = _parseCoordinate(xText);
+      final y = _parseCoordinate(yText);
+      if (!xEmpty && (x == null || y == null)) {
+        errors[row.key] = 'Use decimal numbers only.';
+        continue;
+      }
+
+      updates.putIfAbsent(row.conveyor.id,
+              () => <String, StationCoordinates>{})[row.station.id] =
+          StationCoordinates(x: x, y: y);
+    }
+
+    if (errors.isNotEmpty) {
+      setState(() => _errors
+        ..clear()
+        ..addAll(errors));
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await widget.service.updateStationCoordinates(
+        factoryId: widget.factory.id,
+        coordinates: updates,
+      );
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _dirty = false;
+        _errors.clear();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Station coordinates saved'),
+          backgroundColor: _green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save coordinates: $e'),
+          backgroundColor: _red,
+        ),
+      );
+    }
+  }
+
+  void _applyDeltaSample() {
+    for (final row in _rows) {
+      final sample = _deltaSample[row.key];
+      if (sample == null) continue;
+      row.xController.text = sample[0].toStringAsFixed(3);
+      row.yController.text = sample[1].toStringAsFixed(3);
+    }
+    setState(() {
+      _dirty = true;
+      _errors.clear();
+    });
+  }
+
+  void _clearAll() {
+    for (final row in _rows) {
+      row.xController.clear();
+      row.yController.clear();
+    }
+    setState(() {
+      _dirty = true;
+      _errors.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final groups = _rowsByConveyor;
+
+    return Scaffold(
+      backgroundColor: t.scaffold,
+      appBar: AppBar(
+        title: Text('Coordinates - ${widget.factory.name}'),
+        actions: [
+          if (_isDeltaFactory)
+            TextButton.icon(
+              onPressed: _saving ? null : _applyDeltaSample,
+              icon: const Icon(Icons.auto_fix_high, size: 16),
+              label: const Text('Prefill DELTA'),
+            ),
+          IconButton(
+            tooltip: 'Clear all coordinates',
+            onPressed: _saving ? null : _clearAll,
+            icon: const Icon(Icons.cleaning_services_outlined),
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+          decoration: BoxDecoration(
+            color: t.card,
+            border: Border(top: BorderSide(color: t.border)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _dirty
+                      ? 'Unsaved coordinate changes'
+                      : 'Coordinates are ready',
+                  style: TextStyle(
+                    color: _dirty ? t.orange : t.green,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('Close'),
+              ),
+              const SizedBox(width: 10),
+              FilledButton.icon(
+                onPressed: _saving ? null : _saveAll,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save_alt_rounded, size: 16),
+                label: const Text('Save All'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: _rows.isEmpty
+          ? Center(
+              child: Text(
+                'This factory has no stations yet.',
+                style: TextStyle(color: t.muted),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+              children: [
+                _CoordinateEditorHero(
+                  factory: widget.factory,
+                  mappedCount: _mappedCount,
+                  totalCount: _rows.length,
+                  hasErrors: _errors.isNotEmpty,
+                ),
+                const SizedBox(height: 14),
+                ...groups.entries.map(
+                  (entry) => _CoordinateConveyorGroup(
+                    conveyor: entry.key,
+                    rows: entry.value,
+                    errors: _errors,
+                    onChanged: _markDirty,
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _CoordinateDraftRow {
+  final Conveyor conveyor;
+  final Station station;
+  final TextEditingController xController;
+  final TextEditingController yController;
+
+  const _CoordinateDraftRow({
+    required this.conveyor,
+    required this.station,
+    required this.xController,
+    required this.yController,
+  });
+
+  String get key => '${conveyor.id}/${station.id}';
+
+  void dispose() {
+    xController.dispose();
+    yController.dispose();
+  }
+}
+
+class _CoordinateEditorHero extends StatelessWidget {
+  final Factory factory;
+  final int mappedCount;
+  final int totalCount;
+  final bool hasErrors;
+
+  const _CoordinateEditorHero({
+    required this.factory,
+    required this.mappedCount,
+    required this.totalCount,
+    required this.hasErrors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final progress = totalCount == 0 ? 0.0 : mappedCount / totalCount;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasErrors ? t.red.withValues(alpha: 0.5) : t.border,
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final metrics = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _CoordinateMetric(
+                icon: Icons.factory_outlined,
+                label: factory.name,
+                color: t.navy,
+              ),
+              _CoordinateMetric(
+                icon: Icons.route_outlined,
+                label: '${factory.conveyors.length} conveyors',
+                color: t.blue,
+              ),
+              _CoordinateMetric(
+                icon: Icons.pin_drop_outlined,
+                label: '$mappedCount/$totalCount mapped',
+                color: hasErrors ? t.red : t.green,
+              ),
+            ],
+          );
+
+          final text = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Station Coordinate Editor',
+                style: TextStyle(
+                  color: t.text,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Type measured X/Y metres for every station. Empty fields stay unset.',
+                style: TextStyle(color: t.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  minHeight: 8,
+                  value: progress.clamp(0.0, 1.0),
+                  backgroundColor: t.border,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    hasErrors ? t.red : t.green,
+                  ),
+                ),
+              ),
+            ],
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                text,
+                const SizedBox(height: 14),
+                metrics,
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: text),
+              const SizedBox(width: 18),
+              SizedBox(width: 290, child: metrics),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CoordinateMetric extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _CoordinateMetric({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDark ? 0.14 : 0.09),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: t.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CoordinateConveyorGroup extends StatelessWidget {
+  final Conveyor conveyor;
+  final List<_CoordinateDraftRow> rows;
+  final Map<String, String> errors;
+  final void Function(_CoordinateDraftRow row) onChanged;
+
+  const _CoordinateConveyorGroup({
+    required this.conveyor,
+    required this.rows,
+    required this.errors,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: t.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            decoration: BoxDecoration(
+              color: t.navyLt.withValues(alpha: context.isDark ? 0.42 : 1),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(8)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.linear_scale_rounded, color: t.navy, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Conveyor ${conveyor.number}',
+                    style: TextStyle(
+                      color: t.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${rows.length} stations',
+                  style: TextStyle(
+                    color: t.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...rows.map(
+            (row) => _CoordinateStationRow(
+              row: row,
+              error: errors[row.key],
+              onChanged: () => onChanged(row),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CoordinateStationRow extends StatelessWidget {
+  final _CoordinateDraftRow row;
+  final String? error;
+  final VoidCallback onChanged;
+
+  const _CoordinateStationRow({
+    required this.row,
+    required this.error,
+    required this.onChanged,
+  });
+
+  bool get _complete {
+    return row.xController.text.trim().isNotEmpty &&
+        row.yController.text.trim().isNotEmpty;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: t.border)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final identity = Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: error != null
+                      ? t.redLt
+                      : (_complete ? t.greenLt : t.scaffold),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: error != null
+                        ? t.red
+                        : (_complete ? t.green : t.border),
+                  ),
+                ),
+                child: Text(
+                  row.station.id.replaceFirst('station_', 'S'),
+                  style: TextStyle(
+                    color:
+                        error != null ? t.red : (_complete ? t.green : t.muted),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      row.station.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: t.text,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      row.station.assetId.trim().isEmpty
+                          ? row.station.address
+                          : '${row.station.assetId} - ${row.station.address}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: t.muted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final fields = Row(
+            children: [
+              Expanded(
+                child: _CoordinateTextField(
+                  controller: row.xController,
+                  label: 'X',
+                  hasError: error != null,
+                  onChanged: onChanged,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _CoordinateTextField(
+                  controller: row.yController,
+                  label: 'Y',
+                  hasError: error != null,
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          );
+          final status = _CoordinateStatusChip(
+            complete: _complete,
+            hasError: error != null,
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                identity,
+                const SizedBox(height: 10),
+                fields,
+                if (error != null) ...[
+                  const SizedBox(height: 6),
+                  Text(error!, style: TextStyle(color: t.red, fontSize: 11)),
+                ],
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(flex: 3, child: identity),
+              const SizedBox(width: 12),
+              SizedBox(width: 260, child: fields),
+              const SizedBox(width: 12),
+              SizedBox(width: 94, child: status),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CoordinateTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final bool hasError;
+  final VoidCallback onChanged;
+
+  const _CoordinateTextField({
+    required this.controller,
+    required this.label,
+    required this.hasError,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return TextField(
+      controller: controller,
+      onChanged: (_) => onChanged(),
+      keyboardType: const TextInputType.numberWithOptions(
+        signed: true,
+        decimal: true,
+      ),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[-0-9.,]')),
+      ],
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: 'm',
+        isDense: true,
+        filled: true,
+        fillColor: t.scaffold,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: hasError ? t.red : t.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: hasError ? t.red : t.navy, width: 1.5),
+        ),
+      ),
+      style: TextStyle(
+        color: t.text,
+        fontWeight: FontWeight.w800,
+        fontFamily: 'monospace',
+      ),
+    );
+  }
+}
+
+class _CoordinateStatusChip extends StatelessWidget {
+  final bool complete;
+  final bool hasError;
+
+  const _CoordinateStatusChip({
+    required this.complete,
+    required this.hasError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final color = hasError ? t.red : (complete ? t.green : t.muted);
+    final label = hasError ? 'Check' : (complete ? 'Mapped' : 'Unset');
+    final icon = hasError
+        ? Icons.error_outline
+        : (complete
+            ? Icons.check_circle_outline
+            : Icons.radio_button_unchecked);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: context.isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: t.text,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1167,7 +2286,8 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                           _QrMetaChip(
                               icon: Icons.precision_manufacturing_outlined,
                               label: widget.assetId),
-                          _QrMetaChip(icon: Icons.factory, label: widget.factoryName),
+                          _QrMetaChip(
+                              icon: Icons.factory, label: widget.factoryName),
                           _QrMetaChip(
                               icon: Icons.linear_scale,
                               label: 'Conveyor ${widget.conveyorNumber}'),
@@ -1230,7 +2350,8 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.print, size: 16),
                         label: const Text('Print QR'),

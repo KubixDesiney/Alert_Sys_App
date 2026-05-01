@@ -11,6 +11,72 @@ class HierarchyService {
   String normalizeAssetId(String value) =>
       value.trim().replaceAll(' ', '').toUpperCase();
 
+  String _buildStationAddress(
+    String factoryId,
+    String conveyorId,
+    int stationNumber,
+  ) {
+    return '${factoryId.replaceAll(' ', '_')}_C${conveyorId.replaceAll('conveyor_', '')}_P$stationNumber';
+  }
+
+  int? _nextAvailableStationNumber(Map<String, Station> stations) {
+    for (int i = 1; i <= maxStations; i++) {
+      if (!stations.containsKey('station_$i')) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _ensureAssetHistoryNode(String assetId) async {
+    final historyRef = _db.child('assets/$assetId/history');
+    final snapshot = await historyRef.get();
+    if (!snapshot.exists) {
+      await historyRef.set(<Object?>[]);
+    }
+  }
+
+  Future<void> _upsertAssetNode({
+    required String assetId,
+    required String stationName,
+    required String factoryId,
+    required String factoryName,
+    required String conveyorId,
+    required int conveyorNumber,
+    required String stationId,
+    required int stationNumber,
+    required String address,
+  }) async {
+    await _db.child('assets/$assetId').update({
+      'assetId': assetId,
+      'name': stationName,
+      'factoryId': factoryId,
+      'factoryName': factoryName,
+      'conveyorId': conveyorId,
+      'conveyorNumber': conveyorNumber,
+      'stationId': stationId,
+      'stationNumber': stationNumber,
+      'address': address,
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    await _ensureAssetHistoryNode(assetId);
+  }
+
+  Future<void> _appendAssetHistory({
+    required String assetId,
+    required Map<String, Object?> entry,
+  }) async {
+    final historyRef = _db.child('assets/$assetId/history');
+    await historyRef.runTransaction((current) {
+      final history = <Object?>[];
+      if (current is List) {
+        history.addAll(List<Object?>.from(current));
+      }
+      history.add(entry);
+      return Transaction.success(history);
+    });
+  }
+
   Stream<List<Factory>> getFactories() {
     return _db.child('hierarchy/factories').onValue.map((event) {
       final data = event.snapshot.value;
@@ -84,6 +150,27 @@ class HierarchyService {
     }
     final assetId = await nextAssetId();
     await assetRef.set(assetId);
+    final factories = await getFactories().first;
+    final factory = factories.cast<Factory?>().firstWhere(
+          (item) => item?.id == factoryId,
+          orElse: () => null,
+        );
+    final conveyor = factory?.conveyors[conveyorId];
+    final station = conveyor?.stations[stationId];
+    final stationNumber =
+        int.tryParse(stationId.replaceFirst('station_', '')) ?? 0;
+    await _upsertAssetNode(
+      assetId: assetId,
+      stationName: station?.name ?? 'Station $stationNumber',
+      factoryId: factoryId,
+      factoryName: factory?.name ?? factoryId,
+      conveyorId: conveyorId,
+      conveyorNumber: conveyor?.number ?? 0,
+      stationId: stationId,
+      stationNumber: stationNumber,
+      address: station?.address ??
+          _buildStationAddress(factoryId, conveyorId, stationNumber),
+    );
     return assetId;
   }
 
@@ -135,6 +222,28 @@ class HierarchyService {
     updates[targetPath] = normalized;
     await _reserveAssetCounterFloor(normalized);
     await _db.update(updates);
+
+    final factories = await getFactories().first;
+    final factory = factories.cast<Factory?>().firstWhere(
+          (item) => item?.id == factoryId,
+          orElse: () => null,
+        );
+    final conveyor = factory?.conveyors[conveyorId];
+    final station = conveyor?.stations[stationId];
+    final stationNumber =
+        int.tryParse(stationId.replaceFirst('station_', '')) ?? 0;
+    await _upsertAssetNode(
+      assetId: normalized,
+      stationName: station?.name ?? 'Station $stationNumber',
+      factoryId: factoryId,
+      factoryName: factory?.name ?? factoryId,
+      conveyorId: conveyorId,
+      conveyorNumber: conveyor?.number ?? 0,
+      stationId: stationId,
+      stationNumber: stationNumber,
+      address: station?.address ??
+          _buildStationAddress(factoryId, conveyorId, stationNumber),
+    );
   }
 
   Future<Station?> findStationByLocation(
@@ -224,13 +333,162 @@ class HierarchyService {
       throw Exception('Station $stationNumber already exists');
     }
     final assetId = await nextAssetId();
+    final stationName = 'Station $stationNumber';
+    final address = _buildStationAddress(factoryId, conveyorId, stationNumber);
     final stationMap = {
-      'name': 'Station $stationNumber',
-      'address':
-          '${factoryId.replaceAll(' ', '_')}_C${conveyorId.replaceAll('conveyor_', '')}_P$stationNumber',
+      'name': stationName,
+      'address': address,
       'assetId': assetId,
     };
     await stationRef.set(stationMap);
+    final factories = await getFactories().first;
+    final factory = factories.cast<Factory?>().firstWhere(
+          (item) => item?.id == factoryId,
+          orElse: () => null,
+        );
+    final conveyor = factory?.conveyors[conveyorId];
+    await _upsertAssetNode(
+      assetId: assetId,
+      stationName: stationName,
+      factoryId: factoryId,
+      factoryName: factory?.name ?? factoryId,
+      conveyorId: conveyorId,
+      conveyorNumber: conveyor?.number ?? 0,
+      stationId: stationId,
+      stationNumber: stationNumber,
+      address: address,
+    );
+  }
+
+  Future<void> updateStationCoordinates({
+    required String factoryId,
+    required Map<String, Map<String, StationCoordinates>> coordinates,
+  }) async {
+    final updates = <String, Object?>{};
+    for (final conveyorEntry in coordinates.entries) {
+      for (final stationEntry in conveyorEntry.value.entries) {
+        final basePath =
+            'hierarchy/factories/$factoryId/conveyors/${conveyorEntry.key}/stations/${stationEntry.key}';
+        updates['$basePath/x'] = stationEntry.value.x;
+        updates['$basePath/y'] = stationEntry.value.y;
+      }
+    }
+    if (updates.isEmpty) return;
+    await _db.update(updates);
+  }
+
+  Future<String> moveStation({
+    required String currentFactoryId,
+    required String currentConveyorId,
+    required String stationId,
+    required String destinationFactoryId,
+    required String destinationConveyorId,
+  }) async {
+    if (currentFactoryId == destinationFactoryId &&
+        currentConveyorId == destinationConveyorId) {
+      throw Exception('Choose a different destination before moving.');
+    }
+
+    final factories = await getFactories().first;
+    final currentFactory = factories.cast<Factory?>().firstWhere(
+          (item) => item?.id == currentFactoryId,
+          orElse: () => null,
+        );
+    final destinationFactory = factories.cast<Factory?>().firstWhere(
+          (item) => item?.id == destinationFactoryId,
+          orElse: () => null,
+        );
+    if (currentFactory == null || destinationFactory == null) {
+      throw Exception('Could not resolve the selected factory.');
+    }
+
+    final currentConveyor = currentFactory.conveyors[currentConveyorId];
+    final destinationConveyor =
+        destinationFactory.conveyors[destinationConveyorId];
+    if (currentConveyor == null || destinationConveyor == null) {
+      throw Exception('Could not resolve the selected conveyor.');
+    }
+
+    final oldStationRef = _db.child(
+      'hierarchy/factories/$currentFactoryId/conveyors/$currentConveyorId/stations/$stationId',
+    );
+    final oldSnapshot = await oldStationRef.get();
+    if (!oldSnapshot.exists || oldSnapshot.value is! Map) {
+      throw Exception('The station no longer exists.');
+    }
+
+    final stationMap = Map<Object?, Object?>.from(oldSnapshot.value as Map);
+    final station = Station.fromMap(stationId, stationMap);
+    final assetId = station.assetId.trim();
+    if (assetId.isEmpty) {
+      throw Exception('Only stations with an Asset ID can be moved.');
+    }
+
+    final newStationNumber =
+        _nextAvailableStationNumber(destinationConveyor.stations);
+    if (newStationNumber == null) {
+      throw Exception(
+          'Conveyor ${destinationConveyor.number} already has $maxStations stations.');
+    }
+
+    final newStationId = 'station_$newStationNumber';
+    final newAddress = _buildStationAddress(
+      destinationFactoryId,
+      destinationConveyorId,
+      newStationNumber,
+    );
+    final now = DateTime.now().toUtc().toIso8601String();
+    final oldStationNumber =
+        int.tryParse(stationId.replaceFirst('station_', '')) ?? 0;
+
+    await _db.update({
+      'hierarchy/factories/$destinationFactoryId/conveyors/$destinationConveyorId/stations/$newStationId':
+          {
+        'name': station.name,
+        'address': newAddress,
+        'assetId': assetId,
+      },
+      'hierarchy/factories/$currentFactoryId/conveyors/$currentConveyorId/stations/$stationId':
+          null,
+      'assets/$assetId/assetId': assetId,
+      'assets/$assetId/name': station.name,
+      'assets/$assetId/factoryId': destinationFactoryId,
+      'assets/$assetId/factoryName': destinationFactory.name,
+      'assets/$assetId/conveyorId': destinationConveyorId,
+      'assets/$assetId/conveyorNumber': destinationConveyor.number,
+      'assets/$assetId/stationId': newStationId,
+      'assets/$assetId/stationNumber': newStationNumber,
+      'assets/$assetId/address': newAddress,
+      'assets/$assetId/updatedAt': now,
+    });
+
+    await _ensureAssetHistoryNode(assetId);
+    await _appendAssetHistory(
+      assetId: assetId,
+      entry: {
+        'movedAt': now,
+        'from': {
+          'factoryId': currentFactoryId,
+          'factoryName': currentFactory.name,
+          'conveyorId': currentConveyorId,
+          'conveyorNumber': currentConveyor.number,
+          'stationId': stationId,
+          'stationNumber': oldStationNumber,
+          'address': station.address,
+        },
+        'to': {
+          'factoryId': destinationFactoryId,
+          'factoryName': destinationFactory.name,
+          'conveyorId': destinationConveyorId,
+          'conveyorNumber': destinationConveyor.number,
+          'stationId': newStationId,
+          'stationNumber': newStationNumber,
+          'address': newAddress,
+        },
+      },
+    );
+
+    return newStationId;
   }
 
   Future<void> deleteFactory(String factoryId) async {
