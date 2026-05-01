@@ -325,7 +325,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    initialValue: destinationFactoryId,
+                    value: destinationFactoryId,
                     decoration: const InputDecoration(
                       labelText: 'Destination Factory',
                       border: OutlineInputBorder(),
@@ -350,7 +350,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: destinationConveyorId.isEmpty
+                    value: destinationConveyorId.isEmpty
                         ? null
                         : destinationConveyorId,
                     decoration: const InputDecoration(
