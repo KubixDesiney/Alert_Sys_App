@@ -30,11 +30,6 @@ class _LoginScreenState extends State<LoginScreen> {
         'email_hint': 'your@email.com',
         'password': 'Password',
         'login': 'Sign In',
-        'test_accounts': 'Test Accounts:',
-        'production_manager': 'Production Manager',
-        'supervisor': 'Supervisor',
-        'technician': 'Technician',
-        'accounts_note': 'Accounts are created by administrators',
       },
       'fr': {
         'title': 'Connexion',
@@ -43,11 +38,6 @@ class _LoginScreenState extends State<LoginScreen> {
         'email_hint': 'votre@email.com',
         'password': 'Mot de passe',
         'login': 'Se connecter',
-        'test_accounts': 'Comptes de test :',
-        'production_manager': 'Chef de Production',
-        'supervisor': 'Superviseur',
-        'technician': 'Technicien',
-        'accounts_note': 'Les comptes sont crees par les administrateurs',
       },
     };
 
@@ -183,7 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: Border.all(color: t.border),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -337,44 +327,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 28),
-
-                  // Test accounts info
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: t.scaffold,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: t.border),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          _t('test_accounts'),
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: t.text,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _testAccountRow(
-                            t, 'superadmin@test.com', 'Super Admin'),
-                        _testAccountRow(
-                            t, 'admin@test.com', _t('production_manager')),
-                        _testAccountRow(
-                            t, 'superviseur@test.com', _t('supervisor')),
-                        _testAccountRow(t, 'tech@test.com', _t('technician')),
-                        const SizedBox(height: 8),
-                        Text(
-                          _t('accounts_note'),
-                          style: TextStyle(fontSize: 11, color: t.muted),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -384,36 +336,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _testAccountRow(AppTheme t, String email, String role) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(Icons.person_outline, size: 14, color: t.muted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              email,
-              style: TextStyle(fontSize: 12, color: t.text),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: t.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              role,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: t.red,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
