@@ -1,5 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:ui' as ui;
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../theme.dart';
@@ -67,6 +75,169 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
   void dispose() {
     _factoriesSubscription?.cancel();
     super.dispose();
+  }
+
+  int? _stationNumber(Station station) {
+    final fromId = int.tryParse(station.id.replaceAll('station_', ''));
+    if (fromId != null) return fromId;
+    final embedded = RegExp(r'\d+').firstMatch(station.name);
+    return embedded == null ? null : int.tryParse(embedded.group(0)!);
+  }
+
+  String _stationQrPayload({
+    required String assetId,
+    required Factory factory,
+    required Conveyor conveyor,
+    required int stationNumber,
+  }) {
+    return const JsonEncoder.withIndent('  ').convert({
+      'assetId': assetId,
+      'usine': factory.name,
+      'convoyeur': conveyor.number,
+      'poste': stationNumber,
+    });
+  }
+
+  Future<void> _showStationQrDialog(Station station) async {
+    final factory = _selectedFactory;
+    final conveyor = _selectedConveyor;
+    final stationNumber = _stationNumber(station);
+    if (factory == null || conveyor == null || stationNumber == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a valid station before generating a QR code.'),
+          backgroundColor: _red,
+        ),
+      );
+      return;
+    }
+
+    var assetId = station.assetId.trim();
+    try {
+      if (assetId.isEmpty) {
+        assetId = await _service.ensureStationAssetId(
+          factory.id,
+          conveyor.id,
+          station.id,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not create Asset ID: $e')),
+      );
+      return;
+    }
+
+    final payload = _stationQrPayload(
+      assetId: assetId,
+      factory: factory,
+      conveyor: conveyor,
+      stationNumber: stationNumber,
+    );
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _StationQrDialog(
+        stationName: station.name,
+        factoryName: factory.name,
+        conveyorNumber: conveyor.number,
+        stationNumber: stationNumber,
+        assetId: assetId,
+        payload: payload,
+        onRelink: () {
+          Navigator.of(context).pop();
+          _showRelinkAssetDialog(station);
+        },
+      ),
+    );
+  }
+
+  Future<void> _showRelinkAssetDialog(Station station) async {
+    final factory = _selectedFactory;
+    final conveyor = _selectedConveyor;
+    if (factory == null || conveyor == null) return;
+
+    final controller = TextEditingController(text: station.assetId);
+    String? error;
+    final assetId = await showDialog<String>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          final t = context.appTheme;
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.precision_manufacturing_outlined, color: t.navy),
+                const SizedBox(width: 8),
+                const Text('Relink Asset ID'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Asset ID',
+                    hintText: 'MACH-001',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!, style: TextStyle(color: t.red, fontSize: 12)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final normalized = _service.normalizeAssetId(controller.text);
+                  if (normalized.isEmpty) {
+                    setStateDialog(() => error = 'Asset ID is required');
+                    return;
+                  }
+                  Navigator.pop(context, normalized);
+                },
+                child: const Text('Relink'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+    if (assetId == null) return;
+    if (!mounted) return;
+
+    try {
+      await _service.assignAssetIdToStation(
+        factoryId: factory.id,
+        conveyorId: conveyor.id,
+        stationId: station.id,
+        assetId: assetId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$assetId linked to ${station.name}'),
+          backgroundColor: _green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not relink asset: $e')),
+      );
+    }
   }
 
   // ------------------- Add Factory Dialog -------------------
@@ -491,37 +662,48 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                   ? const Center(
                                       child: Text('No factories',
                                           style: TextStyle(color: _muted)))
-: ListView.builder(
-  itemCount: _factories.length,
-  itemBuilder: (context, index) {
-    final factory = _factories[index];
-    final isSelected = _selectedFactory?.id == factory.id;
-    return Container(
-      color: isSelected ? _navy.withOpacity(0.1) : Colors.transparent,
-      child: ListTile(
-        title: Text(
-          factory.name,
-          style: TextStyle(
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-            color: isSelected ? _navy : null,
-          ),
-        ),
-        subtitle: Text(
-          '${factory.location} · ${factory.conveyors.length} conveyor(s)',
-          style: const TextStyle(fontSize: 12, color: _muted),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, size: 18, color: _red),
-          onPressed: () => _deleteFactory(factory),
-        ),
-        onTap: () => setState(() {
-          _selectedFactory = factory;
-          _selectedConveyor = null;
-        }),
-      ),
-    );
-  },
-)),
+                                  : ListView.builder(
+                                      itemCount: _factories.length,
+                                      itemBuilder: (context, index) {
+                                        final factory = _factories[index];
+                                        final isSelected =
+                                            _selectedFactory?.id == factory.id;
+                                        return Container(
+                                          color: isSelected
+                                              ? _navy.withValues(alpha: 0.1)
+                                              : Colors.transparent,
+                                          child: ListTile(
+                                            title: Text(
+                                              factory.name,
+                                              style: TextStyle(
+                                                fontWeight: isSelected
+                                                    ? FontWeight.bold
+                                                    : FontWeight.w600,
+                                                color:
+                                                    isSelected ? _navy : null,
+                                              ),
+                                            ),
+                                            subtitle: Text(
+                                              '${factory.location} · ${factory.conveyors.length} conveyor(s)',
+                                              style: const TextStyle(
+                                                  fontSize: 12, color: _muted),
+                                            ),
+                                            trailing: IconButton(
+                                              icon: const Icon(
+                                                  Icons.delete_outline,
+                                                  size: 18,
+                                                  color: _red),
+                                              onPressed: () =>
+                                                  _deleteFactory(factory),
+                                            ),
+                                            onTap: () => setState(() {
+                                              _selectedFactory = factory;
+                                              _selectedConveyor = null;
+                                            }),
+                                          ),
+                                        );
+                                      },
+                                    )),
                         ],
                       ),
                     ),
@@ -573,43 +755,64 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                       ? const Center(
                                           child: Text('No conveyors',
                                               style: TextStyle(color: _muted)))
-: ListView.builder(
-  itemCount: conveyors.length,
-  itemBuilder: (context, index) {
-    final conveyor = conveyors[index];
-    final isSelected = _selectedConveyor?.id == conveyor.id;
-    return Container(
-      color: isSelected ? _navy.withOpacity(0.1) : Colors.transparent,
-      child: ListTile(
-        title: Text(
-          'Conveyor ${conveyor.number}',
-          style: TextStyle(
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-            color: isSelected ? _navy : null,
-          ),
-        ),
-        subtitle: Text(
-          '${conveyor.stations.length}/${_service.maxStations} stations',
-          style: const TextStyle(fontSize: 12, color: _muted),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit, size: 18),
-              onPressed: _showEditConveyorDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 18, color: _red),
-              onPressed: () => _deleteConveyor(conveyor),
-            ),
-          ],
-        ),
-        onTap: () => setState(() => _selectedConveyor = conveyor),
-      ),
-    );
-  },
-)),
+                                      : ListView.builder(
+                                          itemCount: conveyors.length,
+                                          itemBuilder: (context, index) {
+                                            final conveyor = conveyors[index];
+                                            final isSelected =
+                                                _selectedConveyor?.id ==
+                                                    conveyor.id;
+                                            return Container(
+                                              color: isSelected
+                                                  ? _navy.withValues(alpha: 0.1)
+                                                  : Colors.transparent,
+                                              child: ListTile(
+                                                title: Text(
+                                                  'Conveyor ${conveyor.number}',
+                                                  style: TextStyle(
+                                                    fontWeight: isSelected
+                                                        ? FontWeight.bold
+                                                        : FontWeight.w600,
+                                                    color: isSelected
+                                                        ? _navy
+                                                        : null,
+                                                  ),
+                                                ),
+                                                subtitle: Text(
+                                                  '${conveyor.stations.length}/${_service.maxStations} stations',
+                                                  style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: _muted),
+                                                ),
+                                                trailing: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.edit,
+                                                          size: 18),
+                                                      onPressed:
+                                                          _showEditConveyorDialog,
+                                                    ),
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                          Icons.delete_outline,
+                                                          size: 18,
+                                                          color: _red),
+                                                      onPressed: () =>
+                                                          _deleteConveyor(
+                                                              conveyor),
+                                                    ),
+                                                  ],
+                                                ),
+                                                onTap: () => setState(() =>
+                                                    _selectedConveyor =
+                                                        conveyor),
+                                              ),
+                                            );
+                                          },
+                                        )),
                         ],
                       ),
                     ),
@@ -667,11 +870,63 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                         itemBuilder: (context, index) {
                                           final station = stations[index];
                                           return ListTile(
-                                            title: Text(station.name),
-                                            subtitle: Text(station.address,
-                                                style: const TextStyle(
+                                            title: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    station.name,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  icon: const Icon(
+                                                    Icons.qr_code_2,
+                                                    size: 18,
+                                                  ),
+                                                  color: _navy,
+                                                  tooltip:
+                                                      'Generate station QR',
+                                                  onPressed: () =>
+                                                      _showStationQrDialog(
+                                                          station),
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                    minWidth: 32,
+                                                    minHeight: 32,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            subtitle: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  station.address,
+                                                  style: const TextStyle(
                                                     fontSize: 11,
-                                                    color: _muted)),
+                                                    color: _muted,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  station.assetId.trim().isEmpty
+                                                      ? 'Asset ID pending'
+                                                      : station.assetId,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: station.assetId
+                                                            .trim()
+                                                            .isEmpty
+                                                        ? _muted
+                                                        : _navy,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           );
                                         },
                                       ),
@@ -685,6 +940,360 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+Future<Uint8List> _renderQrPng(String data) async {
+  final painter = QrPainter(
+    data: data,
+    version: QrVersions.auto,
+    gapless: false,
+    eyeStyle: const QrEyeStyle(
+      eyeShape: QrEyeShape.square,
+      color: Color(0xFF0F172A),
+    ),
+    dataModuleStyle: const QrDataModuleStyle(
+      dataModuleShape: QrDataModuleShape.square,
+      color: Color(0xFF0F172A),
+    ),
+  );
+  final image = await painter.toImage(512);
+  final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+  return bytes!.buffer.asUint8List();
+}
+
+class _StationQrDialog extends StatefulWidget {
+  final String stationName;
+  final String factoryName;
+  final int conveyorNumber;
+  final int stationNumber;
+  final String assetId;
+  final String payload;
+  final VoidCallback onRelink;
+
+  const _StationQrDialog({
+    required this.stationName,
+    required this.factoryName,
+    required this.conveyorNumber,
+    required this.stationNumber,
+    required this.assetId,
+    required this.payload,
+    required this.onRelink,
+  });
+
+  @override
+  State<_StationQrDialog> createState() => _StationQrDialogState();
+}
+
+class _StationQrDialogState extends State<_StationQrDialog> {
+  bool _downloading = false;
+  bool _printing = false;
+
+  Future<void> _downloadPng() async {
+    setState(() => _downloading = true);
+    try {
+      final bytes = await _renderQrPng(widget.payload);
+      final name = 'qr_${widget.assetId}';
+      await FileSaver.instance.saveFile(
+        name: name,
+        bytes: bytes,
+        ext: 'png',
+        mimeType: MimeType.png,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('QR saved as $name.png')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Download failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _printQr() async {
+    setState(() => _printing = true);
+    try {
+      final bytes = await _renderQrPng(widget.payload);
+      final doc = pw.Document();
+      final image = pw.MemoryImage(bytes);
+      doc.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (_) => pw.Center(
+            child: pw.Column(
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                pw.Image(image, width: 300, height: 300),
+                pw.SizedBox(height: 16),
+                pw.Text(
+                  widget.stationName,
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                pw.Text(
+                  '${widget.factoryName} · Conveyor ${widget.conveyorNumber} · Post ${widget.stationNumber}',
+                  style: const pw.TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await Printing.layoutPdf(onLayout: (_) async => doc.save());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Print failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _printing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Material(
+          color: t.card,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(height: 4, color: t.navy),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: t.navyLt,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.qr_code_2, color: t.navy, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Station QR Code',
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.stationName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: t.muted, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      icon: Icon(Icons.close, color: t.muted),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 520),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: t.border),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: QrImageView(
+                            data: widget.payload,
+                            version: QrVersions.auto,
+                            size: 220,
+                            backgroundColor: Colors.white,
+                            gapless: false,
+                            eyeStyle: const QrEyeStyle(
+                              eyeShape: QrEyeShape.square,
+                              color: Color(0xFF0F172A),
+                            ),
+                            dataModuleStyle: const QrDataModuleStyle(
+                              dataModuleShape: QrDataModuleShape.square,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _QrMetaChip(
+                              icon: Icons.precision_manufacturing_outlined,
+                              label: widget.assetId),
+                          _QrMetaChip(icon: Icons.factory, label: widget.factoryName),
+                          _QrMetaChip(
+                              icon: Icons.linear_scale,
+                              label: 'Conveyor ${widget.conveyorNumber}'),
+                          _QrMetaChip(
+                              icon: Icons.settings,
+                              label: 'Post ${widget.stationNumber}'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: widget.onRelink,
+                          icon: const Icon(Icons.link, size: 16),
+                          label: const Text('Relink Asset ID'),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: t.scaffold,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: t.border),
+                        ),
+                        child: SelectableText(
+                          widget.payload,
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 12,
+                            height: 1.35,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                decoration: BoxDecoration(
+                  color: t.scaffold,
+                  border: Border(top: BorderSide(color: t.border)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, size: 16),
+                        label: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _printing ? null : _printQr,
+                        icon: _printing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.print, size: 16),
+                        label: const Text('Print QR'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _downloading ? null : _downloadPng,
+                        icon: _downloading
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.download, size: 16),
+                        label: const Text('Download PNG'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QrMetaChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _QrMetaChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: t.navyLt,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: t.navy.withValues(alpha: 0.16)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: t.navy),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: t.navy,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
