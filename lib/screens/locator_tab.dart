@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 // lib/screens/locator_tab.dart
 //
 // Supervisor-facing locator. Renders the FactoryMap built by the production
@@ -653,8 +655,8 @@ class _MapCardState extends State<_MapCard> {
       scale,
     );
     return Matrix4.identity()
-      ..translateByDouble(tx, ty, 0, 1)
-      ..scaleByDouble(scale, scale, 1, 1);
+      ..translate(tx, ty)
+      ..scale(scale);
   }
 
   double _boundTranslation(

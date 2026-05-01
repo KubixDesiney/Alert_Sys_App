@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 // lib/screens/factory_mapping_tab.dart
 //
 // Production-manager facing map editor. Renders a snap-to-grid canvas where
@@ -420,7 +422,7 @@ class _Header extends StatelessWidget {
           SizedBox(
             width: 220,
             child: DropdownButtonFormField<String>(
-              initialValue: selectedId,
+              value: selectedId,
               isDense: true,
               decoration: const InputDecoration(
                 labelText: 'Factory',
