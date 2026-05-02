@@ -59,16 +59,63 @@ class _OverviewTabState extends State<_OverviewTab> {
   List<Factory> _factories = [];
   String? _historyFilter;
 
+  // Predictive intelligence (worker-driven)
+  MorningBriefing? _briefing;
+  PredictiveModel? _predictions;
+  StreamSubscription<MorningBriefing?>? _briefSub;
+  StreamSubscription<PredictiveModel?>? _predSub;
+  bool _briefingWarmed = false;
+  bool _predictionsWarmed = false;
+
   @override
   void initState() {
     super.initState();
     _loadFactories();
+    _bindPredictiveStreams();
+    _warmPredictiveCaches();
+  }
+
+  @override
+  void dispose() {
+    _briefSub?.cancel();
+    _predSub?.cancel();
+    super.dispose();
   }
 
   void _loadFactories() {
     HierarchyService().getFactories().listen((factories) {
       if (mounted) setState(() => _factories = factories);
     });
+  }
+
+  void _bindPredictiveStreams() {
+    _briefSub =
+        PredictiveIntelService.instance.briefingStream().listen((b) {
+      if (mounted) setState(() => _briefing = b);
+    });
+    _predSub =
+        PredictiveIntelService.instance.predictionsStream().listen((p) {
+      if (mounted) setState(() => _predictions = p);
+    });
+  }
+
+  Future<void> _warmPredictiveCaches() async {
+    // Trigger a single fetch on first load so the worker primes the cache
+    // even if the cron hasn't run yet.
+    if (!_briefingWarmed) {
+      _briefingWarmed = true;
+      unawaited(PredictiveIntelService.instance.fetchBriefing());
+    }
+    if (!_predictionsWarmed) {
+      _predictionsWarmed = true;
+      unawaited(PredictiveIntelService.instance.fetchPredictions());
+    }
+  }
+
+  Future<void> _refreshBriefing() async {
+    final fresh =
+        await PredictiveIntelService.instance.fetchBriefing(force: true);
+    if (mounted && fresh != null) setState(() => _briefing = fresh);
   }
 
   // ───── Existing data helpers (preserved) ─────────────────────────────────
@@ -468,10 +515,11 @@ class _OverviewTabState extends State<_OverviewTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _HeroHeader(
+          _AIMorningBriefingHero(
+            briefing: _briefing,
             timeRangeLabel: widget.timeRangeLabel,
             timeRangeSubtitle: widget.timeRangeSubtitle,
-            isLive: true,
+            onRefresh: _refreshBriefing,
           ),
           const SizedBox(height: 14),
           _ActiveFilterBanner(
@@ -534,8 +582,17 @@ class _OverviewTabState extends State<_OverviewTab> {
             const SizedBox(height: 18),
           ],
 
-          _TypeBreakdownPanel(
+          // ── Predictive Failure Alerts (ML on historical patterns) ──
+          _PredictiveFailureCard(
+            model: _predictions,
+            describeType: _typeLabel,
+          ),
+          const SizedBox(height: 18),
+
+          // ── Predictive Risk Heatmap (replaces static type bars) ──
+          _PredictiveRiskHeatmap(
             stats: ts,
+            model: _predictions,
             activeFilter: _historyFilter,
             onTap: _setHistoryFilter,
           ),
@@ -643,20 +700,54 @@ class _OverviewTabState extends State<_OverviewTab> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HERO HEADER
+// AI MORNING BRIEFING HERO — replaces the static greeting with an LLM
+// paragraph regenerated nightly by the Cloudflare Worker. Sparkling motion
+// graphics, animated gradient mesh, dark/light aware.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _HeroHeader extends StatelessWidget {
+class _AIMorningBriefingHero extends StatefulWidget {
+  final MorningBriefing? briefing;
   final String timeRangeLabel;
   final String timeRangeSubtitle;
-  final bool isLive;
-  const _HeroHeader({
+  final Future<void> Function() onRefresh;
+  const _AIMorningBriefingHero({
+    required this.briefing,
     required this.timeRangeLabel,
     required this.timeRangeSubtitle,
-    required this.isLive,
+    required this.onRefresh,
   });
 
-  String _greeting() {
+  @override
+  State<_AIMorningBriefingHero> createState() => _AIMorningBriefingHeroState();
+}
+
+class _AIMorningBriefingHeroState extends State<_AIMorningBriefingHero>
+    with TickerProviderStateMixin {
+  late final AnimationController _meshCtrl;
+  late final AnimationController _sparkleCtrl;
+  bool _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _meshCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 14),
+    )..repeat();
+    _sparkleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 6),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _meshCtrl.dispose();
+    _sparkleCtrl.dispose();
+    super.dispose();
+  }
+
+  String _fallbackGreeting() {
     final h = DateTime.now().hour;
     if (h < 5) return 'Working late';
     if (h < 12) return 'Good morning';
@@ -664,108 +755,276 @@ class _HeroHeader extends StatelessWidget {
     return 'Good evening';
   }
 
+  String _displaySummary() {
+    final b = widget.briefing;
+    if (b != null && b.summary.trim().isNotEmpty) return b.summary.trim();
+    return '${_fallbackGreeting()}, supervisor. Your AI briefing is warming up — historical patterns are being analysed in the background. Hard data and a personalised summary will land here within the next minute.';
+  }
+
+  String _modelLabel() {
+    final b = widget.briefing;
+    if (b == null) return 'AI BRIEFING · WARMING UP';
+    if (b.model == null || b.model == 'fallback') return 'AI BRIEFING · OFFLINE FALLBACK';
+    return 'AI BRIEFING · LLAMA 3.2';
+  }
+
+  String _generatedLabel() {
+    final ts = widget.briefing?.generatedAt;
+    if (ts == null) return 'just now';
+    final dt = DateTime.tryParse(ts);
+    if (dt == null) return 'just now';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'moments ago';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  Future<void> _doRefresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    await widget.onRefresh();
+    if (mounted) setState(() => _refreshing = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(18, 16, 16, 16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: context.isDark
-              ? [
-                  const Color(0xFF1E3A5F),
-                  const Color(0xFF1E293B),
-                ]
-              : [
-                  const Color(0xFF0D4A75),
-                  const Color(0xFF1E5C8C),
-                ],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: theme.navy.withValues(alpha: 0.18),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final isDark = context.isDark;
+    final summary = _displaySummary();
+    final b = widget.briefing;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
         children: [
-          Expanded(
+          // Animated gradient mesh background
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: _meshCtrl,
+              builder: (_, __) => CustomPaint(
+                painter: _AuroraMeshPainter(
+                  t: _meshCtrl.value,
+                  dark: isDark,
+                ),
+              ),
+            ),
+          ),
+          // Sparkles layer
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _sparkleCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _SparklePainter(t: _sparkleCtrl.value),
+                ),
+              ),
+            ),
+          ),
+          // Glassy overlay for legibility
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.black.withValues(alpha: isDark ? 0.18 : 0.05),
+                    Colors.black.withValues(alpha: isDark ? 0.42 : 0.20),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Content
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 18, 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    if (isLive) const _LivePulseDot(),
-                    if (isLive) const SizedBox(width: 8),
-                    Text(
-                      isLive ? 'LIVE  ·  REAL-TIME' : 'OVERVIEW',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.6,
-                        color: Colors.white.withValues(alpha: 0.75),
+                    const _LivePulseDot(),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.auto_awesome_rounded,
+                              size: 11, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            _modelLabel(),
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.4,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.calendar_month_rounded,
+                              size: 13, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text(
+                            widget.timeRangeLabel,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${_greeting()}, supervisor',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Operations Overview',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.1,
-                  ),
-                ),
-                if (timeRangeSubtitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    timeRangeSubtitle,
+                const SizedBox(height: 14),
+                ShaderMask(
+                  shaderCallback: (rect) => const LinearGradient(
+                    colors: [Colors.white, Color(0xFFE0E7FF)],
+                  ).createShader(rect),
+                  child: const Text(
+                    'Operations Briefing',
                     style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.1,
+                      letterSpacing: -0.4,
                     ),
                   ),
-                ],
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(99),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.calendar_month_rounded,
-                    size: 14, color: Colors.white),
-                const SizedBox(width: 6),
-                Text(
-                  timeRangeLabel,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                ),
+                const SizedBox(height: 10),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 480),
+                  child: Text(
+                    summary,
+                    key: ValueKey(summary.hashCode),
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      color: Colors.white.withValues(alpha: 0.92),
+                      height: 1.55,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (b?.topType != null)
+                      _briefChip(
+                        Icons.local_fire_department_rounded,
+                        '${_typeLabel(b!.topType!)} leads · ${b.topTypeCount}',
+                      ),
+                    if (b?.topFactory != null)
+                      _briefChip(
+                        Icons.factory_rounded,
+                        '${b!.topFactory} most active',
+                      ),
+                    if (b != null)
+                      _briefChip(
+                        Icons.trending_up_rounded,
+                        '${b.resolutionRate}% resolved',
+                      ),
+                    _briefChip(
+                      Icons.schedule_rounded,
+                      'Updated ${_generatedLabel()}',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      widget.timeRangeSubtitle,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(99),
+                        onTap: _doRefresh,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 7),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.white.withValues(alpha: 0.22),
+                                Colors.white.withValues(alpha: 0.10),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_refreshing)
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.6,
+                                    valueColor: AlwaysStoppedAnimation(
+                                        Colors.white),
+                                  ),
+                                )
+                              else
+                                const Icon(Icons.auto_awesome_rounded,
+                                    size: 13, color: Colors.white),
+                              const SizedBox(width: 6),
+                              Text(
+                                _refreshing ? 'Generating…' : 'Regenerate',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: theme.text == Colors.white
+                                      ? Colors.white
+                                      : Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -774,6 +1033,149 @@ class _HeroHeader extends StatelessWidget {
       ),
     );
   }
+
+  Widget _briefChip(IconData icon, String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.13),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 11, color: Colors.white.withValues(alpha: 0.92)),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: Colors.white.withValues(alpha: 0.95),
+              letterSpacing: 0.2,
+            ),
+          ),
+        ]),
+      );
+}
+
+// Aurora mesh — three soft radial gradient blobs slowly orbiting.
+class _AuroraMeshPainter extends CustomPainter {
+  final double t;
+  final bool dark;
+  _AuroraMeshPainter({required this.t, required this.dark});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = dark
+        ? const [Color(0xFF0B1E3F), Color(0xFF1E2A4D)]
+        : const [Color(0xFF0D4A75), Color(0xFF1E5C8C)];
+    final bgPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: base,
+      ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, bgPaint);
+
+    final twoPi = math.pi * 2;
+    final blobs = [
+      _Blob(
+        center: Offset(
+          size.width * (0.20 + 0.18 * math.sin(twoPi * t)),
+          size.height * (0.30 + 0.18 * math.cos(twoPi * t * 0.9)),
+        ),
+        radius: size.width * 0.55,
+        color: dark
+            ? const Color(0xFF6366F1).withValues(alpha: 0.35)
+            : const Color(0xFF60A5FA).withValues(alpha: 0.55),
+      ),
+      _Blob(
+        center: Offset(
+          size.width * (0.78 + 0.10 * math.cos(twoPi * (t + 0.33))),
+          size.height * (0.65 + 0.18 * math.sin(twoPi * (t + 0.33))),
+        ),
+        radius: size.width * 0.55,
+        color: dark
+            ? const Color(0xFF8B5CF6).withValues(alpha: 0.32)
+            : const Color(0xFFC084FC).withValues(alpha: 0.45),
+      ),
+      _Blob(
+        center: Offset(
+          size.width * (0.52 + 0.20 * math.sin(twoPi * (t + 0.66))),
+          size.height * (0.85 + 0.15 * math.cos(twoPi * (t + 0.66))),
+        ),
+        radius: size.width * 0.55,
+        color: dark
+            ? const Color(0xFF06B6D4).withValues(alpha: 0.28)
+            : const Color(0xFF38BDF8).withValues(alpha: 0.40),
+      ),
+    ];
+
+    for (final b in blobs) {
+      final paint = Paint()
+        ..shader = RadialGradient(
+          colors: [b.color, b.color.withValues(alpha: 0)],
+        ).createShader(Rect.fromCircle(center: b.center, radius: b.radius))
+        ..blendMode = BlendMode.plus;
+      canvas.drawCircle(b.center, b.radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AuroraMeshPainter old) =>
+      old.t != t || old.dark != dark;
+}
+
+class _Blob {
+  final Offset center;
+  final double radius;
+  final Color color;
+  _Blob({required this.center, required this.radius, required this.color});
+}
+
+// Sparkle particles drifting upward, fading in/out.
+class _SparklePainter extends CustomPainter {
+  final double t;
+  _SparklePainter({required this.t});
+
+  static final List<_Sparkle> _seeds = List.generate(28, (i) {
+    final r = math.Random(i * 7 + 11);
+    return _Sparkle(
+      x: r.nextDouble(),
+      yOffset: r.nextDouble(),
+      speed: 0.20 + r.nextDouble() * 0.55,
+      size: 0.6 + r.nextDouble() * 1.8,
+      phase: r.nextDouble(),
+    );
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white;
+    for (final s in _seeds) {
+      final progress = ((t * s.speed) + s.phase) % 1.0;
+      final y = (1 - progress) * size.height;
+      final x = s.x * size.width +
+          math.sin((progress + s.phase) * math.pi * 2) * 8;
+      final twinkle = 0.5 + 0.5 * math.sin((t + s.phase) * math.pi * 4);
+      final alpha = (twinkle * (1 - progress) * 0.7).clamp(0.0, 1.0);
+      paint.color = Colors.white.withValues(alpha: alpha);
+      canvas.drawCircle(Offset(x, y + s.yOffset * 6), s.size, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SparklePainter old) => old.t != t;
+}
+
+class _Sparkle {
+  final double x, yOffset, speed, size, phase;
+  _Sparkle({
+    required this.x,
+    required this.yOffset,
+    required this.speed,
+    required this.size,
+    required this.phase,
+  });
 }
 
 class _LivePulseDot extends StatefulWidget {
@@ -1540,15 +1942,19 @@ class _InsightsStrip extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TYPE BREAKDOWN PANEL — animated horizontal bars
+// PREDICTIVE RISK HEATMAP — replaces static type bars with a 24h probability
+// curve per alert type. Each row renders animated wave bars driven by the
+// worker's Poisson model on the last 30 days of history.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _TypeBreakdownPanel extends StatelessWidget {
+class _PredictiveRiskHeatmap extends StatelessWidget {
   final Map<String, Map<String, int>> stats;
+  final PredictiveModel? model;
   final String? activeFilter;
   final void Function(String) onTap;
-  const _TypeBreakdownPanel({
+  const _PredictiveRiskHeatmap({
     required this.stats,
+    required this.model,
     required this.activeFilter,
     required this.onTap,
   });
@@ -1556,56 +1962,100 @@ class _TypeBreakdownPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    final maxTotal = stats.values
-        .map((m) => m['total']!)
-        .fold<int>(0, (a, b) => a > b ? a : b);
-
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
         color: theme.card,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: theme.border),
+        boxShadow: [
+          BoxShadow(
+            color: theme.purple.withValues(alpha: context.isDark ? 0.06 : 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.donut_large_rounded, size: 18, color: theme.navy),
-              const SizedBox(width: 8),
-              Text(
-                'Alert Type Distribution',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: theme.text,
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [theme.purple, theme.blue],
+                  ),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(Icons.show_chart_rounded,
+                    size: 14, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Predictive Risk · Next 24h',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: theme.text,
+                      ),
+                    ),
+                    Text(
+                      model == null
+                          ? 'Awaiting first model from edge inference…'
+                          : 'Probability per 2h window · tap row to filter history',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.muted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
-              Text(
-                'Tap to filter',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.muted,
-                  fontStyle: FontStyle.italic,
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: theme.purple.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bolt_rounded, size: 11, color: theme.purple),
+                    const SizedBox(width: 3),
+                    Text(
+                      'ML',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: theme.purple,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 14),
           ...stats.entries.map((e) {
-            final total = e.value['total']!;
+            final type = e.key;
+            final past = e.value['total']!;
             final solved = e.value['solved']!;
-            final pending = e.value['pending']!;
-            return _TypeBreakdownRow(
-              type: e.key,
-              total: total,
+            final curve = model?.curves[type];
+            return _RiskCurveRow(
+              type: type,
+              past: past,
               solved: solved,
-              pending: pending,
-              maxTotal: maxTotal,
-              isActive: activeFilter == e.key,
-              onTap: () => onTap(e.key),
+              curve: curve,
+              isActive: activeFilter == type,
+              onTap: () => onTap(type),
             );
           }),
         ],
@@ -1614,39 +2064,83 @@ class _TypeBreakdownPanel extends StatelessWidget {
   }
 }
 
-class _TypeBreakdownRow extends StatelessWidget {
+class _RiskCurveRow extends StatefulWidget {
   final String type;
-  final int total, solved, pending, maxTotal;
+  final int past;
+  final int solved;
+  final RiskCurve? curve;
   final bool isActive;
   final VoidCallback onTap;
-  const _TypeBreakdownRow({
+  const _RiskCurveRow({
     required this.type,
-    required this.total,
+    required this.past,
     required this.solved,
-    required this.pending,
-    required this.maxTotal,
+    required this.curve,
     required this.isActive,
     required this.onTap,
   });
 
   @override
+  State<_RiskCurveRow> createState() => _RiskCurveRowState();
+}
+
+class _RiskCurveRowState extends State<_RiskCurveRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _waveCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _waveCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _waveCtrl.dispose();
+    super.dispose();
+  }
+
+  String _riskLabel(double p) {
+    if (p >= 0.7) return 'High';
+    if (p >= 0.4) return 'Elevated';
+    if (p >= 0.15) return 'Watch';
+    return 'Low';
+  }
+
+  Color _riskColor(BuildContext ctx, double p) {
+    final t = ctx.appTheme;
+    if (p >= 0.7) return t.red;
+    if (p >= 0.4) return t.orange;
+    if (p >= 0.15) return t.yellow;
+    return t.green;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    final color = _typeColor(type);
-    final fraction = maxTotal == 0 ? 0.0 : total / maxTotal;
-    final solvedFraction = total == 0 ? 0.0 : solved / total;
+    final color = _typeColor(widget.type);
+    final curve = widget.curve;
+    final p = curve?.total24h ?? 0;
+    final riskColor = _riskColor(context, p);
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
         decoration: BoxDecoration(
-          color: isActive ? color.withValues(alpha: 0.08) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          color: widget.isActive
+              ? color.withValues(alpha: 0.08)
+              : theme.scaffold.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isActive ? color.withValues(alpha: 0.5) : Colors.transparent,
+            color: widget.isActive
+                ? color.withValues(alpha: 0.55)
+                : theme.border,
           ),
         ),
         child: Column(
@@ -1655,98 +2149,1011 @@ class _TypeBreakdownRow extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.13),
-                    borderRadius: BorderRadius.circular(7),
+                    gradient: LinearGradient(
+                      colors: [
+                        color.withValues(alpha: 0.85),
+                        color.withValues(alpha: 0.55),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(_typeIcon(type), size: 15, color: color),
+                  child: Icon(_typeIcon(widget.type),
+                      size: 15, color: Colors.white),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    _typeLabel(type),
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: theme.text,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _typeLabel(widget.type),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: theme.text,
+                        ),
+                      ),
+                      Text(
+                        curve == null
+                            ? '${widget.past} past · awaiting forecast'
+                            : '${widget.past} past · ${widget.solved} resolved · peak @ ${curve.peakHour.toString().padLeft(2, '0')}:00',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: theme.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  '$total',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: color,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: riskColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: riskColor.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    '${_riskLabel(p)} · ${(p * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: riskColor,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: SizedBox(
-                height: 8,
-                child: Stack(
-                  children: [
-                    Container(color: theme.border),
-                    TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: fraction),
-                      duration: const Duration(milliseconds: 700),
-                      curve: Curves.easeOutCubic,
-                      builder: (_, w, __) => FractionallySizedBox(
-                        widthFactor: w.clamp(0.0, 1.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                color.withValues(alpha: 0.7),
-                                color,
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 38,
+              child: AnimatedBuilder(
+                animation: _waveCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _WaveBarsPainter(
+                    buckets: curve?.buckets ?? const [],
+                    color: color,
+                    waveT: _waveCtrl.value,
+                    dark: context.isDark,
+                  ),
+                  size: Size.infinite,
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Row(
               children: [
-                Icon(Icons.check_circle_outline,
-                    size: 12, color: theme.green),
-                const SizedBox(width: 4),
                 Text(
-                  '$solved fixed',
-                  style: TextStyle(fontSize: 11, color: theme.muted),
-                ),
-                const SizedBox(width: 12),
-                Icon(Icons.schedule_rounded, size: 12, color: theme.orange),
-                const SizedBox(width: 4),
-                Text(
-                  '$pending pending',
-                  style: TextStyle(fontSize: 11, color: theme.muted),
+                  'now',
+                  style: TextStyle(fontSize: 9.5, color: theme.muted),
                 ),
                 const Spacer(),
                 Text(
-                  total == 0
-                      ? '—'
-                      : '${(solvedFraction * 100).toStringAsFixed(0)}% resolved',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: theme.text,
-                  ),
+                  '+12h',
+                  style: TextStyle(fontSize: 9.5, color: theme.muted),
+                ),
+                const Spacer(),
+                Text(
+                  '+24h',
+                  style: TextStyle(fontSize: 9.5, color: theme.muted),
                 ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _WaveBarsPainter extends CustomPainter {
+  final List<RiskBucket> buckets;
+  final Color color;
+  final double waveT;
+  final bool dark;
+  _WaveBarsPainter({
+    required this.buckets,
+    required this.color,
+    required this.waveT,
+    required this.dark,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (buckets.isEmpty) {
+      // Placeholder shimmer
+      final p = Paint()
+        ..color = color.withValues(alpha: 0.12)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Offset.zero & size, const Radius.circular(6)),
+        p,
+      );
+      return;
+    }
+
+    final n = buckets.length;
+    final gap = 3.0;
+    final barW = (size.width - gap * (n - 1)) / n;
+    final maxProb =
+        buckets.map((b) => b.probability).fold<double>(0, math.max);
+    final scale = maxProb <= 0 ? 0.0 : 1.0;
+
+    for (var i = 0; i < n; i++) {
+      final b = buckets[i];
+      final x = i * (barW + gap);
+      // Wave breathing modulation, normalized so the peak still reaches 1.
+      final mod = 0.85 + 0.15 * math.sin(waveT * math.pi * 2 + i * 0.45);
+      final h = maxProb == 0
+          ? 0.0
+          : (b.probability / maxProb) * size.height * mod * scale;
+
+      final rect = Rect.fromLTWH(x, size.height - h, barW, h);
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
+
+      final paint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [
+            color.withValues(alpha: 0.95),
+            color.withValues(alpha: 0.45),
+          ],
+        ).createShader(rect);
+      canvas.drawRRect(rrect, paint);
+
+      // Soft top glow on the tallest bar
+      if (b.probability == maxProb && h > 4) {
+        final glow = Paint()
+          ..color = color.withValues(alpha: dark ? 0.45 : 0.30)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+        canvas.drawCircle(
+          Offset(rect.center.dx, rect.top),
+          barW * 0.55,
+          glow,
+        );
+      }
+
+      // Faded baseline bar to anchor empty buckets
+      final base = Paint()
+        ..color = color.withValues(alpha: 0.08)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, size.height - 2, barW, 2),
+          const Radius.circular(2),
+        ),
+        base,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveBarsPainter old) =>
+      old.waveT != waveT ||
+      old.buckets != buckets ||
+      old.color != color ||
+      old.dark != dark;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREDICTIVE FAILURE CARD — top N machines/types most likely to alert next
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _PredictiveFailureCard extends StatefulWidget {
+  final PredictiveModel? model;
+  final String Function(String) describeType;
+  const _PredictiveFailureCard({
+    required this.model,
+    required this.describeType,
+  });
+
+  @override
+  State<_PredictiveFailureCard> createState() => _PredictiveFailureCardState();
+}
+
+class _PredictiveFailureCardState extends State<_PredictiveFailureCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shimmer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    final isDark = context.isDark;
+    final preds = widget.model?.predictions ?? const <PredictedFailure>[];
+    final top = preds.take(5).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  const Color(0xFF1B1230),
+                  const Color(0xFF0F1B30),
+                ]
+              : [
+                  const Color(0xFFF5F0FF),
+                  const Color(0xFFEFF6FF),
+                ],
+        ),
+        border: Border.all(color: theme.purple.withValues(alpha: 0.32)),
+        boxShadow: [
+          BoxShadow(
+            color: theme.purple.withValues(alpha: isDark ? 0.18 : 0.10),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                AnimatedBuilder(
+                  animation: _shimmer,
+                  builder: (_, __) {
+                    final t = _shimmer.value;
+                    return Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        gradient: SweepGradient(
+                          startAngle: 0,
+                          endAngle: math.pi * 2,
+                          transform: GradientRotation(t * math.pi * 2),
+                          colors: [
+                            theme.purple,
+                            theme.blue,
+                            theme.purple,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(11),
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                theme.purple.withValues(alpha: 0.35),
+                            blurRadius: 14,
+                          ),
+                        ],
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.psychology_alt_rounded,
+                            size: 19, color: Colors.white),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Predictive Failure Alerts',
+                            style: TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w800,
+                              color: theme.text,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color:
+                                  theme.purple.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Text(
+                              'BETA',
+                              style: TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w900,
+                                color: theme.purple,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        widget.model == null
+                            ? 'Edge model warming up — first inference within 60s.'
+                            : 'Top probable next failures · trained on last ${widget.model!.predictions.isEmpty ? 30 : 30}d',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: theme.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.model != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: theme.card,
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: theme.border),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: theme.green,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: theme.green.withValues(alpha: 0.6),
+                                blurRadius: 5,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'LIVE',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: theme.text,
+                            letterSpacing: 1.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (top.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(18),
+                alignment: Alignment.center,
+                child: Column(
+                  children: [
+                    Icon(Icons.science_outlined,
+                        size: 32, color: theme.purple),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Not enough history yet',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: theme.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'The model needs a few days of alerts to learn patterns.',
+                      style: TextStyle(fontSize: 11, color: theme.muted),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...top.asMap().entries.map((e) => _PredictedFailureRow(
+                    rank: e.key + 1,
+                    failure: e.value,
+                    describeType: widget.describeType,
+                  )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PredictedFailureRow extends StatelessWidget {
+  final int rank;
+  final PredictedFailure failure;
+  final String Function(String) describeType;
+  const _PredictedFailureRow({
+    required this.rank,
+    required this.failure,
+    required this.describeType,
+  });
+
+  String _eta() {
+    final h = failure.etaHours;
+    if (h == null) return 'No ETA yet';
+    if (h <= 0) return 'Overdue · expected';
+    if (h < 1) return 'Within ${(h * 60).round()} min';
+    if (h < 24) return 'In ~${h.toStringAsFixed(1)}h';
+    final d = (h / 24).round();
+    return 'In ~${d}d';
+  }
+
+  String _lastSeen() {
+    final t = failure.lastTs;
+    if (t == null) return 'never';
+    final diff = DateTime.now().difference(t);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    final tColor = _typeColor(failure.type);
+    final conf = failure.confidence.clamp(0, 100).toDouble();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: theme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [theme.purple, theme.blue],
+                  ),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Center(
+                  child: Text(
+                    '$rank',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: tColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_typeIcon(failure.type), size: 11, color: tColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      describeType(failure.type),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: tColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${conf.toInt()}%',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: theme.purple,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Text(
+                'conf.',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: theme.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${failure.usine.isNotEmpty ? failure.usine : failure.factoryId} · Line ${failure.convoyeur} · WS ${failure.poste}',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: theme.text,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: SizedBox(
+              height: 6,
+              child: Stack(
+                children: [
+                  Container(color: theme.border),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: conf / 100),
+                    duration: const Duration(milliseconds: 800),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, w, __) => FractionallySizedBox(
+                      widthFactor: w.clamp(0.0, 1.0),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [theme.purple, theme.blue],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Icon(Icons.history_toggle_off_rounded,
+                  size: 11, color: theme.muted),
+              const SizedBox(width: 3),
+              Text(
+                'Last ${_lastSeen()}',
+                style: TextStyle(fontSize: 10.5, color: theme.muted),
+              ),
+              const SizedBox(width: 10),
+              Icon(Icons.timer_outlined, size: 11, color: theme.orange),
+              const SizedBox(width: 3),
+              Text(
+                _eta(),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: theme.orange,
+                ),
+              ),
+              const Spacer(),
+              if (failure.criticalCount > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.red.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    '${failure.criticalCount} critical',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: theme.red,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CRITICAL ALERT ROW WITH AI ONE-TAP RESOLUTION SUGGESTION
+// Lazily fetches the suggestion from the worker, lets PM assign with 1 tap.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _CriticalAlertRowAI extends StatefulWidget {
+  final AlertModel alert;
+  final String Function(AlertModel) describe;
+  final VoidCallback onAlertTap;
+  const _CriticalAlertRowAI({
+    required this.alert,
+    required this.describe,
+    required this.onAlertTap,
+  });
+
+  @override
+  State<_CriticalAlertRowAI> createState() => _CriticalAlertRowAIState();
+}
+
+class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
+    with SingleTickerProviderStateMixin {
+  AssigneeSuggestion? _suggestion;
+  bool _loading = false;
+  bool _assigning = false;
+  String? _assignError;
+  bool _assignedDone = false;
+  late final AnimationController _glowCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _loadSuggestion();
+  }
+
+  @override
+  void dispose() {
+    _glowCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSuggestion() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    final s =
+        await PredictiveIntelService.instance.suggestAssignee(widget.alert.id);
+    if (!mounted) return;
+    setState(() {
+      _suggestion = s;
+      _loading = false;
+    });
+  }
+
+  Future<void> _assign() async {
+    final s = _suggestion;
+    if (s == null || s.bestUid == null || _assigning || _assignedDone) return;
+    setState(() {
+      _assigning = true;
+      _assignError = null;
+    });
+    try {
+      await AlertService().takeAlert(
+        widget.alert.id,
+        s.bestUid!,
+        s.bestName ?? 'AI assignment',
+      );
+      if (!mounted) return;
+      setState(() {
+        _assigning = false;
+        _assignedDone = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _assigning = false;
+        _assignError = 'Failed: $e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    final alert = widget.alert;
+    final elapsedMin = DateTime.now().difference(alert.timestamp).inMinutes;
+    final elapsedText = elapsedMin < 60
+        ? '${elapsedMin}m'
+        : '${elapsedMin ~/ 60}h ${elapsedMin % 60}m';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: theme.card,
+        border: Border.all(color: theme.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: widget.onAlertTap,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _typeColor(alert.type),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_typeLabel(alert.type)} — ${widget.describe(alert)}',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: theme.text,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${alert.usine} · Line ${alert.convoyeur} · WS ${alert.poste}',
+                        style: TextStyle(fontSize: 11, color: theme.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: theme.red.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(99),
+                    border:
+                        Border.all(color: theme.red.withValues(alpha: 0.35)),
+                  ),
+                  child: Text(
+                    elapsedText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: theme.red,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 9),
+          _buildSuggestionStrip(theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuggestionStrip(AppTheme theme) {
+    if (_loading) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.purple.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.purple.withValues(alpha: 0.18)),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                valueColor: AlwaysStoppedAnimation(theme.purple),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'AI is matching the best supervisor…',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: theme.purple,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_assignedDone) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.green.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.green.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_rounded, size: 14, color: theme.green),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Assigned to ${_suggestion?.bestName ?? 'supervisor'} — supervisor notified.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: theme.green,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final s = _suggestion;
+    if (s == null || s.bestUid == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.scaffold.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 13, color: theme.muted),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'No eligible supervisor right now.',
+                style: TextStyle(fontSize: 11, color: theme.muted),
+              ),
+            ),
+            TextButton(
+              onPressed: _loadSuggestion,
+              style: TextButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                minimumSize: const Size(0, 28),
+              ),
+              child: Text(
+                'Retry',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.navy,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _glowCtrl,
+      builder: (_, __) {
+        final glow = 0.18 + 0.12 * _glowCtrl.value;
+        return Container(
+          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                theme.purple.withValues(alpha: 0.15),
+                theme.blue.withValues(alpha: 0.10),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: theme.purple.withValues(alpha: 0.30)),
+            boxShadow: [
+              BoxShadow(
+                color: theme.purple.withValues(alpha: glow),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded,
+                  size: 14, color: theme.purple),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                          text: 'AI suggests: ',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: theme.muted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(
+                          text: s.bestName ?? 'supervisor',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: theme.text,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '  ·  ${s.confidencePct}% match',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.purple,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ]),
+                    ),
+                    if (s.reasons.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Text(
+                          s.reasons.take(2).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: theme.muted,
+                          ),
+                        ),
+                      ),
+                    if (_assignError != null)
+                      Text(
+                        _assignError!,
+                        style: TextStyle(fontSize: 10.5, color: theme.red),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              ElevatedButton(
+                onPressed: _assigning ? null : _assign,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.purple,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                child: _assigning
+                    ? const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.6,
+                          valueColor:
+                              AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : const Text('Assign'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -1764,6 +3171,14 @@ class _CriticalAlertsCard extends StatelessWidget {
     required this.onAlertTap,
     required this.describe,
   });
+
+  Widget _alertTile(BuildContext context, AlertModel alert) {
+    return _CriticalAlertRowAI(
+      alert: alert,
+      describe: describe,
+      onAlertTap: () => onAlertTap(alert),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1823,83 +3238,7 @@ class _CriticalAlertsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          ...alerts.map((alert) {
-            final elapsedMin =
-                DateTime.now().difference(alert.timestamp).inMinutes;
-            final elapsedText = elapsedMin < 60
-                ? '${elapsedMin}m'
-                : '${elapsedMin ~/ 60}h ${elapsedMin % 60}m';
-            return GestureDetector(
-              onTap: () => onAlertTap(alert),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.all(11),
-                decoration: BoxDecoration(
-                  color: theme.card,
-                  border: Border.all(color: theme.border),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 4,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: _typeColor(alert.type),
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${_typeLabel(alert.type)} — ${describe(alert)}',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: theme.text,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${alert.usine} · Line ${alert.convoyeur} · WS ${alert.poste}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: theme.muted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: theme.red.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(
-                            color: theme.red.withValues(alpha: 0.35)),
-                      ),
-                      child: Text(
-                        elapsedText,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: theme.red,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(Icons.chevron_right, size: 18, color: theme.muted),
-                  ],
-                ),
-              ),
-            );
-          }),
+          ...alerts.map((a) => _alertTile(context, a)),
         ],
       ),
     );

@@ -42,6 +42,8 @@ class VoiceCommandParser {
   static const Map<String, int> _ones = {
     'zero': 0,
     'oh': 0,
+    'o': 0,
+    'owe': 0,
     'one': 1,
     'won': 1,
     'two': 2,
@@ -71,6 +73,7 @@ class VoiceCommandParser {
     'twenty': 20,
     'thirty': 30,
     'forty': 40,
+    'fourty': 40,
     'fifty': 50,
     'sixty': 60,
     'seventy': 70,
@@ -86,15 +89,54 @@ class VoiceCommandParser {
     'an',
     'and',
     'alert',
+    'alerts',
     'alarm',
+    'alarms',
     'case',
+    'hash',
+    'hashtag',
     'id',
     'no',
     'number',
     'num',
+    'pound',
     'please',
+    'sharp',
     'the',
   };
+
+  /// Parse several recognizer hypotheses and return the best command.
+  ///
+  /// Android/iOS recognizers often include the right command as the second or
+  /// third alternative when the first hypothesis turns "claim" into "clean" or
+  /// drops part of a spoken alert number. Prefer a complete command with an
+  /// alert number, then fall back to the first valid command.
+  static VoiceCommand parseBest(Iterable<String> transcripts) {
+    final unique = <String>[];
+    final seen = <String>{};
+    for (final transcript in transcripts) {
+      final trimmed = transcript.trim();
+      if (trimmed.isEmpty) continue;
+      final key = _normalize(trimmed);
+      if (seen.add(key)) unique.add(trimmed);
+    }
+
+    if (unique.isEmpty) {
+      return const VoiceCommand(intent: VoiceIntent.unknown, rawText: '');
+    }
+
+    VoiceCommand? firstValid;
+    for (final transcript in unique) {
+      final command = parse(transcript);
+      if (!command.isValid) continue;
+      firstValid ??= command;
+      if (!_requiresAlertNumber(command.intent) ||
+          command.alertNumber != null) {
+        return command;
+      }
+    }
+    return firstValid ?? parse(unique.first);
+  }
 
   /// Parse a finalized transcription string into a [VoiceCommand].
   /// Returns a command with `intent = unknown` if the verb is not recognized.
@@ -105,11 +147,7 @@ class VoiceCommandParser {
     }
 
     // Normalize: lowercase, collapse whitespace, strip punctuation.
-    final normalized = raw
-        .toLowerCase()
-        .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    final normalized = _normalize(raw);
     final tokens = normalized.isEmpty
         ? const <String>[]
         : normalized.split(' ').where((t) => t.isNotEmpty).toList();
@@ -229,8 +267,20 @@ class VoiceCommandParser {
         }) ||
         _containsAnyToken(tokens, const {
           'resolve',
+          'resolves',
           'resolved',
+          'resolver',
           'resolving',
+          'result',
+          'results',
+          'reserve',
+          'reserved',
+          'dissolve',
+          'dissolved',
+          'revolve',
+          'revolved',
+          'solve',
+          'solved',
           'close',
           'closed',
           'finish',
@@ -245,6 +295,10 @@ class VoiceCommandParser {
     }
 
     if (_containsAnyPhrase(normalized, const {
+          'claim alert',
+          'claim the alert',
+          'claim alarm',
+          'claim ticket',
           'accept assignment',
           'accept the assignment',
           'accept this assignment',
@@ -276,6 +330,7 @@ class VoiceCommandParser {
         _containsAnyToken(tokens, const {
           'clean',
           'climb',
+          'clim',
           'client',
           'clam',
           'plane',
@@ -309,6 +364,7 @@ class VoiceCommandParser {
       'alarms',
       'assignment',
       'case',
+      'lert',
       'ticket',
     });
   }
@@ -323,6 +379,11 @@ class VoiceCommandParser {
     }
 
     final tokens = text.split(' ');
+    final chunkedAlertNumber = _extractChunkedNumber(tokens);
+    if (chunkedAlertNumber != null) {
+      return chunkedAlertNumber;
+    }
+
     final digitSequence = _extractSpokenDigitSequence(tokens);
     if (digitSequence != null) {
       return digitSequence;
@@ -376,4 +437,111 @@ class VoiceCommandParser {
     if (digits.length < 2) return null;
     return int.tryParse(digits.join());
   }
+
+  static String _normalize(String text) {
+    return text
+        .toLowerCase()
+        .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static bool _requiresAlertNumber(VoiceIntent intent) {
+    return intent == VoiceIntent.claim ||
+        intent == VoiceIntent.resolve ||
+        intent == VoiceIntent.escalate;
+  }
+
+  static int? _extractChunkedNumber(List<String> tokens) {
+    for (var start = 0; start < tokens.length; start++) {
+      final chunks = <_NumberChunk>[];
+      var index = start;
+
+      while (index < tokens.length) {
+        final token = tokens[index];
+        if (_numberFillers.contains(token)) {
+          index++;
+          continue;
+        }
+
+        final chunk = _readNumberChunk(tokens, index);
+        if (chunk == null) break;
+        chunks.add(chunk);
+        index += chunk.tokenCount;
+      }
+
+      final value = _numberFromChunks(chunks);
+      if (value != null) return value;
+    }
+    return null;
+  }
+
+  static _NumberChunk? _readNumberChunk(List<String> tokens, int index) {
+    final token = tokens[index];
+
+    if (_tens.containsKey(token)) {
+      final tens = _tens[token]!;
+      final nextIndex = index + 1;
+      if (nextIndex < tokens.length) {
+        final nextDigit = _digitWordValue(tokens[nextIndex]);
+        if (nextDigit != null && nextDigit > 0) {
+          return _NumberChunk(tens + nextDigit, 2, 2);
+        }
+      }
+      return _NumberChunk(tens, 2, 1);
+    }
+
+    final value = _ones[token];
+    if (value == null) return null;
+    if (value >= 0 && value <= 9) {
+      return _NumberChunk(value, 1, 1);
+    }
+    return _NumberChunk(value, 2, 1);
+  }
+
+  static int? _numberFromChunks(List<_NumberChunk> chunks) {
+    if (chunks.isEmpty) return null;
+
+    if (chunks.every((chunk) => chunk.width == 1) && chunks.length >= 2) {
+      return int.tryParse(chunks.map((chunk) => chunk.value).join());
+    }
+
+    if (chunks.length == 2 && chunks[0].width == 1 && chunks[1].width == 2) {
+      return chunks[0].value * 100 + chunks[1].value;
+    }
+
+    if (chunks.length == 2 && chunks[0].width == 2 && chunks[1].width == 2) {
+      return chunks[0].value * 100 + chunks[1].value;
+    }
+
+    if (chunks.length == 3 &&
+        chunks[0].width == 2 &&
+        chunks[1].width == 1 &&
+        chunks[2].width == 1) {
+      return chunks[0].value * 100 + chunks[1].value * 10 + chunks[2].value;
+    }
+
+    if (chunks.length == 3 &&
+        chunks[0].width == 1 &&
+        chunks[1].width == 1 &&
+        chunks[2].width == 2) {
+      return chunks[0].value * 1000 + chunks[1].value * 100 + chunks[2].value;
+    }
+
+    return null;
+  }
+
+  static int? _digitWordValue(String token) {
+    final value = _ones[token];
+    if (value == null || value < 0 || value > 9) return null;
+    return value;
+  }
+}
+
+class _NumberChunk {
+  final int value;
+  final int width;
+  final int tokenCount;
+
+  const _NumberChunk(this.value, this.width, this.tokenCount);
 }

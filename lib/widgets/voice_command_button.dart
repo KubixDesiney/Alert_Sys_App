@@ -106,23 +106,7 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
       return;
     }
 
-    var cmd = VoiceCommandParser.parse(capture.transcript);
-    if (_needsAlertNumber(cmd) && !_canClaimOnlyAvailableAlert(provider, cmd)) {
-      await VoiceService.instance.speak('What alert number?');
-      if (!mounted) return;
-
-      setState(() => _listening = true);
-      _pulse.repeat(reverse: true);
-      final numberText = await VoiceService.instance.captureOnce(
-        timeout: const Duration(seconds: 4),
-      );
-      _stopUi();
-
-      if (numberText.trim().isNotEmpty) {
-        cmd = VoiceCommandParser.parse('${cmd.rawText} $numberText');
-      }
-    }
-
+    final cmd = VoiceCommandParser.parseBest(capture.transcripts);
     await dispatcher.execute(cmd, voiceAlreadyVerified: true);
   }
 
@@ -159,18 +143,6 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
     setState(() => _listening = false);
     _pulse.stop();
     _pulse.reset();
-  }
-
-  bool _needsAlertNumber(VoiceCommand cmd) {
-    return cmd.alertNumber == null &&
-        (cmd.intent == VoiceIntent.claim ||
-            cmd.intent == VoiceIntent.resolve ||
-            cmd.intent == VoiceIntent.escalate);
-  }
-
-  bool _canClaimOnlyAvailableAlert(AlertProvider provider, VoiceCommand cmd) {
-    return cmd.intent == VoiceIntent.claim &&
-        provider.availableAlerts.length == 1;
   }
 
   String _authFailureMessage(VoiceVerificationResult auth) {

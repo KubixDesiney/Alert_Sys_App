@@ -18,7 +18,7 @@ class VoiceCommandDispatcher {
 
   /// Run a parsed command against the provider. All user feedback goes
   /// through TTS — there's no UI surface in this layer by design.
-  Future<void> execute(
+  Future<VoiceCommandExecutionResult> execute(
     VoiceCommand cmd, {
     Uint8List? rawAudio,
     int rawAudioSampleRate = 16000,
@@ -30,55 +30,39 @@ class VoiceCommandDispatcher {
         sampleRate: rawAudioSampleRate,
       );
       if (!auth.verified) {
-        await VoiceService.instance.speak('Voice not recognized');
-        return;
+        return _speakResult(false, _authFailureMessage(auth));
       }
     }
 
     if (cmd.intent == VoiceIntent.unknown) {
-      await VoiceService.instance.speak(
-          'I did not understand. Try saying claim alert, resolve alert, or escalate alert.');
-      return;
+      return _speakResult(false,
+          'I did not understand. Say the full command, like claim alert 1025 or resolve alert 1025.');
     }
 
     // Navigation intents — caller wires these up via a callback if desired.
     // Speaking-only fallback so the user knows we heard them.
     switch (cmd.intent) {
       case VoiceIntent.showDashboard:
-        await VoiceService.instance.speak('Opening dashboard.');
-        return;
+        return _speakResult(true, 'Opening dashboard.');
       case VoiceIntent.showAlerts:
-        await VoiceService.instance.speak('Showing alerts.');
-        return;
+        return _speakResult(true, 'Showing alerts.');
       case VoiceIntent.showFixed:
-        await VoiceService.instance.speak('Showing resolved alerts.');
-        return;
+        return _speakResult(true, 'Showing resolved alerts.');
       default:
         break;
     }
 
     final number = cmd.alertNumber;
-    if (number == null && cmd.intent != VoiceIntent.claim) {
-      await VoiceService.instance.speak(
-          'I did not catch the alert number. Please say the number clearly.');
-      return;
+    if (number == null) {
+      return _speakResult(false,
+          'I did not catch the alert number. Say the full command, like claim alert 1025.');
     }
 
-    // Look up the alert by alertNumber. For a plain "claim alert" command,
-    // allow a hands-free claim only when there is exactly one available alert.
-    final match =
-        number == null ? _singleAvailableClaimTarget() : _findByNumber(number);
+    // Look up the alert by alertNumber. Voice commands require the spoken,
+    // human-facing alert number so there is no second prompt or confirmation.
+    final match = _findByNumber(number);
     if (match == null) {
-      if (number == null) {
-        final available = provider.availableAlerts.length;
-        await VoiceService.instance.speak(available == 0
-            ? 'There are no available alerts to claim.'
-            : 'I found $available available alerts. Say claim alert followed by the number.');
-      } else {
-        await VoiceService.instance
-            .speak('Alert number $number was not found.');
-      }
-      return;
+      return _speakResult(false, 'Alert number $number was not found.');
     }
 
     try {
@@ -86,30 +70,30 @@ class VoiceCommandDispatcher {
         case VoiceIntent.claim:
           final user = FirebaseAuth.instance.currentUser;
           if (user == null) {
-            await VoiceService.instance.speak('You are not signed in.');
-            return;
+            return _speakResult(false, 'You are not signed in.');
           }
           final name = await _displayName(user.uid) ?? 'Supervisor';
           await provider.takeAlert(match.id, user.uid, name);
-          await VoiceService.instance.speak('Alert ${match.number} claimed.');
-          break;
+          return _speakResult(true, 'Alert ${match.number} claimed.');
         case VoiceIntent.resolve:
           final reason = (cmd.reason == null || cmd.reason!.trim().isEmpty)
               ? 'Resolved by voice command'
               : cmd.reason!.trim();
           await provider.resolveAlert(match.id, reason);
-          await VoiceService.instance.speak('Alert ${match.number} resolved.');
-          break;
+          return _speakResult(true, 'Alert ${match.number} resolved.');
         case VoiceIntent.escalate:
           await provider.toggleCritical(match.id, true);
-          await VoiceService.instance.speak('Alert ${match.number} escalated.');
-          break;
+          return _speakResult(true, 'Alert ${match.number} escalated.');
         default:
           break;
       }
     } catch (e) {
-      await VoiceService.instance.speak('Action failed. ${_shortError(e)}');
+      return _speakResult(false, 'Action failed. ${_shortError(e)}');
     }
+    return const VoiceCommandExecutionResult(
+      success: false,
+      message: 'Command was not handled.',
+    );
   }
 
   // Look up by alertNumber from the provider's cached list.
@@ -120,13 +104,6 @@ class VoiceCommandDispatcher {
       }
     }
     return null;
-  }
-
-  _AlertRef? _singleAvailableClaimTarget() {
-    final available = provider.availableAlerts;
-    if (available.length != 1) return null;
-    final alert = available.first;
-    return _AlertRef(alert.id, alert.alertNumber);
   }
 
   Future<String?> _displayName(String uid) async {
@@ -144,11 +121,37 @@ class VoiceCommandDispatcher {
     final s = e.toString();
     return s.length > 80 ? '${s.substring(0, 80)}...' : s;
   }
+
+  static String _authFailureMessage(VoiceVerificationResult auth) {
+    if (auth.unenrolled) return 'Please enroll your voice first.';
+    final message = auth.message ?? '';
+    if (message.contains('No audio sample')) {
+      return 'I could not capture your voice sample. Please try again.';
+    }
+    return 'Voice not recognized';
+  }
+
+  Future<VoiceCommandExecutionResult> _speakResult(
+    bool success,
+    String message,
+  ) async {
+    await VoiceService.instance.speak(message);
+    return VoiceCommandExecutionResult(success: success, message: message);
+  }
+}
+
+class VoiceCommandExecutionResult {
+  final bool success;
+  final String message;
+
+  const VoiceCommandExecutionResult({
+    required this.success,
+    required this.message,
+  });
 }
 
 class _AlertRef {
   final String id;
-  // ignore: unused_element
   final int number;
   _AlertRef(this.id, this.number);
 }

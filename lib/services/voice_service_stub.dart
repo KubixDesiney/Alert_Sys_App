@@ -54,16 +54,27 @@ class VoiceService {
 
 class VoiceCommandCapture {
   final String transcript;
+  final List<String> alternatives;
   final Uint8List? rawAudio;
   final int sampleRate;
 
   const VoiceCommandCapture({
     required this.transcript,
+    this.alternatives = const <String>[],
     required this.rawAudio,
     required this.sampleRate,
   });
 
   const VoiceCommandCapture.empty({required this.sampleRate})
       : transcript = '',
+        alternatives = const <String>[],
         rawAudio = null;
+
+  Iterable<String> get transcripts sync* {
+    if (transcript.trim().isNotEmpty) yield transcript.trim();
+    for (final alternative in alternatives) {
+      final text = alternative.trim();
+      if (text.isNotEmpty) yield text;
+    }
+  }
 }
