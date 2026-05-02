@@ -510,7 +510,7 @@ function buildPredictiveModel(alertsMap) {
       const h2 = (startHour + i * 2 + 1) % 24;
       const cnt = hodCounts[type][h1] + hodCounts[type][h2];
       const lambda = cnt / PREDICT_HORIZON_DAYS;
-      const probability = 1 - Math.exp(-Math.max(0.0001, lambda));
+      const probability = lambda > 0 ? 1 - Math.exp(-lambda) : 0;
       total += probability;
       buckets.push({
         offsetHours: i * 2,
