@@ -16,6 +16,11 @@ extension TreeNodeDensityX on TreeNodeDensity {
         TreeNodeDensity.comfortable => 168,
         TreeNodeDensity.detailed => 200,
       };
+  double get cardHeight => switch (this) {
+        TreeNodeDensity.compact => 66,
+        TreeNodeDensity.comfortable => 98,
+        TreeNodeDensity.detailed => 118,
+      };
   double get titleSize => switch (this) {
         TreeNodeDensity.compact => 12,
         TreeNodeDensity.comfortable => 13,
@@ -123,6 +128,7 @@ class _TreeNodeCardState extends State<TreeNodeCard>
               if (widget.ripple) _buildRipple(t),
               Container(
                 width: d.cardWidth,
+                height: d.cardHeight,
                 decoration: BoxDecoration(
                   color: t.card,
                   borderRadius: BorderRadius.circular(14),
