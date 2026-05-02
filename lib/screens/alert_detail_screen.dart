@@ -7,6 +7,7 @@ import '../providers/alert_provider.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
 import '../services/ai_assignment_service.dart';
+import '../services/ai_service.dart';
 import '../theme.dart';
 
 class AlertDetailScreen extends StatefulWidget {
@@ -87,13 +88,23 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
       _isAiLoading = true;
       _aiSuggestion = null;
     });
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 2));
-    setState(() {
-      _aiSuggestion =
-          '• Check the ${alert.type} sensor calibration.\n• Restart the affected machine.\n• If the issue persists, escalate to maintenance.';
-      _isAiLoading = false;
-    });
+    final provider = context.read<AlertProvider>();
+    final pastResolutions =
+        await provider.getPastResolutionsForType(alert.type, 3);
+    final suggestion = await AIService().getResolutionSuggestion(
+      alertType: alert.type,
+      alertDescription: alert.description,
+      usine: alert.usine,
+      convoyeur: alert.convoyeur,
+      poste: alert.poste,
+      pastResolutions: pastResolutions,
+    );
+    if (mounted) {
+      setState(() {
+        _aiSuggestion = suggestion;
+        _isAiLoading = false;
+      });
+    }
   }
 
   Future<void> _respondToCollab({

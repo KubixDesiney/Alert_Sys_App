@@ -60,7 +60,7 @@ String _typeLabel(String t) => switch (t) {
       'qualite' => 'Quality',
       'maintenance' => 'Maintenance',
       'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resources Deficiency',
+      'manque_ressource' => 'Resource Deficiency',
       _ => t,
     };
 
@@ -709,7 +709,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           child: Row(children: [
                             Icon(Icons.inventory_2, size: 16),
                             SizedBox(width: 8),
-                            Text('Resource Shortage'),
+                            Text('Resource Deficiency'),
                           ])),
                     ],
                     onChanged: (val) => setState(() => selectedType = val!),
