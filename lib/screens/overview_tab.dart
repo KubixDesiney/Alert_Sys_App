@@ -199,7 +199,7 @@ class _OverviewTabState extends State<_OverviewTab> {
       case 'defaut_produit':
         return 'Damaged product detected';
       case 'manque_ressource':
-        return 'Resource shortage - missing raw materials';
+        return 'Resource deficiency - missing raw materials';
       default:
         return 'Alert detected';
     }

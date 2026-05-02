@@ -2,7 +2,14 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class AIService {
-  static const String _workerUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/gemini-proxy';
+  static const String _workerUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/ai-proxy';
+
+  static const _typeLabels = {
+    'qualite': 'Quality',
+    'maintenance': 'Maintenance',
+    'defaut_produit': 'Damaged Product',
+    'manque_ressource': 'Resource Deficiency',
+  };
 
   Future<String> getResolutionSuggestion({
     required String alertType,
@@ -12,17 +19,19 @@ class AIService {
     required int poste,
     List<String> pastResolutions = const [],
   }) async {
-    final locationInfo = 'Plant: $usine, Line: $convoyeur, Workstation: $poste';
+    final typeLabel = _typeLabels[alertType] ?? alertType;
+    final locationInfo =
+        'Factory: $usine, Conveyor line: $convoyeur, Workstation ID: #$poste';
     final prompt = '''
-You are an industrial maintenance assistant. Suggest a resolution for the following alert:
+You are an industrial operations assistant. A supervisor needs a resolution suggestion for the following alert:
 
-Alert type: $alertType
+Alert type: $typeLabel
 Description: $alertDescription
 Location: $locationInfo
 
-${pastResolutions.isNotEmpty ? 'Past resolutions for the EXACT SAME location and alert type:\n' + pastResolutions.map((r) => '- $r').join('\n') : 'No past resolutions found for this specific location.'}
+${pastResolutions.isNotEmpty ? 'Past resolutions logged for this alert type at this location:\n' + pastResolutions.map((r) => '- $r').join('\n') : 'No past resolutions on record for this specific location.'}
 
-Provide a concise, actionable resolution suggestion (2-3 bullet points). Focus on the most likely cause and fix. If past resolutions exist, prioritize them.
+Provide a concise, actionable resolution suggestion in 2-3 bullet points. Focus on the most likely root cause and immediate fix based on the alert type and description. If past resolutions exist, prioritize the most relevant one.
 ''';
     try {
       final response = await http.post(

@@ -41,7 +41,7 @@ Color _typeBgColor(String type) => switch (type) {
     };
 
 String _typeLabel(String type) => switch (type) {
-      'qualite' => 'Quality Issues',
+      'qualite' => 'Quality',
       'maintenance' => 'Maintenance',
       'defaut_produit' => 'Damaged Product',
       'manque_ressource' => 'Resource Deficiency',
@@ -1474,7 +1474,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           // Threshold cards
           _ThresholdCard(
             type: 'qualite',
-            label: 'Quality Issues',
+            label: 'Quality',
             color: t.red,
             bgColor: t.redLt,
             icon: Icons.warning_amber_rounded,
