@@ -1,37 +1,24 @@
-// Minimal full-screen voice flow opened from the "Speak command"
-// notification action. Walks the user through:
-//   1. capture command  ("claim alert" / "claim alert N" / "accept assignment")
-//   2. resolve target alert
-//   3. capture confirmation ("yes")
-//   4. invoke AlertProvider.takeAlert (existing claim rules apply)
-//   5. speak result, close screen
-//
-// Designed to feel like a phone-call screen: large status text, mic indicator,
-// no nav bar. On Android we ask the host activity to show on lock screen
-// + turn the screen on via a method channel into MainActivity.
+// Full-screen voice flow opened from the "Speak command" notification action.
+// It captures one complete command such as "claim alert 1025" or
+// "resolve alert 1025", verifies the speaker, executes it, then closes.
 
 import 'dart:async';
-import 'dart:typed_data';
 
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:provider/provider.dart';
 
-import '../models/alert_model.dart';
 import '../providers/alert_provider.dart';
-import '../services/voice_auth_service.dart';
+import '../services/voice_command_dispatcher.dart';
 import '../services/voice_command_parser.dart';
 import '../services/voice_service.dart';
 import '../theme.dart';
 
 class VoiceClaimScreen extends StatefulWidget {
-  /// If the alert id is known from the notification payload, pass it here.
-  /// The user can still say "claim alert N" to override or to claim
-  /// a different alert by number.
+  /// Kept for notification payload compatibility. Commands intentionally use
+  /// the spoken alert number so the user can say one full sentence.
   final String? alertId;
 
   const VoiceClaimScreen({super.key, this.alertId});
@@ -40,13 +27,13 @@ class VoiceClaimScreen extends StatefulWidget {
   State<VoiceClaimScreen> createState() => _VoiceClaimScreenState();
 }
 
-enum _Step { initializing, awaitingCommand, awaitingConfirm, working, done }
+enum _Step { initializing, awaitingCommand, working, done }
 
 class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   static const _channel = MethodChannel('alertsys/voice_claim');
 
   _Step _step = _Step.initializing;
-  String _statusLine = 'Preparing voice command…';
+  String _statusLine = 'Preparing voice command...';
   String _hint = '';
   bool _success = false;
   bool _flowStarted = false;
@@ -100,186 +87,66 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       return;
     }
 
-    _setStep(_Step.awaitingCommand,
-        status: 'Speak your command',
-        hint: 'e.g. "Claim alert" or "Accept assignment"');
+    _setStep(
+      _Step.awaitingCommand,
+      status: 'Speak your command',
+      hint: 'e.g. "Claim alert 1025" or "Resolve alert 1025"',
+    );
     await VoiceService.instance.speak('Speak your command.');
     if (!mounted) return;
 
-    final commandCapture = await VoiceService.instance.captureCommandWithAudio(
+    final capture = await VoiceService.instance.captureCommandWithAudio(
       timeout: const Duration(seconds: 6),
       sampleRate: 16000,
     );
     if (!mounted) return;
 
-    _setStep(_Step.working, status: 'Verifying voice', hint: '');
-    final commandVerified = await _verifyVoiceSample(
-      commandCapture.rawAudio,
-      commandCapture.sampleRate,
-    );
-    if (!mounted || !commandVerified) return;
-
-    final cmdText = commandCapture.transcript;
-    final cmd = VoiceCommandParser.parse(cmdText);
-    if (cmd.intent != VoiceIntent.claim) {
+    final command = VoiceCommandParser.parseBest(capture.transcripts);
+    if (!_isCompleteActionCommand(command)) {
       _finish(
         success: false,
-        message: cmdText.isEmpty
+        message: capture.transcript.trim().isEmpty
             ? 'I did not hear a command.'
-            : 'Unrecognized command: "$cmdText"',
-        speak: 'I did not understand. Try claim alert, or accept assignment.',
+            : 'Unrecognized command: "${capture.transcript}"',
+        speak:
+            'I did not understand. Say the full command, like claim alert 1025.',
       );
       return;
     }
 
-    final target = await _resolveTargetAlert(cmd.alertNumber);
-    if (target == null) {
-      _finish(
-        success: false,
-        message: cmd.alertNumber != null
-            ? 'Alert number ${cmd.alertNumber} not found.'
-            : 'No alert specified. Say "claim alert" followed by the number.',
-        speak: cmd.alertNumber != null
-            ? 'Alert number ${cmd.alertNumber} was not found.'
-            : 'I did not catch the alert number.',
-      );
-      return;
-    }
-
-    if (target.status != 'disponible') {
-      _finish(
-        success: false,
-        message: 'Alert #${target.alertNumber} is no longer available '
-            '(status: ${target.status}).',
-        speak: 'That alert is no longer available.',
-      );
-      return;
-    }
-
-    _setStep(_Step.awaitingConfirm,
-        status: 'Say YES to confirm',
-        hint: 'Claim alert #${target.alertNumber}?');
-    await VoiceService.instance.speak('Say yes to confirm.');
-    if (!mounted) return;
-
-    final confirmText = await VoiceService.instance
-        .captureOnce(timeout: const Duration(seconds: 4));
-    if (!mounted) return;
-
-    if (!VoiceCommandParser.isYes(confirmText)) {
-      _finish(
-        success: false,
-        message: 'Confirmation not received — claim cancelled.',
-        speak: 'Cancelled.',
-      );
-      return;
-    }
-
-    _setStep(_Step.working,
-        status: 'Claiming alert…', hint: 'Alert #${target.alertNumber}');
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        _finish(
-          success: false,
-          message: 'You are not signed in.',
-          speak: 'You are not signed in.',
-        );
-        return;
-      }
-
-      final provider = context.read<AlertProvider>();
-      final name = await _displayName(user.uid) ?? 'Supervisor';
-      await provider.takeAlert(target.id, user.uid, name);
-
-      _finish(
-        success: true,
-        message: 'Alert #${target.alertNumber} claimed.',
-        speak: 'Alert claimed.',
-      );
-    } catch (e) {
-      _finish(
-        success: false,
-        message: _humanizeError(e),
-        speak: _humanizeError(e),
-      );
-    }
-  }
-
-  Future<AlertModel?> _resolveTargetAlert(int? spokenNumber) async {
-    final provider = context.read<AlertProvider>();
-    final alerts = provider.allAlerts;
-
-    // 1. Spoken number always wins — the user explicitly named one.
-    if (spokenNumber != null) {
-      for (final a in alerts) {
-        if (a.alertNumber == spokenNumber) return a;
-      }
-      return null;
-    }
-
-    // 2. Notification-supplied id, if still in cache.
-    if (widget.alertId != null) {
-      for (final a in alerts) {
-        if (a.id == widget.alertId) return a;
-      }
-      // Cache miss — fall back to a direct DB read.
-      try {
-        final snap = await FirebaseDatabase.instance
-            .ref('alerts/${widget.alertId}')
-            .get();
-        if (snap.exists && snap.value != null) {
-          return AlertModel.fromMap(
-              widget.alertId!, Map<String, dynamic>.from(snap.value as Map));
-        }
-      } catch (_) {}
-    }
-    return null;
-  }
-
-  Future<bool> _verifyVoiceSample(Uint8List? audio, int sampleRate) async {
-    final result = await VoiceAuthService.instance.verifyCurrentUser(
-      rawAudio: audio,
-      sampleRate: sampleRate,
+    _setStep(
+      _Step.working,
+      status: _workingStatus(command),
+      hint: 'Alert #${command.alertNumber}',
     );
-    if (!result.verified) {
-      final message = result.unenrolled
-          ? 'Please enroll your voice before using voice claim.'
-          : (result.message?.contains('No audio sample') == true
-              ? 'I could not capture your voice sample. Try again.'
-              : 'Voice not recognized');
-      _finish(
-        success: false,
-        message: message,
-        speak: message,
-      );
-      return false;
-    }
-    return true;
+
+    final provider = context.read<AlertProvider>();
+    final result = await VoiceCommandDispatcher(provider).execute(
+      command,
+      rawAudio: capture.rawAudio,
+      rawAudioSampleRate: capture.sampleRate,
+    );
+    _finish(success: result.success, message: result.message, speak: '');
   }
 
-  Future<String?> _displayName(String uid) async {
-    try {
-      final snap = await FirebaseDatabase.instance.ref('users/$uid').get();
-      if (!snap.exists) return null;
-      final m = Map<String, dynamic>.from(snap.value as Map);
-      final first = (m['firstName'] ?? '').toString();
-      final last = (m['lastName'] ?? '').toString();
-      final full = '$first $last'.trim();
-      if (full.isNotEmpty) return full;
-      return (m['fullName'] ?? m['name'] ?? m['email'])?.toString();
-    } catch (_) {
-      return null;
-    }
+  bool _isCompleteActionCommand(VoiceCommand command) {
+    return command.alertNumber != null &&
+        (command.intent == VoiceIntent.claim ||
+            command.intent == VoiceIntent.resolve ||
+            command.intent == VoiceIntent.escalate);
   }
 
-  String _humanizeError(Object e) {
-    final s = e.toString();
-    if (s.contains('already have an alert in progress')) {
-      return 'You already have an alert in progress. Resolve it first.';
+  String _workingStatus(VoiceCommand command) {
+    switch (command.intent) {
+      case VoiceIntent.claim:
+        return 'Claiming alert...';
+      case VoiceIntent.resolve:
+        return 'Resolving alert...';
+      case VoiceIntent.escalate:
+        return 'Escalating alert...';
+      default:
+        return 'Running command...';
     }
-    return s.length > 120 ? '${s.substring(0, 120)}…' : s;
   }
 
   void _setStep(_Step step, {required String status, String hint = ''}) {
@@ -313,8 +180,7 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    final listening =
-        _step == _Step.awaitingCommand || _step == _Step.awaitingConfirm;
+    final listening = _step == _Step.awaitingCommand;
 
     Color iconColor;
     IconData iconData;
@@ -343,12 +209,15 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
                     icon: Icon(Icons.close, color: t.muted),
                   ),
                   const Spacer(),
-                  Text('Voice claim',
-                      style: TextStyle(
-                          color: t.muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5)),
+                  Text(
+                    'Voice command',
+                    style: TextStyle(
+                      color: t.muted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ],
               ),
               const Spacer(),
@@ -358,7 +227,10 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
                 _statusLine,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: t.text, fontSize: 22, fontWeight: FontWeight.w700),
+                  color: t.text,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               if (_hint.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -377,7 +249,8 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
                     foregroundColor: Colors.white,
                     minimumSize: const Size(double.infinity, 48),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                   child: const Text('Close'),
                 ),
@@ -393,8 +266,12 @@ class _PulseIcon extends StatefulWidget {
   final bool active;
   final IconData icon;
   final Color color;
-  const _PulseIcon(
-      {required this.active, required this.icon, required this.color});
+
+  const _PulseIcon({
+    required this.active,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   State<_PulseIcon> createState() => _PulseIconState();
@@ -402,41 +279,41 @@ class _PulseIcon extends StatefulWidget {
 
 class _PulseIconState extends State<_PulseIcon>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(
+    _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     );
-    if (widget.active) _c.repeat(reverse: true);
+    if (widget.active) _controller.repeat(reverse: true);
   }
 
   @override
-  void didUpdateWidget(covariant _PulseIcon old) {
-    super.didUpdateWidget(old);
-    if (widget.active && !_c.isAnimating) {
-      _c.repeat(reverse: true);
+  void didUpdateWidget(covariant _PulseIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
     } else if (!widget.active) {
-      _c.stop();
-      _c.value = 0;
+      _controller.stop();
+      _controller.value = 0;
     }
   }
 
   @override
   void dispose() {
-    _c.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _c,
+      animation: _controller,
       builder: (_, __) {
-        final v = widget.active ? _c.value : 0.0;
+        final v = widget.active ? _controller.value : 0.0;
         return SizedBox(
           width: 160,
           height: 160,

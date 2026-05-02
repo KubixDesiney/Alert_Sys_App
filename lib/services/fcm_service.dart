@@ -211,7 +211,7 @@ class FcmService {
     final provider = alertProvider;
     if (provider == null) return;
 
-    final cmd = VoiceCommandParser.parse(result.transcript);
+    final cmd = VoiceCommandParser.parseBest(result.transcripts);
 
     Uint8List? audioBytes;
     if (result.audioPath.isNotEmpty) {

@@ -111,6 +111,7 @@ class VoiceService {
         },
         listenFor: timeout,
         pauseFor: const Duration(seconds: 4),
+        localeId: 'en_US',
         listenOptions: stt.SpeechListenOptions(
           partialResults: true,
           cancelOnError: true,
@@ -154,6 +155,7 @@ class VoiceService {
         },
         listenFor: timeout,
         pauseFor: const Duration(seconds: 4),
+        localeId: 'en_US',
         listenOptions: stt.SpeechListenOptions(
           partialResults: true,
           cancelOnError: true,
@@ -221,6 +223,7 @@ class VoiceService {
 
         return VoiceCommandCapture(
           transcript: result['transcript']?.toString() ?? '',
+          alternatives: _stringListFromChannelValue(result['alternatives']),
           rawAudio: rawAudio,
           sampleRate: sampleRate,
         );
@@ -235,6 +238,9 @@ class VoiceService {
     final transcript = await captureOnce(timeout: timeout);
     return VoiceCommandCapture(
       transcript: transcript,
+      alternatives: transcript.trim().isEmpty
+          ? const <String>[]
+          : <String>[transcript.trim()],
       rawAudio: null,
       sampleRate: sampleRate,
     );
@@ -315,20 +321,41 @@ class VoiceService {
       debugPrint('VoiceService audio cleanup failed: $e');
     }
   }
+
+  List<String> _stringListFromChannelValue(Object? value) {
+    if (value is List) {
+      return value
+          .map((item) => item?.toString().trim() ?? '')
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+    }
+    return const <String>[];
+  }
 }
 
 class VoiceCommandCapture {
   final String transcript;
+  final List<String> alternatives;
   final Uint8List? rawAudio;
   final int sampleRate;
 
   const VoiceCommandCapture({
     required this.transcript,
+    this.alternatives = const <String>[],
     required this.rawAudio,
     required this.sampleRate,
   });
 
   const VoiceCommandCapture.empty({required this.sampleRate})
       : transcript = '',
+        alternatives = const <String>[],
         rawAudio = null;
+
+  Iterable<String> get transcripts sync* {
+    if (transcript.trim().isNotEmpty) yield transcript.trim();
+    for (final alternative in alternatives) {
+      final text = alternative.trim();
+      if (text.isNotEmpty) yield text;
+    }
+  }
 }

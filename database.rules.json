@@ -3,8 +3,11 @@
 
     "alerts": {
       ".read": "auth != null",
-      ".write": false,
-      ".indexOn": ["usine", "status", "superviseurId", "assistantId", "type", "convoyeur", "poste", "assetId", "push_sent"],
+      ".write": "auth != null",
+      ".indexOn": [
+        "usine", "status", "superviseurId", "assistantId",
+        "type", "convoyeur", "poste", "assetId", "push_sent"
+      ],
       "$alertId": {
         ".read": "auth != null",
         ".write": "auth != null || (auth == null && !data.exists() && newData.hasChildren(['adresse','convoyeur','poste','timestamp','type','usine']) && newData.child('adresse').isString() && newData.child('convoyeur').isNumber() && newData.child('poste').isNumber() && newData.child('timestamp').isString() && newData.child('type').isString() && newData.child('usine').isString())",
@@ -74,6 +77,30 @@
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
+    "assets": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      "$assetId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        "assetId": { ".validate": "!newData.exists() || newData.isString()" },
+        "name": { ".validate": "!newData.exists() || newData.isString()" },
+        "factoryId": { ".validate": "!newData.exists() || newData.isString()" },
+        "factoryName": { ".validate": "!newData.exists() || newData.isString()" },
+        "conveyorId": { ".validate": "!newData.exists() || newData.isString()" },
+        "conveyorNumber": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "stationId": { ".validate": "!newData.exists() || newData.isString()" },
+        "stationNumber": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "address": { ".validate": "!newData.exists() || newData.isString()" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isString()" },
+        "history": {
+          "$index": {
+            ".validate": "newData.hasChildren(['movedAt', 'from', 'to'])"
+          }
+        }
+      }
+    },
+
     "users": {
       ".read": "auth != null",
       ".write": false,
@@ -127,6 +154,16 @@
     "ai_master": {
       ".read": "auth != null",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
+    },
+
+    "ai_predictions": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    "ai_briefing": {
+      ".read": "auth != null",
+      ".write": "auth != null"
     },
 
     "factories": {
