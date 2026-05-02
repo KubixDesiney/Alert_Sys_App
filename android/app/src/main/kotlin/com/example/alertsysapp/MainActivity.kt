@@ -53,7 +53,7 @@ class MainActivity : FlutterActivity() {
                     "startVoiceLockFlow" -> {
                         pendingVoiceLockResult?.error("CANCELLED", "Superseded by new request", null)
                         pendingVoiceLockResult = result
-                        val timeoutMs = call.argument<Int>("timeoutMs") ?: 4000
+                        val timeoutMs = call.argument<Int>("timeoutMs") ?: 6000
                         startActivityForResult(
                             Intent(this, VoiceLockRecorderActivity::class.java).putExtra(
                                 VoiceLockRecorderActivity.EXTRA_TIMEOUT_MS,
@@ -99,6 +99,10 @@ class MainActivity : FlutterActivity() {
                 pending.success(
                     mapOf(
                         "transcript" to (data.getStringExtra(VoiceLockRecorderActivity.EXTRA_TRANSCRIPT) ?: ""),
+                        "alternatives" to (
+                            data.getStringArrayListExtra(VoiceLockRecorderActivity.EXTRA_ALTERNATIVES)
+                                ?: arrayListOf<String>()
+                            ),
                         "audioPath" to (data.getStringExtra(VoiceLockRecorderActivity.EXTRA_AUDIO_PATH) ?: "")
                     )
                 )

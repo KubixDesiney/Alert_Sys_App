@@ -26,6 +26,7 @@ import '../services/alert_service.dart';
 import '../services/worker_trigger_queue.dart';
 import '../widgets/voice_command_button.dart';
 import '../services/ai_assignment_service.dart';
+import '../services/predictive_intel_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
 import 'alerts_tree_tab.dart';
