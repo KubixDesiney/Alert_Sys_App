@@ -13,11 +13,15 @@ class VoiceLockResult {
 class VoiceLockService {
   static const _channel = MethodChannel('alertsys/voice_lock');
 
-  static Future<VoiceLockResult?> startVoiceLockFlow() async {
+  static Future<VoiceLockResult?> startVoiceLockFlow({
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
     if (!Platform.isAndroid) return null;
     try {
-      final result =
-          await _channel.invokeMapMethod<String, dynamic>('startVoiceLockFlow');
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'startVoiceLockFlow',
+        {'timeoutMs': timeout.inMilliseconds},
+      );
       if (result == null) return null;
       return VoiceLockResult(
         transcript: result['transcript']?.toString() ?? '',

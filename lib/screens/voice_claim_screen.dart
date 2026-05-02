@@ -244,10 +244,15 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       sampleRate: sampleRate,
     );
     if (!result.verified) {
+      final message = result.unenrolled
+          ? 'Please enroll your voice before using voice claim.'
+          : (result.message?.contains('No audio sample') == true
+              ? 'I could not capture your voice sample. Try again.'
+              : 'Voice not recognized');
       _finish(
         success: false,
-        message: 'Voice not recognized',
-        speak: 'Voice not recognized',
+        message: message,
+        speak: message,
       );
       return false;
     }

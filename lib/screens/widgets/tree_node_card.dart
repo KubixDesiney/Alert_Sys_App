@@ -17,9 +17,9 @@ extension TreeNodeDensityX on TreeNodeDensity {
         TreeNodeDensity.detailed => 200,
       };
   double get cardHeight => switch (this) {
-        TreeNodeDensity.compact => 66,
-        TreeNodeDensity.comfortable => 98,
-        TreeNodeDensity.detailed => 118,
+        TreeNodeDensity.compact => 70,
+        TreeNodeDensity.comfortable => 108,
+        TreeNodeDensity.detailed => 128,
       };
   double get titleSize => switch (this) {
         TreeNodeDensity.compact => 12,
