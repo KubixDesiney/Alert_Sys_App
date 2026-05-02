@@ -89,12 +89,10 @@ class _OverviewTabState extends State<_OverviewTab> {
   }
 
   void _bindPredictiveStreams() {
-    _briefSub =
-        PredictiveIntelService.instance.briefingStream().listen((b) {
+    _briefSub = PredictiveIntelService.instance.briefingStream().listen((b) {
       if (mounted) setState(() => _briefing = b);
     });
-    _predSub =
-        PredictiveIntelService.instance.predictionsStream().listen((p) {
+    _predSub = PredictiveIntelService.instance.predictionsStream().listen((p) {
       if (mounted) setState(() => _predictions = p);
     });
   }
@@ -337,8 +335,7 @@ class _OverviewTabState extends State<_OverviewTab> {
         insights.add(_Insight(
           icon: Icons.priority_high_rounded,
           color: AppColors.orange,
-          text:
-              'Resolution rate is $rate% — workload may need redistribution.',
+          text: 'Resolution rate is $rate% — workload may need redistribution.',
         ));
       }
     }
@@ -764,7 +761,8 @@ class _AIMorningBriefingHeroState extends State<_AIMorningBriefingHero>
   String _modelLabel() {
     final b = widget.briefing;
     if (b == null) return 'AI BRIEFING · WARMING UP';
-    if (b.model == null || b.model == 'fallback') return 'AI BRIEFING · OFFLINE FALLBACK';
+    if (b.model == null || b.model == 'fallback')
+      return 'AI BRIEFING · OFFLINE FALLBACK';
     return 'AI BRIEFING · LLAMA 3.2';
   }
 
@@ -1001,8 +999,8 @@ class _AIMorningBriefingHeroState extends State<_AIMorningBriefingHero>
                                   height: 12,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 1.6,
-                                    valueColor: AlwaysStoppedAnimation(
-                                        Colors.white),
+                                    valueColor:
+                                        AlwaysStoppedAnimation(Colors.white),
                                   ),
                                 )
                               else
@@ -1154,8 +1152,8 @@ class _SparklePainter extends CustomPainter {
     for (final s in _seeds) {
       final progress = ((t * s.speed) + s.phase) % 1.0;
       final y = (1 - progress) * size.height;
-      final x = s.x * size.width +
-          math.sin((progress + s.phase) * math.pi * 2) * 8;
+      final x =
+          s.x * size.width + math.sin((progress + s.phase) * math.pi * 2) * 8;
       final twinkle = 0.5 + 0.5 * math.sin((t + s.phase) * math.pi * 4);
       final alpha = (twinkle * (1 - progress) * 0.7).clamp(0.0, 1.0);
       paint.color = Colors.white.withValues(alpha: alpha);
@@ -1218,7 +1216,8 @@ class _LivePulseDotState extends State<_LivePulseDot>
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4ADE80).withValues(alpha: opacity * 0.6),
+                    color: const Color(0xFF4ADE80)
+                        .withValues(alpha: opacity * 0.6),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -1733,8 +1732,7 @@ class _TrendBadge extends StatelessWidget {
     final theme = context.appTheme;
     final isUp = pct > 0;
     final isFlat = pct.abs() < 0.5;
-    final color =
-        isFlat ? theme.muted : (isUp ? theme.green : theme.red);
+    final color = isFlat ? theme.muted : (isUp ? theme.green : theme.red);
     final icon = isFlat
         ? Icons.remove_rounded
         : (isUp ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded);
@@ -1869,8 +1867,7 @@ class _InsightsStrip extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: theme.purple.withValues(alpha: 0.13),
                   borderRadius: BorderRadius.circular(99),
@@ -2018,8 +2015,7 @@ class _PredictiveRiskHeatmap extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: theme.purple.withValues(alpha: 0.13),
                   borderRadius: BorderRadius.circular(99),
@@ -2138,9 +2134,8 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
               : theme.scaffold.withValues(alpha: 0.4),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: widget.isActive
-                ? color.withValues(alpha: 0.55)
-                : theme.border,
+            color:
+                widget.isActive ? color.withValues(alpha: 0.55) : theme.border,
           ),
         ),
         child: Column(
@@ -2190,8 +2185,8 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: riskColor.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(99),
@@ -2272,8 +2267,7 @@ class _WaveBarsPainter extends CustomPainter {
         ..color = color.withValues(alpha: 0.12)
         ..style = PaintingStyle.fill;
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Offset.zero & size, const Radius.circular(6)),
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(6)),
         p,
       );
       return;
@@ -2282,8 +2276,17 @@ class _WaveBarsPainter extends CustomPainter {
     final n = buckets.length;
     final gap = 3.0;
     final barW = (size.width - gap * (n - 1)) / n;
-    final maxProb =
-        buckets.map((b) => b.probability).fold<double>(0, math.max);
+    final maxProb = buckets.map((b) => b.probability).fold<double>(0, math.max);
+    if (maxProb <= 0.01) {
+      final p = Paint()
+        ..color = color.withValues(alpha: 0.12)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(6)),
+        p,
+      );
+      return;
+    }
     final scale = maxProb <= 0 ? 0.0 : 1.0;
 
     for (var i = 0; i < n; i++) {
@@ -2438,8 +2441,7 @@ class _PredictiveFailureCardState extends State<_PredictiveFailureCard>
                         borderRadius: BorderRadius.circular(11),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                theme.purple.withValues(alpha: 0.35),
+                            color: theme.purple.withValues(alpha: 0.35),
                             blurRadius: 14,
                           ),
                         ],
@@ -2471,8 +2473,7 @@ class _PredictiveFailureCardState extends State<_PredictiveFailureCard>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color:
-                                  theme.purple.withValues(alpha: 0.16),
+                              color: theme.purple.withValues(alpha: 0.16),
                               borderRadius: BorderRadius.circular(99),
                             ),
                             child: Text(
@@ -2502,8 +2503,8 @@ class _PredictiveFailureCardState extends State<_PredictiveFailureCard>
                 ),
                 if (widget.model != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: theme.card,
                       borderRadius: BorderRadius.circular(99),
@@ -2548,8 +2549,7 @@ class _PredictiveFailureCardState extends State<_PredictiveFailureCard>
                 alignment: Alignment.center,
                 child: Column(
                   children: [
-                    Icon(Icons.science_outlined,
-                        size: 32, color: theme.purple),
+                    Icon(Icons.science_outlined, size: 32, color: theme.purple),
                     const SizedBox(height: 8),
                     Text(
                       'Not enough history yet',
@@ -2649,8 +2649,7 @@ class _PredictedFailureRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: tColor.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(99),
@@ -3023,8 +3022,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
             TextButton(
               onPressed: _loadSuggestion,
               style: TextButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                 minimumSize: const Size(0, 28),
               ),
               child: Text(
@@ -3065,8 +3063,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
           ),
           child: Row(
             children: [
-              Icon(Icons.auto_awesome_rounded,
-                  size: 14, color: theme.purple),
+              Icon(Icons.auto_awesome_rounded, size: 14, color: theme.purple),
               const SizedBox(width: 6),
               Expanded(
                 child: Column(
@@ -3128,8 +3125,8 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                   backgroundColor: theme.purple,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -3144,8 +3141,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 1.6,
-                          valueColor:
-                              AlwaysStoppedAnimation(Colors.white),
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
                         ),
                       )
                     : const Text('Assign'),
@@ -3291,9 +3287,11 @@ class _HistoryHeader extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        _ExportBtn(label: 'CSV', icon: Icons.table_chart_outlined, onTap: onCsv),
+        _ExportBtn(
+            label: 'CSV', icon: Icons.table_chart_outlined, onTap: onCsv),
         const SizedBox(width: 8),
-        _ExportBtn(label: 'Excel', icon: Icons.grid_on_outlined, onTap: onExcel),
+        _ExportBtn(
+            label: 'Excel', icon: Icons.grid_on_outlined, onTap: onExcel),
       ],
     );
   }
@@ -3316,8 +3314,8 @@ class _EmptyState extends StatelessWidget {
               color: theme.green.withValues(alpha: 0.13),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(Icons.check_circle_outline,
-                size: 30, color: theme.green),
+            child:
+                Icon(Icons.check_circle_outline, size: 30, color: theme.green),
           ),
           const SizedBox(height: 14),
           Text(
@@ -3408,8 +3406,8 @@ class _FilterPanel extends StatelessWidget {
                 onPressed: onReset,
                 icon: const Icon(Icons.refresh_rounded, size: 14),
                 label: const Text('Reset',
-                    style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 style: TextButton.styleFrom(
                   foregroundColor: theme.navy,
                   padding:
@@ -3470,8 +3468,7 @@ class _FilterPanel extends StatelessWidget {
                 items: [
                   const DropdownMenuItem(
                       value: 'all',
-                      child: Text('All Types',
-                          style: TextStyle(fontSize: 13))),
+                      child: Text('All Types', style: TextStyle(fontSize: 13))),
                   ...[
                     'qualite',
                     'maintenance',
@@ -3479,8 +3476,8 @@ class _FilterPanel extends StatelessWidget {
                     'manque_ressource'
                   ].map((t) => DropdownMenuItem(
                         value: t,
-                        child:
-                            Text(_typeLabel(t), style: const TextStyle(fontSize: 13)),
+                        child: Text(_typeLabel(t),
+                            style: const TextStyle(fontSize: 13)),
                       )),
                 ],
                 onChanged: onType,
@@ -3491,20 +3488,17 @@ class _FilterPanel extends StatelessWidget {
                 items: const [
                   DropdownMenuItem(
                       value: 'all',
-                      child: Text('All Statuses',
-                          style: TextStyle(fontSize: 13))),
+                      child:
+                          Text('All Statuses', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'disponible',
-                      child:
-                          Text('Available', style: TextStyle(fontSize: 13))),
+                      child: Text('Available', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'en_cours',
-                      child:
-                          Text('Claimed', style: TextStyle(fontSize: 13))),
+                      child: Text('Claimed', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'validee',
-                      child:
-                          Text('Fixed', style: TextStyle(fontSize: 13))),
+                      child: Text('Fixed', style: TextStyle(fontSize: 13))),
                 ],
                 onChanged: onStatus,
               ),
@@ -3514,23 +3508,21 @@ class _FilterPanel extends StatelessWidget {
                 items: const [
                   DropdownMenuItem(
                       value: 'all',
-                      child:
-                          Text('All Time', style: TextStyle(fontSize: 13))),
+                      child: Text('All Time', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'today',
                       child: Text('Today', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'week',
-                      child: Text('Last 7 Days',
-                          style: TextStyle(fontSize: 13))),
+                      child:
+                          Text('Last 7 Days', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'month',
                       child:
                           Text('This Month', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'year',
-                      child:
-                          Text('This Year', style: TextStyle(fontSize: 13))),
+                      child: Text('This Year', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'custom',
                       child: Text('Custom', style: TextStyle(fontSize: 13))),
@@ -3636,15 +3628,15 @@ class _ActiveFilterBanner extends StatelessWidget {
           label: selectedUsine, color: theme.orange, onRemove: onRemoveUsine));
     }
     if (filterConvoyeur != 'all') {
-      chips.add(_ActiveChip(
-          label: 'Line $filterConvoyeur', color: theme.orange));
+      chips.add(
+          _ActiveChip(label: 'Line $filterConvoyeur', color: theme.orange));
     }
     if (filterPoste != 'all') {
       chips.add(_ActiveChip(label: 'Post $filterPoste', color: theme.orange));
     }
     if (filterType != 'all') {
-      chips.add(_ActiveChip(
-          label: _typeLabel(filterType), color: theme.orange));
+      chips
+          .add(_ActiveChip(label: _typeLabel(filterType), color: theme.orange));
     }
     if (filterStatus != 'all') {
       chips.add(_ActiveChip(label: filterStatus, color: theme.orange));
@@ -3749,8 +3741,7 @@ class _ExportBtn extends StatelessWidget {
         side: BorderSide(color: theme.border),
         backgroundColor: theme.card,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       icon: Icon(icon, size: 14),
       label: Text(label,
