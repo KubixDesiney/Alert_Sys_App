@@ -45,7 +45,7 @@ AlertMeta typeMeta(String type, AppTheme t) {
       );
     case 'manque_ressource':
       return AlertMeta(
-        label: 'Resource Shortage',
+        label: 'Resource Deficiency',
         icon: Icons.inventory_2_outlined,
         color: t.orange,
         bg: t.orangeLt,

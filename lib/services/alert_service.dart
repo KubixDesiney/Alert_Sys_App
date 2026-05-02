@@ -7,7 +7,7 @@ String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
       'maintenance' => 'Equipment requires maintenance intervention.',
       'defaut_produit' => 'Product defect identified at workstation.',
-      'manque_ressource' => 'Resource shortage reported at production post.',
+      'manque_ressource' => 'Resource deficiency reported at production post.',
       _ => 'Alert raised — awaiting supervisor assessment.',
     };
 

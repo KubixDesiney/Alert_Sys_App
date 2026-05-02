@@ -1339,7 +1339,7 @@ IconData _statusIcon(LocatorNodeStatus s) => switch (s) {
 String _typeLabel(String type) => switch (type) {
       'qualite' => 'Quality',
       'maintenance' => 'Maintenance',
-      'defaut_produit' => 'Damaged product',
-      'manque_ressource' => 'Resource shortage',
+      'defaut_produit' => 'Damaged Product',
+      'manque_ressource' => 'Resource Deficiency',
       _ => type,
     };

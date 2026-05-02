@@ -37,7 +37,7 @@ String _typeLabel(String type) => switch (type) {
       'qualite' => 'Quality',
       'maintenance' => 'Maintenance',
       'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resources Deficiency',
+      'manque_ressource' => 'Resource Deficiency',
       _ => type,
     };
 
