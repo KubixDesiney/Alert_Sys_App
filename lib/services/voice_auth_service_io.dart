@@ -26,7 +26,7 @@ class VoiceAuthService {
   VoiceAuthService._();
   static final VoiceAuthService instance = VoiceAuthService._();
 
-  static const double threshold = 0.88;
+  static const double threshold = 0.80;
   static const String _modelAsset =
       'assets/models/conformer_tisid_small.tflite';
 
@@ -37,7 +37,7 @@ class VoiceAuthService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return VoiceEnrollmentState.unavailable;
     final enrolled = await _loadVoiceprint(uid);
-    return enrolled == null || enrolled.isEmpty
+    return enrolled == null || enrolled.embedding.isEmpty
         ? VoiceEnrollmentState.unenrolled
         : VoiceEnrollmentState.enrolled;
   }
@@ -56,7 +56,7 @@ class VoiceAuthService {
     }
 
     final enrolled = await _loadVoiceprint(uid);
-    if (enrolled == null || enrolled.isEmpty) {
+    if (enrolled == null || enrolled.embedding.isEmpty) {
       return const VoiceVerificationResult(
         verified: false,
         unenrolled: true,
@@ -75,9 +75,9 @@ class VoiceAuthService {
     try {
       final embedding =
           await extractEmbedding(rawAudio, sampleRate: sampleRate);
-      final similarity = cosineSimilarity(enrolled, embedding);
+      final similarity = cosineSimilarity(enrolled.embedding, embedding);
       return VoiceVerificationResult(
-        verified: similarity >= threshold,
+        verified: similarity >= enrolled.threshold,
         unenrolled: false,
         similarity: similarity,
       );
@@ -102,10 +102,11 @@ class VoiceAuthService {
     }
 
     final samples = _pcm16BytesToDoubles(rawAudio);
-    final normalizedSamples = sampleRate == 16000
+    final resampledSamples = sampleRate == 16000
         ? samples
         : _resampleLinear(samples, sampleRate, 16000);
-    final features = _buildStackedMelFeatures(normalizedSamples);
+    final preparedSamples = _prepareSamplesForEmbedding(resampledSamples);
+    final features = _buildStackedMelFeatures(preparedSamples);
     if (features.isEmpty) {
       throw StateError('Not enough speech audio for voice verification.');
     }
@@ -228,12 +229,27 @@ class VoiceAuthService {
     }();
   }
 
-  Future<List<double>?> _loadVoiceprint(String uid) async {
-    final snapshot = await FirebaseDatabase.instance
-        .ref('users/$uid/voiceprint/embedding')
-        .get();
+  Future<_Voiceprint?> _loadVoiceprint(String uid) async {
+    final snapshot =
+        await FirebaseDatabase.instance.ref('users/$uid/voiceprint').get();
     if (!snapshot.exists || snapshot.value == null) return null;
-    return _numbersFromFirebaseValue(snapshot.value);
+    final value = snapshot.value;
+    if (value is Map) {
+      final rawEmbedding =
+          value.containsKey('embedding') ? value['embedding'] : value;
+      final embedding = _numbersFromFirebaseValue(rawEmbedding);
+      final savedThreshold = (value['threshold'] as num?)?.toDouble();
+      return _Voiceprint(
+        embedding: embedding,
+        threshold: savedThreshold == null
+            ? threshold
+            : math.min(savedThreshold, threshold),
+      );
+    }
+    return _Voiceprint(
+      embedding: _numbersFromFirebaseValue(value),
+      threshold: threshold,
+    );
   }
 
   List<double> _numbersFromFirebaseValue(Object? value) {
@@ -245,7 +261,7 @@ class VoiceAuthService {
     }
     if (value is Map) {
       final entries = value.entries.toList()
-        ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
+        ..sort((a, b) => _compareFirebaseIndexKeys(a.key, b.key));
       return entries
           .map((e) => e.value)
           .whereType<num>()
@@ -255,6 +271,13 @@ class VoiceAuthService {
     return const <double>[];
   }
 
+  int _compareFirebaseIndexKeys(Object? a, Object? b) {
+    final ai = int.tryParse(a.toString());
+    final bi = int.tryParse(b.toString());
+    if (ai != null && bi != null) return ai.compareTo(bi);
+    return a.toString().compareTo(b.toString());
+  }
+
   List<double> _pcm16BytesToDoubles(Uint8List bytes) {
     final data = ByteData.sublistView(bytes);
     final samples = <double>[];
@@ -262,6 +285,66 @@ class VoiceAuthService {
       samples.add(data.getInt16(i, Endian.little) / 32768.0);
     }
     return samples;
+  }
+
+  List<double> _prepareSamplesForEmbedding(List<double> samples) {
+    if (samples.isEmpty) return samples;
+    return _normalizeVolume(_trimSilence(samples));
+  }
+
+  List<double> _trimSilence(List<double> samples) {
+    const frameSize = 320; // 20 ms at 16 kHz.
+    const padding = 1600; // Keep context around the detected speech.
+    if (samples.length < frameSize * 4) return samples;
+
+    var maxAbs = 0.0;
+    for (final sample in samples) {
+      final abs = sample.abs();
+      if (abs > maxAbs) maxAbs = abs;
+    }
+    if (maxAbs < 0.003) return samples;
+
+    final threshold = math.max(0.012, maxAbs * 0.08);
+    int? firstSpeech;
+    int? lastSpeech;
+
+    for (var start = 0;
+        start + frameSize <= samples.length;
+        start += frameSize) {
+      final rms = _rms(samples, start, start + frameSize);
+      if (rms >= threshold) {
+        firstSpeech ??= start;
+        lastSpeech = start + frameSize;
+      }
+    }
+
+    if (firstSpeech == null || lastSpeech == null) return samples;
+    final start = math.max(0, firstSpeech - padding);
+    final end = math.min(samples.length, lastSpeech + padding);
+    if (end <= start) return samples;
+    return samples.sublist(start, end);
+  }
+
+  List<double> _normalizeVolume(List<double> samples) {
+    if (samples.isEmpty) return samples;
+    final rms = _rms(samples, 0, samples.length);
+    if (rms < 0.003) return samples;
+    final gain = (0.08 / rms).clamp(0.5, 8.0).toDouble();
+    return samples
+        .map((sample) => (sample * gain).clamp(-1.0, 1.0).toDouble())
+        .toList(growable: false);
+  }
+
+  double _rms(List<double> samples, int start, int end) {
+    final safeStart = start.clamp(0, samples.length).toInt();
+    final safeEnd = end.clamp(safeStart, samples.length).toInt();
+    final count = safeEnd - safeStart;
+    if (count <= 0) return 0;
+    var sumSquares = 0.0;
+    for (var i = safeStart; i < safeEnd; i++) {
+      sumSquares += samples[i] * samples[i];
+    }
+    return math.sqrt(sumSquares / count);
   }
 
   List<double> _resampleLinear(
@@ -459,4 +542,14 @@ class VoiceAuthService {
     final width = flattened.length ~/ rows;
     return flattened.sublist(flattened.length - width);
   }
+}
+
+class _Voiceprint {
+  final List<double> embedding;
+  final double threshold;
+
+  const _Voiceprint({
+    required this.embedding,
+    required this.threshold,
+  });
 }

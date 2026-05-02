@@ -81,6 +81,20 @@ class VoiceCommandParser {
     'hundred': 100,
     'thousand': 1000,
   };
+  static const Set<String> _numberFillers = {
+    'a',
+    'an',
+    'and',
+    'alert',
+    'alarm',
+    'case',
+    'id',
+    'no',
+    'number',
+    'num',
+    'please',
+    'the',
+  };
 
   /// Parse a finalized transcription string into a [VoiceCommand].
   /// Returns a command with `intent = unknown` if the verb is not recognized.
@@ -96,6 +110,9 @@ class VoiceCommandParser {
         .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+    final tokens = normalized.isEmpty
+        ? const <String>[]
+        : normalized.split(' ').where((t) => t.isNotEmpty).toList();
 
     // Multi-word navigation commands first (they have no number).
     if (normalized.contains('show dashboard') ||
@@ -114,22 +131,7 @@ class VoiceCommandParser {
       return VoiceCommand(intent: VoiceIntent.showFixed, rawText: raw);
     }
 
-    // Verb extraction. We accept synonyms so the recognizer has slack.
-    VoiceIntent intent = VoiceIntent.unknown;
-    if (normalized.startsWith('claim') ||
-        normalized.startsWith('take') ||
-        normalized.contains('accept assignment') ||
-        normalized.contains('accept the assignment') ||
-        normalized.contains('accept this assignment')) {
-      intent = VoiceIntent.claim;
-    } else if (normalized.startsWith('resolve') ||
-        normalized.startsWith('close') ||
-        normalized.startsWith('finish')) {
-      intent = VoiceIntent.resolve;
-    } else if (normalized.startsWith('escalate') ||
-        normalized.startsWith('escalade')) {
-      intent = VoiceIntent.escalate;
-    }
+    final intent = _detectIntent(normalized, tokens);
     if (intent == VoiceIntent.unknown) {
       return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
     }
@@ -161,7 +163,12 @@ class VoiceCommandParser {
   /// "yeah", "yep", "confirm", "confirmed", "ok", "okay", "go", "go ahead",
   /// "claim", "do it". Anything else (including silence / empty) is "no".
   static bool isYes(String transcript) {
-    final t = transcript.trim().toLowerCase();
+    final t = transcript
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     if (t.isEmpty) return false;
     const positives = {
       'yes',
@@ -176,7 +183,9 @@ class VoiceCommandParser {
       'go',
       'go ahead',
       'do it',
+      'do that',
       'claim',
+      'claim it',
       'accept',
       'affirmative',
       'correct',
@@ -189,6 +198,119 @@ class VoiceCommandParser {
       }
     }
     return false;
+  }
+
+  static VoiceIntent _detectIntent(String normalized, List<String> tokens) {
+    if (tokens.isEmpty) return VoiceIntent.unknown;
+
+    if (_containsAnyPhrase(normalized, const {
+          'mark critical',
+          'make critical',
+          'set critical',
+          'raise priority',
+        }) ||
+        _containsAnyToken(tokens, const {
+          'escalate',
+          'escalated',
+          'escalating',
+          'escalation',
+          'escalade',
+        })) {
+      return VoiceIntent.escalate;
+    }
+
+    if (_containsAnyPhrase(normalized, const {
+          'close alert',
+          'finish alert',
+          'fix alert',
+          'mark fixed',
+          'mark resolved',
+          'validate alert',
+        }) ||
+        _containsAnyToken(tokens, const {
+          'resolve',
+          'resolved',
+          'resolving',
+          'close',
+          'closed',
+          'finish',
+          'finished',
+          'fix',
+          'fixed',
+          'done',
+          'validate',
+          'validated',
+        })) {
+      return VoiceIntent.resolve;
+    }
+
+    if (_containsAnyPhrase(normalized, const {
+          'accept assignment',
+          'accept the assignment',
+          'accept this assignment',
+          'assign it to me',
+          'assign to me',
+          'i will take',
+          'ill take',
+          'i ll take',
+          'pick up',
+          'take this',
+          'take the alert',
+        }) ||
+        _containsAnyToken(tokens, const {
+          'claim',
+          'claimed',
+          'claiming',
+          'take',
+          'taking',
+          'accept',
+          'accepted',
+          'grab',
+          'handle',
+          'mine',
+        })) {
+      return VoiceIntent.claim;
+    }
+
+    if (_mentionsAlert(tokens) &&
+        _containsAnyToken(tokens, const {
+          'clean',
+          'climb',
+          'client',
+          'clam',
+          'plane',
+          'plain',
+        })) {
+      return VoiceIntent.claim;
+    }
+
+    return VoiceIntent.unknown;
+  }
+
+  static bool _containsAnyPhrase(String text, Set<String> phrases) {
+    for (final phrase in phrases) {
+      if (text.contains(phrase)) return true;
+    }
+    return false;
+  }
+
+  static bool _containsAnyToken(List<String> tokens, Set<String> choices) {
+    for (final token in tokens) {
+      if (choices.contains(token)) return true;
+    }
+    return false;
+  }
+
+  static bool _mentionsAlert(List<String> tokens) {
+    return _containsAnyToken(tokens, const {
+      'alert',
+      'alerts',
+      'alarm',
+      'alarms',
+      'assignment',
+      'case',
+      'ticket',
+    });
   }
 
   /// Extracts the first number found in [text]. Recognizes both digit
@@ -226,6 +348,8 @@ class VoiceCommandParser {
         total += current;
         current = 0;
         sawAny = true;
+      } else if (_numberFillers.contains(t)) {
+        continue;
       } else if (sawAny && current > 0) {
         // Filler word after we already started — flush and stop. Prevents
         // "claim alert 1025 please" from greedily consuming "please".
@@ -242,6 +366,8 @@ class VoiceCommandParser {
       final digit = _ones[token];
       if (digit != null && digit >= 0 && digit <= 9) {
         digits.add(digit);
+      } else if (_numberFillers.contains(token)) {
+        continue;
       } else if (digits.isNotEmpty) {
         break;
       }

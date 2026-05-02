@@ -20,7 +20,7 @@ class VoiceAuthService {
   VoiceAuthService._();
   static final VoiceAuthService instance = VoiceAuthService._();
 
-  static const double threshold = 0.88;
+  static const double threshold = 0.80;
 
   Future<VoiceEnrollmentState> enrollmentState() async {
     return VoiceEnrollmentState.unavailable;
