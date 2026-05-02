@@ -1195,8 +1195,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   // Layout: compute positions for visible nodes given the current selection.
   _Layout _layoutTree(_TreeData tree) {
-    const cardW = 168.0;
-    const cardH = 92.0;
+    final cardW = _filter.density.cardWidth;
+    final cardH = _filter.density.cardHeight;
     const spacingX = 32.0;
     const layerGap = 80.0;
     const padding = 28.0;
