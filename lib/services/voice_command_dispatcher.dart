@@ -58,17 +58,26 @@ class VoiceCommandDispatcher {
     }
 
     final number = cmd.alertNumber;
-    if (number == null) {
+    if (number == null && cmd.intent != VoiceIntent.claim) {
       await VoiceService.instance.speak(
           'I did not catch the alert number. Please say the number clearly.');
       return;
     }
 
-    // Look up the alert by alertNumber. Falls back to the last-seen list
-    // from the provider. If not found, abort with a spoken error.
-    final match = _findByNumber(number);
+    // Look up the alert by alertNumber. For a plain "claim alert" command,
+    // allow a hands-free claim only when there is exactly one available alert.
+    final match =
+        number == null ? _singleAvailableClaimTarget() : _findByNumber(number);
     if (match == null) {
-      await VoiceService.instance.speak('Alert number $number was not found.');
+      if (number == null) {
+        final available = provider.availableAlerts.length;
+        await VoiceService.instance.speak(available == 0
+            ? 'There are no available alerts to claim.'
+            : 'I found $available available alerts. Say claim alert followed by the number.');
+      } else {
+        await VoiceService.instance
+            .speak('Alert number $number was not found.');
+      }
       return;
     }
 
@@ -82,18 +91,18 @@ class VoiceCommandDispatcher {
           }
           final name = await _displayName(user.uid) ?? 'Supervisor';
           await provider.takeAlert(match.id, user.uid, name);
-          await VoiceService.instance.speak('Alert $number claimed.');
+          await VoiceService.instance.speak('Alert ${match.number} claimed.');
           break;
         case VoiceIntent.resolve:
           final reason = (cmd.reason == null || cmd.reason!.trim().isEmpty)
               ? 'Resolved by voice command'
               : cmd.reason!.trim();
           await provider.resolveAlert(match.id, reason);
-          await VoiceService.instance.speak('Alert $number resolved.');
+          await VoiceService.instance.speak('Alert ${match.number} resolved.');
           break;
         case VoiceIntent.escalate:
           await provider.toggleCritical(match.id, true);
-          await VoiceService.instance.speak('Alert $number escalated.');
+          await VoiceService.instance.speak('Alert ${match.number} escalated.');
           break;
         default:
           break;
@@ -111,6 +120,13 @@ class VoiceCommandDispatcher {
       }
     }
     return null;
+  }
+
+  _AlertRef? _singleAvailableClaimTarget() {
+    final available = provider.availableAlerts;
+    if (available.length != 1) return null;
+    final alert = available.first;
+    return _AlertRef(alert.id, alert.alertNumber);
   }
 
   Future<String?> _displayName(String uid) async {

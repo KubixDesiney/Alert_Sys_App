@@ -81,7 +81,11 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
 
     final provider = context.read<AlertProvider>();
     final dispatcher = VoiceCommandDispatcher(provider);
-    await _maybeSuggestEnrollment();
+    final enrollment = await _maybeSuggestEnrollment();
+    if (enrollment == VoiceEnrollmentState.unenrolled) {
+      await VoiceService.instance.speak('Please enroll your voice first.');
+      return;
+    }
 
     setState(() => _listening = true);
     _pulse.repeat(reverse: true);
@@ -98,12 +102,12 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
       sampleRate: capture.sampleRate,
     );
     if (!auth.verified) {
-      await VoiceService.instance.speak('Voice not recognized');
+      await VoiceService.instance.speak(_authFailureMessage(auth));
       return;
     }
 
     var cmd = VoiceCommandParser.parse(capture.transcript);
-    if (_needsAlertNumber(cmd)) {
+    if (_needsAlertNumber(cmd) && !_canClaimOnlyAvailableAlert(provider, cmd)) {
       await VoiceService.instance.speak('What alert number?');
       if (!mounted) return;
 
@@ -162,6 +166,20 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
         (cmd.intent == VoiceIntent.claim ||
             cmd.intent == VoiceIntent.resolve ||
             cmd.intent == VoiceIntent.escalate);
+  }
+
+  bool _canClaimOnlyAvailableAlert(AlertProvider provider, VoiceCommand cmd) {
+    return cmd.intent == VoiceIntent.claim &&
+        provider.availableAlerts.length == 1;
+  }
+
+  String _authFailureMessage(VoiceVerificationResult auth) {
+    if (auth.unenrolled) return 'Please enroll your voice first.';
+    final message = auth.message ?? '';
+    if (message.contains('No audio sample')) {
+      return 'I could not capture your voice sample. Please try again.';
+    }
+    return 'Voice not recognized';
   }
 
   @override
