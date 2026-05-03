@@ -41,7 +41,7 @@ Color _typeBgColor(String type) => switch (type) {
     };
 
 String _typeLabel(String type) => switch (type) {
-      'qualite' => 'Quality',
+      'qualite' => 'Quality Issues',
       'maintenance' => 'Maintenance',
       'defaut_produit' => 'Damaged Product',
       'manque_ressource' => 'Resource Deficiency',
@@ -68,11 +68,17 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _service = CollaborationService();
+  late final Stream<List<dynamic>> _escalatedAlertsCountStream;
+  late final Stream<List<CollaborationRequest>>
+      _pendingCollaborationRequestsStream;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _escalatedAlertsCountStream = _getEscalatedAlertsCount();
+    _pendingCollaborationRequestsStream =
+        _service.getPendingCollaborationRequests();
   }
 
   @override
@@ -151,7 +157,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                               const Text('Escalated Alerts'),
                               const SizedBox(width: 4),
                               StreamBuilder<List<dynamic>>(
-                                stream: _getEscalatedAlertsCount(),
+                                stream: _escalatedAlertsCountStream,
                                 builder: (context, snapshot) {
                                   final count = snapshot.data?.length ?? 0;
                                   if (count == 0)
@@ -186,8 +192,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                               const Text('Collaborations'),
                               const SizedBox(width: 4),
                               StreamBuilder<List<CollaborationRequest>>(
-                                stream:
-                                    _service.getPendingCollaborationRequests(),
+                                stream: _pendingCollaborationRequestsStream,
                                 builder: (context, snapshot) {
                                   final count = snapshot.data?.length ?? 0;
                                   if (count == 0)
@@ -1474,7 +1479,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           // Threshold cards
           _ThresholdCard(
             type: 'qualite',
-            label: 'Quality',
+            label: 'Quality Issues',
             color: t.red,
             bgColor: t.redLt,
             icon: Icons.warning_amber_rounded,

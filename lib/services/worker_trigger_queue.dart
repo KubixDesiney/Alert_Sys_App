@@ -6,13 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'worker_auth_config.dart';
+
 class WorkerTriggerQueue {
   WorkerTriggerQueue._();
 
   static final WorkerTriggerQueue instance = WorkerTriggerQueue._();
 
-  static const String workerBaseUrl =
-      'https://alert-notifier.aziz-nagati01.workers.dev';
   static const String _storageKey = 'offline_worker_trigger_queue_v1';
   static const Duration _requestTimeout = Duration(seconds: 8);
   static const Duration _reconnectFlushDelay = Duration(seconds: 2);
@@ -52,16 +52,16 @@ class WorkerTriggerQueue {
   }
 
   Future<void> enqueueNotify() {
-    return enqueuePost(Uri.parse('$workerBaseUrl/notify'));
+    return enqueuePost(Uri.parse('${WorkerAuthConfig.baseUrl}/notify'));
   }
 
   Future<void> enqueueAiRetry() {
-    return enqueuePost(Uri.parse('$workerBaseUrl/ai-retry'));
+    return enqueuePost(Uri.parse('${WorkerAuthConfig.baseUrl}/ai-retry'));
   }
 
   Future<void> enqueueAlertTrigger(String alertId) {
     return enqueuePost(
-      Uri.parse(workerBaseUrl),
+      Uri.parse(WorkerAuthConfig.baseUrl),
       headers: const {'Content-Type': 'application/json'},
       jsonBody: {'alertId': alertId},
     );
@@ -126,7 +126,10 @@ class WorkerTriggerQueue {
           final response = await http
               .post(
                 Uri.parse(request.url),
-                headers: request.headers.isEmpty ? null : request.headers,
+                headers: {
+                  ...request.headers,
+                  ...WorkerAuthConfig.headers(),
+                },
                 body: request.body,
               )
               .timeout(_requestTimeout);

@@ -84,13 +84,15 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
       return;
     }
 
+    final enrollState = await VoiceAuthService.instance.enrollmentState();
+    if (enrollState != VoiceEnrollmentState.enrolled) {
+      await _maybeSuggestEnrollment();
+      await VoiceService.instance.speak('Please enroll your voice first.');
+      return;
+    }
+
     final provider = context.read<AlertProvider>();
     final dispatcher = VoiceCommandDispatcher(provider);
-    // Suggest enrollment via snackbar, but never block the command on it.
-    // Voice commands now run with app-session trust when the supervisor
-    // hasn't enrolled — they can still drive the floor while we nudge
-    // them to set up biometrics later.
-    unawaited(_maybeSuggestEnrollment());
 
     setState(() => _listening = true);
     _pulse.repeat(reverse: true);
@@ -102,42 +104,32 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
     _stopUi();
     if (!mounted) return;
 
-    if (capture.transcript.trim().isEmpty &&
-        capture.alternatives.isEmpty) {
+    if (capture.transcript.trim().isEmpty && capture.alternatives.isEmpty) {
       await VoiceService.instance.speak(
         'I did not hear anything. Please tap the mic and try again.',
       );
       return;
     }
 
-    // Best-effort speaker verification: only blocks when the user is
-    // enrolled AND we have a usable audio sample to score. The default
-    // STT path (speech_to_text plugin) doesn't expose raw PCM, so we
-    // run a separate short capture here only if the user is enrolled.
-    final enrollState = await VoiceAuthService.instance.enrollmentState();
-    if (enrollState == VoiceEnrollmentState.enrolled) {
-      final pcm = capture.rawAudio ??
-          await VoiceService.instance.captureRawAudio(
-            duration: const Duration(milliseconds: 1600),
-          );
-      if (pcm != null && pcm.lengthInBytes > 1600) {
-        final auth = await VoiceAuthService.instance.verifyCurrentUser(
-          rawAudio: pcm,
-          sampleRate: capture.sampleRate,
+    // Action commands require a fresh voice sample that matches enrollment.
+    final pcm = capture.rawAudio ??
+        await VoiceService.instance.captureRawAudio(
+          duration: const Duration(milliseconds: 1600),
         );
-        if (!auth.verified && !auth.unenrolled) {
-          // Hard reject only on a real mismatch — quality / sample-size
-          // failures fall through and trust the app session.
-          final msg = auth.message ?? '';
-          final qualityIssue = msg.contains('No audio sample') ||
-              msg.contains('Speech too short') ||
-              msg.contains('signal');
-          if (!qualityIssue) {
-            await VoiceService.instance.speak(_authFailureMessage(auth));
-            return;
-          }
-        }
-      }
+    if (pcm == null || pcm.lengthInBytes <= 1600) {
+      await VoiceService.instance.speak(
+        'I could not capture your voice sample. Please try again.',
+      );
+      return;
+    }
+
+    final auth = await VoiceAuthService.instance.verifyCurrentUser(
+      rawAudio: pcm,
+      sampleRate: capture.sampleRate,
+    );
+    if (!auth.verified) {
+      await VoiceService.instance.speak(_authFailureMessage(auth));
+      return;
     }
 
     final cmd = VoiceCommandParser.parseBest(capture.transcripts);
