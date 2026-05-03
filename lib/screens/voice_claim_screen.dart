@@ -108,8 +108,8 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       );
       if (!mounted) return;
 
-      command = VoiceCommandParser.parseCanonical(capture.transcripts);
-      if (_isCompleteActionCommand(command)) break;
+      command = _parseCommandForThisAlert(capture.transcripts);
+      if (_canRunActionCommand(command)) break;
 
       if (attempt == 0) {
         _setStep(
@@ -124,9 +124,7 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       }
     }
 
-    if (capture == null ||
-        command == null ||
-        !_isCompleteActionCommand(command)) {
+    if (capture == null || command == null || !_canRunActionCommand(command)) {
       _finish(
         success: false,
         message: (capture?.transcript ?? '').trim().isEmpty
@@ -141,7 +139,7 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     _setStep(
       _Step.working,
       status: _workingStatus(command),
-      hint: 'Alert #${command.alertNumber}',
+      hint: _workingHint(command),
     );
 
     final provider = context.read<AlertProvider>();
@@ -149,15 +147,50 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       command,
       rawAudio: capture.rawAudio,
       rawAudioSampleRate: capture.sampleRate,
+      fallbackAlertId: widget.alertId,
     );
     _finish(success: result.success, message: result.message, speak: '');
   }
 
-  bool _isCompleteActionCommand(VoiceCommand command) {
-    return command.alertNumber != null &&
-        (command.intent == VoiceIntent.claim ||
-            command.intent == VoiceIntent.resolve ||
-            command.intent == VoiceIntent.escalate);
+  VoiceCommand _parseCommandForThisAlert(Iterable<String> transcripts) {
+    final canonical = VoiceCommandParser.parseCanonical(transcripts);
+    if (_canRunActionCommand(canonical)) return canonical;
+
+    if (_hasFallbackAlert) {
+      final loose = VoiceCommandParser.parseBest(transcripts);
+      if (_canRunActionCommand(loose)) return loose;
+    }
+
+    return canonical;
+  }
+
+  bool _canRunActionCommand(VoiceCommand command) {
+    final actionIntent = command.intent == VoiceIntent.claim ||
+        command.intent == VoiceIntent.resolve ||
+        command.intent == VoiceIntent.escalate;
+    if (!actionIntent) return false;
+    if (command.alertNumber != null) return true;
+    return _hasFallbackAlert && _mentionsAlert(command.rawText);
+  }
+
+  bool get _hasFallbackAlert =>
+      widget.alertId != null && widget.alertId!.isNotEmpty;
+
+  bool _mentionsAlert(String rawText) {
+    final normalized = rawText
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return RegExp(r'\b(alert|alerts|alarm|alarms|case|ticket)\b')
+        .hasMatch(normalized);
+  }
+
+  String _workingHint(VoiceCommand command) {
+    final number = command.alertNumber;
+    if (number != null) return 'Alert #$number';
+    return 'Current alert';
   }
 
   String _workingStatus(VoiceCommand command) {
