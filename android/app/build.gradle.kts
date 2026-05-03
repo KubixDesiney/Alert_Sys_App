@@ -10,7 +10,7 @@ plugins {
 
 android {
     namespace = "com.example.alertsysapp"
-    compileSdk = 36
+    compileSdk = 24
     ndkVersion = "27.0.12077973"
 
     compileOptions {
