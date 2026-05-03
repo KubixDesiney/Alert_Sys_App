@@ -3,7 +3,7 @@ description: A new Flutter project.
 
 publish_to: "none"
 
-version: 1.0.10+3
+version: 1.1.1
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -28,7 +28,14 @@ dependencies:
   flutter_dotenv: ^5.1.0
   url_launcher: ^6.3.0
 
-  # Voice command stack — Android SpeechRecognizer + native TTS, push-to-talk only.
+  # Voice command stack:
+  #   - Android (production): sherpa_onnx offline ASR — streaming Zipformer
+  #     model downloaded on first launch, then fully offline. Dramatically
+  #     more accurate than Android SpeechRecognizer in factory noise.
+  #   - Other platforms (web/desktop test builds): speech_to_text fallback.
+  # flutter_tts configured in voice_service_io.dart for max-volume factory TTS.
+  sherpa_onnx: ^1.11.3
+  archive: ^3.6.1
   speech_to_text: ^7.0.0
   flutter_tts: ^4.2.0
   permission_handler: ^11.3.1
@@ -53,6 +60,13 @@ dependencies:
   provider: ^6.1.2
   tflite_flutter: ^0.12.1
   qr_flutter: ^4.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  mocktail: ^1.0.4
+
 flutter:
   uses-material-design: true
   assets:

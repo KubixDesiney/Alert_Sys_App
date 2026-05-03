@@ -15,6 +15,7 @@ import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
 import 'services/offline_account_cache.dart';
 import 'services/offline_database_service.dart';
+import 'services/voice_service.dart';
 import 'services/worker_trigger_queue.dart';
 import 'theme.dart';
 
@@ -69,9 +70,20 @@ void main() async {
   );
 
   // Keep startup path light; post-launch SDK setup runs in background.
-  // The voice service initializes lazily when the user taps the mic
-  // button or opens the voice claim screen, so no warm-up is needed.
   ShorebirdCodePush();
+
+  // Pre-warm the speech recognizer after first frame so the first tap on
+  // the mic button starts listening with no perceptible delay. init() is
+  // idempotent and any failure is swallowed inside the service.
+  unawaited(
+    Future.delayed(const Duration(milliseconds: 800), () async {
+      try {
+        await VoiceService.instance.init();
+      } catch (e) {
+        debugPrint('Voice warmup failed: $e');
+      }
+    }),
+  );
 
   runApp(const AlertSysApp());
 }

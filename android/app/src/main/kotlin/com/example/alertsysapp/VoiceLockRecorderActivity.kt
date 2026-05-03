@@ -12,42 +12,53 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Minimal full-screen activity that captures raw PCM audio and speech-to-text
- * in parallel. Launched by MainActivity via startActivityForResult; returns
- * { EXTRA_TRANSCRIPT, EXTRA_AUDIO_PATH } on RESULT_OK.
+ * Full-screen push-to-talk activity that captures raw 16-bit PCM audio at
+ * 16 kHz. Transcription is done on the Dart side via sherpa_onnx (offline
+ * Zipformer / Whisper), so this Activity no longer contains any STT code.
+ *
+ * Benefits of the new split:
+ *   - Simpler native code — no speech engine lifecycle, no grammar JSON
+ *   - sherpa_onnx ships as a pub.dev package; no Maven AAR dependency
+ *   - Same PCM buffer is used for both transcription and speaker verification
+ *
+ * Returns on RESULT_OK:
+ *   EXTRA_AUDIO_PATH — path to the raw PCM file (sampleRate 16000, mono,
+ *                      16-bit LE). Caller deletes the file after reading it.
  */
 class VoiceLockRecorderActivity : Activity() {
 
     companion object {
-        const val EXTRA_TRANSCRIPT = "transcript"
-        const val EXTRA_ALTERNATIVES = "alternatives"
         const val EXTRA_AUDIO_PATH = "audioPath"
         const val EXTRA_TIMEOUT_MS = "timeoutMs"
+        // Legacy keys kept for API compatibility — returned as empty strings
+        // so the Dart layer does not need a null check.
+        const val EXTRA_TRANSCRIPT = "transcript"
+        const val EXTRA_ALTERNATIVES = "alternatives"
+        const val EXTRA_CONFIDENCE = "confidence"
+
         private const val DEFAULT_TIMEOUT_MS = 6000L
         private const val SAMPLE_RATE = 16000
+
+        // Stop recording when RMS stays below this for SILENCE_MS; ensures we
+        // don't capture minutes of silence on a long timeout.
+        private const val SILENCE_RMS_THRESHOLD = 0.010
+        private const val SILENCE_MS = 900L
     }
 
     private var audioRecord: AudioRecord? = null
-    private var speechRecognizer: SpeechRecognizer? = null
     private val stopped = AtomicBoolean(false)
-    private val audioBuffer = ByteArrayOutputStream(SAMPLE_RATE * 8) // ~4 s preallocated
+    private val audioBuffer = ByteArrayOutputStream(SAMPLE_RATE * 8)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recordingThread: Thread? = null
-    private var bestTranscript = ""
-    private val transcriptAlternatives = linkedSetOf<String>()
 
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,25 +83,18 @@ class VoiceLockRecorderActivity : Activity() {
             return
         }
 
-        // 1. Start PCM capture immediately — no UI delay.
-        startAudioRecording()
-
-        // 2. Start speech-to-text in parallel.
-        startSpeechRecognition()
-
-        // 3. Hard timeout.
         val timeoutMs = intent.getIntExtra(
             EXTRA_TIMEOUT_MS,
             DEFAULT_TIMEOUT_MS.toInt()
         ).coerceIn(1000, 8000).toLong()
-        mainHandler.postDelayed({ stopAndFinish(null) }, timeoutMs)
 
-        // 4. Show minimal overlay (recording is already running by this point).
+        startRecording(timeoutMs)
+        mainHandler.postDelayed({ stopAndFinish() }, timeoutMs)
         showListeningOverlay()
     }
 
     @SuppressLint("MissingPermission")
-    private fun startAudioRecording() {
+    private fun startRecording(timeoutMs: Long) {
         val minBuffer = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
@@ -98,12 +102,13 @@ class VoiceLockRecorderActivity : Activity() {
         )
         if (minBuffer <= 0) return
 
+        val readSize = maxOf(minBuffer, 1024)
         val recorder = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
-            minBuffer * 4
+            readSize * 4
         )
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
             recorder.release()
@@ -113,12 +118,30 @@ class VoiceLockRecorderActivity : Activity() {
         audioRecord = recorder
         recorder.startRecording()
 
-        val readBuf = ByteArray(minBuffer)
+        val chunk = ByteArray(readSize)
         recordingThread = Thread {
+            var lastSpeechMs = System.currentTimeMillis()
+            var sawSpeech = false
+            val startMs = System.currentTimeMillis()
+
             while (!stopped.get()) {
-                val read = recorder.read(readBuf, 0, readBuf.size)
-                if (read > 0) {
-                    synchronized(audioBuffer) { audioBuffer.write(readBuf, 0, read) }
+                val read = recorder.read(chunk, 0, chunk.size)
+                if (read <= 0) continue
+                synchronized(audioBuffer) { audioBuffer.write(chunk, 0, read) }
+
+                val rms = computeRms(chunk, read)
+                val now = System.currentTimeMillis()
+                if (rms > SILENCE_RMS_THRESHOLD) {
+                    sawSpeech = true
+                    lastSpeechMs = now
+                }
+                // End-of-utterance: had speech, then silence for SILENCE_MS
+                if (sawSpeech &&
+                    now - lastSpeechMs > SILENCE_MS &&
+                    now - startMs > 800
+                ) {
+                    mainHandler.post { stopAndFinish() }
+                    return@Thread
                 }
             }
         }.also {
@@ -127,57 +150,19 @@ class VoiceLockRecorderActivity : Activity() {
         }
     }
 
-    private fun startSpeechRecognition() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) return
-
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onResults(results: Bundle) {
-                updateBestTranscript(results)
-                stopAndFinish(bestTranscript)
-            }
-
-            override fun onError(error: Int) =
-                stopAndFinish(bestTranscript.ifBlank { null })
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {
-                mainHandler.postDelayed({
-                    if (!stopped.get()) stopAndFinish(bestTranscript.ifBlank { null })
-                }, 700L)
-            }
-            override fun onPartialResults(partialResults: Bundle?) {
-                updateBestTranscript(partialResults)
-            }
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
-
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.US.toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2200L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 400L)
+    private fun computeRms(buffer: ByteArray, length: Int): Double {
+        if (length < 2) return 0.0
+        var sum = 0.0
+        var count = 0
+        var i = 0
+        while (i + 1 < length) {
+            val sample = ((buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 0xff)).toShort()
+            val norm = sample / 32768.0
+            sum += norm * norm
+            count++
+            i += 2
         }
-        speechRecognizer?.startListening(intent)
-    }
-
-    private fun updateBestTranscript(results: Bundle?) {
-        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-        matches
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.forEach { transcriptAlternatives.add(it) }
-        val candidate = matches?.firstOrNull()?.trim().orEmpty()
-        if (candidate.length >= bestTranscript.length) {
-            bestTranscript = candidate
-        }
+        return if (count == 0) 0.0 else Math.sqrt(sum / count)
     }
 
     private fun showListeningOverlay() {
@@ -199,13 +184,9 @@ class VoiceLockRecorderActivity : Activity() {
         setContentView(container)
     }
 
-    private fun stopAndFinish(transcript: String?) {
+    private fun stopAndFinish() {
         if (!stopped.compareAndSet(false, true)) return
         mainHandler.removeCallbacksAndMessages(null)
-
-        try { speechRecognizer?.stopListening() } catch (_: Exception) {}
-        try { speechRecognizer?.destroy() } catch (_: Exception) {}
-        speechRecognizer = null
 
         try { audioRecord?.stop() } catch (_: Exception) {}
         try { audioRecord?.release() } catch (_: Exception) {}
@@ -218,12 +199,10 @@ class VoiceLockRecorderActivity : Activity() {
             val audioPath = savePcmToFile()
             mainHandler.post {
                 val data = Intent().apply {
-                    putExtra(EXTRA_TRANSCRIPT, transcript ?: "")
-                    putStringArrayListExtra(
-                        EXTRA_ALTERNATIVES,
-                        ArrayList(transcriptAlternatives)
-                    )
+                    putExtra(EXTRA_TRANSCRIPT, "")
+                    putStringArrayListExtra(EXTRA_ALTERNATIVES, arrayListOf())
                     putExtra(EXTRA_AUDIO_PATH, audioPath ?: "")
+                    putExtra(EXTRA_CONFIDENCE, -1.0)
                 }
                 setResult(RESULT_OK, data)
                 finish()
@@ -248,8 +227,6 @@ class VoiceLockRecorderActivity : Activity() {
         super.onDestroy()
         if (!stopped.getAndSet(true)) {
             mainHandler.removeCallbacksAndMessages(null)
-            try { speechRecognizer?.stopListening() } catch (_: Exception) {}
-            try { speechRecognizer?.destroy() } catch (_: Exception) {}
             try { audioRecord?.stop() } catch (_: Exception) {}
             try { audioRecord?.release() } catch (_: Exception) {}
         }
