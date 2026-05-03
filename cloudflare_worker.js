@@ -15,7 +15,7 @@ let _fcmTokenExpMs = 0;
 
 const MAX_ALERTS_TO_PUSH = 1;
 const MAX_ESCALATION_CHECKS = 5;
-const MAX_AI_FACTORIES = 1;
+const MAX_AI_FACTORIES = 20; // process all active factories per cron run
 const MAX_FANOUT = 2;
 
 // ============================================================
@@ -733,6 +733,48 @@ Begin with "Good morning". Acknowledge what is going well, name one specific are
 }
 
 // ============================================================
+// Auto-fix endpoint – called by CI when flutter test fails.
+// POST JSON: { testFile: string, code: string, errors: string }
+// Returns JSON: { fixedCode: string }
+// ============================================================
+async function handleAutoFix(request, env) {
+  try {
+    const { testFile, code, errors } = await request.json();
+
+    if (!env.AI) {
+      return new Response(
+        JSON.stringify({ fixedCode: '', note: 'AI binding not configured' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const prompt =
+      `You are a Dart/Flutter test repair expert.\n` +
+      `Return ONLY the complete fixed Dart source file with no markdown fences,\n` +
+      `no explanations, no comments about what changed — raw Dart code only.\n\n` +
+      `=== ERRORS ===\n${errors}\n` +
+      `=== CURRENT FILE ===\n${code}\n` +
+      `=== FIXED FILE ===\n`;
+
+    const response = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 4096,
+    });
+
+    const fixedCode = (response.response ?? '').trim();
+    return new Response(JSON.stringify({ fixedCode }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (e) {
+    return new Response(
+      JSON.stringify({ fixedCode: '', note: String(e) }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
+  }
+}
+
+// ============================================================
 // AI proxy – Gemma 3 1B via Cloudflare Workers AI (edge inference)
 // ============================================================
 async function handleAIRequest(request, env) {
@@ -1375,6 +1417,7 @@ export default {
 
     if (url.pathname === '/config') return handleConfigRequest();
     if (url.pathname === '/ai-proxy') return handleAIRequest(request, env);
+    if (url.pathname === '/auto-fix') return handleAutoFix(request, env);
     if (url.pathname === '/predict') return handlePredictions(env);
     if (url.pathname === '/briefing') return handleBriefing(request, env);
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
@@ -1415,4 +1458,27 @@ export default {
     }
     return new Response('OK', { status: 200, headers: corsHeaders });
   },
+};
+
+// ============================================================
+// Test-only named exports.
+//
+// Cloudflare Workers ship the file as ESM and only consume the default
+// export, so these named exports are inert in production. They're loaded
+// by Jest in CI to exercise the pure scoring / prediction / briefing
+// helpers in isolation. Keep this list in sync with the test suite.
+// ============================================================
+export {
+  aiSanitizeFactoryId,
+  aiResolveFactory,
+  buildSupStats,
+  scoreSupervisor,
+  buildPredictiveModel,
+  notifTitle,
+  base64UrlEncode,
+  getFcmTokensForFactory,
+  _toMs,
+  _briefingDateKey,
+  _aggregateWeek,
+  _typeName,
 };

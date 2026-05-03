@@ -41,6 +41,10 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   @override
   void initState() {
     super.initState();
+    // Kick off recognizer warmup IMMEDIATELY — first-frame callback can be
+    // 100+ ms away on cold start, and we want the mic listening as soon as
+    // possible after the supervisor taps the notification.
+    unawaited(VoiceService.instance.init());
     _prepareLockScreenVoice();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runFlow());
   }
@@ -153,15 +157,17 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   }
 
   VoiceCommand _parseCommandForThisAlert(Iterable<String> transcripts) {
+    // Always try the lenient parser first — it accepts both action-first
+    // canonical phrasings and natural variants like "I'll take alert 1025"
+    // or "claim 1025" that the strict parser rejects. The strict path was
+    // discarding too many valid commands in field testing.
+    final loose = VoiceCommandParser.parseBest(transcripts);
+    if (_canRunActionCommand(loose)) return loose;
+
     final canonical = VoiceCommandParser.parseCanonical(transcripts);
     if (_canRunActionCommand(canonical)) return canonical;
 
-    if (_hasFallbackAlert) {
-      final loose = VoiceCommandParser.parseBest(transcripts);
-      if (_canRunActionCommand(loose)) return loose;
-    }
-
-    return canonical;
+    return loose.isValid ? loose : canonical;
   }
 
   bool _canRunActionCommand(VoiceCommand command) {

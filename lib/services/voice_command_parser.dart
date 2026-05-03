@@ -388,7 +388,30 @@ class VoiceCommandParser {
       return VoiceIntent.claim;
     }
 
+    // Last-chance heuristic: bare verb followed by a number, no "alert"
+    // wrapper. Matches "claim 1025", "resolve 1025", "escalate 1025", and
+    // their common STT misrecognitions when the supervisor speaks fast.
+    if (tokens.length >= 2) {
+      final first = tokens.first;
+      final hasNumber =
+          RegExp(r'\d').hasMatch(normalized) || _hasNumberWord(tokens);
+      if (hasNumber) {
+        final intentFromFirst = _canonicalIntentFromFirstToken(first);
+        if (_isActionIntent(intentFromFirst)) return intentFromFirst;
+      }
+    }
+
     return VoiceIntent.unknown;
+  }
+
+  static bool _hasNumberWord(List<String> tokens) {
+    for (final t in tokens) {
+      if (_ones.containsKey(t) || _tens.containsKey(t) ||
+          _scales.containsKey(t)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static bool _containsAnyPhrase(String text, Set<String> phrases) {
@@ -427,8 +450,20 @@ class VoiceCommandParser {
     final intent = _canonicalIntentFromFirstToken(tokens.first);
     if (!_isActionIntent(intent)) return false;
 
+    // "claim alert 1025" — the original strict shape.
     final alertIndex = tokens.indexWhere(_isAlertToken);
-    return alertIndex > 0 && alertIndex <= 4;
+    if (alertIndex > 0 && alertIndex <= 4) return true;
+
+    // "claim 1025" — supervisor skips the word "alert". Accept any action
+    // verb followed by a digit run within the first few tokens, since this
+    // is the most common phrasing in field tests.
+    for (var i = 1; i < tokens.length && i <= 4; i++) {
+      if (RegExp(r'^\d{1,7}$').hasMatch(tokens[i])) return true;
+      if (_ones.containsKey(tokens[i]) || _tens.containsKey(tokens[i])) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static VoiceIntent _canonicalIntentFromFirstToken(String token) {
