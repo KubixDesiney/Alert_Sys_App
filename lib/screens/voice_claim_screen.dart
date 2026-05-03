@@ -95,19 +95,43 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     await VoiceService.instance.speak('Speak your command.');
     if (!mounted) return;
 
-    final capture = await VoiceService.instance.captureCommandWithAudio(
-      timeout: const Duration(seconds: 6),
-      sampleRate: 16000,
-    );
-    if (!mounted) return;
+    // Strict capture loop: Vosk is grammar-locked to the command vocabulary,
+    // so anything outside "<verb> alert <number>" comes back as nothing.
+    // Re-prompt once before failing so a single fluke (door slam, partial
+    // word) doesn't drop the supervisor back to manual touch.
+    VoiceCommandCapture? capture;
+    VoiceCommand? command;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      capture = await VoiceService.instance.captureCommandWithAudio(
+        timeout: const Duration(seconds: 6),
+        sampleRate: 16000,
+      );
+      if (!mounted) return;
 
-    final command = VoiceCommandParser.parseBest(capture.transcripts);
-    if (!_isCompleteActionCommand(command)) {
+      command = VoiceCommandParser.parseCanonical(capture.transcripts);
+      if (_isCompleteActionCommand(command)) break;
+
+      if (attempt == 0) {
+        _setStep(
+          _Step.awaitingCommand,
+          status: 'I did not catch that — say it again',
+          hint: 'Say "Claim alert" then the number, e.g. "Claim alert 1025"',
+        );
+        await VoiceService.instance.speak(
+          'Please say the full command, like claim alert 1025.',
+        );
+        if (!mounted) return;
+      }
+    }
+
+    if (capture == null ||
+        command == null ||
+        !_isCompleteActionCommand(command)) {
       _finish(
         success: false,
-        message: capture.transcript.trim().isEmpty
+        message: (capture?.transcript ?? '').trim().isEmpty
             ? 'I did not hear a command.'
-            : 'Unrecognized command: "${capture.transcript}"',
+            : 'Unrecognized command: "${capture!.transcript}"',
         speak:
             'I did not understand. Say the full command, like claim alert 1025.',
       );

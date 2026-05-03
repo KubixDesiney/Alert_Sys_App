@@ -13,6 +13,7 @@ class VoiceService {
 
   bool get isAvailable => false;
   bool get isListening => false;
+  bool get voskReady => false;
   Stream<String> get commandStream => _commandsController.stream;
 
   Future<void> init() async {
@@ -57,18 +58,21 @@ class VoiceCommandCapture {
   final List<String> alternatives;
   final Uint8List? rawAudio;
   final int sampleRate;
+  final double confidence;
 
   const VoiceCommandCapture({
     required this.transcript,
     this.alternatives = const <String>[],
     required this.rawAudio,
     required this.sampleRate,
+    this.confidence = -1,
   });
 
   const VoiceCommandCapture.empty({required this.sampleRate})
       : transcript = '',
         alternatives = const <String>[],
-        rawAudio = null;
+        rawAudio = null,
+        confidence = -1;
 
   Iterable<String> get transcripts sync* {
     if (transcript.trim().isNotEmpty) yield transcript.trim();

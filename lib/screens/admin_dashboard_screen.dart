@@ -33,6 +33,12 @@ import 'alerts_tree_tab.dart';
 
 part 'overview_tab.dart';
 part 'supervisors_tab.dart';
+part '../widgets/overview/ai_morning_briefing_hero.dart';
+part '../widgets/overview/overview_stat_card.dart';
+part '../widgets/overview/overview_insights_strip.dart';
+part '../widgets/overview/overview_predictive_heatmap.dart';
+part '../widgets/overview/overview_predictive_failure_card.dart';
+part '../widgets/overview/overview_critical_alerts_card.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy = AppColors.navy;
@@ -45,9 +51,7 @@ const _text = AppColors.text;
 const _green = AppColors.green;
 const _greenLt = AppColors.greenLight;
 const _orange = AppColors.orange;
-const _orangeLt = AppColors.orangeLight;
 const _blue = AppColors.blue;
-const _blueLt = AppColors.blueLight;
 
 Color _typeColor(String t) => switch (t) {
       'qualite' => const Color(0xFFDC2626),
@@ -120,6 +124,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _loadSavedFilters();
     _loadSupervisors();
     _loadAlerts();
+    // Init AI service immediately so the realtime history listener starts
+    // and worker-made assignments are visible even when not on the Alerts tab.
+    AIAssignmentService.instance.init();
   }
 
   Future<void> _loadSavedFilters() async {
@@ -199,6 +206,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
       setState(() => _alerts = list);
       _applyFilters();
+      // Run client-side AI engine on every alert update, not just when the
+      // Alerts tab is visible.
+      AIAssignmentService.instance.processAlerts(list);
     });
   }
 

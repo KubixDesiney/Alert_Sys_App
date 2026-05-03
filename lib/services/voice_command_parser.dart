@@ -6,6 +6,14 @@
 //   2. Extract the intent verb (claim / resolve / escalate / show ...).
 //   3. Pull a free-text "reason" segment for resolve commands.
 //   4. Detect yes/no confirmations (used by the notification claim flow).
+//
+// Two parse modes:
+//   - [parseBest] / [parse]: lenient legacy path used by the always-listening
+//     FAB. Accepts loose phrasing like "I will take alert 1025".
+//   - [parseCanonical]: strict mode for the notification-driven claim flow.
+//     Accepts ONLY "claim alert NUMBER" / "resolve alert NUMBER [with reason ...]"
+//     / "escalate alert NUMBER" — anything else returns unknown so the UI
+//     can re-prompt instead of mis-firing on a noisy hypothesis.
 
 enum VoiceIntent {
   claim,
@@ -104,6 +112,81 @@ class VoiceCommandParser {
     'sharp',
     'the',
   };
+
+  /// Strict parser used by the notification-driven claim flow. Only accepts
+  /// canonical "<verb> alert <number>" sentences — anything else returns
+  /// unknown so the UI can re-prompt instead of acting on a noisy hypothesis.
+  ///
+  /// Tries every hypothesis in order and returns the first one that parses to
+  /// a complete action command (claim/resolve/escalate + alertNumber). The
+  /// Vosk grammar already restricts the recognizer's output to the command
+  /// vocabulary, so iterating alternatives is cheap and rarely needed in
+  /// practice; it exists to handle the legacy SpeechRecognizer fallback path.
+  static VoiceCommand parseCanonical(Iterable<String> transcripts) {
+    for (final transcript in transcripts) {
+      final cmd = _parseCanonicalSingle(transcript);
+      if (cmd.isValid && cmd.alertNumber != null) return cmd;
+    }
+    return const VoiceCommand(intent: VoiceIntent.unknown, rawText: '');
+  }
+
+  static VoiceCommand _parseCanonicalSingle(String transcript) {
+    final raw = transcript.trim();
+    if (raw.isEmpty) {
+      return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
+    }
+
+    final normalized = _normalize(raw);
+
+    // Strip a single leading filler ("please claim alert 1025"). After this
+    // the string MUST start with one of the three command verbs.
+    var cleaned = normalized
+        .replaceFirst(RegExp(r'^(please|hey|ok|okay|alert system)\s+'), '')
+        .trim();
+
+    final claimMatch =
+        RegExp(r'^claim\s+(alert|alarm|ticket)\s+(.+)$').firstMatch(cleaned);
+    final resolveMatch =
+        RegExp(r'^resolve\s+(alert|alarm|ticket)\s+(.+)$').firstMatch(cleaned);
+    final escalateMatch =
+        RegExp(r'^escalate\s+(alert|alarm|ticket)\s+(.+)$').firstMatch(cleaned);
+
+    VoiceIntent intent;
+    String tail;
+    if (claimMatch != null) {
+      intent = VoiceIntent.claim;
+      tail = claimMatch.group(2)!;
+    } else if (resolveMatch != null) {
+      intent = VoiceIntent.resolve;
+      tail = resolveMatch.group(2)!;
+    } else if (escalateMatch != null) {
+      intent = VoiceIntent.escalate;
+      tail = escalateMatch.group(2)!;
+    } else {
+      return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
+    }
+
+    String? reason;
+    if (intent == VoiceIntent.resolve) {
+      final reasonMatch = RegExp(r'\bwith reason\b\s*(.*)$').firstMatch(tail);
+      if (reasonMatch != null) {
+        final candidate = reasonMatch.group(1)?.trim();
+        if (candidate != null && candidate.isNotEmpty) reason = candidate;
+        tail = tail.substring(0, reasonMatch.start).trim();
+      }
+    }
+
+    final number = _extractNumber(tail);
+    if (number == null) {
+      return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
+    }
+    return VoiceCommand(
+      intent: intent,
+      alertNumber: number,
+      reason: reason,
+      rawText: raw,
+    );
+  }
 
   /// Parse several recognizer hypotheses and return the best command.
   ///

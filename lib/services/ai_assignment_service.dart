@@ -95,7 +95,7 @@ class AIAssignmentService extends ChangeNotifier {
   static const Duration _throttleInterval = Duration(milliseconds: 800);
   static const Duration _cooldownDuration = Duration(minutes: 5);
   static const Duration _defaultSkippedTtl = Duration(minutes: 20);
-  static const int _maxLogs = 100;
+  static const int _maxLogs = 500;
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -1587,23 +1587,29 @@ class AIAssignmentService extends ChangeNotifier {
   }
 
   /// Syncs recent AI history entries from Firebase into the in-memory _logs.
-  /// Called on startup and periodically to catch Worker-made assignments.
+  /// Called on startup to catch Worker-made assignments while the admin was
+  /// offline. Looks back 24 hours so a PM returning after a long absence sees
+  /// the full activity log for that period.
   Future<void> syncRecentAIHistory() async {
     try {
       final alertsSnap = await _db.child('alerts').get();
       if (!alertsSnap.exists) return;
 
       final alertsMap = Map<String, dynamic>.from(alertsSnap.value as Map);
-      final now = DateTime.now();
-      final oneHourAgo = now.subtract(const Duration(hours: 1));
+      final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+
+      // Collect all entries first so we can sort them oldest-first before
+      // inserting, preserving chronological order in the log list.
+      final pending = <AILogEntry>[];
 
       for (final alertEntry in alertsMap.entries) {
         final alertId = alertEntry.key;
         final alertData = alertEntry.value;
-
         if (alertData is! Map) continue;
 
-        // Extract alert metadata for label generation
+        final aiHistory = alertData['aiHistory'];
+        if (aiHistory is! Map) continue;
+
         final alertType = alertData['type']?.toString() ?? '';
         final alertUsine = alertData['usine']?.toString() ?? '';
         final alertConvoyeur = alertData['convoyeur']?.toString() ?? '';
@@ -1611,30 +1617,19 @@ class AIAssignmentService extends ChangeNotifier {
         final alertLabel =
             '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
 
-        final aiHistory = alertData['aiHistory'];
-        if (aiHistory is! Map) continue;
-
-        // Convert aiHistory entries to AILogEntry objects
         for (final historyEntry in aiHistory.entries) {
           final historyData = historyEntry.value;
           if (historyData is! Map) continue;
 
           final timestamp = _parseTimestamp(historyData['timestamp']);
-          if (timestamp == null || timestamp.isBefore(oneHourAgo)) {
-            continue; // Skip old entries
-          }
+          if (timestamp == null || timestamp.isBefore(cutoff)) continue;
 
-          // Check if already in _logs to avoid duplicates
           final logId = '${alertId}_${historyEntry.key}';
-          if (_logs.any((log) => log.id == logId)) {
-            continue;
-          }
+          // Use the O(1) set — _addLog also adds to _processedHistoryIds so
+          // the realtime listener won't re-add these entries.
+          if (_processedHistoryIds.contains(logId)) continue;
 
-          // Create AILogEntry from history data
-          final event = historyData['event'];
-          final status = _parseLogStatus(event);
-
-          final logEntry = AILogEntry(
+          pending.add(AILogEntry(
             id: logId,
             alertId: alertId,
             alertLabel: alertLabel,
@@ -1647,11 +1642,15 @@ class AIAssignmentService extends ChangeNotifier {
             consideredCandidates: const [],
             confidence: (historyData['confidence'] as num?)?.toDouble() ?? 0.0,
             timestamp: timestamp,
-            status: status,
-          );
-
-          _addLog(logEntry);
+            status: _parseLogStatus(historyData['event']),
+          ));
         }
+      }
+
+      // Insert oldest-first so the newest-first view (logs.reversed) is correct.
+      pending.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      for (final entry in pending) {
+        _addLog(entry);
       }
     } catch (e) {
       if (kDebugMode) print('[AI_SYNC] Error syncing history: $e');
