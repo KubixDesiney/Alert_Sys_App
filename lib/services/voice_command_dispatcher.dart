@@ -23,6 +23,7 @@ class VoiceCommandDispatcher {
     Uint8List? rawAudio,
     int rawAudioSampleRate = 16000,
     bool voiceAlreadyVerified = false,
+    String? fallbackAlertId,
   }) async {
     if (!voiceAlreadyVerified) {
       final auth = await VoiceAuthService.instance.verifyCurrentUser(
@@ -53,16 +54,26 @@ class VoiceCommandDispatcher {
     }
 
     final number = cmd.alertNumber;
+    final _AlertRef? match;
     if (number == null) {
-      return _speakResult(false,
-          'I did not catch the alert number. Say the full command, like claim alert 1025.');
-    }
-
-    // Look up the alert by alertNumber. Voice commands require the spoken,
-    // human-facing alert number so there is no second prompt or confirmation.
-    final match = _findByNumber(number);
-    if (match == null) {
-      return _speakResult(false, 'Alert number $number was not found.');
+      if (fallbackAlertId != null &&
+          fallbackAlertId.isNotEmpty &&
+          _mentionsAlert(cmd.rawText)) {
+        match = _findById(fallbackAlertId);
+        if (match == null) {
+          return _speakResult(false, 'Alert was not found.');
+        }
+      } else {
+        return _speakResult(false,
+            'I did not catch the alert number. Say the full command, like claim alert 1025.');
+      }
+    } else {
+      // Look up the alert by alertNumber. Voice commands require the spoken,
+      // human-facing alert number so there is no second prompt or confirmation.
+      match = _findByNumber(number);
+      if (match == null) {
+        return _speakResult(false, 'Alert number $number was not found.');
+      }
     }
 
     try {
@@ -104,6 +115,26 @@ class VoiceCommandDispatcher {
       }
     }
     return null;
+  }
+
+  _AlertRef? _findById(String alertId) {
+    for (final a in provider.allAlerts) {
+      if (a.id == alertId) {
+        return _AlertRef(a.id, a.alertNumber);
+      }
+    }
+    return null;
+  }
+
+  static bool _mentionsAlert(String rawText) {
+    final normalized = rawText
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return RegExp(r'\b(alert|alerts|alarm|alarms|case|ticket)\b')
+        .hasMatch(normalized);
   }
 
   Future<String?> _displayName(String uid) async {

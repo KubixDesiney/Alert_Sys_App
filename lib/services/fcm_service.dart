@@ -20,6 +20,7 @@ import 'voice_auth_service.dart';
 import 'voice_command_dispatcher.dart';
 import 'voice_command_parser.dart';
 import 'voice_lock_service.dart';
+import 'sherpa_stt_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -211,8 +212,6 @@ class FcmService {
     final provider = alertProvider;
     if (provider == null) return;
 
-    final cmd = VoiceCommandParser.parseBest(result.transcripts);
-
     Uint8List? audioBytes;
     if (result.audioPath.isNotEmpty) {
       try {
@@ -220,15 +219,44 @@ class FcmService {
       } catch (_) {}
     }
 
+    final transcripts = result.transcripts.toList(growable: true);
+    final transcript = await _transcribeVoiceLockAudio(audioBytes);
+    if (transcript.isNotEmpty) transcripts.insert(0, transcript);
+    final cmd = VoiceCommandParser.parseBest(transcripts);
+
     // VoiceCommandDispatcher handles voice auth internally.
     try {
-      await VoiceCommandDispatcher(provider).execute(cmd, rawAudio: audioBytes);
+      await VoiceCommandDispatcher(provider).execute(
+        cmd,
+        rawAudio: audioBytes,
+        fallbackAlertId: alertId,
+      );
     } catch (_) {}
 
     if (result.audioPath.isNotEmpty) {
       try {
         File(result.audioPath).deleteSync();
       } catch (_) {}
+    }
+  }
+
+  static Future<String> _transcribeVoiceLockAudio(Uint8List? audioBytes) async {
+    if (audioBytes == null || audioBytes.isEmpty) return '';
+
+    try {
+      var ready = SherpaSttService.instance.isReady;
+      if (!ready) {
+        ready = await SherpaSttService.instance.ensureReady();
+      }
+      if (!ready) {
+        debugPrint('FcmService: voice STT model was not ready.');
+        return '';
+      }
+      return SherpaSttService.instance
+          .transcribe(audioBytes, sampleRate: 16000);
+    } catch (e, st) {
+      debugPrint('FcmService: voice transcription failed: $e\n$st');
+      return '';
     }
   }
 

@@ -10,10 +10,9 @@
 // Two parse modes:
 //   - [parseBest] / [parse]: lenient legacy path used by the always-listening
 //     FAB. Accepts loose phrasing like "I will take alert 1025".
-//   - [parseCanonical]: strict mode for the notification-driven claim flow.
-//     Accepts ONLY "claim alert NUMBER" / "resolve alert NUMBER [with reason ...]"
-//     / "escalate alert NUMBER" — anything else returns unknown so the UI
-//     can re-prompt instead of mis-firing on a noisy hypothesis.
+//   - [parseCanonical]: notification-driven flow. Requires an action-first
+//     alert command with a number, but accepts common STT verb variants like
+//     "clean alert 1025" or "result alert 1025".
 
 enum VoiceIntent {
   claim,
@@ -113,15 +112,15 @@ class VoiceCommandParser {
     'the',
   };
 
-  /// Strict parser used by the notification-driven claim flow. Only accepts
-  /// canonical "<verb> alert <number>" sentences — anything else returns
-  /// unknown so the UI can re-prompt instead of acting on a noisy hypothesis.
+  /// Parser used by the notification-driven claim flow. It keeps the safety
+  /// rule that the command must be action-first and include an alert number,
+  /// while still accepting common STT variants like "clean alert 1025" and
+  /// "result alert 1025".
   ///
   /// Tries every hypothesis in order and returns the first one that parses to
-  /// a complete action command (claim/resolve/escalate + alertNumber). The
-  /// Vosk grammar already restricts the recognizer's output to the command
-  /// vocabulary, so iterating alternatives is cheap and rarely needed in
-  /// practice; it exists to handle the legacy SpeechRecognizer fallback path.
+  /// a complete action command (claim/resolve/escalate + alertNumber). Some
+  /// recognizers include the right phrase as a later alternative, so iterating
+  /// hypotheses keeps the command flow from failing on the first noisy guess.
   static VoiceCommand parseCanonical(Iterable<String> transcripts) {
     for (final transcript in transcripts) {
       final cmd = _parseCanonicalSingle(transcript);
@@ -139,53 +138,20 @@ class VoiceCommandParser {
     final normalized = _normalize(raw);
 
     // Strip a single leading filler ("please claim alert 1025"). After this
-    // the string MUST start with one of the three command verbs.
-    var cleaned = normalized
+    // the string must start with an action-like command word.
+    final cleaned = normalized
         .replaceFirst(RegExp(r'^(please|hey|ok|okay|alert system)\s+'), '')
         .trim();
 
-    final claimMatch =
-        RegExp(r'^claim\s+(alert|alarm|ticket)\s+(.+)$').firstMatch(cleaned);
-    final resolveMatch =
-        RegExp(r'^resolve\s+(alert|alarm|ticket)\s+(.+)$').firstMatch(cleaned);
-    final escalateMatch =
-        RegExp(r'^escalate\s+(alert|alarm|ticket)\s+(.+)$').firstMatch(cleaned);
-
-    VoiceIntent intent;
-    String tail;
-    if (claimMatch != null) {
-      intent = VoiceIntent.claim;
-      tail = claimMatch.group(2)!;
-    } else if (resolveMatch != null) {
-      intent = VoiceIntent.resolve;
-      tail = resolveMatch.group(2)!;
-    } else if (escalateMatch != null) {
-      intent = VoiceIntent.escalate;
-      tail = escalateMatch.group(2)!;
-    } else {
+    if (!_looksLikeCanonicalAction(cleaned)) {
       return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
     }
 
-    String? reason;
-    if (intent == VoiceIntent.resolve) {
-      final reasonMatch = RegExp(r'\bwith reason\b\s*(.*)$').firstMatch(tail);
-      if (reasonMatch != null) {
-        final candidate = reasonMatch.group(1)?.trim();
-        if (candidate != null && candidate.isNotEmpty) reason = candidate;
-        tail = tail.substring(0, reasonMatch.start).trim();
-      }
-    }
-
-    final number = _extractNumber(tail);
-    if (number == null) {
+    final command = parse(raw);
+    if (!_isActionIntent(command.intent) || command.alertNumber == null) {
       return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
     }
-    return VoiceCommand(
-      intent: intent,
-      alertNumber: number,
-      reason: reason,
-      rawText: raw,
-    );
+    return command;
   }
 
   /// Parse several recognizer hypotheses and return the best command.
@@ -450,6 +416,96 @@ class VoiceCommandParser {
       'lert',
       'ticket',
     });
+  }
+
+  static bool _looksLikeCanonicalAction(String normalized) {
+    final tokens = normalized.isEmpty
+        ? const <String>[]
+        : normalized.split(' ').where((t) => t.isNotEmpty).toList();
+    if (tokens.isEmpty) return false;
+
+    final intent = _canonicalIntentFromFirstToken(tokens.first);
+    if (!_isActionIntent(intent)) return false;
+
+    final alertIndex = tokens.indexWhere(_isAlertToken);
+    return alertIndex > 0 && alertIndex <= 4;
+  }
+
+  static VoiceIntent _canonicalIntentFromFirstToken(String token) {
+    if (const {
+      'claim',
+      'claimed',
+      'claiming',
+      'clean',
+      'climb',
+      'clim',
+      'client',
+      'clam',
+      'plane',
+      'plain',
+    }.contains(token)) {
+      return VoiceIntent.claim;
+    }
+
+    if (const {
+      'resolve',
+      'resolves',
+      'resolved',
+      'resolver',
+      'resolving',
+      'result',
+      'results',
+      'reserve',
+      'reserved',
+      'dissolve',
+      'dissolved',
+      'revolve',
+      'revolved',
+      'solve',
+      'solved',
+      'close',
+      'closed',
+      'finish',
+      'finished',
+      'fix',
+      'fixed',
+      'done',
+      'validate',
+      'validated',
+    }.contains(token)) {
+      return VoiceIntent.resolve;
+    }
+
+    if (const {
+      'escalate',
+      'escalated',
+      'escalating',
+      'escalation',
+      'escalade',
+    }.contains(token)) {
+      return VoiceIntent.escalate;
+    }
+
+    return VoiceIntent.unknown;
+  }
+
+  static bool _isAlertToken(String token) {
+    return const {
+      'alert',
+      'alerts',
+      'alarm',
+      'alarms',
+      'assignment',
+      'case',
+      'lert',
+      'ticket',
+    }.contains(token);
+  }
+
+  static bool _isActionIntent(VoiceIntent intent) {
+    return intent == VoiceIntent.claim ||
+        intent == VoiceIntent.resolve ||
+        intent == VoiceIntent.escalate;
   }
 
   /// Extracts the first number found in [text]. Recognizes both digit
