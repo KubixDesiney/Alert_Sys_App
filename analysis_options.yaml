@@ -9,6 +9,15 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # Stray legacy entrypoint kept at the repo root from an earlier
+    # scaffolding step. Flutter uses lib/main.dart; this file is unused
+    # and out of date — exclude it from analysis so CI stays green.
+    - main.dart
+    - build/**
+    - .dart_tool/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

@@ -77,9 +77,28 @@ class MainActivity : FlutterActivity() {
                         val sampleRate = call.argument<Int>("sampleRate") ?: 16000
                         recordPcm16Async(durationMs, sampleRate, result)
                     }
+                    "boostMediaVolume" -> {
+                        runOnUiThread { boostMediaVolume() }
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /**
+     * Forces the media stream to its maximum volume so TTS prompts cut through
+     * factory-floor noise. Caller (Dart) restores the previous level after the
+     * speak() call finishes if it cares about being polite — for the alert flow
+     * we deliberately leave it at max because supervisors need to hear it.
+     */
+    private fun boostMediaVolume() {
+        try {
+            val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, max, 0)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onResume() {
@@ -103,7 +122,8 @@ class MainActivity : FlutterActivity() {
                             data.getStringArrayListExtra(VoiceLockRecorderActivity.EXTRA_ALTERNATIVES)
                                 ?: arrayListOf<String>()
                             ),
-                        "audioPath" to (data.getStringExtra(VoiceLockRecorderActivity.EXTRA_AUDIO_PATH) ?: "")
+                        "audioPath" to (data.getStringExtra(VoiceLockRecorderActivity.EXTRA_AUDIO_PATH) ?: ""),
+                        "confidence" to data.getDoubleExtra(VoiceLockRecorderActivity.EXTRA_CONFIDENCE, -1.0)
                     )
                 )
             } else {
