@@ -95,7 +95,7 @@ class AIAssignmentService extends ChangeNotifier {
   static const Duration _throttleInterval = Duration(milliseconds: 800);
   static const Duration _cooldownDuration = Duration(minutes: 5);
   static const Duration _defaultSkippedTtl = Duration(minutes: 20);
-  static const int _maxLogs = 500;
+  static const int _maxLogs = 100;
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
@@ -147,23 +147,6 @@ class AIAssignmentService extends ChangeNotifier {
       return '0.70 to 0.85: strong match';
     }
     return 'Above 0.85: excellent match';
-  }
-
-  Future<List<AICandidate>> recommendAssistantsForAlert({
-    required AlertModel alert,
-    required List<AlertModel> allAlerts,
-    Set<String> excludeSupervisorIds = const <String>{},
-  }) async {
-    if (!_initialized) await init();
-    await _refreshFeedbackSummary();
-
-    final supervisors = (await _fetchActiveSupervisors())
-        .where((s) => !excludeSupervisorIds.contains(s.user.id))
-        .toList();
-    final candidates = _evaluateAll(alert, supervisors, allAlerts);
-    final eligible = candidates.where((c) => c.eligible).toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
-    return eligible;
   }
 
   Future<void> init() async {
@@ -1587,49 +1570,53 @@ class AIAssignmentService extends ChangeNotifier {
   }
 
   /// Syncs recent AI history entries from Firebase into the in-memory _logs.
-  /// Called on startup to catch Worker-made assignments while the admin was
-  /// offline. Looks back 24 hours so a PM returning after a long absence sees
-  /// the full activity log for that period.
+  /// Called on startup and periodically to catch Worker-made assignments.
   Future<void> syncRecentAIHistory() async {
     try {
       final alertsSnap = await _db.child('alerts').get();
       if (!alertsSnap.exists) return;
 
       final alertsMap = Map<String, dynamic>.from(alertsSnap.value as Map);
-      final cutoff = DateTime.now().subtract(const Duration(hours: 24));
-
-      // Collect all entries first so we can sort them oldest-first before
-      // inserting, preserving chronological order in the log list.
-      final pending = <AILogEntry>[];
+      final now = DateTime.now();
+      final oneHourAgo = now.subtract(const Duration(hours: 1));
 
       for (final alertEntry in alertsMap.entries) {
         final alertId = alertEntry.key;
         final alertData = alertEntry.value;
+        
         if (alertData is! Map) continue;
-
-        final aiHistory = alertData['aiHistory'];
-        if (aiHistory is! Map) continue;
-
+        
+        // Extract alert metadata for label generation
         final alertType = alertData['type']?.toString() ?? '';
         final alertUsine = alertData['usine']?.toString() ?? '';
         final alertConvoyeur = alertData['convoyeur']?.toString() ?? '';
         final alertPoste = alertData['poste']?.toString() ?? '';
-        final alertLabel =
-            '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+        final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+        
+        final aiHistory = alertData['aiHistory'];
+        if (aiHistory is! Map) continue;
 
+        // Convert aiHistory entries to AILogEntry objects
         for (final historyEntry in aiHistory.entries) {
           final historyData = historyEntry.value;
           if (historyData is! Map) continue;
 
           final timestamp = _parseTimestamp(historyData['timestamp']);
-          if (timestamp == null || timestamp.isBefore(cutoff)) continue;
+          if (timestamp == null || timestamp.isBefore(oneHourAgo)) {
+            continue; // Skip old entries
+          }
 
+          // Check if already in _logs to avoid duplicates
           final logId = '${alertId}_${historyEntry.key}';
-          // Use the O(1) set — _addLog also adds to _processedHistoryIds so
-          // the realtime listener won't re-add these entries.
-          if (_processedHistoryIds.contains(logId)) continue;
+          if (_logs.any((log) => log.id == logId)) {
+            continue;
+          }
 
-          pending.add(AILogEntry(
+          // Create AILogEntry from history data
+          final event = historyData['event'];
+          final status = _parseLogStatus(event);
+
+          final logEntry = AILogEntry(
             id: logId,
             alertId: alertId,
             alertLabel: alertLabel,
@@ -1642,15 +1629,11 @@ class AIAssignmentService extends ChangeNotifier {
             consideredCandidates: const [],
             confidence: (historyData['confidence'] as num?)?.toDouble() ?? 0.0,
             timestamp: timestamp,
-            status: _parseLogStatus(historyData['event']),
-          ));
-        }
-      }
+            status: status,
+          );
 
-      // Insert oldest-first so the newest-first view (logs.reversed) is correct.
-      pending.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      for (final entry in pending) {
-        _addLog(entry);
+          _addLog(logEntry);
+        }
       }
     } catch (e) {
       if (kDebugMode) print('[AI_SYNC] Error syncing history: $e');
@@ -1684,8 +1667,7 @@ class AIAssignmentService extends ChangeNotifier {
       final alertUsine = alertMap['usine']?.toString() ?? '';
       final alertConvoyeur = alertMap['convoyeur']?.toString() ?? '';
       final alertPoste = alertMap['poste']?.toString() ?? '';
-      final alertLabel =
-          '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+      final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
 
       for (final entry in Map<String, dynamic>.from(aiHistory).entries) {
         final histKey = entry.key;

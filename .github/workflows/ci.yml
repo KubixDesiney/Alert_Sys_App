@@ -7,8 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel any in-flight run for the same ref so PRs only ever have one CI run
-# in flight at once.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -16,7 +14,7 @@ concurrency:
 env:
   FLUTTER_VERSION: '3.27.4'
   NODE_VERSION: '20'
-  AUTO_FIX_URL: 'https://alert-notifier.aziz-nagati01.workers.dev/auto-fix'
+  AUTO_FIX_URL: 'https://alert-notifier.aziz-nagati01.workers.dev'
 
 jobs:
   flutter:
@@ -26,53 +24,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so we can inspect the previous commit message and
-          # diff files changed in HEAD vs HEAD~1 for the auto-fix step.
           fetch-depth: 2
 
-      - name: Set up JDK 17 (required by AGP 8 / Flutter Android build)
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      - name: Cache pub-cache and .dart_tool
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.pub-cache
             ${{ github.workspace }}/.dart_tool
           key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
-          restore-keys: |
-            pub-${{ runner.os }}-
+          restore-keys: pub-${{ runner.os }}-
 
       - name: Resolve dependencies
         run: flutter pub get
 
       - name: Static analysis
-        # The codebase carries pre-existing deprecation infos (e.g.
-        # `withOpacity` → `withValues`) and a few unused-element warnings.
-        # CI fails only on real errors so the suite stays meaningful while
-        # those infos are migrated incrementally.
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # ── Self-healing: run tests and capture output ──────────────────────────
       - name: Run tests and capture errors
         id: tests
-        # continue-on-error so subsequent steps can inspect the failure and
-        # call the auto-fix endpoint before the job officially fails.
         continue-on-error: true
         run: flutter test --reporter expanded 2>&1 | tee test_output.log
 
-      # ── Guard: never auto-fix a commit that was already an auto-fix ─────────
-      - name: Check for AI-fix commit (skip auto-fix loop guard)
+      - name: Guard – skip if previous commit was AI fix
         id: guard
         if: steps.tests.outcome == 'failure'
         run: |
@@ -84,22 +68,14 @@ jobs:
             echo "is_autofix=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── Find the failing test file from this commit's diff ──────────────────
       - name: Determine failing test file
         id: find_test
         if: steps.tests.outcome == 'failure' && steps.guard.outputs.is_autofix == 'false'
         run: |
-          # Prefer test files changed in this commit; fall back to the first
-          # test file mentioned in the error output.
-          FAILING_FILE=$(git diff --name-only HEAD~1 HEAD 2>/dev/null \
-            | grep '_test\.dart$' | head -1)
-
+          FAILING_FILE=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '_test\.dart$' | head -1)
           if [ -z "$FAILING_FILE" ]; then
-            # Parse the log for a path that ends in _test.dart
-            FAILING_FILE=$(grep -oP '[^\s]+_test\.dart' test_output.log \
-              | head -1 | sed 's/^.*alertsysapp\///')
+            FAILING_FILE=$(grep -oP '[^\s]+_test\.dart' test_output.log | head -1 | sed 's/^.*alertsysapp\///')
           fi
-
           echo "file=$FAILING_FILE" >> "$GITHUB_OUTPUT"
           if [ -n "$FAILING_FILE" ]; then
             echo "Found failing test file: $FAILING_FILE"
@@ -107,78 +83,100 @@ jobs:
             echo "::warning::Could not determine which test file to fix."
           fi
 
-      # ── Call the Worker's /auto-fix endpoint ────────────────────────────────
-      - name: Call AI auto-fix endpoint
-        id: autofix
-        if: >-
-          steps.tests.outcome == 'failure' &&
-          steps.guard.outputs.is_autofix == 'false' &&
-          steps.find_test.outputs.file != ''
+      - name: Collect relevant source files
+        id: collect
+        if: steps.tests.outcome == 'failure' && steps.guard.outputs.is_autofix == 'false' && steps.find_test.outputs.file != ''
         run: |
           FAILING_FILE="${{ steps.find_test.outputs.file }}"
           ERRORS=$(cat test_output.log)
-          CODE=$(cat "$FAILING_FILE")
+          TEST_CONTENT=$(cat "$FAILING_FILE")
 
-          # Escape the three fields as JSON strings so the payload is valid.
+          # Collect all Dart files used by the test (the test itself + all its imports)
+          FILES_JSON=$(echo "$TEST_CONTENT" | grep "^import" | sed -E "s/^import['\"]([^'\"]+)['\"];.*/\1/" | while read import_path; do
+            # Translate package imports to actual paths inside lib/
+            if [[ "$import_path" == package:alertsysapp/* ]]; then
+              real_path="lib/${import_path#package:alertsysapp/}"
+            elif [[ "$import_path" == package:* ]]; then
+              # Skip external packages
+              continue
+            else
+              # relative import – assumes test directory
+              real_path="$(dirname "$FAILING_FILE")/$import_path"
+            fi
+            if [ -f "$real_path" ]; then
+              echo "{\"path\":\"$real_path\",\"content\":$(cat "$real_path" | jq -Rs .)}"
+            fi
+          done)
+
+          # Add the test file itself
+          TEST_ENTRY=$(jq -n --arg path "$FAILING_FILE" --arg content "$TEST_CONTENT" '{path: $path, content: $content}')
+
+          # Build the final files array (test file first, then imported files)
+          ALL_FILES=$(echo "[$TEST_ENTRY,$(echo "$FILES_JSON" | paste -sd, -)]" | jq '.')
+
+          echo "files_json<<JSON_EOF" >> "$GITHUB_OUTPUT"
+          echo "$ALL_FILES" >> "$GITHUB_OUTPUT"
+          echo "JSON_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Call AI full‑context auto‑fix
+        id: autofix
+        if: steps.tests.outcome == 'failure' && steps.guard.outputs.is_autofix == 'false' && steps.find_test.outputs.file != ''
+        run: |
+          FAILING_FILE="${{ steps.find_test.outputs.file }}"
+          ERRORS=$(cat test_output.log)
           PAYLOAD=$(jq -n \
-            --arg testFile "$FAILING_FILE" \
-            --arg code     "$CODE" \
-            --arg errors   "$ERRORS" \
-            '{testFile: $testFile, code: $code, errors: $errors}')
+            --arg failingTest "$FAILING_FILE" \
+            --arg errors "$ERRORS" \
+            --argjson files "${{ steps.collect.outputs.files_json }}" \
+            '{failingTest: $failingTest, errors: $errors, files: $files}')
 
-          RESPONSE=$(curl -s -X POST "${{ env.AUTO_FIX_URL }}" \
+          RESPONSE=$(curl -s -X POST "${{ env.AUTO_FIX_URL }}/auto-fix-full" \
             -H 'Content-Type: application/json' \
+            -H "X-AlertSys-Worker-Secret: $WORKER_SHARED_SECRET" \
             -d "$PAYLOAD")
 
-          FIXED=$(echo "$RESPONSE" | jq -r '.fixedCode // empty')
+          echo "AI response: $RESPONSE"
+          FIXED=$(echo "$RESPONSE" | jq -r '.fixedFiles // empty')
 
-          if [ -n "$FIXED" ]; then
-            echo "fixed=true"  >> "$GITHUB_OUTPUT"
-            # Write the fixed code; printf avoids any trailing-newline issues.
-            printf '%s' "$FIXED" > "$FAILING_FILE"
-            echo "Applied AI fix to $FAILING_FILE"
+          if [ "$FIXED" != "null" ] && [ "$FIXED" != "[]" ] && [ -n "$FIXED" ]; then
+            echo "fixed=true" >> "$GITHUB_OUTPUT"
+            echo "$FIXED" | jq -c '.[]' | while read file; do
+              path=$(echo "$file" | jq -r '.path')
+              content=$(echo "$file" | jq -r '.content')
+              printf '%s' "$content" > "$path"
+              echo "Updated $path"
+            done
           else
             echo "fixed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::AI returned an empty fix for $FAILING_FILE"
+            echo "::warning::AI returned no fixes."
           fi
+        env:
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
 
-      # ── Commit and push the fix; the push re-triggers the workflow ──────────
-      - name: Commit and push AI fix
-        if: >-
-          steps.tests.outcome == 'failure' &&
-          steps.guard.outputs.is_autofix == 'false' &&
-          steps.autofix.outputs.fixed == 'true'
+      - name: Commit and push AI fix (all changed files)
+        if: steps.autofix.outputs.fixed == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${{ steps.find_test.outputs.file }}"
+          git add -A
           git commit -m "🤖 Auto-fix failing test: ${{ steps.find_test.outputs.file }}"
           git push origin HEAD
         env:
-          # GITHUB_TOKEN has push access on the same repo by default.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Fail the job when tests broke but no fix was applied ────────────────
-      - name: Fail if tests failed and no auto-fix was applied
-        if: >-
-          steps.tests.outcome == 'failure' &&
-          (steps.guard.outputs.is_autofix == 'true' ||
-           steps.autofix.outputs.fixed   != 'true')
+      - name: Fail if tests failed and no fix was applied
+        if: steps.tests.outcome == 'failure' && (steps.guard.outputs.is_autofix == 'true' || steps.autofix.outputs.fixed != 'true')
         run: |
           echo "Tests failed and no automatic fix was applied."
-          echo "See test_output.log above for details."
           exit 1
 
-      # ── Normal build steps (only reached when tests passed) ─────────────────
       - name: Build Android APK (debug)
         if: steps.tests.outcome == 'success'
-        # Debug build keeps signing requirements off the critical path. The
-        # release pipeline lives in deploy.yml and stays out of CI.
-        run: flutter build apk --debug
+        run: flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_WORKER_URL=${{ vars.WORKER_URL }}
 
       - name: Build Web release
         if: steps.tests.outcome == 'success'
-        run: flutter build web --release
+        run: flutter build web --release --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev
 
       - name: Upload web build artefact
         if: steps.tests.outcome == 'success'
@@ -193,36 +191,24 @@ jobs:
     name: Cloudflare Worker (Jest + deploy)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Only deploy when Flutter tests passed and this isn't an AI auto-fix
-    # commit (those just carry a test-file change; the worker didn't change).
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Install JS dependencies
-        run: npm ci || npm install
+      - run: npm ci || npm install
 
-      - name: Run worker Jest tests
-        run: npm test
+      - run: npm test
 
-      - name: Deploy worker via wrangler
-        # Only deploy on direct pushes to main that are NOT AI auto-fix
-        # commits (those commits only touch test files, not the worker).
-        if: >-
+      - name: Deploy worker (only on non‑AI‑fix pushes to main)
+        if: >
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
           !startsWith(github.event.head_commit.message, '🤖')
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set — skipping worker deploy"
-            exit 0
-          fi
-          npx wrangler deploy
+        run: npx wrangler deploy

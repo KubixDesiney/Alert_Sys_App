@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 
 import 'predictive_models.dart';
+import 'worker_auth_config.dart';
 
 class PredictiveRepository {
   PredictiveRepository({FirebaseDatabase? database, http.Client? client})
@@ -13,8 +14,7 @@ class PredictiveRepository {
   final FirebaseDatabase _db;
   final http.Client _client;
 
-  static const String workerBase =
-      'https://alert-notifier.aziz-nagati01.workers.dev';
+  static String get workerBase => WorkerAuthConfig.baseUrl;
   static const Duration requestTimeout = Duration(seconds: 8);
   static const Duration cacheTtl = Duration(minutes: 5);
 
@@ -89,8 +89,9 @@ class PredictiveRepository {
 
   Future<Object?> _fetchJson(String url) async {
     try {
-      final response =
-          await _client.get(Uri.parse(url)).timeout(requestTimeout);
+      final response = await _client
+          .get(Uri.parse(url), headers: WorkerAuthConfig.headers())
+          .timeout(requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) return null;
       return jsonDecode(response.body);
     } catch (_) {

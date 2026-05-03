@@ -1,8 +1,10 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'worker_auth_config.dart';
+
 class AIService {
-  static const String _workerUrl = 'https://alert-notifier.aziz-nagati01.workers.dev/ai-proxy';
+  static String get _workerUrl => '${WorkerAuthConfig.baseUrl}/ai-proxy';
 
   static const _typeLabels = {
     'qualite': 'Quality',
@@ -36,7 +38,7 @@ Provide a concise, actionable resolution suggestion in 2-3 bullet points. Focus 
     try {
       final response = await http.post(
         Uri.parse(_workerUrl),
-        headers: {'Content-Type': 'application/json'},
+        headers: WorkerAuthConfig.headers(json: true),
         body: jsonEncode({'prompt': prompt}),
       );
       if (response.statusCode == 200) {
