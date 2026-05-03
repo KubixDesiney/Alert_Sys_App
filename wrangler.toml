@@ -5,7 +5,7 @@
 # run `wrangler deploy` once you've authenticated with `wrangler login` or
 # CI-provided CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID env vars.
 #
-# Secrets (FB_DB_URL, FB_CLIENT_EMAIL, FB_PRIVATE_KEY, ANTHROPIC_API_KEY,
+# Secrets (WORKER_SHARED_SECRET, FB_DB_URL, FB_CLIENT_EMAIL, FB_PRIVATE_KEY,
 # GEMINI_API_KEY, etc.) are managed via `wrangler secret put NAME` — do not
 # commit them. The cron schedule below mirrors the original "every minute"
 # trigger that drives AI assignment, escalation, and push fan-out.

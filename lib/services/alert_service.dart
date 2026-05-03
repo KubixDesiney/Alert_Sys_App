@@ -7,7 +7,7 @@ String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
       'maintenance' => 'Equipment requires maintenance intervention.',
       'defaut_produit' => 'Product defect identified at workstation.',
-      'manque_ressource' => 'Resource deficiency reported at production post.',
+      'manque_ressource' => 'Resource shortage reported at production post.',
       _ => 'Alert raised — awaiting supervisor assessment.',
     };
 
@@ -15,8 +15,7 @@ class AlertService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   /// Atomically increments and returns the next short, speakable alert number.
-  /// Used for voice commands ("claim alert 1025") since Firebase push keys
-  /// are not pronounceable. Counter starts at 1000 to keep numbers 4+ digits.
+  /// Voice commands rely on this because Firebase push keys are not pronounceable.
   Future<int> nextAlertNumber() async {
     final ref = _db.child('alertCounter');
     final result = await ref.runTransaction((current) {
@@ -77,13 +76,10 @@ class AlertService {
           'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
     }
 
-    // Allocate a short, speakable alert number BEFORE writing the alert
-    // so it's present from the first stream tick (no UI flicker from 0 → N).
     final number = await nextAlertNumber();
     final assetId =
         await hierarchyService.getAssetIdForLocation(usine, convoyeur, poste);
 
-    // Create the alert (same as before)
     final ref = _db.child('alerts').push();
     final now = DateTime.now().toUtc();
     final alertId = ref.key!;
@@ -324,7 +320,6 @@ class AlertService {
     await _db.child('alerts/$alertId').update({'notificationSent': true});
 
     final users = await getAllUsers();
-
     final numberPrefix = alertNumber > 0 ? '#$alertNumber ' : '';
 
     for (var entry in users.entries) {

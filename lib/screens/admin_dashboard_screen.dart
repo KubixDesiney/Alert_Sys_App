@@ -23,10 +23,10 @@ import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
-import '../services/worker_trigger_queue.dart';
-import '../widgets/voice_command_button.dart';
 import '../services/ai_assignment_service.dart';
 import '../services/predictive_intel_service.dart';
+import '../services/predictive_models.dart';
+import '../services/worker_trigger_queue.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
 import 'alerts_tree_tab.dart';
@@ -34,11 +34,11 @@ import 'alerts_tree_tab.dart';
 part 'overview_tab.dart';
 part 'supervisors_tab.dart';
 part '../widgets/overview/ai_morning_briefing_hero.dart';
-part '../widgets/overview/overview_stat_card.dart';
-part '../widgets/overview/overview_insights_strip.dart';
-part '../widgets/overview/overview_predictive_heatmap.dart';
-part '../widgets/overview/overview_predictive_failure_card.dart';
 part '../widgets/overview/overview_critical_alerts_card.dart';
+part '../widgets/overview/overview_insights_strip.dart';
+part '../widgets/overview/overview_predictive_failure_card.dart';
+part '../widgets/overview/overview_predictive_heatmap.dart';
+part '../widgets/overview/overview_stat_card.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy = AppColors.navy;
@@ -51,7 +51,9 @@ const _text = AppColors.text;
 const _green = AppColors.green;
 const _greenLt = AppColors.greenLight;
 const _orange = AppColors.orange;
+const _orangeLt = AppColors.orangeLight;
 const _blue = AppColors.blue;
+const _blueLt = AppColors.blueLight;
 
 Color _typeColor(String t) => switch (t) {
       'qualite' => const Color(0xFFDC2626),
@@ -65,7 +67,7 @@ String _typeLabel(String t) => switch (t) {
       'qualite' => 'Quality',
       'maintenance' => 'Maintenance',
       'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resource Deficiency',
+      'manque_ressource' => 'Resources Deficiency',
       _ => t,
     };
 
@@ -105,7 +107,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final _auth = AuthService();
 
   // Filter state
-  String _timeRange = 'all';
+  String _timeRange = 'week';
   String _selectedUsine = 'all';
   String _filterConvoyeur = 'all';
   String _filterPoste = 'all';
@@ -124,15 +126,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _loadSavedFilters();
     _loadSupervisors();
     _loadAlerts();
-    // Init AI service immediately so the realtime history listener starts
-    // and worker-made assignments are visible even when not on the Alerts tab.
-    AIAssignmentService.instance.init();
   }
 
   Future<void> _loadSavedFilters() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _timeRange = prefs.getString(_prefTimeRange) ?? 'all';
+      _timeRange = prefs.getString(_prefTimeRange) ?? 'week';
       _selectedUsine = prefs.getString(_prefUsine) ?? 'all';
     });
     _applyFilters();
@@ -155,7 +154,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         'today' => a.timestamp.year == now.year &&
             a.timestamp.month == now.month &&
             a.timestamp.day == now.day,
-        'week' => a.timestamp.isAfter(now.subtract(const Duration(days: 7))),
+        'week' =>
+          a.timestamp.isAfter(now.subtract(Duration(days: now.weekday - 1))) &&
+              a.timestamp.isBefore(now
+                  .subtract(Duration(days: now.weekday - 1))
+                  .add(const Duration(days: 7))),
         'month' =>
           a.timestamp.year == now.year && a.timestamp.month == now.month,
         'year' => a.timestamp.year == now.year,
@@ -206,9 +209,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
       setState(() => _alerts = list);
       _applyFilters();
-      // Run client-side AI engine on every alert update, not just when the
-      // Alerts tab is visible.
-      AIAssignmentService.instance.processAlerts(list);
     });
   }
 
@@ -303,8 +303,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     // ✅ 2. Original alert creation (unchanged)
-    final assetId =
-        await hierarchyService.getAssetIdForLocation(usine, convoyeur, poste);
     final ref = _db.ref('alerts').push();
     final now = DateTime.now();
     final alertId = ref.key!;
@@ -314,7 +312,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'convoyeur': convoyeur,
       'poste': poste,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
-      if (assetId != null) 'assetId': assetId,
       'timestamp': now.toIso8601String(),
       'description': description,
       'status': 'disponible',
@@ -330,19 +327,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'elapsedTime': null,
     });
 
-    // Queue the Cloudflare Worker trigger for online/offline delivery.
+    // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
     try {
-      await WorkerTriggerQueue.instance.enqueuePost(
-        Uri.parse(WorkerTriggerQueue.workerBaseUrl),
-        headers: {'Content-Type': 'application/json'},
-        jsonBody: {
-          'type': type,
-          'description': description,
-          'alertId': alertId,
-        },
-      );
+      await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
     } catch (e) {
-      debugPrint('Manual worker trigger queue failed: $e');
+      debugPrint('Manual worker trigger failed: $e');
     }
   }
 
@@ -360,7 +349,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     List<List<dynamic>> csvData = [
       [
         'ID',
-        'Alert #',
         'Type',
         'Usine',
         'Convoyeur',
@@ -379,7 +367,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     for (var alert in _filteredAlerts) {
       csvData.add([
         alert.id,
-        alert.alertNumber,
         _typeLabel(alert.type),
         alert.usine,
         alert.convoyeur,
@@ -429,7 +416,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     var sheet = excelFile['Alerts'];
     sheet.appendRow([
       excel.TextCellValue('ID'),
-      excel.TextCellValue('Alert #'),
       excel.TextCellValue('Type'),
       excel.TextCellValue('Usine'),
       excel.TextCellValue('Convoyeur'),
@@ -447,7 +433,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     for (var alert in _filteredAlerts) {
       sheet.appendRow([
         excel.TextCellValue(alert.id),
-        excel.IntCellValue(alert.alertNumber),
         excel.TextCellValue(_typeLabel(alert.type)),
         excel.TextCellValue(alert.usine),
         excel.IntCellValue(alert.convoyeur),
@@ -720,7 +705,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           child: Row(children: [
                             Icon(Icons.inventory_2, size: 16),
                             SizedBox(width: 8),
-                            Text('Resource Deficiency'),
+                            Text('Resource Shortage'),
                           ])),
                     ],
                     onChanged: (val) => setState(() => selectedType = val!),
@@ -1105,18 +1090,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
           child: Column(children: [
-        _Header(
-          activeSups: _activeSups,
-          onLogout: _logout,
-          onSimulateAlert: _showSimulateDialog,
-        ),
+        _Header(activeSups: _activeSups, onLogout: _logout),
         _PillTabBar(tab: _tab, onSelect: (i) => setState(() => _tab = i)),
         Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _navy))
                 : _buildContent()),
       ])),
-      floatingActionButton: const VoiceCommandButton(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showSimulateDialog,
+        backgroundColor: _navy,
+        tooltip: 'Simulate Alert',
+        child: const Icon(Icons.add_alert),
+      ),
     );
   }
 
@@ -1194,10 +1180,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           onRefresh: _loadSupervisors,
         );
       case 2:
-        return AlertsTreeTab(
-          alerts: _alerts,
-          onAssignAssistant: _assignAssistant,
-        );
+        return AlertsTreeTab(alerts: _alerts);
       case 3:
         return const AdminEscalationScreen();
       case 4:
@@ -1214,12 +1197,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 class _Header extends StatefulWidget {
   final int activeSups;
   final VoidCallback onLogout;
-  final VoidCallback onSimulateAlert;
-  const _Header({
-    required this.activeSups,
-    required this.onLogout,
-    required this.onSimulateAlert,
-  });
+  const _Header({required this.activeSups, required this.onLogout});
   @override
   State<_Header> createState() => _HeaderState();
 }
@@ -1278,28 +1256,6 @@ class _HeaderState extends State<_Header> {
     super.dispose();
   }
 
-  Future<void> _markNotificationAsRead(
-    Map<String, dynamic> notification,
-    StateSetter setModalState,
-    BuildContext modalContext,
-  ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    final notificationId = notification['id']?.toString();
-    if (uid == null || notificationId == null || notificationId.isEmpty) {
-      return;
-    }
-
-    await _db.child('notifications/$uid/$notificationId').remove();
-
-    if (!mounted || !modalContext.mounted) return;
-    setModalState(() {
-      _notifications.removeWhere((item) => item['id'] == notificationId);
-      _notificationCount =
-          _notifications.where((item) => item['status'] != 'read').length;
-    });
-    setState(() {});
-  }
-
   void _showNotifications() {
     showModalBottomSheet(
       context: context,
@@ -1331,10 +1287,6 @@ class _HeaderState extends State<_Header> {
                             itemCount: _notifications.length,
                             itemBuilder: (context, index) {
                               final n = _notifications[index];
-                              final notificationType =
-                                  (n['type'] ?? '').toString();
-                              final isCollabNotification =
-                                  notificationType.startsWith('collaboration_');
                               if (n['type'] ==
                                   'ai_cross_factory_recommendation') {
                                 final alertId = (n['alertId'] ?? '').toString();
@@ -1691,45 +1643,7 @@ class _HeaderState extends State<_Header> {
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      if (n['status'] != 'read' &&
-                                          isCollabNotification)
-                                        OutlinedButton.icon(
-                                          onPressed: () async {
-                                            await _markNotificationAsRead(
-                                                n, setModalState, context);
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(context)
-                                                  .showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                      'Collaboration notification marked as read'),
-                                                  backgroundColor: Colors.green,
-                                                ),
-                                              );
-                                            }
-                                          },
-                                          icon: const Icon(
-                                              Icons.done_all_rounded,
-                                              size: 16),
-                                          label: const Text('Read',
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600)),
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: _navy,
-                                            side: BorderSide(
-                                                color: theme.dividerColor),
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 10, vertical: 8),
-                                            minimumSize: const Size(0, 36),
-                                            tapTargetSize: MaterialTapTargetSize
-                                                .shrinkWrap,
-                                            shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(8)),
-                                          ),
-                                        )
-                                      else if (n['status'] != 'read')
+                                      if (n['status'] != 'read')
                                         IconButton(
                                           icon: const Icon(Icons.visibility,
                                               size: 18, color: Colors.blue),
@@ -1839,11 +1753,6 @@ class _HeaderState extends State<_Header> {
               style: TextStyle(fontSize: 11, color: t.muted)),
         ]),
         const Spacer(),
-        IconButton(
-          icon: Icon(Icons.add_alert_outlined, color: t.muted, size: 22),
-          tooltip: 'Simulate Alert',
-          onPressed: widget.onSimulateAlert,
-        ),
         // ── Theme toggle ──
         IconButton(
           icon: Icon(

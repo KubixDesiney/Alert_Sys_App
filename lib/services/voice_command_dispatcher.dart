@@ -19,15 +19,9 @@ class VoiceCommandDispatcher {
   /// Run a parsed command against the provider. All user feedback goes
   /// through TTS — there's no UI surface in this layer by design.
   ///
-  /// Biometric verification is best-effort here:
-  ///   - If [voiceAlreadyVerified] is true, skip entirely.
-  ///   - If [rawAudio] is non-empty AND the user is enrolled, run the
-  ///     speaker embedding check. A failed match aborts the command.
-  ///   - If [rawAudio] is null/empty (e.g. speech_to_text plugin path,
-  ///     which doesn't expose PCM), trust the app-level Firebase auth
-  ///     session that the supervisor already signed into. Missing raw
-  ///     audio is no longer a hard block — it was making perfectly
-  ///     intelligible commands fail with "Voice not recognized".
+  /// Biometric verification is mandatory here:
+  ///   - If [voiceAlreadyVerified] is true, the caller already checked it.
+  ///   - Otherwise [rawAudio] must match the current user's enrolled voiceprint.
   Future<VoiceCommandExecutionResult> execute(
     VoiceCommand cmd, {
     Uint8List? rawAudio,
@@ -35,22 +29,20 @@ class VoiceCommandDispatcher {
     bool voiceAlreadyVerified = false,
     String? fallbackAlertId,
   }) async {
-    final hasAudio = rawAudio != null && rawAudio.lengthInBytes >= 1600;
-    if (!voiceAlreadyVerified && hasAudio) {
+    if (!voiceAlreadyVerified) {
+      final hasAudio = rawAudio != null && rawAudio.lengthInBytes >= 1600;
+      if (!hasAudio) {
+        return _speakResult(
+          false,
+          'I could not capture your voice sample. Please try again.',
+        );
+      }
       final auth = await VoiceAuthService.instance.verifyCurrentUser(
         rawAudio: rawAudio,
         sampleRate: rawAudioSampleRate,
       );
-      // Only block on an explicit mismatch. Treat unenrolled / missing-sample
-      // outcomes as "trust the app session" so the command still runs.
-      if (!auth.verified && !auth.unenrolled) {
-        final msg = auth.message ?? '';
-        final isMissingSample = msg.contains('No audio sample') ||
-            msg.contains('Speech too short') ||
-            msg.contains('signal');
-        if (!isMissingSample) {
-          return _speakResult(false, _authFailureMessage(auth));
-        }
+      if (!auth.verified) {
+        return _speakResult(false, _authFailureMessage(auth));
       }
     }
 
