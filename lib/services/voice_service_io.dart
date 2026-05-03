@@ -1,18 +1,22 @@
 // Voice service used on mobile/desktop builds.
 //
-// Primary STT path (Android): audio captured by VoiceLockRecorderActivity
-// (native AudioRecord), PCM bytes returned to Dart, transcribed by
-// SherpaSttService (sherpa_onnx offline Zipformer). No Kotlin STT code.
+// STT path: speech_to_text plugin — wraps the platform's native
+// SpeechRecognizer (Android) / SFSpeechRecognizer (iOS). Starts in
+// tens of milliseconds (no Activity launch, no model download), and
+// emits results + alternates straight to Dart.
 //
-// Fallback path: speech_to_text plugin for non-Android platforms and for
-// the brief window before the sherpa_onnx model finishes downloading on a
-// fresh install.
+// The full-screen lock-screen native flow (VoiceLockRecorderActivity)
+// is only used when explicitly requested via `forceLockScreen: true` —
+// e.g. when the FCM "Speak command" notification action is fired and
+// the device is locked, where we cannot rely on plugin overlays.
+//
+// Sherpa ONNX is kept as an opportunistic transcription helper for the
+// raw-PCM lock-screen path, but is no longer on the critical path.
 //
 // TTS: flutter_tts configured for factory floor — maximum volume, audio
-// focus stealing, slower rate, prefers the highest-quality available engine.
-// The native MainActivity also pumps the media stream to max via
-// `boostMediaVolume` immediately before each speak() so prompts cut through
-// machine noise even if the user has the system slider down.
+// focus stealing, prefers Google's neural voice. The native MainActivity
+// pumps the media stream to max via boostMediaVolume immediately before
+// each speak() so prompts cut through machine noise.
 
 import 'dart:async';
 import 'dart:io';
@@ -42,8 +46,10 @@ class VoiceService {
   Timer? _listenCutoff;
   int _listenSession = 0;
   bool _initialized = false;
+  bool _initInFlight = false;
   bool _available = false;
   bool _listening = false;
+  bool _permissionGranted = false;
   String? lastError;
 
   bool get isAvailable => _available || SherpaSttService.instance.isReady;
@@ -51,19 +57,28 @@ class VoiceService {
   bool get voskReady => SherpaSttService.instance.isReady;
   Stream<String> get commandStream => _commandsController.stream;
 
+  /// Initializes the speech recognizer and TTS. Idempotent and safe to call
+  /// from app start — runs in the background. Pre-warming this means the
+  /// first tap on the mic button starts listening with no perceptible delay.
   Future<void> init() async {
     if (_initialized) return;
-    _initialized = true;
-
-    // Start sherpa_onnx warmup in parallel with the legacy STT init.
-    // First launch downloads ~17 MB; subsequent launches are instant.
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      unawaited(SherpaSttService.instance.ensureReady().then((ok) {
-        if (!ok) debugPrint('VoiceService: sherpa_onnx not ready, using fallback STT');
-      }));
+    if (_initInFlight) {
+      // Wait for the in-flight init to finish.
+      while (_initInFlight && !_initialized) {
+        await Future.delayed(const Duration(milliseconds: 30));
+      }
+      return;
     }
+    _initInFlight = true;
 
     try {
+      // Best-effort pre-grant of mic permission so the first listen() doesn't
+      // race the OS permission dialog.
+      try {
+        final status = await Permission.microphone.status;
+        _permissionGranted = status.isGranted;
+      } catch (_) {}
+
       _available = await _speech.initialize(
         onError: (e) {
           debugPrint('VoiceService onError: ${e.errorMsg}');
@@ -77,22 +92,31 @@ class VoiceService {
         ],
       );
       await _configureFactoryTts();
-      if (!_available && !SherpaSttService.instance.isReady) {
+      if (!_available) {
         lastError ??= 'Speech recognition not available on this device';
+      }
+
+      // Sherpa stays as a *background* warmup so the lock-screen flow can use
+      // it later if it happens to be ready, but the in-app path no longer
+      // waits on it.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        unawaited(SherpaSttService.instance.ensureReady().then((ok) {
+          if (!ok) {
+            debugPrint(
+                'VoiceService: sherpa_onnx not ready (using speech_to_text only)');
+          }
+        }));
       }
     } catch (e, st) {
       debugPrint('VoiceService.init failed: $e\n$st');
       _available = false;
       lastError = '$e';
+    } finally {
+      _initialized = true;
+      _initInFlight = false;
     }
   }
 
-  /// Tunes flutter_tts for factory-floor playback:
-  ///   - Volume = 1.0 (max).
-  ///   - Rate = 0.45 (slower and clearer over PA-style ambient audio).
-  ///   - Pitch = 1.0 (default — pitch shifts hurt intelligibility in noise).
-  ///   - Awaits speech completion so re-prompts do not overlap.
-  ///   - Prefers Google's neural TTS engine when present.
   Future<void> _configureFactoryTts() async {
     try {
       await _tts.setLanguage('en-US');
@@ -138,9 +162,8 @@ class VoiceService {
   }
 
   /// Push-to-talk listener for the in-app FAB. Broadcasts the best transcript
-  /// captured during [timeout]. Uses the legacy speech_to_text path here
-  /// because the FAB targets a continuous-listening UX where partial results
-  /// are expected; the push-to-talk notification flow uses captureCommandWithAudio.
+  /// captured during [timeout]. Uses speech_to_text under the hood for
+  /// instant start.
   Future<void> startListening({
     Duration timeout = const Duration(seconds: 5),
   }) async {
@@ -195,37 +218,99 @@ class VoiceService {
   Future<String> captureOnce({
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    if (!_initialized) await init();
-    if (!_available) return '';
-    if (!await _ensureMicPermission()) return '';
+    final capture = await captureCommandWithAudio(timeout: timeout);
+    return capture.transcript;
+  }
 
-    final completer = Completer<String>();
+  /// Push-to-talk capture. The default path uses speech_to_text — listen()
+  /// starts instantly because the recognizer is pre-initialized in init().
+  ///
+  /// Set [forceLockScreen] to true to force the legacy native flow
+  /// (VoiceLockRecorderActivity) — only used by the FCM voice_claim notif
+  /// action when the device is locked, since the plugin can't draw on top
+  /// of the keyguard.
+  Future<VoiceCommandCapture> captureCommandWithAudio({
+    Duration timeout = const Duration(seconds: 6),
+    int sampleRate = 16000,
+    bool forceLockScreen = false,
+  }) async {
+    if (!_initialized) await init();
+    if (!await _ensureMicPermission()) {
+      return VoiceCommandCapture.empty(sampleRate: sampleRate);
+    }
+
+    if (forceLockScreen &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      return _captureViaLockActivity(timeout, sampleRate);
+    }
+
+    return _captureViaSpeechToText(timeout, sampleRate);
+  }
+
+  Future<VoiceCommandCapture> _captureViaSpeechToText(
+    Duration timeout,
+    int sampleRate,
+  ) async {
+    if (!_available) {
+      // One last attempt to bring the recognizer up.
+      _initialized = false;
+      await init();
+      if (!_available) {
+        return VoiceCommandCapture.empty(sampleRate: sampleRate);
+      }
+    }
+
     _listening = true;
-    Timer? cutoff;
+    final completer = Completer<void>();
+    final List<String> alternatives = [];
     String bestTranscript = '';
+    Timer? cutoff;
+
+    void recordTranscript(String text) {
+      final trimmed = text.trim();
+      if (trimmed.isEmpty) return;
+      bestTranscript = trimmed;
+      if (!alternatives.contains(trimmed)) alternatives.add(trimmed);
+    }
 
     try {
+      // Stop any prior session before starting a new one — protects against
+      // back-to-back taps that would otherwise leave the recognizer wedged.
+      try {
+        if (_speech.isListening) await _speech.stop();
+      } catch (_) {}
+
       await _speech.listen(
         onResult: (r) {
-          final text = r.recognizedWords.trim();
-          if (text.isNotEmpty) bestTranscript = text;
+          recordTranscript(r.recognizedWords);
+          // speech_to_text exposes alternates via SpeechRecognitionResult —
+          // capturing them helps the parser disambiguate "clean" vs "claim".
+          for (final alt in r.alternates) {
+            recordTranscript(alt.recognizedWords);
+          }
+          if (r.finalResult && !completer.isCompleted) {
+            completer.complete();
+          }
         },
+        onSoundLevelChange: null,
         listenFor: timeout,
-        pauseFor: const Duration(seconds: 4),
+        pauseFor: const Duration(milliseconds: 1200),
         localeId: 'en_US',
         listenOptions: stt.SpeechListenOptions(
           partialResults: true,
           cancelOnError: true,
-          listenMode: stt.ListenMode.dictation,
+          listenMode: stt.ListenMode.confirmation,
         ),
       );
+
+      // Hard cap so we never hang past the timeout window.
       cutoff = Timer(timeout + const Duration(milliseconds: 600), () {
-        if (!completer.isCompleted) completer.complete(bestTranscript.trim());
+        if (!completer.isCompleted) completer.complete();
       });
-      return await completer.future;
+      await completer.future;
     } catch (e) {
-      debugPrint('VoiceService.captureOnce: $e');
-      return '';
+      debugPrint('VoiceService._captureViaSpeechToText: $e');
     } finally {
       cutoff?.cancel();
       _listening = false;
@@ -234,95 +319,72 @@ class VoiceService {
       } catch (_) {}
       await _releaseAndroidAudioSession();
     }
-  }
 
-  /// Full push-to-talk capture for the notification-driven claim flow.
-  ///
-  /// 1. VoiceLockRecorderActivity (native) captures raw PCM via AudioRecord —
-  ///    the most noise-robust Android audio source for voice use cases.
-  /// 2. SherpaSttService (sherpa_onnx Dart) transcribes the PCM offline.
-  /// 3. The same PCM bytes are returned for speaker verification.
-  ///
-  /// Falls back to speech_to_text when sherpa_onnx is still downloading
-  /// (first launch only).
-  Future<VoiceCommandCapture> captureCommandWithAudio({
-    Duration timeout = const Duration(seconds: 6),
-    int sampleRate = 16000,
-  }) async {
-    if (!_initialized) await init();
-    if (!await _ensureMicPermission()) {
-      return VoiceCommandCapture.empty(sampleRate: sampleRate);
-    }
-
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      _listening = true;
-      try {
-        // If sherpa_onnx is still downloading, wait up to 3 s before falling
-        // back to the legacy SpeechRecognizer path.
-        if (!SherpaSttService.instance.isReady) {
-          await SherpaSttService.instance
-              .ensureReady()
-              .timeout(const Duration(seconds: 3), onTimeout: () => false);
-        }
-
-        final result = await _voiceLockChannel.invokeMapMethod<String, dynamic>(
-          'startVoiceLockFlow',
-          {'timeoutMs': timeout.inMilliseconds},
-        );
-        if (result == null) {
-          return VoiceCommandCapture.empty(sampleRate: sampleRate);
-        }
-
-        Uint8List? rawAudio;
-        final audioPath = result['audioPath']?.toString() ?? '';
-        if (audioPath.isNotEmpty) {
-          final file = File(audioPath);
-          try {
-            rawAudio = await file.readAsBytes();
-          } catch (e) {
-            debugPrint('VoiceService: audio read failed: $e');
-          } finally {
-            try {
-              await file.delete();
-            } catch (_) {}
-          }
-        }
-
-        // Transcribe with sherpa_onnx if ready, otherwise return empty and
-        // let the re-prompt loop in voice_claim_screen handle the retry.
-        String transcript = '';
-        final List<String> alternatives = [];
-        if (rawAudio != null && SherpaSttService.instance.isReady) {
-          transcript = await SherpaSttService.instance
-              .transcribe(rawAudio, sampleRate: sampleRate);
-          if (transcript.isNotEmpty) alternatives.add(transcript);
-        }
-
-        return VoiceCommandCapture(
-          transcript: transcript,
-          alternatives: alternatives,
-          rawAudio: rawAudio,
-          sampleRate: sampleRate,
-          confidence: -1,
-        );
-      } catch (e) {
-        debugPrint('VoiceService.captureCommandWithAudio: $e');
-      } finally {
-        _listening = false;
-        await _releaseAndroidAudioSession();
-      }
-    }
-
-    // Non-Android fallback (web/desktop dev builds).
-    final transcript = await captureOnce(timeout: timeout);
     return VoiceCommandCapture(
-      transcript: transcript,
-      alternatives:
-          transcript.trim().isEmpty ? const <String>[] : [transcript.trim()],
+      transcript: bestTranscript,
+      alternatives: alternatives,
+      // speech_to_text doesn't expose raw PCM; biometric is gracefully
+      // skipped by the dispatcher when rawAudio is null and the user is
+      // already authenticated to the app.
       rawAudio: null,
       sampleRate: sampleRate,
       confidence: -1,
     );
+  }
+
+  Future<VoiceCommandCapture> _captureViaLockActivity(
+    Duration timeout,
+    int sampleRate,
+  ) async {
+    _listening = true;
+    try {
+      final result = await _voiceLockChannel.invokeMapMethod<String, dynamic>(
+        'startVoiceLockFlow',
+        {'timeoutMs': timeout.inMilliseconds},
+      );
+      if (result == null) {
+        return VoiceCommandCapture.empty(sampleRate: sampleRate);
+      }
+
+      Uint8List? rawAudio;
+      final audioPath = result['audioPath']?.toString() ?? '';
+      if (audioPath.isNotEmpty) {
+        final file = File(audioPath);
+        try {
+          rawAudio = await file.readAsBytes();
+        } catch (e) {
+          debugPrint('VoiceService: audio read failed: $e');
+        } finally {
+          try {
+            await file.delete();
+          } catch (_) {}
+        }
+      }
+
+      // Try sherpa for transcription if it's ready; otherwise fall back to
+      // an empty transcript and let the re-prompt loop handle the retry.
+      String transcript = '';
+      final List<String> alternatives = [];
+      if (rawAudio != null && SherpaSttService.instance.isReady) {
+        transcript = await SherpaSttService.instance
+            .transcribe(rawAudio, sampleRate: sampleRate);
+        if (transcript.isNotEmpty) alternatives.add(transcript);
+      }
+
+      return VoiceCommandCapture(
+        transcript: transcript,
+        alternatives: alternatives,
+        rawAudio: rawAudio,
+        sampleRate: sampleRate,
+        confidence: -1,
+      );
+    } catch (e) {
+      debugPrint('VoiceService._captureViaLockActivity: $e');
+      return VoiceCommandCapture.empty(sampleRate: sampleRate);
+    } finally {
+      _listening = false;
+      await _releaseAndroidAudioSession();
+    }
   }
 
   Future<Uint8List?> captureRawAudio({
@@ -359,9 +421,6 @@ class VoiceService {
     await _releaseAndroidAudioSession();
   }
 
-  /// Speaks [text] at maximum volume. Pumps the media stream to max
-  /// immediately before speaking so the prompt is audible over factory noise
-  /// even when the device volume slider has been turned down.
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
     try {
@@ -389,9 +448,11 @@ class VoiceService {
   }
 
   Future<bool> _ensureMicPermission() async {
+    if (_permissionGranted) return true;
     try {
       final status = await Permission.microphone.request();
-      return status.isGranted;
+      _permissionGranted = status.isGranted;
+      return _permissionGranted;
     } catch (e) {
       debugPrint('VoiceService permission error: $e');
       return false;
@@ -433,7 +494,7 @@ class VoiceCommandCapture {
     if (transcript.trim().isNotEmpty) yield transcript.trim();
     for (final alternative in alternatives) {
       final text = alternative.trim();
-      if (text.isNotEmpty) yield text;
+      if (text.isNotEmpty && text != transcript.trim()) yield text;
     }
   }
 }
