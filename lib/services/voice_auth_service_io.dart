@@ -26,7 +26,22 @@ class VoiceAuthService {
   VoiceAuthService._();
   static final VoiceAuthService instance = VoiceAuthService._();
 
+  /// Cosine similarity threshold for accepting a sample as the enrolled voice.
+  /// Tightened from the legacy 0.78 because the audio pipeline now feeds the
+  /// embedding model only VAD-trimmed, SNR-gated speech — false-rejects from
+  /// background noise are no longer the dominant failure mode.
   static const double threshold = 0.80;
+
+  /// Minimum signal-to-noise ratio (dB) required before we trust a sample
+  /// for verification. Below this we refuse rather than risk confirming a
+  /// machine drone as a human voice. Tuned for industrial floors.
+  static const double minSnrDb = 6.0;
+
+  /// Minimum effective speech duration (post-VAD trim) for a usable sample.
+  /// 0.6 s is enough for "claim alert ten twenty five" while rejecting stray
+  /// taps and short shouts that don't carry speaker information.
+  static const Duration minSpeechDuration = Duration(milliseconds: 600);
+
   static const String _modelAsset =
       'assets/models/conformer_tisid_small.tflite';
 
@@ -69,6 +84,29 @@ class VoiceAuthService {
         verified: false,
         unenrolled: false,
         message: 'No audio sample captured for voice verification.',
+      );
+    }
+
+    // Audio quality gate. We refuse samples that don't carry enough speech
+    // or that are dominated by factory-floor noise — better to ask the user
+    // to repeat than to score a noise-only sample against the enrolled
+    // embedding, which can occasionally drift above threshold by chance.
+    final quality = _assessAudioQuality(rawAudio, sampleRate);
+    if (quality.speechDuration < minSpeechDuration) {
+      return VoiceVerificationResult(
+        verified: false,
+        unenrolled: false,
+        message: 'Speech too short for verification. Please speak the full '
+            'command.',
+      );
+    }
+    if (quality.snrDb < minSnrDb) {
+      return VoiceVerificationResult(
+        verified: false,
+        unenrolled: false,
+        message: 'Background noise too high for voice verification '
+            '(SNR ${quality.snrDb.toStringAsFixed(1)} dB). Step closer or '
+            'find a quieter spot.',
       );
     }
 
@@ -276,6 +314,60 @@ class VoiceAuthService {
     final bi = int.tryParse(b.toString());
     if (ai != null && bi != null) return ai.compareTo(bi);
     return a.toString().compareTo(b.toString());
+  }
+
+  /// Energy-based VAD + SNR estimator. Scans the waveform in 20 ms frames,
+  /// classifies each frame as speech or noise by comparing its RMS to a
+  /// noise-floor estimate (the lowest 20% of frame RMSes), then reports
+  /// total speech duration and SNR in dB.
+  _AudioQuality _assessAudioQuality(Uint8List rawAudio, int sampleRate) {
+    final samples = _pcm16BytesToDoubles(rawAudio);
+    if (samples.isEmpty) {
+      return const _AudioQuality(speechDuration: Duration.zero, snrDb: 0);
+    }
+
+    const frameMs = 20;
+    final frameSize = (sampleRate * frameMs / 1000).round();
+    if (samples.length < frameSize) {
+      return const _AudioQuality(speechDuration: Duration.zero, snrDb: 0);
+    }
+
+    final frameRms = <double>[];
+    for (var start = 0; start + frameSize <= samples.length; start += frameSize) {
+      frameRms.add(_rms(samples, start, start + frameSize));
+    }
+    if (frameRms.isEmpty) {
+      return const _AudioQuality(speechDuration: Duration.zero, snrDb: 0);
+    }
+
+    final sorted = List<double>.from(frameRms)..sort();
+    final noiseFrameCount = math.max(1, (sorted.length * 0.2).floor());
+    var noiseSum = 0.0;
+    for (var i = 0; i < noiseFrameCount; i++) {
+      noiseSum += sorted[i];
+    }
+    final noiseRms = noiseSum / noiseFrameCount;
+    final speechThreshold = math.max(noiseRms * 2.5, 0.012);
+
+    var speechFrames = 0;
+    var speechSumSq = 0.0;
+    for (final rms in frameRms) {
+      if (rms >= speechThreshold) {
+        speechFrames++;
+        speechSumSq += rms * rms;
+      }
+    }
+    if (speechFrames == 0) {
+      return _AudioQuality(speechDuration: Duration.zero, snrDb: 0);
+    }
+    final speechRms = math.sqrt(speechSumSq / speechFrames);
+    final snrDb = noiseRms <= 1e-6
+        ? 60.0
+        : 20 * (math.log(speechRms / noiseRms) / math.ln10);
+    return _AudioQuality(
+      speechDuration: Duration(milliseconds: speechFrames * frameMs),
+      snrDb: snrDb,
+    );
   }
 
   List<double> _pcm16BytesToDoubles(Uint8List bytes) {
@@ -551,5 +643,15 @@ class _Voiceprint {
   const _Voiceprint({
     required this.embedding,
     required this.threshold,
+  });
+}
+
+class _AudioQuality {
+  final Duration speechDuration;
+  final double snrDb;
+
+  const _AudioQuality({
+    required this.speechDuration,
+    required this.snrDb,
   });
 }

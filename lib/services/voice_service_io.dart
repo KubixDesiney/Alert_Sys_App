@@ -1,8 +1,18 @@
-// Push-to-talk voice service backed by native SpeechRecognizer/TTS on mobile.
-// (and the OS-equivalent on iOS / Web Speech API on browsers) via
-// the speech_to_text plugin. No background listening, no continuous
-// capture — every listen window is started by an explicit call and
-// auto-stops within [timeout].
+// Voice service used on mobile/desktop builds.
+//
+// Primary STT path (Android): audio captured by VoiceLockRecorderActivity
+// (native AudioRecord), PCM bytes returned to Dart, transcribed by
+// SherpaSttService (sherpa_onnx offline Zipformer). No Kotlin STT code.
+//
+// Fallback path: speech_to_text plugin for non-Android platforms and for
+// the brief window before the sherpa_onnx model finishes downloading on a
+// fresh install.
+//
+// TTS: flutter_tts configured for factory floor — maximum volume, audio
+// focus stealing, slower rate, prefers the highest-quality available engine.
+// The native MainActivity also pumps the media stream to max via
+// `boostMediaVolume` immediately before each speak() so prompts cut through
+// machine noise even if the user has the system slider down.
 
 import 'dart:async';
 import 'dart:io';
@@ -14,6 +24,8 @@ import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+
+import 'sherpa_stt_service.dart';
 
 class VoiceService {
   VoiceService._();
@@ -34,13 +46,23 @@ class VoiceService {
   bool _listening = false;
   String? lastError;
 
-  bool get isAvailable => _available;
+  bool get isAvailable => _available || SherpaSttService.instance.isReady;
   bool get isListening => _listening;
+  bool get voskReady => SherpaSttService.instance.isReady;
   Stream<String> get commandStream => _commandsController.stream;
 
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
+
+    // Start sherpa_onnx warmup in parallel with the legacy STT init.
+    // First launch downloads ~17 MB; subsequent launches are instant.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      unawaited(SherpaSttService.instance.ensureReady().then((ok) {
+        if (!ok) debugPrint('VoiceService: sherpa_onnx not ready, using fallback STT');
+      }));
+    }
+
     try {
       _available = await _speech.initialize(
         onError: (e) {
@@ -54,15 +76,8 @@ class VoiceService {
           stt.SpeechToText.androidNoBluetooth,
         ],
       );
-      try {
-        await _tts.setLanguage('en-US');
-        await _tts.setSpeechRate(0.5);
-        await _tts.setPitch(1.0);
-        await _tts.awaitSpeakCompletion(true);
-      } catch (e) {
-        debugPrint('VoiceService TTS setup failed: $e');
-      }
-      if (!_available) {
+      await _configureFactoryTts();
+      if (!_available && !SherpaSttService.instance.isReady) {
         lastError ??= 'Speech recognition not available on this device';
       }
     } catch (e, st) {
@@ -72,9 +87,60 @@ class VoiceService {
     }
   }
 
-  /// Push-to-talk style listener. Broadcasts the best transcript captured
-  /// during [timeout]. Use this for the in-app FAB; for sequential prompts
-  /// prefer [captureOnce], which awaits the result directly.
+  /// Tunes flutter_tts for factory-floor playback:
+  ///   - Volume = 1.0 (max).
+  ///   - Rate = 0.45 (slower and clearer over PA-style ambient audio).
+  ///   - Pitch = 1.0 (default — pitch shifts hurt intelligibility in noise).
+  ///   - Awaits speech completion so re-prompts do not overlap.
+  ///   - Prefers Google's neural TTS engine when present.
+  Future<void> _configureFactoryTts() async {
+    try {
+      await _tts.setLanguage('en-US');
+      await _tts.setSpeechRate(0.45);
+      await _tts.setVolume(1.0);
+      await _tts.setPitch(1.0);
+      await _tts.awaitSpeakCompletion(true);
+
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        try {
+          final engines = await _tts.getEngines as List<dynamic>?;
+          if (engines != null) {
+            final preferred = engines.cast<String>().firstWhere(
+                  (e) => e.contains('google'),
+                  orElse: () => '',
+                );
+            if (preferred.isNotEmpty) await _tts.setEngine(preferred);
+          }
+        } catch (_) {}
+
+        try {
+          final voices = await _tts.getVoices as List<dynamic>?;
+          if (voices != null) {
+            for (final raw in voices) {
+              if (raw is! Map) continue;
+              final voice = Map<String, String>.from(
+                raw.map((k, v) => MapEntry(k.toString(), v.toString())),
+              );
+              final locale = voice['locale'] ?? '';
+              final name = voice['name'] ?? '';
+              if (locale.startsWith('en') &&
+                  (name.contains('en-us-x-') || name.contains('en-US'))) {
+                await _tts.setVoice({'name': name, 'locale': locale});
+                break;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('VoiceService TTS setup failed: $e');
+    }
+  }
+
+  /// Push-to-talk listener for the in-app FAB. Broadcasts the best transcript
+  /// captured during [timeout]. Uses the legacy speech_to_text path here
+  /// because the FAB targets a continuous-listening UX where partial results
+  /// are expected; the push-to-talk notification flow uses captureCommandWithAudio.
   Future<void> startListening({
     Duration timeout = const Duration(seconds: 5),
   }) async {
@@ -95,9 +161,7 @@ class VoiceService {
       if (emitted || session != _listenSession) return;
       emitted = true;
       final text = bestTranscript.trim();
-      if (text.isNotEmpty) {
-        _commandsController.add(text);
-      }
+      if (text.isNotEmpty) _commandsController.add(text);
       await stopListening();
     }
 
@@ -105,9 +169,7 @@ class VoiceService {
       await _speech.listen(
         onResult: (r) {
           final text = r.recognizedWords.trim();
-          if (text.isNotEmpty) {
-            bestTranscript = text;
-          }
+          if (text.isNotEmpty) bestTranscript = text;
         },
         listenFor: timeout,
         pauseFor: const Duration(seconds: 4),
@@ -130,9 +192,6 @@ class VoiceService {
     }
   }
 
-  /// Capture exactly one finalized phrase. Returns empty string on
-  /// timeout / no speech / permission denied. Designed for the
-  /// notification-driven claim flow where steps are sequential.
   Future<String> captureOnce({
     Duration timeout = const Duration(seconds: 5),
   }) async {
@@ -149,9 +208,7 @@ class VoiceService {
       await _speech.listen(
         onResult: (r) {
           final text = r.recognizedWords.trim();
-          if (text.isNotEmpty) {
-            bestTranscript = text;
-          }
+          if (text.isNotEmpty) bestTranscript = text;
         },
         listenFor: timeout,
         pauseFor: const Duration(seconds: 4),
@@ -163,9 +220,7 @@ class VoiceService {
         ),
       );
       cutoff = Timer(timeout + const Duration(milliseconds: 600), () {
-        if (!completer.isCompleted) {
-          completer.complete(bestTranscript.trim());
-        }
+        if (!completer.isCompleted) completer.complete(bestTranscript.trim());
       });
       return await completer.future;
     } catch (e) {
@@ -181,16 +236,20 @@ class VoiceService {
     }
   }
 
-  /// Captures the user's command transcript and the raw PCM audio from the
-  /// same utterance so speaker verification can happen before command parsing.
+  /// Full push-to-talk capture for the notification-driven claim flow.
+  ///
+  /// 1. VoiceLockRecorderActivity (native) captures raw PCM via AudioRecord —
+  ///    the most noise-robust Android audio source for voice use cases.
+  /// 2. SherpaSttService (sherpa_onnx Dart) transcribes the PCM offline.
+  /// 3. The same PCM bytes are returned for speaker verification.
+  ///
+  /// Falls back to speech_to_text when sherpa_onnx is still downloading
+  /// (first launch only).
   Future<VoiceCommandCapture> captureCommandWithAudio({
-    Duration timeout = const Duration(seconds: 5),
+    Duration timeout = const Duration(seconds: 6),
     int sampleRate = 16000,
   }) async {
     if (!_initialized) await init();
-    if (!_available) {
-      return VoiceCommandCapture.empty(sampleRate: sampleRate);
-    }
     if (!await _ensureMicPermission()) {
       return VoiceCommandCapture.empty(sampleRate: sampleRate);
     }
@@ -198,6 +257,14 @@ class VoiceService {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       _listening = true;
       try {
+        // If sherpa_onnx is still downloading, wait up to 3 s before falling
+        // back to the legacy SpeechRecognizer path.
+        if (!SherpaSttService.instance.isReady) {
+          await SherpaSttService.instance
+              .ensureReady()
+              .timeout(const Duration(seconds: 3), onTimeout: () => false);
+        }
+
         final result = await _voiceLockChannel.invokeMapMethod<String, dynamic>(
           'startVoiceLockFlow',
           {'timeoutMs': timeout.inMilliseconds},
@@ -213,7 +280,7 @@ class VoiceService {
           try {
             rawAudio = await file.readAsBytes();
           } catch (e) {
-            debugPrint('VoiceService.captureCommandWithAudio read failed: $e');
+            debugPrint('VoiceService: audio read failed: $e');
           } finally {
             try {
               await file.delete();
@@ -221,11 +288,22 @@ class VoiceService {
           }
         }
 
+        // Transcribe with sherpa_onnx if ready, otherwise return empty and
+        // let the re-prompt loop in voice_claim_screen handle the retry.
+        String transcript = '';
+        final List<String> alternatives = [];
+        if (rawAudio != null && SherpaSttService.instance.isReady) {
+          transcript = await SherpaSttService.instance
+              .transcribe(rawAudio, sampleRate: sampleRate);
+          if (transcript.isNotEmpty) alternatives.add(transcript);
+        }
+
         return VoiceCommandCapture(
-          transcript: result['transcript']?.toString() ?? '',
-          alternatives: _stringListFromChannelValue(result['alternatives']),
+          transcript: transcript,
+          alternatives: alternatives,
           rawAudio: rawAudio,
           sampleRate: sampleRate,
+          confidence: -1,
         );
       } catch (e) {
         debugPrint('VoiceService.captureCommandWithAudio: $e');
@@ -235,14 +313,15 @@ class VoiceService {
       }
     }
 
+    // Non-Android fallback (web/desktop dev builds).
     final transcript = await captureOnce(timeout: timeout);
     return VoiceCommandCapture(
       transcript: transcript,
-      alternatives: transcript.trim().isEmpty
-          ? const <String>[]
-          : <String>[transcript.trim()],
+      alternatives:
+          transcript.trim().isEmpty ? const <String>[] : [transcript.trim()],
       rawAudio: null,
       sampleRate: sampleRate,
+      confidence: -1,
     );
   }
 
@@ -255,10 +334,7 @@ class VoiceService {
     try {
       final audio = await _audioChannel.invokeMethod<Uint8List>(
         'recordPcm16',
-        {
-          'durationMs': duration.inMilliseconds,
-          'sampleRate': sampleRate,
-        },
+        {'durationMs': duration.inMilliseconds, 'sampleRate': sampleRate},
       );
       return audio;
     } catch (e) {
@@ -283,11 +359,19 @@ class VoiceService {
     await _releaseAndroidAudioSession();
   }
 
+  /// Speaks [text] at maximum volume. Pumps the media stream to max
+  /// immediately before speaking so the prompt is audible over factory noise
+  /// even when the device volume slider has been turned down.
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
     try {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        try {
+          await _audioChannel.invokeMethod('boostMediaVolume');
+        } catch (_) {}
+      }
       await _tts.stop();
-      await _tts.speak(text, focus: false);
+      await _tts.speak(text, focus: true);
     } catch (e) {
       debugPrint('VoiceService.speak: $e');
     } finally {
@@ -301,6 +385,7 @@ class VoiceService {
     try {
       await _tts.stop();
     } catch (_) {}
+    SherpaSttService.instance.dispose();
   }
 
   Future<bool> _ensureMicPermission() async {
@@ -321,16 +406,6 @@ class VoiceService {
       debugPrint('VoiceService audio cleanup failed: $e');
     }
   }
-
-  List<String> _stringListFromChannelValue(Object? value) {
-    if (value is List) {
-      return value
-          .map((item) => item?.toString().trim() ?? '')
-          .where((item) => item.isNotEmpty)
-          .toList(growable: false);
-    }
-    return const <String>[];
-  }
 }
 
 class VoiceCommandCapture {
@@ -338,18 +413,21 @@ class VoiceCommandCapture {
   final List<String> alternatives;
   final Uint8List? rawAudio;
   final int sampleRate;
+  final double confidence;
 
   const VoiceCommandCapture({
     required this.transcript,
     this.alternatives = const <String>[],
     required this.rawAudio,
     required this.sampleRate,
+    this.confidence = -1,
   });
 
   const VoiceCommandCapture.empty({required this.sampleRate})
       : transcript = '',
         alternatives = const <String>[],
-        rawAudio = null;
+        rawAudio = null,
+        confidence = -1;
 
   Iterable<String> get transcripts sync* {
     if (transcript.trim().isNotEmpty) yield transcript.trim();
