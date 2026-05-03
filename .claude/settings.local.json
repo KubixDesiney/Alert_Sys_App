@@ -10,7 +10,14 @@
       "Bash(flutter build *)",
       "Bash(npx firebase-tools *)",
       "Bash(dart analyze *)",
-      "Bash(grep \"lib\\\\\\\\\\\\\\\\\")"
+      "Bash(grep \"lib\\\\\\\\\\\\\\\\\")",
+      "Bash(flutter test *)",
+      "Bash(./gradlew --offline :app:compileDebugKotlin)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\21652\\\\alertsysapp\\\\android\\\\app\\\\src\\\\main\\\\kotlin\\\\com\\\\example\\\\alertsysapp\\\\VoskEngine.kt\" -Force)",
+      "Read(//c/Users/21652/AppData/Local/Pub/Cache/hosted/pub.dev//**)",
+      "Bash(./gradlew :app:compileDebugKotlin)",
+      "Bash(./gradlew :app:compileDebugKotlin --rerun-tasks)",
+      "Bash(git -C c:/Users/21652/alertsysapp diff --name-only HEAD)"
     ]
   }
 }

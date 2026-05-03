@@ -1,0 +1,16 @@
+{
+  "name": "alertsys-worker",
+  "version": "1.1.0",
+  "private": true,
+  "description": "AlertSys Cloudflare Worker — AI scoring, escalation cron, push fan-out.",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "wrangler": "^3.78.0"
+  }
+}
