@@ -14,7 +14,7 @@ void main() {
         create: (_) => ThemeProvider(),
         child: MaterialApp(
           theme: buildLightTheme(),
-          home: const AdminDashboardScreen(deferInitializationForTest: true),
+          home: const AdminDashboardScreen(),
         ),
       ),
     );
