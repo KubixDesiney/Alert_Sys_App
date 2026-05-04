@@ -4,6 +4,7 @@ import '../../models/alert_model.dart';
 import '../../services/predictive_intel_service.dart';
 import '../../services/predictive_models.dart';
 import '../../services/service_locator.dart';
+import '../../utils/alert_claim_error.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
 
@@ -163,7 +164,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
       if (!mounted) return;
       setState(() {
         _assigning = false;
-        _assignError = 'Failed: $e';
+        _assignError = formatAlertClaimError(e);
       });
     }
   }
