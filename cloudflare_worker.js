@@ -26,7 +26,6 @@ let _fcmTokenExpMs = 0;
 // Subrequest budgets (keep well below 50)
 const MAX_ALERTS_TO_PUSH = 1;          // process max 1 new alert per cron tick
 const MAX_ESCALATION_CHECKS = 5;       // check up to 5 alerts for escalation
-const MAX_AI_FACTORIES = 1;            // assign AI only for one factory per tick
 const MAX_FANOUT = 2;                  // max notifications to push via fan-out (cron will skip fan‑out)
 
 // ============================================================
@@ -847,7 +846,7 @@ function notifTitle(type) {
 }
 
 // ============================================================
-// AI Assignment Engine (capped at MAX_AI_FACTORIES)
+// AI Assignment Engine
 // ============================================================
 const AI_COOLDOWN_MS = 5 * 60 * 1000;
 const AI_ACTIVE_STATUSES = new Set(['active', 'available']);
@@ -1040,9 +1039,7 @@ async function runAIAssignments(env, ctx) {
   const now = Date.now();
   const factoryIds = Object.keys(byFactory);
 
-  // Only process up to MAX_AI_FACTORIES
-  for (let i = 0; i < Math.min(factoryIds.length, MAX_AI_FACTORIES); i++) {
-    const factoryId = factoryIds[i];
+  for (const factoryId of factoryIds) {
     const enaRes = await fetch(
       `${env.FB_DB_URL}factories/${factoryId}/aiConfig/enabled.json?auth=${token}`,
     );
