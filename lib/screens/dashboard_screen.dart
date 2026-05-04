@@ -2211,23 +2211,22 @@ class _AlertRow extends StatelessWidget {
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: _navy))),
-                if (alert.alertNumber > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: const Color(0xFFE8F0F8),
-                          borderRadius: BorderRadius.circular(99)),
-                      child: Text('#${alert.alertNumber}',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _navy,
-                              fontFamily: 'monospace')),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFE8F0F8),
+                        borderRadius: BorderRadius.circular(99)),
+                    child: Text(alert.alertLabel,
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: _navy,
+                            fontFamily: 'monospace')),
                   ),
+                ),
                 if (alert.status == 'en_cours' &&
                     alert.superviseurId == currentUserId &&
                     onCriticalToggle != null)
@@ -2673,7 +2672,7 @@ class _DashboardBottomNav extends StatelessWidget {
               ),
               _NavBtn(
                 icon: Icons.qr_code_scanner,
-                label: 'Alert Scan',
+                label: 'Station Scan',
                 selected: currentIndex == 2,
                 onTap: () => onTap(2),
               ),

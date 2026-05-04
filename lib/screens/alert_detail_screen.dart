@@ -190,8 +190,8 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
         title: FutureBuilder<AlertModel>(
           future: _alertFuture,
           builder: (context, snap) {
-            final n = snap.data?.alertNumber ?? 0;
-            return Text(n > 0 ? 'Alert #$n' : 'Alert Details');
+                final alert = snap.data;
+                return Text(alert == null ? 'Alert Details' : 'Alert ${alert.alertLabel}');
           },
         ),
       ),
@@ -213,28 +213,27 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (alert.alertNumber > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: context.appTheme.navyLt,
-                                borderRadius: BorderRadius.circular(99),
-                                border: Border.all(
-                                    color: context.appTheme.navy
-                                        .withValues(alpha: 0.3)),
-                              ),
-                              child: Text(
-                                'Alert #${alert.alertNumber}',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: context.appTheme.navy),
-                              ),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: context.appTheme.navyLt,
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(
+                                  color: context.appTheme.navy
+                                      .withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              'Alert ${alert.alertLabel}',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: context.appTheme.navy),
                             ),
                           ),
+                        ),
                         Text('Type: ${alert.type}',
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
