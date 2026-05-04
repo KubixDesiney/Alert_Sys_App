@@ -6,11 +6,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:vibration/vibration.dart';
 import '../providers/alert_provider.dart';
-import '../providers/theme_provider.dart';
 import '../models/alert_model.dart';
 import '../services/auth_service.dart';
 import '../services/offline_account_cache.dart';
 import '../theme.dart';
+import '../utils/alert_meta.dart';
+import '../widgets/dashboard_common.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
 import 'alert_scan_screen.dart';
@@ -24,22 +25,6 @@ import '../services/collaboration_service.dart';
 const _navy = AppColors.navy;
 const _white = AppColors.white;
 const _muted = AppColors.textMuted;
-
-Color _typeColor(String type) => switch (type) {
-      'qualite' => const Color(0xFFEF4444),
-      'maintenance' => const Color(0xFF3B82F6),
-      'defaut_produit' => const Color(0xFF22C55E),
-      'manque_ressource' => const Color(0xFFF59E0B),
-      _ => const Color(0xFF6B7280),
-    };
-
-String _typeLabel(String type) => switch (type) {
-      'qualite' => 'Quality',
-      'maintenance' => 'Maintenance',
-      'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resource Deficiency',
-      _ => type,
-    };
 
 String _formatTimestamp(DateTime dt) {
   final h12 = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
@@ -1402,68 +1387,25 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    final isDark = context.isDark;
     return Container(
       decoration: BoxDecoration(
           color: t.card,
           border: Border(bottom: BorderSide(color: t.border, width: 1))),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(Icons.factory, size: 28, color: t.navy.withValues(alpha: 0.8)),
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                decoration:
-                    BoxDecoration(color: t.card, shape: BoxShape.circle),
-                child: Icon(Icons.warning, color: t.red, size: 14),
-              ),
-            ),
-          ],
+        DashboardUserInfo(
+          title: 'Supervisor',
+          subtitle: widget.userName,
+          trailingIcon: Icons.warning,
         ),
-        const SizedBox(width: 12),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Supervisor',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w700, color: t.navy)),
-          Text(widget.userName, style: TextStyle(fontSize: 12, color: t.muted)),
-        ]),
         const Spacer(),
-        // Theme toggle
-        IconButton(
-          icon: Icon(
-            isDark ? Icons.light_mode : Icons.dark_mode,
-            color: t.navy,
-            size: 22,
-          ),
-          tooltip: isDark ? 'Light mode' : 'Dark mode',
-          onPressed: () => context.read<ThemeProvider>().toggle(),
+        DashboardThemeToggleButton(color: t.navy),
+        DashboardNotificationBell(
+          count: _notificationCount,
+          onPressed: _showNotifications,
+          color: t.navy,
+          iconSize: 28,
         ),
-        // Notifications
-        Stack(clipBehavior: Clip.none, children: [
-          IconButton(
-              icon: Icon(Icons.notifications_none, color: t.navy, size: 28),
-              onPressed: _showNotifications),
-          if (_notificationCount > 0)
-            Positioned(
-              top: 6,
-              right: 6,
-              child: Container(
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(color: t.red, shape: BoxShape.circle),
-                child: Center(
-                    child: Text('$_notificationCount',
-                        style: TextStyle(
-                            color: t.card,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700))),
-              ),
-            ),
-        ]),
         const SizedBox(width: 4),
         // Logout
         InkWell(
@@ -1725,7 +1667,7 @@ class _ClaimedView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _typeLabel(alert.type),
+                    typeMeta(alert.type, context.appTheme).label,
                     style: const TextStyle(
                       color: Color(0xFF9A3412),
                       fontSize: 24,
@@ -2255,16 +2197,16 @@ class _AlertRow extends StatelessWidget {
                       color: Colors.red, size: 16),
                 if (alert.isCritical) const SizedBox(width: 4),
                 pulseDot
-                    ? _PulseDot(color: _typeColor(alert.type))
+                    ? _PulseDot(color: typeMeta(alert.type, context.appTheme).color)
                     : Container(
                         width: 10,
                         height: 10,
                         decoration: BoxDecoration(
-                            color: _typeColor(alert.type),
+                            color: typeMeta(alert.type, context.appTheme).color,
                             shape: BoxShape.circle)),
                 const SizedBox(width: 8),
                 Expanded(
-                    child: Text(_typeLabel(alert.type),
+                    child: Text(typeMeta(alert.type, context.appTheme).label,
                         style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,

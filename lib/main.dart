@@ -15,6 +15,7 @@ import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
 import 'services/offline_account_cache.dart';
 import 'services/offline_database_service.dart';
+import 'services/service_locator.dart';
 import 'services/voice_service.dart';
 import 'services/worker_trigger_queue.dart';
 import 'theme.dart';
@@ -24,7 +25,8 @@ void main() async {
   // Global error handler
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
-    debugPrint('Flutter error caught: ${details.exception}');
+    ServiceLocator.instance.logger
+        .error('Flutter error caught', details.exception, details.stack);
   };
   // Show a red error screen instead of a white blank when a widget build fails
   ErrorWidget.builder = (errorDetails) {
@@ -58,6 +60,7 @@ void main() async {
   };
 
   await _safeInitFirebase();
+  ServiceLocator.instance.init();
   await OfflineDatabaseService.configure();
   WorkerTriggerQueue.instance.start();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -65,7 +68,7 @@ void main() async {
   final fcm = FcmService();
   unawaited(
     fcm.init().timeout(const Duration(seconds: 8)).catchError((Object e) {
-      debugPrint('FCM init failed: $e');
+      ServiceLocator.instance.logger.warning('FCM init failed', e);
     }),
   );
 
@@ -80,7 +83,7 @@ void main() async {
       try {
         await VoiceService.instance.init();
       } catch (e) {
-        debugPrint('Voice warmup failed: $e');
+        ServiceLocator.instance.logger.warning('Voice warmup failed', e);
       }
     }),
   );
@@ -96,7 +99,7 @@ Future<void> _safeInitFirebase() async {
     );
   } catch (e) {
     // Duplicate app can happen on hot restart/background isolate startup.
-    debugPrint('Firebase init skipped: $e');
+    ServiceLocator.instance.logger.info('Firebase init skipped', e);
   }
 }
 
@@ -189,13 +192,16 @@ class _RoleRouterState extends State<RoleRouter> {
           .ref('users/${widget.uid}')
           .get()
           .timeout(_accountLoadTimeout, onTimeout: () {
-        debugPrint('Account load timed out. Treating as invalid account.');
+        ServiceLocator.instance.logger
+            .warning('Account load timed out. Treating as invalid account.');
         throw TimeoutException('Account load timed out');
       });
       if (!mounted) return;
       if (!accountSnapshot.exists || accountSnapshot.value == null) {
         if (cachedRole != null && !(await _isDatabaseConnected())) {
-          debugPrint('Account record unavailable offline. Using cached role.');
+          ServiceLocator.instance.logger.warning(
+            'Account record unavailable offline. Using cached role.',
+          );
           setState(() {
             _role = cachedRole;
             _loading = false;
@@ -204,7 +210,8 @@ class _RoleRouterState extends State<RoleRouter> {
           return;
         }
 
-        debugPrint('Account record missing. Signing out.');
+        ServiceLocator.instance.logger
+            .warning('Account record missing. Signing out.');
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
         setState(() {
@@ -218,7 +225,8 @@ class _RoleRouterState extends State<RoleRouter> {
       final data = Map<String, dynamic>.from(accountSnapshot.value as Map);
       final role = data['role']?.toString();
       if (!OfflineAccountCache.isValidRole(role)) {
-        debugPrint('Invalid role value for account. Signing out.');
+        ServiceLocator.instance.logger
+            .warning('Invalid role value for account. Signing out.');
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
         setState(() {
@@ -243,7 +251,8 @@ class _RoleRouterState extends State<RoleRouter> {
       if (!mounted) return;
       final connected = await _isDatabaseConnected();
       if (cachedRole != null && (e is TimeoutException || !connected)) {
-        debugPrint('Account load failed; using cached role: $e');
+        ServiceLocator.instance.logger
+            .warning('Account load failed; using cached role: $e');
         setState(() {
           _role = cachedRole;
           _loading = false;
@@ -257,7 +266,9 @@ class _RoleRouterState extends State<RoleRouter> {
         if (!mounted) return;
       }
 
-      debugPrint('Account load failed without an offline fallback: $e');
+      ServiceLocator.instance.logger.warning(
+        'Account load failed without an offline fallback: $e',
+      );
       setState(() {
         _loading = false;
         _role = null;

@@ -8,6 +8,7 @@ import '../models/alert_model.dart';
 import '../services/work_instruction_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
+import '../utils/user_friendly_error.dart';
 import 'alert_detail_screen.dart';
 
 class AlertScanScreen extends StatefulWidget {
@@ -95,7 +96,7 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
       onError: (e) {
         if (!mounted) return;
         setState(() {
-          _historyError = e.toString();
+          _historyError = UserFriendlyError.message(e);
           _historyLoading = false;
         });
       },

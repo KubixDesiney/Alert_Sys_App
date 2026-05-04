@@ -1,18 +1,24 @@
-part of '../../screens/admin_dashboard_screen.dart';
+import 'dart:math' as math;
 
-class _PredictiveFailureCard extends StatefulWidget {
+import 'package:flutter/material.dart';
+
+import '../../services/predictive_models.dart';
+import '../../theme.dart';
+import '../../utils/alert_meta.dart';
+
+class PredictiveFailureCard extends StatefulWidget {
   final PredictiveModel? model;
   final String Function(String) describeType;
-  const _PredictiveFailureCard({
+  const PredictiveFailureCard({
     required this.model,
     required this.describeType,
   });
 
   @override
-  State<_PredictiveFailureCard> createState() => _PredictiveFailureCardState();
+  State<PredictiveFailureCard> createState() => _PredictiveFailureCardState();
 }
 
-class _PredictiveFailureCardState extends State<_PredictiveFailureCard>
+class _PredictiveFailureCardState extends State<PredictiveFailureCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmer;
 
@@ -262,7 +268,8 @@ class _PredictedFailureRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    final tColor = _typeColor(failure.type);
+    final meta = typeMeta(failure.type, context.appTheme);
+    final tColor = meta.color;
     final conf = failure.confidence.clamp(0, 100).toDouble();
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -307,7 +314,7 @@ class _PredictedFailureRow extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(_typeIcon(failure.type), size: 11, color: tColor),
+                    Icon(meta.icon, size: 11, color: tColor),
                     const SizedBox(width: 4),
                     Text(
                       describeType(failure.type),

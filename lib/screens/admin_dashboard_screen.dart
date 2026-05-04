@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,27 +17,20 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../providers/alert_provider.dart';
 import 'alert_detail_screen.dart';
+import 'package:http/http.dart' as http;
 import 'admin_escalation_screen.dart';
 import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
 import '../services/ai_assignment_service.dart';
-import '../services/predictive_intel_service.dart';
-import '../services/predictive_models.dart';
-import '../services/worker_trigger_queue.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
 import 'alerts_tree_tab.dart';
 
-part 'overview_tab.dart';
-part 'supervisors_tab.dart';
-part '../widgets/overview/ai_morning_briefing_hero.dart';
-part '../widgets/overview/overview_critical_alerts_card.dart';
-part '../widgets/overview/overview_insights_strip.dart';
-part '../widgets/overview/overview_predictive_failure_card.dart';
-part '../widgets/overview/overview_predictive_heatmap.dart';
-part '../widgets/overview/overview_stat_card.dart';
+import '../utils/alert_meta.dart';
+import 'overview_tab.dart';
+import 'supervisors_tab.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy = AppColors.navy;
@@ -47,46 +39,12 @@ const _red = AppColors.red;
 const _white = AppColors.white;
 const _border = AppColors.border;
 const _muted = AppColors.muted;
-const _text = AppColors.text;
 const _green = AppColors.green;
-const _greenLt = AppColors.greenLight;
-const _orange = AppColors.orange;
-const _orangeLt = AppColors.orangeLight;
-const _blue = AppColors.blue;
-const _blueLt = AppColors.blueLight;
 
-Color _typeColor(String t) => switch (t) {
-      'qualite' => const Color(0xFFDC2626),
-      'maintenance' => const Color(0xFF2563EB),
-      'defaut_produit' => const Color(0xFF16A34A),
-      'manque_ressource' => const Color(0xFFD97706),
-      _ => const Color(0xFF64748B),
-    };
-
-String _typeLabel(String t) => switch (t) {
-      'qualite' => 'Quality',
-      'maintenance' => 'Maintenance',
-      'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resources Deficiency',
-      _ => t,
-    };
-
-IconData _typeIcon(String t) => switch (t) {
-      'qualite' => Icons.warning_amber_rounded,
-      'maintenance' => Icons.build,
-      'defaut_produit' => Icons.cancel,
-      'manque_ressource' => Icons.inventory_2,
-      _ => Icons.notifications_outlined,
-    };
+// Use centralized alert metadata from `utils/alert_meta.dart`.
 
 String _fmtDate(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-
-String _fmtTs(DateTime d) =>
-    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')} '
-    '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-
-String _fmtMin(int min) => min < 60 ? '${min}m' : '${min ~/ 60}h ${min % 60}m';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SCREEN
@@ -268,8 +226,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Simulated ${_typeLabel(type)} alert on $usine, Conv $convoyeur, Post $poste'),
+                content: Text(
+                'Simulated ${typeMeta(type, context.appTheme).label} alert on $usine, Conv $convoyeur, Post $poste'),
             backgroundColor: _green,
           ),
         );
@@ -305,7 +263,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // ✅ 2. Original alert creation (unchanged)
     final ref = _db.ref('alerts').push();
     final now = DateTime.now();
-    final alertId = ref.key!;
+    final alertId = ref.key;
     await ref.set({
       'type': type,
       'usine': usine,
@@ -329,7 +287,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
     try {
-      await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
+      await http.post(
+        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'type': type,
+          'description': description,
+          'alertId': alertId,
+        }),
+      );
     } catch (e) {
       debugPrint('Manual worker trigger failed: $e');
     }
@@ -367,7 +333,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     for (var alert in _filteredAlerts) {
       csvData.add([
         alert.id,
-        _typeLabel(alert.type),
+        typeMeta(alert.type, context.appTheme).label,
         alert.usine,
         alert.convoyeur,
         alert.poste,
@@ -433,7 +399,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     for (var alert in _filteredAlerts) {
       sheet.appendRow([
         excel.TextCellValue(alert.id),
-        excel.TextCellValue(_typeLabel(alert.type)),
+        excel.TextCellValue(typeMeta(alert.type, context.appTheme).label),
         excel.TextCellValue(alert.usine),
         excel.IntCellValue(alert.convoyeur),
         excel.IntCellValue(alert.poste),
@@ -927,17 +893,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ]),
                 const SizedBox(height: 20),
                 Row(children: [
-                  Expanded(child: _SheetField('First Name', first, 'Ahmed')),
+                  Expanded(child: _sheetField('First Name', first, 'Ahmed')),
                   const SizedBox(width: 10),
-                  Expanded(child: _SheetField('Last Name', last, 'Benali')),
+                  Expanded(child: _sheetField('Last Name', last, 'Benali')),
                 ]),
-                _SheetField('Phone', phone, '+213 XX XX XX XX',
+                _sheetField('Phone', phone, '+213 XX XX XX XX',
                     keyboard: TextInputType.phone),
-                _SheetField('Email', email, 'ahmed@sagem.com',
+                _sheetField('Email', email, 'ahmed@sagem.com',
                     keyboard: TextInputType.emailAddress),
-                _SheetField('Password', pass, 'Min 6 characters',
+                _sheetField('Password', pass, 'Min 6 characters',
                     obscure: true),
-                _SheetLabel('Assigned Plant'),
+                _sheetLabel('Assigned Plant'),
                 Container(
                   margin: const EdgeInsets.only(bottom: 14),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -958,7 +924,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                 ),
-                _SheetLabel('Hire Date'),
+                _sheetLabel('Hire Date'),
                 GestureDetector(
                   onTap: () async {
                     final p = await showDatePicker(
@@ -1076,6 +1042,47 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  /// Helper to build a text field in the create supervisor sheet
+  Widget _sheetField(
+    String label,
+    TextEditingController controller,
+    String hint, {
+    TextInputType keyboard = TextInputType.text,
+    bool obscure = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboard,
+        obscureText: obscure,
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  /// Helper to build a section label in the create supervisor sheet
+  Widget _sheetLabel(String text) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 10),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: _navy,
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmDelete(UserModel sup) async {
     await _auth.deleteSupervisor(sup.id);
     await _loadSupervisors();
@@ -1109,7 +1116,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildContent() {
     switch (_tab) {
       case 0:
-        return _OverviewTab(
+        return AdminOverviewTab(
           total: _total,
           solved: _solved,
           inProgress: _inProgress,
@@ -1172,7 +1179,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           allAlerts: _alerts,
         );
       case 1:
-        return _SupervisorsTab(
+        return AdminSupervisorsTab(
           supervisors: _supervisors,
           alerts: _alerts,
           onAdd: _showCreateSheet,
@@ -1356,10 +1363,9 @@ class _HeaderState extends State<_Header> {
                                     n['message'] ??
                                         'AI cross-factory recommendation',
                                     style: TextStyle(
-                                        color:
-                                            theme.brightness == Brightness.dark
-                                                ? Colors.white
-                                                : Colors.black87),
+                                        color: theme.brightness == Brightness.dark
+                                            ? Colors.white
+                                            : Colors.black87),
                                   ),
                                   subtitle: Column(
                                     crossAxisAlignment:
@@ -1450,14 +1456,12 @@ class _HeaderState extends State<_Header> {
                                 return ListTile(
                                   title: Text(n['message'] ?? 'Help request',
                                       style: TextStyle(
-                                          color: theme.brightness ==
-                                                  Brightness.dark
+                                          color: theme.brightness == Brightness.dark
                                               ? Colors.white
                                               : Colors.black87)),
                                   subtitle: Text('Tap to accept or refuse',
                                       style: TextStyle(
-                                          color: theme.brightness ==
-                                                  Brightness.dark
+                                          color: theme.brightness == Brightness.dark
                                               ? Colors.white70
                                               : Colors.black54)),
                                   trailing: Row(
@@ -1542,17 +1546,14 @@ class _HeaderState extends State<_Header> {
                                 );
                               } else if (n['type'] == 'assistance_request') {
                                 return ListTile(
-                                  title: Text(
-                                      n['message'] ?? 'Assistance request',
+                                  title: Text(n['message'] ?? 'Assistance request',
                                       style: TextStyle(
-                                          color: theme.brightness ==
-                                                  Brightness.dark
+                                          color: theme.brightness == Brightness.dark
                                               ? Colors.white
                                               : Colors.black87)),
                                   subtitle: Text(n['alertDescription'] ?? '',
                                       style: TextStyle(
-                                          color: theme.brightness ==
-                                                  Brightness.dark
+                                          color: theme.brightness == Brightness.dark
                                               ? Colors.white70
                                               : Colors.black54)),
                                   trailing: ElevatedButton(

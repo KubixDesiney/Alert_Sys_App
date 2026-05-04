@@ -1,10 +1,17 @@
-part of '../../screens/admin_dashboard_screen.dart';
+import 'package:flutter/material.dart';
 
-class _CriticalAlertsCard extends StatelessWidget {
+import '../../models/alert_model.dart';
+import '../../services/predictive_intel_service.dart';
+import '../../services/predictive_models.dart';
+import '../../services/service_locator.dart';
+import '../../theme.dart';
+import '../../utils/alert_meta.dart';
+
+class CriticalAlertsCard extends StatelessWidget {
   final List<AlertModel> alerts;
   final void Function(AlertModel) onAlertTap;
   final String Function(AlertModel) describe;
-  const _CriticalAlertsCard({
+  const CriticalAlertsCard({
     required this.alerts,
     required this.onAlertTap,
     required this.describe,
@@ -142,7 +149,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
       _assignError = null;
     });
     try {
-      await AlertService().takeAlert(
+      await ServiceLocator.instance.alertService.takeAlert(
         widget.alert.id,
         s.bestUid!,
         s.bestName ?? 'AI assignment',
@@ -190,7 +197,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                   width: 4,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: _typeColor(alert.type),
+                    color: typeMeta(alert.type, context.appTheme).color,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
@@ -200,7 +207,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${_typeLabel(alert.type)} — ${widget.describe(alert)}',
+                        '${typeMeta(alert.type, context.appTheme).label} — ${widget.describe(alert)}',
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,

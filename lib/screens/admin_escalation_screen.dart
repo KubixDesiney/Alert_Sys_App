@@ -5,57 +5,19 @@ import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
 import '../models/alert_model.dart';
 import '../theme.dart';
+import '../utils/alert_meta.dart';
 
 const _navy = AppColors.navy;
 const _white = AppColors.white;
-const _border = AppColors.border;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
 const _greenLt = AppColors.greenLight;
 const _red = AppColors.red;
 const _redLt = Color(0xFFFEE2E2);
 const _orange = AppColors.orange;
-const _orangeLt = AppColors.orangeLight;
-const _blue = AppColors.blue;
-const _blueLt = AppColors.blueLight;
-const _yellow = Color(0xFFFBBF24);
-const _yellowLt = Color(0xFFFEF3C7);
 const _purple = Color(0xFF9333EA);
 
-// ignore: unused_element
-Color _typeColor(String type) => switch (type) {
-      'qualite' => _red,
-      'maintenance' => _blue,
-      'defaut_produit' => _green,
-      'manque_ressource' => _orange,
-      _ => _muted,
-    };
-
-// ignore: unused_element
-Color _typeBgColor(String type) => switch (type) {
-      'qualite' => _redLt,
-      'maintenance' => _blueLt,
-      'defaut_produit' => _greenLt,
-      'manque_ressource' => _orangeLt,
-      _ => const Color(0xFFF1F5F9),
-    };
-
-String _typeLabel(String type) => switch (type) {
-      'qualite' => 'Quality Issues',
-      'maintenance' => 'Maintenance',
-      'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resource Deficiency',
-      _ => type,
-    };
-
-// ignore: unused_element
-IconData _typeIcon(String type) => switch (type) {
-      'qualite' => Icons.warning_amber_rounded,
-      'maintenance' => Icons.build_circle,
-      'defaut_produit' => Icons.cancel,
-      'manque_ressource' => Icons.inventory_2,
-      _ => Icons.notifications_outlined,
-    };
+// Use centralized alert metadata from `utils/alert_meta.dart`.
 
 class AdminEscalationScreen extends StatefulWidget {
   const AdminEscalationScreen({super.key});
@@ -68,17 +30,11 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _service = CollaborationService();
-  late final Stream<List<dynamic>> _escalatedAlertsCountStream;
-  late final Stream<List<CollaborationRequest>>
-      _pendingCollaborationRequestsStream;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _escalatedAlertsCountStream = _getEscalatedAlertsCount();
-    _pendingCollaborationRequestsStream =
-        _service.getPendingCollaborationRequests();
   }
 
   @override
@@ -157,7 +113,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                               const Text('Escalated Alerts'),
                               const SizedBox(width: 4),
                               StreamBuilder<List<dynamic>>(
-                                stream: _escalatedAlertsCountStream,
+                                stream: _getEscalatedAlertsCount(),
                                 builder: (context, snapshot) {
                                   final count = snapshot.data?.length ?? 0;
                                   if (count == 0)
@@ -192,7 +148,8 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                               const Text('Collaborations'),
                               const SizedBox(width: 4),
                               StreamBuilder<List<CollaborationRequest>>(
-                                stream: _pendingCollaborationRequestsStream,
+                                stream:
+                                    _service.getPendingCollaborationRequests(),
                                 builder: (context, snapshot) {
                                   final count = snapshot.data?.length ?? 0;
                                   if (count == 0)
@@ -335,7 +292,7 @@ class _EscalatedAlertsTab extends StatelessWidget {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${_typeLabel(alert.type)} — ${alert.description}',
+                        '${typeMeta(alert.type, context.appTheme).label} — ${alert.description}',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -376,102 +333,6 @@ class _EscalatedAlertsTab extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-// Updated card for each escalated alert
-class _EscalatedAlertCard extends StatelessWidget {
-  final AlertModel alert;
-  const _EscalatedAlertCard({required this.alert});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: t.scaffold,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: t.red.withOpacity(0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: t.red.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(Icons.warning_amber, color: t.red, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '${_typeLabel(alert.type)} — ${alert.description}',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: t.text,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ]),
-          const SizedBox(height: 10),
-          Row(children: [
-            Icon(Icons.location_on, size: 14, color: t.muted),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                '${alert.usine} • Line ${alert.convoyeur} • Post ${alert.poste}',
-                style: TextStyle(fontSize: 12, color: t.muted),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          Row(children: [
-            Icon(Icons.access_time, size: 14, color: t.muted),
-            const SizedBox(width: 6),
-            Text(
-              'Escalated: ${_formatDateTime(alert.escalatedAt ?? alert.timestamp)}',
-              style: TextStyle(fontSize: 12, color: t.muted),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          if (alert.status == 'disponible')
-            Row(children: [
-              Icon(Icons.warning_amber_rounded, size: 14, color: t.red),
-              const SizedBox(width: 6),
-              Text(
-                'Unclaimed alert exceeded threshold',
-                style: TextStyle(
-                    color: t.red, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ])
-          else if (alert.status == 'en_cours')
-            Row(children: [
-              Icon(Icons.hourglass_bottom, size: 14, color: t.orange),
-              const SizedBox(width: 6),
-              Text(
-                'Claimed but not resolved in time',
-                style: TextStyle(
-                    color: t.orange, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ]),
-        ],
-      ),
-    );
-  }
-
-  String _formatDateTime(DateTime dt) {
-    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }
 
@@ -883,92 +744,34 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
     final pmName =
         FirebaseAuth.instance.currentUser?.email?.split('@').first ?? 'PM';
 
-    // Fetch alert data to get its usine
+    // Build approval plan and delegate dialogs/decisions to the service.
+    final plan = await service.buildApprovalPlanForRequest(request);
+
     final alertSnapshot =
         await FirebaseDatabase.instance.ref('alerts/${request.alertId}').get();
-    if (!alertSnapshot.exists) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Alert not found'), backgroundColor: _red));
-      }
-      return;
-    }
-    final alertData = Map<String, dynamic>.from(alertSnapshot.value as Map);
-    final alertUsine = alertData['usine'] as String? ?? '';
+    final alertUsine = alertSnapshot.exists
+        ? (alertSnapshot.child('usine').value as String? ?? '')
+        : '';
 
-    // 1. Cross-factory detection — collect {name, fromUsine} for each cross-factory supervisor
-    final List<Map<String, String>> crossFactoryTransfers = [];
-    for (int i = 0; i < request.targetSupervisorIds.length; i++) {
-      final supId = request.targetSupervisorIds[i];
-      final supName = request.targetSupervisorNames[i];
-      final supSnapshot =
-          await FirebaseDatabase.instance.ref('users/$supId').get();
-      if (supSnapshot.exists) {
-        final supData = Map<String, dynamic>.from(supSnapshot.value as Map);
-        final supUsine = supData['usine'] as String? ?? '';
-        if (supUsine.isNotEmpty && supUsine != alertUsine) {
-          crossFactoryTransfers.add({'name': supName, 'fromUsine': supUsine});
-        }
-      }
-    }
+    final decision = await service.requestApprovalDecision(
+      context: context,
+      plan: plan,
+      targetUsine: alertUsine,
+    );
+    if (decision == null) return;
 
-    // 2. Find existing CLAIMED (en_cours) alerts for target supervisors (as claimant only)
-    final List<Map<String, String>> existingClaimedAlerts = [];
-    for (final supId in request.targetSupervisorIds) {
-      final snap = await FirebaseDatabase.instance
-          .ref('alerts')
-          .orderByChild('superviseurId')
-          .equalTo(supId)
-          .once();
-      if (snap.snapshot.exists) {
-        final alertsMap = Map<String, dynamic>.from(snap.snapshot.value as Map);
-        for (final entry in alertsMap.entries) {
-          if (entry.key == request.alertId) continue;
-          final a = Map<String, dynamic>.from(entry.value);
-          if (a['status'] == 'en_cours') {
-            existingClaimedAlerts.add({
-              'alertId': entry.key,
-              'usine': a['usine'] as String? ?? 'Unknown',
-            });
-          }
-        }
-      }
-    }
-
-    bool transferConfirmed = false;
-    bool cancelConfirmed = false;
-
-    // --- Cross-factory dialog ---
-    if (crossFactoryTransfers.isNotEmpty) {
-      if (!context.mounted) return;
-      final confirmed = await _showCrossFactoryDialog(
-          context, crossFactoryTransfers, alertUsine);
-      if (confirmed != true) return;
-      transferConfirmed = true;
-    }
-
-    // --- Cancel original alert dialog ---
-    if (existingClaimedAlerts.isNotEmpty) {
-      if (!context.mounted) return;
-      final confirmed =
-          await _showCancelOriginalDialog(context, existingClaimedAlerts);
-      if (confirmed != true) return;
-      cancelConfirmed = true;
-    }
-
-    // --- Perform approval ---
-    if (!context.mounted) return;
     try {
       await service.approveCollaborationRequestWithDetails(
         requestId: request.id,
         approverId: currentUserId,
         approverName: pmName,
         isPMApproval: true,
-        confirmTransfer: transferConfirmed,
-        confirmCancelOriginal: cancelConfirmed,
-        cancelExistingAlertIds: cancelConfirmed
-            ? existingClaimedAlerts.map((e) => e['alertId']!).toList()
-            : null,
+        confirmTransfer: decision.confirmTransfer,
+        confirmCancelOriginal: decision.confirmCancelOriginal,
+        cancelExistingAlertIds:
+            decision.cancelExistingAlertIds.isNotEmpty
+                ? decision.cancelExistingAlertIds
+                : null,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -983,264 +786,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
     }
   }
 
-  Future<bool?> _showCrossFactoryDialog(
-    BuildContext context,
-    List<Map<String, String>> transfers,
-    String toUsine,
-  ) {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                      color: _orangeLt, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.assignment_outlined,
-                      color: _orange, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text('Cross-Factory Transfer Required',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: _navy)),
-                ),
-              ]),
-              const SizedBox(height: 8),
-              const Text(
-                'Approving this collaboration will require supervisor(s) to be transferred to work on an alert in a different factory.',
-                style: TextStyle(fontSize: 13, color: _muted),
-              ),
-              const SizedBox(height: 16),
-              ...transfers.map((t) => Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _orangeLt,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _orange.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.warning_amber_rounded,
-                              color: _orange, size: 16),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(t['name']!,
-                                      style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: _navy)),
-                                  const SizedBox(height: 2),
-                                  Text.rich(TextSpan(
-                                    style: const TextStyle(
-                                        fontSize: 12, color: _navy),
-                                    children: [
-                                      const TextSpan(
-                                          text: 'Will be transferred from '),
-                                      TextSpan(
-                                          text: t['fromUsine']!,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold)),
-                                      const TextSpan(text: ' to '),
-                                      TextSpan(
-                                          text: toUsine,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold)),
-                                    ],
-                                  )),
-                                ]),
-                          ),
-                        ]),
-                  )),
-              const SizedBox(height: 12),
-              const Text('Do you confirm this transfer?',
-                  style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.bold, color: _navy)),
-              const SizedBox(height: 20),
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _navy,
-                      side: BorderSide(color: Colors.grey.shade300),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    icon: const Icon(Icons.check_circle, size: 16),
-                    label: const Text('Confirm Transfer & Approve',
-                        style: TextStyle(fontSize: 12)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-              ]),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<bool?> _showCancelOriginalDialog(
-    BuildContext context,
-    List<Map<String, String>> existingAlerts,
-  ) {
-    return showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                      color: _orangeLt, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.warning_amber_rounded,
-                      color: _orange, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text('Cancel Original Alert?',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: _navy)),
-                ),
-              ]),
-              const SizedBox(height: 8),
-              const Text(
-                'Approving this collaboration will cancel the original alert.',
-                style: TextStyle(fontSize: 13, color: _muted),
-              ),
-              const SizedBox(height: 16),
-              ...existingAlerts.map((e) {
-                final alertId = e['alertId']!;
-                final shortId =
-                    'Alert #${alertId.length >= 6 ? alertId.substring(0, 6) : alertId}';
-                final usine = e['usine']!;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _orangeLt,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _orange.withValues(alpha: 0.4)),
-                  ),
-                  child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.warning_amber_rounded,
-                            color: _orange, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(shortId,
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold,
-                                        color: _navy)),
-                                const SizedBox(height: 2),
-                                Text.rich(TextSpan(
-                                  style: const TextStyle(
-                                      fontSize: 12, color: _navy),
-                                  children: [
-                                    const TextSpan(text: 'Factory: '),
-                                    TextSpan(
-                                        text: usine,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold)),
-                                  ],
-                                )),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'The original alert will be canceled and replaced by this collaboration.',
-                                  style: TextStyle(fontSize: 11, color: _muted),
-                                ),
-                              ]),
-                        ),
-                      ]),
-                );
-              }),
-              const SizedBox(height: 12),
-              const Text(
-                'Do you confirm canceling the original alert and approving this collaboration?',
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.bold, color: _navy),
-              ),
-              const SizedBox(height: 20),
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _navy,
-                      side: BorderSide(color: Colors.grey.shade300),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    icon: const Icon(Icons.check_circle, size: 16),
-                    label: const Text('Confirm & Approve'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
-                    ),
-                  ),
-                ),
-              ]),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // Dialog methods moved to CollaborationService
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();

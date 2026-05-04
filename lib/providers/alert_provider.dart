@@ -1,182 +1,104 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
 import '../models/alert_model.dart';
-import '../services/alert_service.dart';
-import '../services/ai_service.dart';
-import '../services/worker_trigger_queue.dart';
-import 'package:rxdart/rxdart.dart';
+import '../services/alert_actions_service.dart';
+import '../services/alert_stream_service.dart';
+import '../services/notification_service.dart';
+import '../services/service_locator.dart';
 
 class AlertProvider extends ChangeNotifier {
-  final AlertService _service = AlertService();
+  AlertProvider({
+    AlertStreamService? alertStreamService,
+    AlertActionsService? alertActionsService,
+    NotificationService? notificationService,
+  })  : _alertStreamService =
+            alertStreamService ?? ServiceLocator.instance.alertStreamService,
+        _alertActionsService =
+            alertActionsService ?? ServiceLocator.instance.alertActionsService,
+        _notificationService =
+            notificationService ?? ServiceLocator.instance.notificationService;
+
+  final AlertStreamService _alertStreamService;
+  final AlertActionsService _alertActionsService;
+  final NotificationService _notificationService;
+
+  final int _pageSize = 100;
+  final Set<String> _loadedOlderAlertIds = {};
   List<AlertModel> _alerts = [];
   Timer? _clockTimer;
   DateTime _currentTime = DateTime.now();
   bool isLoading = false;
-
-  Set<String> _previousAlertIds = {};
-  final Map<String, DateTime> _lastProcessed = {}; // Deduplication map
   bool _initialized = false;
-  StreamSubscription? _alertsSubscription;
+  bool _isLoadingOlder = false;
 
-  // ----------------------------------------------------------------------
-  // Initialization
-  // ----------------------------------------------------------------------
   void initForProductionManager() {
-    if (_initialized) return;
+    if (_initialized) {
+      return;
+    }
     _initialized = true;
-    isLoading = true;
-    notifyListeners();
-    _alertsSubscription?.cancel();
-    bool firstLoad = true;
-    _alertsSubscription = _service.getAllAlerts().listen((alerts) {
-      if (firstLoad) {
-        _previousAlertIds = alerts.map((a) => a.id).toSet();
-        firstLoad = false;
-      } else {
-        _checkNewAlerts(alerts);
-      }
-      _alerts = alerts;
-      isLoading = false;
-      notifyListeners();
-    });
+    _alertStreamService.initForProductionManager(
+      pageSize: _pageSize,
+      onLoading: _markLoading,
+      onAlerts: _setAlerts,
+    );
     _startClock();
   }
 
   void init(String usine) {
-    _alertsSubscription?.cancel();
+    _initialized = true;
     _alerts = [];
-    _previousAlertIds.clear();
-    _lastProcessed.clear();
-    isLoading = true;
-    notifyListeners();
-
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    if (currentUserId == null) {
-      // Fallback to just usine stream
-      bool firstLoad = true;
-      _alertsSubscription = _service.getAlertsForUsine(usine).listen((alerts) {
-        if (firstLoad) {
-          _previousAlertIds = alerts.map((a) => a.id).toSet();
-          firstLoad = false;
-        } else {
-          _checkNewAlerts(alerts);
-        }
-        _alerts = alerts;
-        isLoading = false;
-        notifyListeners();
-      });
-      _startClock();
-      return;
-    }
-
-    final usineStream = _service.getAlertsForUsine(usine);
-    final assistantStream = _service.getAlertsWhereAssistant(currentUserId);
-    // Alerts where this supervisor is the primary claimant (catches AI
-    // cross-factory assignments that wouldn't appear in the usine stream).
-    final supervisorStream = _service.getAlertsWhereSupervisor(currentUserId);
-
-    bool firstLoad = true;
-    bool fallbackActivated = false;
-
-    void applyAlerts(List<AlertModel> alerts) {
-      if (firstLoad) {
-        _previousAlertIds = alerts.map((a) => a.id).toSet();
-        firstLoad = false;
-      } else {
-        _checkNewAlerts(alerts);
-      }
-      _alerts = alerts;
-      isLoading = false;
-      notifyListeners();
-    }
-
-    void activateFallback(Object error, [StackTrace? stackTrace]) {
-      if (fallbackActivated) return;
-      fallbackActivated = true;
-      debugPrint('AlertProvider combineLatest fallback activated: $error');
-      if (stackTrace != null) debugPrint(stackTrace.toString());
-      _alertsSubscription?.cancel();
-      _alertsSubscription = _service.getAlertsForUsine(usine).listen(
-        applyAlerts,
-        onError: (fallbackError, fallbackStack) {
-          debugPrint('AlertProvider fallback stream error: $fallbackError');
-        },
-      );
-    }
-
-    _alertsSubscription = Rx.combineLatest3<List<AlertModel>, List<AlertModel>,
-        List<AlertModel>, List<AlertModel>>(
-      usineStream,
-      assistantStream,
-      supervisorStream,
-      (usineAlerts, assistantAlerts, supervisorAlerts) {
-        final combined = [
-          ...usineAlerts,
-          ...assistantAlerts,
-          ...supervisorAlerts
-        ];
-        final seen = <String>{};
-        return combined.where((a) => seen.add(a.id)).toList();
-      },
-    ).listen(
-      applyAlerts,
-      onError: activateFallback,
+    _loadedOlderAlertIds.clear();
+    _alertStreamService.initForSupervisor(
+      usine: usine,
+      currentUserId: FirebaseAuth.instance.currentUser?.uid,
+      pageSize: _pageSize,
+      onLoading: _markLoading,
+      onAlerts: _setAlerts,
     );
     _startClock();
+  }
+
+  Future<void> loadOlderAlerts() async {
+    if (_isLoadingOlder) {
+      return;
+    }
+    _isLoadingOlder = true;
+    try {
+      final older = await _alertStreamService.loadOlderAlerts(_alerts);
+      if (older.isEmpty) {
+        return;
+      }
+      final combined = [..._alerts];
+      for (final alert in older) {
+        if (_loadedOlderAlertIds.add(alert.id) &&
+            combined.every((existing) => existing.id != alert.id)) {
+          combined.add(alert);
+        }
+      }
+      combined.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      _alerts = combined;
+      notifyListeners();
+    } finally {
+      _isLoadingOlder = false;
+    }
   }
 
   void reset() {
     _clockTimer?.cancel();
     _clockTimer = null;
-    _alertsSubscription?.cancel();
-    _alertsSubscription = null;
+    _alertStreamService.reset();
     _alerts = [];
     isLoading = false;
-    _previousAlertIds.clear();
-    _lastProcessed.clear();
     _initialized = false;
+    _loadedOlderAlertIds.clear();
     notifyListeners();
   }
 
-  // ----------------------------------------------------------------------
-  // New alert detection with debug prints
-  // ----------------------------------------------------------------------
-  void _checkNewAlerts(List<AlertModel> newAlerts) {
-    final newIds = newAlerts.map((a) => a.id).toSet();
-    final addedIds = newIds.difference(_previousAlertIds);
-    final now = DateTime.now();
-
-    for (var id in addedIds) {
-      if (_lastProcessed.containsKey(id)) {
-        final last = _lastProcessed[id]!;
-        if (now.difference(last) < const Duration(seconds: 2)) {
-          print('⏩ Skipping duplicate alert $id (already processed)');
-          continue;
-        }
-      }
-      _lastProcessed[id] = now;
-      final alert = newAlerts.firstWhere((a) => a.id == id);
-
-      print(
-          '📢 New alert detected: ${alert.id} (${alert.type}) – creating in-app notifications');
-
-      // Create in-app Firebase notifications (OneSignal pushes handled by Worker)
-      _service.sendNewAlertNotification(
-          alert.id, alert.type, alert.description);
-    }
-    _previousAlertIds = newIds;
-  }
-
-  Future<List<String>> getPastResolutionsForType(String type, int limit) async {
-    final similar = _alerts
-        .where((a) =>
-            a.type == type &&
-            a.status == 'validee' &&
-            a.resolutionReason != null)
-        .toList()
-      ..sort((a, b) => b.resolvedAt!.compareTo(a.resolvedAt!));
-    return similar.take(limit).map((a) => a.resolutionReason!).toList();
+  Future<List<String>> getPastResolutionsForType(String type, int limit) {
+    return _alertActionsService.getPastResolutionsForType(_alerts, type, limit);
   }
 
   Future<List<String>> getPastResolutionsForLocation({
@@ -185,37 +107,30 @@ class AlertProvider extends ChangeNotifier {
     required int convoyeur,
     required int poste,
     int limit = 3,
-  }) async {
-    final similar = _alerts
-        .where((a) =>
-            a.type == type &&
-            a.status == 'validee' &&
-            a.resolutionReason != null &&
-            a.usine == usine &&
-            a.convoyeur == convoyeur &&
-            a.poste == poste)
-        .toList()
-      ..sort((a, b) => b.resolvedAt!.compareTo(a.resolvedAt!));
-    return similar.take(limit).map((a) => a.resolutionReason!).toList();
+  }) {
+    return _alertActionsService.getPastResolutionsForLocation(
+      alerts: _alerts,
+      type: type,
+      usine: usine,
+      convoyeur: convoyeur,
+      poste: poste,
+      limit: limit,
+    );
   }
 
-  Future<String> getAiSuggestionForAlert(AlertModel alert) async {
-    final pastResolutions = await getPastResolutionsForLocation(
-      type: alert.type,
-      usine: alert.usine,
-      convoyeur: alert.convoyeur,
-      poste: alert.poste,
-      limit: 3,
-    );
-    final aiService = AIService();
-    return await aiService.getResolutionSuggestion(
-      alertType: alert.type,
-      alertDescription: alert.description,
-      usine: alert.usine,
-      convoyeur: alert.convoyeur,
-      poste: alert.poste,
-      pastResolutions: pastResolutions,
-    );
+  Future<String> getAiSuggestionForAlert(AlertModel alert) {
+    return _alertActionsService.getAiSuggestionForAlert(alert, _alerts);
+  }
+
+  void _markLoading() {
+    isLoading = true;
+    notifyListeners();
+  }
+
+  void _setAlerts(List<AlertModel> alerts) {
+    _alerts = alerts;
+    isLoading = false;
+    notifyListeners();
   }
 
   void _startClock() {
@@ -229,13 +144,10 @@ class AlertProvider extends ChangeNotifier {
   @override
   void dispose() {
     _clockTimer?.cancel();
-    _alertsSubscription?.cancel();
+    _alertStreamService.reset();
     super.dispose();
   }
 
-  // ----------------------------------------------------------------------
-  // Getters
-  // ----------------------------------------------------------------------
   List<AlertModel> get allAlerts => _alerts;
   List<AlertModel> get availableAlerts =>
       _alerts.where((a) => a.status == 'disponible').toList();
@@ -254,18 +166,15 @@ class AlertProvider extends ChangeNotifier {
       .where((a) => a.status == 'validee' && a.superviseurId == superviseurId)
       .toList();
 
-  /// Alerts where this supervisor was the assistant (not the main claimant).
   List<AlertModel> assistedAlerts(String superviseurId) {
     return _alerts.where((a) {
-      if (a.status != 'validee') return false;
-      // Old single assistant check
-      if (a.assistantId == superviseurId) return true;
-      // New collaborators list check
-      if (a.collaborators != null &&
-          a.collaborators!.any((c) => c['id'] == superviseurId)) {
+      if (a.status != 'validee') {
+        return false;
+      }
+      if (a.assistantId == superviseurId) {
         return true;
       }
-      return false;
+      return a.collaborators?.any((c) => c['id'] == superviseurId) ?? false;
     }).toList();
   }
 
@@ -276,186 +185,109 @@ class AlertProvider extends ChangeNotifier {
       FirebaseAuth.instance.currentUser?.email?.split('@').first ??
       'Supervisor';
 
-  // ----------------------------------------------------------------------
-  // Actions
-  // ----------------------------------------------------------------------
   Future<void> takeAlert(
-      String alertId, String superviseurId, String superviseurName) async {
-    // Check if this supervisor already has an in-progress alert
-    final existingInProgress = _alerts
-        .any((a) => a.status == 'en_cours' && a.superviseurId == superviseurId);
-    if (existingInProgress) {
-      // Optionally throw an exception or show a snackbar; here we'll just return an error state
-      throw Exception(
-          'You already have an alert in progress. Please resolve it before claiming a new one.');
-    }
-    _updateLocal(
-        alertId,
-        (a) => a.copyWith(
-              status: 'en_cours',
-              superviseurId: superviseurId,
-              superviseurName: superviseurName,
-              takenAtTimestamp: DateTime.now(),
-            ));
-    await _service.takeAlert(alertId, superviseurId, superviseurName);
-  }
-
-  Future<void> returnToQueue(String alertId, {String? reason}) async {
-    final alert = _alerts.firstWhere((a) => a.id == alertId);
-    final supervisorName = alert.superviseurName ?? 'A supervisor';
-    _updateLocal(
-        alertId,
-        (a) => a.copyWith(
-              status: 'disponible',
-              clearSuperviseur: true,
-              clearTakenAt: true,
-            ));
-    await _service.returnToQueue(alertId, reason: reason);
-    await _service.notifyAdminsAboutSuspend(alertId, supervisorName, reason);
-  }
-
-  Future<void> resolveAlert(String alertId, String reason) async {
-    final alert = _alerts.firstWhere((a) => a.id == alertId);
-    final elapsed = alert.takenAtTimestamp != null
-        ? DateTime.now().difference(alert.takenAtTimestamp!).inMinutes
-        : 0;
-    _updateLocal(
-        alertId,
-        (a) => a.copyWith(
-              status: 'validee',
-              elapsedTime: elapsed,
-              resolutionReason: reason,
-              resolvedAt: DateTime.now(),
-            ));
-
-    // If an assistant helped, credit them with "Assisted" label
-    await _service.resolveAlert(
-      alertId,
-      reason,
-      elapsed,
-      assistingSupervisorId: alert.superviseurId,
-      assistingSupervisorName: alert.superviseurName,
+    String alertId,
+    String superviseurId,
+    String superviseurName,
+  ) {
+    return _alertActionsService.takeAlert(
+      alerts: _alerts,
+      alertId: alertId,
+      superviseurId: superviseurId,
+      superviseurName: superviseurName,
+      updateLocal: _updateLocal,
     );
-    // Supervisor is now free — trigger AI to assign the next waiting alert.
-    await WorkerTriggerQueue.instance.enqueueAiRetry();
   }
 
-  Future<void> addComment(String alertId, String comment) async {
-    final newComment =
-        '[${_formatTime(DateTime.now())}] ${currentSuperviseurName}: $comment';
-    final alert = _alerts.firstWhere((a) => a.id == alertId);
-    final updatedComments = [...alert.comments, newComment];
-    _updateLocal(alertId, (a) => a.copyWith(comments: updatedComments));
-    await _service.addComment(alertId, newComment);
+  Future<void> returnToQueue(String alertId, {String? reason}) {
+    return _alertActionsService.returnToQueue(
+      alerts: _alerts,
+      alertId: alertId,
+      reason: reason,
+      updateLocal: _updateLocal,
+    );
   }
 
-  Future<void> toggleCritical(String alertId, bool isCritical,
-      {String? note}) async {
-    _updateLocal(
-        alertId, (a) => a.copyWith(isCritical: isCritical, criticalNote: note));
-    await _service.toggleCritical(alertId, isCritical);
-    if (note != null) {
-      await _service.setCriticalNote(
-          alertId, note); // you need to add this method in AlertService
-    }
-    await _notifyAllUsers(alertId, isCritical);
+  Future<void> resolveAlert(String alertId, String reason) {
+    return _alertActionsService.resolveAlert(
+      alerts: _alerts,
+      alertId: alertId,
+      reason: reason,
+      updateLocal: _updateLocal,
+    );
   }
 
-  Future<void> requestAssistanceForAlert(String alertId) async {
-    final alert = _alerts.firstWhere((a) => a.id == alertId);
-    if (alert.superviseurId == null) return;
-    final users = await _service.getAllUsers();
-    final currentUserId = FirebaseAuth.instance.currentUser!.uid;
-    for (var entry in users.entries) {
-      final userId = entry.key;
-      if (userId == currentUserId) continue;
-      final userData = entry.value as Map;
-      final role = userData['role'] ?? 'supervisor';
-      if (role == 'supervisor' || role == 'admin') {
-        final notification = {
-          'type': 'assistance_request',
-          'alertId': alertId,
-          'alertType': alert.type,
-          'alertDescription': alert.description,
-          'requesterName': currentSuperviseurName,
-          'message':
-              '🆘 $currentSuperviseurName needs assistance on alert: ${alert.type}',
-          'timestamp': DateTime.now().toIso8601String(),
-          'status': 'pending',
-        };
-        await _service.sendHelpRequest(userId, notification);
-      }
-    }
-    // Trigger FCM fan-out so recipients get a push immediately.
-    await WorkerTriggerQueue.instance.enqueueNotify();
+  Future<void> addComment(String alertId, String comment) {
+    return _alertActionsService.addComment(
+      alerts: _alerts,
+      alertId: alertId,
+      comment: comment,
+      currentSuperviseurName: currentSuperviseurName,
+      updateLocal: _updateLocal,
+    );
   }
 
-  Future<void> acceptAssistance(String alertId) async {
-    final currentId = FirebaseAuth.instance.currentUser!.uid;
-    final currentName =
-        FirebaseAuth.instance.currentUser!.email!.split('@').first;
-    await _service.acceptHelpRequest(alertId, '', currentId, currentName);
-    _updateLocal(
-        alertId,
-        (a) => a.copyWith(
-              assistantId: currentId,
-              assistantName: currentName,
-              helpRequestId: null,
-            ));
+  Future<void> toggleCritical(String alertId, bool isCritical, {String? note}) async {
+    await _alertActionsService.toggleCritical(
+      alertId: alertId,
+      isCritical: isCritical,
+      note: note,
+      updateLocal: _updateLocal,
+    );
+    await _notificationService.notifyAllUsers(
+      alerts: _alerts,
+      alertId: alertId,
+      isCritical: isCritical,
+    );
   }
 
-  Future<void> acceptHelp(String alertId, String requestId) async {
-    final currentId = FirebaseAuth.instance.currentUser!.uid;
-    final currentName =
-        FirebaseAuth.instance.currentUser!.email!.split('@').first;
-    await _service.acceptHelpRequest(
-        alertId, requestId, currentId, currentName);
-    _updateLocal(
-        alertId,
-        (a) => a.copyWith(
-              assistantId: currentId,
-              assistantName: currentName,
-              helpRequestId: null,
-            ));
+  Future<void> requestAssistanceForAlert(String alertId) {
+    return _notificationService.requestAssistanceForAlert(
+      alerts: _alerts,
+      alertId: alertId,
+      currentUserId: currentSuperviseurId,
+      currentSuperviseurName: currentSuperviseurName,
+    );
   }
 
-  Future<void> refuseHelp(String alertId, String requestId) async {
-    await _service.refuseHelpRequest(alertId, requestId);
-    _updateLocal(alertId, (a) => a.copyWith(helpRequestId: null));
+  Future<void> acceptAssistance(String alertId) {
+    return _notificationService.acceptAssistance(
+      alertId: alertId,
+      currentId: currentSuperviseurId,
+      currentName: currentSuperviseurName,
+      updateLocal: _updateLocal,
+    );
+  }
+
+  Future<void> acceptHelp(String alertId, String requestId) {
+    return _notificationService.acceptHelp(
+      alertId: alertId,
+      requestId: requestId,
+      currentId: currentSuperviseurId,
+      currentName: currentSuperviseurName,
+      updateLocal: _updateLocal,
+    );
+  }
+
+  Future<void> refuseHelp(String alertId, String requestId) {
+    return _notificationService.refuseHelp(
+      alertId: alertId,
+      requestId: requestId,
+      updateLocal: _updateLocal,
+    );
   }
 
   Future<void> requestHelp(
-      String alertId, String requesterId, String requesterName) async {
-    final alert = _alerts.firstWhere((a) => a.id == alertId);
-    if (alert.superviseurId == null) return;
-    await _service.createHelpRequest(
-        alertId, requesterId, requesterName, alert.superviseurId!);
-  }
-
-  Future<void> _notifyAllUsers(String alertId, bool isCritical,
-      [String? customMessage]) async {
-    final alert = _alerts.firstWhere((a) => a.id == alertId);
-    final users = await _service.getAllUsers();
-    for (var entry in users.entries) {
-      final userId = entry.key;
-      final userData = entry.value as Map;
-      if (userData['role'] == 'admin' || userData['role'] == 'supervisor') {
-        final message = customMessage ??
-            (isCritical
-                ? 'Alert marked as CRITICAL: ${alert.type}'
-                : 'Alert critical flag removed: ${alert.type}');
-        final notification = {
-          'type': 'alert_critical_update',
-          'alertId': alertId,
-          'alertType': alert.type,
-          'alertDescription': alert.description,
-          'message': message,
-          'timestamp': DateTime.now().toIso8601String(),
-          'status': 'pending',
-        };
-        await _service.sendHelpRequest(userId, notification);
-      }
-    }
+    String alertId,
+    String requesterId,
+    String requesterName,
+  ) {
+    return _notificationService.requestHelp(
+      alerts: _alerts,
+      alertId: alertId,
+      requesterId: requesterId,
+      requesterName: requesterName,
+    );
   }
 
   void _updateLocal(String id, AlertModel Function(AlertModel) update) {
@@ -463,11 +295,10 @@ class AlertProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _formatTime(DateTime dt) =>
-      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-
   String getElapsedTime(AlertModel alert) {
-    if (alert.takenAtTimestamp == null) return '00:00:00';
+    if (alert.takenAtTimestamp == null) {
+      return '00:00:00';
+    }
     final diff = _currentTime.difference(alert.takenAtTimestamp!);
     final h = diff.inHours.toString().padLeft(2, '0');
     final m = (diff.inMinutes % 60).toString().padLeft(2, '0');
@@ -476,8 +307,12 @@ class AlertProvider extends ChangeNotifier {
   }
 
   String formatElapsedTime(int? minutes) {
-    if (minutes == null || minutes == 0) return '0 min';
-    if (minutes < 60) return '$minutes min';
+    if (minutes == null || minutes == 0) {
+      return '0 min';
+    }
+    if (minutes < 60) {
+      return '$minutes min';
+    }
     final h = minutes ~/ 60;
     final m = minutes % 60;
     return m > 0 ? '${h}h ${m}min' : '${h}h';

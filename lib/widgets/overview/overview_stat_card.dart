@@ -1,6 +1,8 @@
-part of '../../screens/admin_dashboard_screen.dart';
+import 'package:flutter/material.dart';
 
-class _EliteStatCard extends StatelessWidget {
+import '../../theme.dart';
+
+class EliteStatCard extends StatelessWidget {
   final String label;
   final int value;
   final IconData icon;
@@ -13,7 +15,7 @@ class _EliteStatCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onCriticalTap;
 
-  const _EliteStatCard({
+  const EliteStatCard({
     required this.label,
     required this.value,
     required this.icon,

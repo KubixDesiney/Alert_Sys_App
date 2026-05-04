@@ -22,6 +22,7 @@ import '../services/hierarchy_service.dart';
 import '../theme.dart';
 import '../widgets/locator_painter.dart';
 import 'alert_detail_screen.dart';
+import '../utils/alert_meta.dart';
 
 class LocatorScreen extends StatefulWidget {
   final String supervisorId;
@@ -895,7 +896,7 @@ class _SidePanel extends StatelessWidget {
                               fontSize: 18,
                               fontWeight: FontWeight.w900,
                             )),
-                        Text(_typeLabel(claim!.type),
+                        Text(typeMeta(claim!.type, context.appTheme).label,
                             style: TextStyle(color: t.muted, fontSize: 11)),
                       ],
                     ),
@@ -1050,7 +1051,7 @@ class _MobileRoutePanel extends StatelessWidget {
         ? 'Claim an alert to unlock route focus.'
         : missingNode
             ? 'C${claim.convoyeur}S${claim.poste} is not on the map.'
-            : '$startLabel -> ${_typeLabel(claim.type)}';
+            : '$startLabel -> ${typeMeta(claim.type, context.appTheme).label}';
 
     final card = Container(
       height: 76,
@@ -1336,10 +1337,4 @@ IconData _statusIcon(LocatorNodeStatus s) => switch (s) {
       LocatorNodeStatus.idle => Icons.radio_button_unchecked_rounded,
     };
 
-String _typeLabel(String type) => switch (type) {
-      'qualite' => 'Quality',
-      'maintenance' => 'Maintenance',
-      'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resource Deficiency',
-      _ => type,
-    };
+// Use centralized alert metadata from `utils/alert_meta.dart`.
