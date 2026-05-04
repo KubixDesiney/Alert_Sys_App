@@ -11,6 +11,7 @@ import '../services/auth_service.dart';
 import '../services/offline_account_cache.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
+import '../utils/alert_claim_error.dart';
 import '../widgets/dashboard_common.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';
@@ -1594,7 +1595,7 @@ class _ReceivedView extends StatelessWidget {
                         });
                       } catch (e) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(e.toString()),
+                            content: Text(formatAlertClaimError(e)),
                             backgroundColor: Colors.red));
                       }
                     },

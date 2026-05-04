@@ -830,21 +830,6 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       length: 2,
       child: Scaffold(
         backgroundColor: t.scaffold,
-        floatingActionButton: Builder(builder: (context) {
-          final tab = DefaultTabController.of(context);
-          return AnimatedBuilder(
-            animation: tab,
-            builder: (context, _) {
-              if (tab.index != 0) return const SizedBox.shrink();
-              return FloatingActionButton(
-                onPressed: _showAddFactoryDialog,
-                backgroundColor: _navy,
-                tooltip: 'Add Factory',
-                child: const Icon(Icons.add_business),
-              );
-            },
-          );
-        }),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

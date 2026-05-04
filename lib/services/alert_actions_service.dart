@@ -33,6 +33,7 @@ class AlertActionsService {
       );
     }
 
+    await _alertService.takeAlert(alertId, superviseurId, superviseurName);
     updateLocal(
       alertId,
       (a) => a.copyWith(
@@ -42,7 +43,6 @@ class AlertActionsService {
         takenAtTimestamp: DateTime.now(),
       ),
     );
-    await _alertService.takeAlert(alertId, superviseurId, superviseurName);
   }
 
   Future<void> returnToQueue({

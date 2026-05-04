@@ -9,6 +9,7 @@ import '../services/collaboration_service.dart';
 import '../services/ai_assignment_service.dart';
 import '../services/ai_service.dart';
 import '../theme.dart';
+import '../utils/alert_claim_error.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
@@ -173,7 +174,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Action failed: $e')),
+        SnackBar(content: Text(formatAlertClaimError(e))),
       );
     } finally {
       if (mounted) {
