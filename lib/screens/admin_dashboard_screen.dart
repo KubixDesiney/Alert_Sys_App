@@ -1097,19 +1097,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
           child: Column(children: [
-        _Header(activeSups: _activeSups, onLogout: _logout),
+        _Header(activeSups: _activeSups, onLogout: _logout, onSimulateAlert: _showSimulateDialog),
         _PillTabBar(tab: _tab, onSelect: (i) => setState(() => _tab = i)),
         Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _navy))
                 : _buildContent()),
       ])),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showSimulateDialog,
-        backgroundColor: _navy,
-        tooltip: 'Simulate Alert',
-        child: const Icon(Icons.add_alert),
-      ),
     );
   }
 
@@ -1204,7 +1198,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 class _Header extends StatefulWidget {
   final int activeSups;
   final VoidCallback onLogout;
-  const _Header({required this.activeSups, required this.onLogout});
+  final VoidCallback onSimulateAlert;
+  const _Header({required this.activeSups, required this.onLogout, required this.onSimulateAlert});
   @override
   State<_Header> createState() => _HeaderState();
 }
@@ -1754,6 +1749,20 @@ class _HeaderState extends State<_Header> {
               style: TextStyle(fontSize: 11, color: t.muted)),
         ]),
         const Spacer(),
+        // ── Simulate Alert ──
+        IconButton(
+          onPressed: widget.onSimulateAlert,
+          icon: Icon(Icons.add_alert, size: 20, color: t.navy),
+          tooltip: 'Simulate Alert',
+          style: IconButton.styleFrom(
+            side: BorderSide(color: t.border),
+            padding: const EdgeInsets.all(10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         // ── Theme toggle ──
         IconButton(
           icon: Icon(
