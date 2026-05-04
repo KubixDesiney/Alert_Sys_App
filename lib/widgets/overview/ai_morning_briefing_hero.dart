@@ -1,11 +1,17 @@
-part of '../../screens/admin_dashboard_screen.dart';
+import 'dart:math' as math;
 
-class _AIMorningBriefingHero extends StatefulWidget {
+import 'package:flutter/material.dart';
+
+import '../../services/predictive_intel_service.dart';
+import '../../theme.dart';
+import '../../utils/alert_meta.dart';
+
+class AIMorningBriefingHero extends StatefulWidget {
   final MorningBriefing? briefing;
   final String timeRangeLabel;
   final String timeRangeSubtitle;
   final Future<void> Function() onRefresh;
-  const _AIMorningBriefingHero({
+  const AIMorningBriefingHero({
     required this.briefing,
     required this.timeRangeLabel,
     required this.timeRangeSubtitle,
@@ -13,10 +19,10 @@ class _AIMorningBriefingHero extends StatefulWidget {
   });
 
   @override
-  State<_AIMorningBriefingHero> createState() => _AIMorningBriefingHeroState();
+  State<AIMorningBriefingHero> createState() => _AIMorningBriefingHeroState();
 }
 
-class _AIMorningBriefingHeroState extends State<_AIMorningBriefingHero>
+class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
     with TickerProviderStateMixin {
   late final AnimationController _meshCtrl;
   late final AnimationController _sparkleCtrl;
@@ -235,7 +241,7 @@ class _AIMorningBriefingHeroState extends State<_AIMorningBriefingHero>
                     if (b?.topType != null)
                       _briefChip(
                         Icons.local_fire_department_rounded,
-                        '${_typeLabel(b!.topType!)} leads · ${b.topTypeCount}',
+                        '${typeMeta(b!.topType!, context.appTheme).label} leads · ${b.topTypeCount}',
                       ),
                     if (b?.topFactory != null)
                       _briefChip(

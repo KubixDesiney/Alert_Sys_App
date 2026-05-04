@@ -13,78 +13,8 @@
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers':
-    'Content-Type, Authorization, X-AlertSys-Worker-Secret, X-Firebase-ID-Token',
+  'Access-Control-Allow-Headers': 'Content-Type',
 };
-
-const WORKER_SECRET_HEADER = 'X-AlertSys-Worker-Secret';
-
-function jsonResponse(payload, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-
-function timingSafeEqual(a, b) {
-  const left = String(a || '');
-  const right = String(b || '');
-  const max = Math.max(left.length, right.length);
-  let diff = left.length ^ right.length;
-  for (let i = 0; i < max; i++) {
-    diff |= left.charCodeAt(i % Math.max(left.length, 1)) ^
-      right.charCodeAt(i % Math.max(right.length, 1));
-  }
-  return diff === 0;
-}
-
-function requestSharedSecret(request) {
-  const explicit = request.headers.get(WORKER_SECRET_HEADER);
-  if (explicit) return explicit;
-  const auth = request.headers.get('Authorization') || '';
-  return auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
-}
-
-function requireSharedSecret(request, env) {
-  const expected = env.WORKER_SHARED_SECRET || env.ALERTSYS_WORKER_SECRET;
-  if (!expected) {
-    console.error('[AUTHZ] WORKER_SHARED_SECRET is not configured');
-    return jsonResponse({ error: 'Worker authentication is not configured.' }, 503);
-  }
-  if (!timingSafeEqual(requestSharedSecret(request), expected)) {
-    return jsonResponse({ error: 'Unauthorized' }, 401);
-  }
-  return null;
-}
-
-async function lookupFirebaseUser(idToken, env) {
-  if (!idToken) return null;
-  const res = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${env.FB_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken }),
-    },
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.users?.[0] || null;
-}
-
-async function requireAdminCaller(request, env, token) {
-  const idToken = request.headers.get('X-Firebase-ID-Token') || '';
-  const user = await lookupFirebaseUser(idToken, env);
-  const uid = user?.localId;
-  if (!uid) return { ok: false, response: jsonResponse({ error: 'Firebase user token required.' }, 401) };
-
-  const roleRes = await fetch(`${env.FB_DB_URL}users/${uid}/role.json?auth=${token}`);
-  const role = roleRes.ok ? await roleRes.json() : null;
-  if (role !== 'admin') {
-    return { ok: false, response: jsonResponse({ error: 'Admin role required.' }, 403) };
-  }
-  return { ok: true, uid };
-}
 
 // Per‑isolate caches
 let _fbToken = null;
@@ -252,9 +182,6 @@ async function sendFcm(token, title, body, data, env) {
     const accessToken = await getFcmAccessToken(env);
     const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
     const url = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
-    const stringData = Object.fromEntries(
-      Object.entries(data || {}).map(([key, value]) => [key, String(value ?? '')]),
-    );
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -265,7 +192,7 @@ async function sendFcm(token, title, body, data, env) {
         message: {
           token,
           notification: { title, body },
-          data: stringData,
+          data,
           android: {
             priority: 'high',
             notification: { channel_id: 'alerts_high' },
@@ -339,16 +266,9 @@ async function processAlerts(env, ctx) {
     const getRes = await fetch(flagUrl, { headers: { 'X-Firebase-ETag': 'true' } });
     if (!getRes.ok) continue;
     const etag = getRes.headers.get('ETag');
-    if (!etag) {
-      console.error(`[PUSH] Missing ETag for alert ${alert.id}; skipping claim`);
-      continue;
-    }
     const current = await getRes.json();
     if (current !== false) continue;
 
-    // Firebase RTDB REST ETags give us a compare-and-swap claim. If another
-    // worker has already claimed this flag, Firebase returns 412 and this
-    // isolate skips the send instead of duplicating the push.
     const claimRes = await fetch(flagUrl, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'if-match': etag },
@@ -509,528 +429,6 @@ async function checkEscalations(env, ctx) {
 }
 
 // ============================================================
-// Predictive failure engine and morning briefing helpers
-// ============================================================
-const PREDICT_TYPES = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
-const PREDICT_HORIZON_DAYS = 30;
-const PREDICT_HALFLIFE_DAYS = 14;
-
-function _toMs(ts) {
-  if (typeof ts === 'number') return ts;
-  if (typeof ts === 'string') {
-    const parsed = Date.parse(ts);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-  return null;
-}
-
-function buildPredictiveModel(alertsMap) {
-  const now = Date.now();
-  const horizonMs = PREDICT_HORIZON_DAYS * 86400000;
-  const hodCounts = {};
-  const recentCounts = {};
-  const machineHistory = {};
-  const factoryRisk = {};
-
-  for (const type of PREDICT_TYPES) {
-    hodCounts[type] = new Array(24).fill(0);
-    recentCounts[type] = 0;
-  }
-
-  for (const [, alert] of Object.entries(alertsMap || {})) {
-    if (!alert) continue;
-    const tsMs = _toMs(alert.timestamp);
-    if (!tsMs || now - tsMs > horizonMs || tsMs > now) continue;
-
-    const type = String(alert.type || '');
-    if (!PREDICT_TYPES.includes(type)) continue;
-
-    const date = new Date(tsMs);
-    hodCounts[type][date.getUTCHours()]++;
-    recentCounts[type]++;
-
-    const factoryId = aiSanitizeFactoryId(alert.usine || '');
-    const conv = alert.convoyeur ?? 0;
-    const post = alert.poste ?? 0;
-    const key = `${factoryId}|${conv}|${post}|${type}`;
-    const ageDays = (now - tsMs) / 86400000;
-    const decay = Math.exp(-ageDays / PREDICT_HALFLIFE_DAYS);
-
-    if (!machineHistory[key]) {
-      machineHistory[key] = {
-        factoryId,
-        usine: alert.usine || '',
-        convoyeur: conv,
-        poste: post,
-        type,
-        score: 0,
-        count: 0,
-        lastTs: tsMs,
-        firstTs: tsMs,
-        critical: 0,
-      };
-    }
-
-    const machine = machineHistory[key];
-    machine.score += decay;
-    machine.count++;
-    if (alert.isCritical) machine.critical++;
-    if (tsMs > machine.lastTs) machine.lastTs = tsMs;
-    if (tsMs < machine.firstTs) machine.firstTs = tsMs;
-
-    if (!factoryRisk[factoryId]) {
-      factoryRisk[factoryId] = { name: alert.usine || factoryId, score: 0, count: 0 };
-    }
-    factoryRisk[factoryId].score += decay;
-    factoryRisk[factoryId].count++;
-  }
-
-  const startHour = new Date(now).getUTCHours();
-  const curves = {};
-  for (const type of PREDICT_TYPES) {
-    const buckets = [];
-    let total = 0;
-    for (let i = 0; i < 12; i++) {
-      const h1 = (startHour + i * 2) % 24;
-      const h2 = (startHour + i * 2 + 1) % 24;
-      const count = hodCounts[type][h1] + hodCounts[type][h2];
-      const lambda = count / PREDICT_HORIZON_DAYS;
-      const probability = lambda > 0 ? 1 - Math.exp(-lambda) : 0;
-      total += probability;
-      buckets.push({
-        offsetHours: i * 2,
-        startHour: h1,
-        endHour: h2,
-        probability: Number(probability.toFixed(4)),
-        expected: Number(lambda.toFixed(4)),
-      });
-    }
-
-    const totalRecent = recentCounts[type];
-    const dailyAvg = totalRecent / PREDICT_HORIZON_DAYS;
-    const peak = buckets.reduce(
-      (previous, current) =>
-        current.probability > previous.probability ? current : previous,
-      buckets[0],
-    );
-
-    curves[type] = {
-      buckets,
-      total24h: Number((1 - Math.exp(-dailyAvg)).toFixed(4)),
-      hourlyRate: Number((dailyAvg / 24).toFixed(4)),
-      peakHour: peak.startHour,
-      peakProbability: peak.probability,
-      avgProbability: Number((total / 12).toFixed(4)),
-      sampleSize: totalRecent,
-    };
-  }
-
-  const ranked = Object.values(machineHistory)
-    .filter((machine) => machine.count >= 1)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
-  const maxScore = ranked[0]?.score || 1;
-  const predictions = ranked.map((machine) => {
-    const ageDays = (now - machine.lastTs) / 86400000;
-    const span = Math.max(1, (machine.lastTs - machine.firstTs) / 86400000);
-    const meanGap = machine.count > 1 ? span / (machine.count - 1) : null;
-    const etaHours = meanGap !== null ? Math.max(0, (meanGap - ageDays) * 24) : null;
-    const confidence = Math.min(96, Math.round((machine.score / maxScore) * 88 + 8));
-    return {
-      factoryId: machine.factoryId,
-      usine: machine.usine,
-      convoyeur: machine.convoyeur,
-      poste: machine.poste,
-      type: machine.type,
-      confidence,
-      pastCount: machine.count,
-      criticalCount: machine.critical,
-      lastTs: new Date(machine.lastTs).toISOString(),
-      etaHours: etaHours !== null ? Number(etaHours.toFixed(1)) : null,
-      score: Number(machine.score.toFixed(3)),
-    };
-  });
-
-  const factoryRanked = Object.entries(factoryRisk)
-    .map(([id, value]) => ({
-      id,
-      name: value.name,
-      score: Number(value.score.toFixed(3)),
-      count: value.count,
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6);
-
-  return {
-    curves,
-    predictions,
-    factoryRisk: factoryRanked,
-    generatedAt: new Date().toISOString(),
-    horizonDays: PREDICT_HORIZON_DAYS,
-    halflifeDays: PREDICT_HALFLIFE_DAYS,
-  };
-}
-
-async function refreshPredictionsIfStale(env, ctx, maxAgeMin = 30) {
-  const { token, alertsMap } = ctx;
-  try {
-    const current = await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${token}`);
-    if (current.ok) {
-      const data = await current.json();
-      if (data?.generatedAt) {
-        const age = (Date.now() - Date.parse(data.generatedAt)) / 60000;
-        if (!Number.isNaN(age) && age < maxAgeMin) return data;
-      }
-    }
-  } catch (e) {}
-
-  const model = buildPredictiveModel(alertsMap);
-  await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${token}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(model),
-  });
-  return model;
-}
-
-function _briefingDateKey(date) {
-  return `${date.getUTCFullYear()}-${(date.getUTCMonth() + 1)
-    .toString()
-    .padStart(2, '0')}-${date.getUTCDate().toString().padStart(2, '0')}`;
-}
-
-function _aggregateWeek(alertsMap) {
-  const now = Date.now();
-  const weekMs = 7 * 86400000;
-  const stats = {
-    total: 0,
-    solved: 0,
-    pending: 0,
-    inProgress: 0,
-    critical: 0,
-    aiAssigned: 0,
-    byType: {},
-    byFactory: {},
-    avgResolutionMin: 0,
-    fastestMin: null,
-    slowestMin: null,
-  };
-  let totalElapsed = 0;
-  let solvedCount = 0;
-
-  for (const alert of Object.values(alertsMap || {})) {
-    if (!alert) continue;
-    const tsMs = _toMs(alert.timestamp);
-    if (!tsMs || now - tsMs > weekMs) continue;
-
-    stats.total++;
-    if (alert.status === 'validee') {
-      stats.solved++;
-      if (typeof alert.elapsedTime === 'number' && alert.elapsedTime > 0) {
-        totalElapsed += alert.elapsedTime;
-        solvedCount++;
-        if (stats.fastestMin === null || alert.elapsedTime < stats.fastestMin) {
-          stats.fastestMin = alert.elapsedTime;
-        }
-        if (stats.slowestMin === null || alert.elapsedTime > stats.slowestMin) {
-          stats.slowestMin = alert.elapsedTime;
-        }
-      }
-    } else if (alert.status === 'en_cours') {
-      stats.inProgress++;
-    } else {
-      stats.pending++;
-    }
-
-    if (alert.isCritical) stats.critical++;
-    if (alert.aiAssigned) stats.aiAssigned++;
-    const type = String(alert.type || 'other');
-    const factory = String(alert.usine || 'unknown');
-    stats.byType[type] = (stats.byType[type] || 0) + 1;
-    stats.byFactory[factory] = (stats.byFactory[factory] || 0) + 1;
-  }
-
-  stats.avgResolutionMin = solvedCount > 0 ? Math.round(totalElapsed / solvedCount) : 0;
-  return stats;
-}
-
-function _typeName(type) {
-  return ({
-    qualite: 'Quality',
-    maintenance: 'Maintenance',
-    defaut_produit: 'Damaged Product',
-    manque_ressource: 'Resource Deficiency',
-  })[type] || type;
-}
-
-async function generateMorningBriefing(env, ctx, force = false) {
-  const { token, alertsMap } = ctx;
-  const today = _briefingDateKey(new Date());
-  if (!force) {
-    try {
-      const current = await fetch(`${env.FB_DB_URL}ai_briefing/latest.json?auth=${token}`);
-      if (current.ok) {
-        const data = await current.json();
-        if (data?.date === today) return data;
-      }
-    } catch (e) {}
-  }
-
-  const stats = _aggregateWeek(alertsMap);
-  const topType = Object.entries(stats.byType).sort((a, b) => b[1] - a[1])[0];
-  const topFactory = Object.entries(stats.byFactory).sort((a, b) => b[1] - a[1])[0];
-  const resolutionRate =
-    stats.total > 0 ? Math.round((stats.solved / stats.total) * 100) : 0;
-  const summary =
-    `Good morning. Last week the team handled ${stats.total} alerts with a ` +
-    `${resolutionRate}% resolution rate and an average response of ` +
-    `${stats.avgResolutionMin} minutes. Stay sharp on critical signals today.`;
-
-  const payload = {
-    date: today,
-    summary,
-    generatedAt: new Date().toISOString(),
-    model: 'fallback',
-    stats,
-    topType: topType ? { type: topType[0], count: topType[1] } : null,
-    topFactory: topFactory ? { name: topFactory[0], count: topFactory[1] } : null,
-    resolutionRate,
-  };
-
-  if (env.AI) {
-    try {
-      const prompt =
-        `You are an industrial operations briefing officer. Write one calm, ` +
-        `professional paragraph, no bullets. Facts: total alerts ${stats.total}, ` +
-        `resolved ${stats.solved}, critical ${stats.critical}, in progress ` +
-        `${stats.inProgress}, pending ${stats.pending}, average resolution ` +
-        `${stats.avgResolutionMin} minutes, most frequent type ` +
-        `${topType ? _typeName(topType[0]) : 'none'}, most active site ` +
-        `${topFactory ? topFactory[0] : 'none'}. Begin with Good morning.`;
-      const response = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-        messages: [{ role: 'user', content: prompt }],
-      });
-      const output = (response.response || '').trim();
-      if (output) {
-        payload.summary = output;
-        payload.model = '@cf/meta/llama-3.2-3b-instruct';
-      }
-    } catch (e) {
-      console.error('[BRIEFING] AI failed: ' + e.message);
-    }
-  }
-
-  await fetch(`${env.FB_DB_URL}ai_briefing/latest.json?auth=${token}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  await fetch(`${env.FB_DB_URL}ai_briefing/history/${today}.json?auth=${token}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  return payload;
-}
-
-async function handlePredictions(env) {
-  try {
-    const ctx = await loadCoreData(env);
-    return jsonResponse(await refreshPredictionsIfStale(env, ctx, 30));
-  } catch (e) {
-    return jsonResponse({ error: String(e) }, 500);
-  }
-}
-
-async function handleBriefing(request, env) {
-  try {
-    const url = new URL(request.url);
-    const force = url.searchParams.get('force') === '1';
-    const ctx = await loadCoreData(env);
-    return jsonResponse(await generateMorningBriefing(env, ctx, force));
-  } catch (e) {
-    return jsonResponse({ error: String(e) }, 500);
-  }
-}
-
-// ============================================================
-// AI proxy and CI auto-fix endpoints
-// ============================================================
-async function handleAIRequest(request, env) {
-  const fallback = '• Check equipment status.\n• Verify sensor connections.\n• Restart the affected machine.';
-  try {
-    const { prompt } = await request.json();
-    if (!env.AI) return jsonResponse({ suggestion: fallback, note: 'AI binding not configured' });
-    const response = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-      messages: [{ role: 'user', content: prompt }],
-    });
-    return jsonResponse({ suggestion: response.response?.trim() || 'No suggestion available' });
-  } catch (e) {
-    return jsonResponse({ suggestion: fallback, note: String(e) });
-  }
-}
-
-async function handleAutoFix(request, env) {
-  try {
-    const { testFile, code, errors } = await request.json();
-    if (!env.AI) return jsonResponse({ fixedCode: '', note: 'AI binding not configured' });
-
-    const prompt =
-      `You are a Dart/Flutter test repair expert.\n` +
-      `Return only the complete fixed Dart source file. No markdown.\n\n` +
-      `File: ${testFile}\n\n=== ERRORS ===\n${errors}\n\n` +
-      `=== CURRENT FILE ===\n${code}\n\n=== FIXED FILE ===\n`;
-
-    const response = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 4096,
-    });
-    return jsonResponse({ fixedCode: (response.response || '').trim() });
-  } catch (e) {
-    return jsonResponse({ fixedCode: '', note: String(e) }, 500);
-  }
-}
-
-function extractJsonArray(text) {
-  const raw = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start < 0 || end < start) return [];
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-async function handleAutoFixFull(request, env) {
-  try {
-    const { failingTest, errors, files } = await request.json();
-    const suppliedFiles = Array.isArray(files) ? files : [];
-    const allowedPaths = new Set(
-      suppliedFiles
-        .map((file) => String(file?.path || ''))
-        .filter((path) => path.endsWith('.dart') && !path.includes('..')),
-    );
-
-    if (!env.AI || allowedPaths.size === 0) {
-      return jsonResponse({ fixedFiles: [], note: 'AI binding not configured or no files supplied' });
-    }
-
-    const fileBlock = suppliedFiles
-      .filter((file) => allowedPaths.has(String(file.path || '')))
-      .map((file) => `=== FILE: ${file.path} ===\n${file.content || ''}`)
-      .join('\n\n');
-
-    const prompt =
-      `You fix Flutter tests by editing only supplied Dart files.\n` +
-      `Return strict JSON only: [{"path":"relative/path.dart","content":"full file content"}].\n` +
-      `Do not include markdown. Do not invent file paths.\n\n` +
-      `Failing test: ${failingTest}\n\n=== ERRORS ===\n${errors}\n\n${fileBlock}`;
-
-    const response = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 8192,
-    });
-
-    const fixedFiles = extractJsonArray(response.response)
-      .filter((file) => allowedPaths.has(String(file?.path || '')) && typeof file.content === 'string')
-      .map((file) => ({ path: file.path, content: file.content }));
-
-    return jsonResponse({ fixedFiles });
-  } catch (e) {
-    return jsonResponse({ fixedFiles: [], note: String(e) }, 500);
-  }
-}
-
-// ============================================================
-// Secured admin account creation
-// ============================================================
-function requiredString(value) {
-  const text = String(value || '').trim();
-  return text.isEmpty ? null : text;
-}
-
-async function handleCreateSupervisor(request, env) {
-  if (request.method !== 'POST') return jsonResponse({ error: 'POST required' }, 405);
-
-  try {
-    const token = await getFirebaseToken(env);
-    const admin = await requireAdminCaller(request, env, token);
-    if (!admin.ok) return admin.response;
-
-    const body = await request.json();
-    const firstName = requiredString(body.firstName);
-    const lastName = requiredString(body.lastName);
-    const email = requiredString(body.email);
-    const password = requiredString(body.password);
-    const phone = requiredString(body.phone);
-    const usine = requiredString(body.usine);
-    const hiredDate = requiredString(body.hiredDate) || new Date().toISOString();
-
-    if (!firstName || !lastName || !email || !password || !phone || !usine) {
-      return jsonResponse({ error: 'Missing required supervisor fields.' }, 400);
-    }
-
-    const createRes = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${env.FB_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, returnSecureToken: true }),
-      },
-    );
-    const created = await createRes.json();
-    if (!createRes.ok || !created.localId) {
-      const message = created?.error?.message || `Auth create failed (${createRes.status})`;
-      return jsonResponse({ error: message }, 400);
-    }
-
-    const uid = created.localId;
-    const nowIso = new Date().toISOString();
-    const userData = {
-      firstName,
-      lastName,
-      fullName: `${firstName} ${lastName}`,
-      email,
-      phone,
-      role: 'supervisor',
-      usine,
-      status: 'absent',
-      hiredDate,
-      lastSeen: nowIso,
-      createdAt: nowIso,
-      createdBy: admin.uid,
-    };
-
-    const writeRes = await fetch(`${env.FB_DB_URL}users/${uid}.json?auth=${token}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(userData),
-    });
-
-    if (!writeRes.ok) {
-      if (created.idToken) {
-        await fetch(
-          `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${env.FB_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: created.idToken }),
-          },
-        );
-      }
-      return jsonResponse({ error: 'Supervisor auth user was rolled back after database write failed.' }, 500);
-    }
-
-    return jsonResponse({ uid });
-  } catch (e) {
-    return jsonResponse({ error: String(e) }, 500);
-  }
-}
-
-// ============================================================
 // Gemini proxy
 // ============================================================
 async function handleGeminiRequest(request, env) {
@@ -1122,7 +520,6 @@ async function fanOutPendingNotifications(env, ctx) {
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
       if (!getRes.ok) continue;
       const etag = getRes.headers.get('ETag');
-      if (!etag) continue;
       const current = await getRes.json();
       if (!current || current.pushSent === true || current.pushSending === true) continue;
 
@@ -1184,225 +581,6 @@ function notifTitle(type) {
 }
 
 // ============================================================
-// Supervisor scoring shared by AI assignment and suggestion endpoints
-// ============================================================
-function buildSupStats(alertsMap) {
-  const stats = {};
-  for (const alert of Object.values(alertsMap || {})) {
-    if (!alert || alert.status !== 'validee' || alert.elapsedTime == null) continue;
-    for (const role of ['superviseurId', 'assistantId']) {
-      const id = alert[role];
-      if (!id) continue;
-      if (!stats[id]) {
-        stats[id] = {
-          typeCounts: {},
-          typeTotalTimes: {},
-          stationCounts: {},
-          conveyorCounts: {},
-        };
-      }
-
-      const supStats = stats[id];
-      const type = alert.type || '';
-      supStats.typeCounts[type] = (supStats.typeCounts[type] || 0) + 1;
-      supStats.typeTotalTimes[type] =
-        (supStats.typeTotalTimes[type] || 0) + (alert.elapsedTime || 0);
-      const stationKey = `${alert.usine || ''}|${alert.convoyeur}|${alert.poste}`;
-      const conveyorKey = `${alert.usine || ''}|${alert.convoyeur}`;
-      supStats.stationCounts[stationKey] = (supStats.stationCounts[stationKey] || 0) + 1;
-      supStats.conveyorCounts[conveyorKey] = (supStats.conveyorCounts[conveyorKey] || 0) + 1;
-    }
-  }
-
-  for (const id of Object.keys(stats)) {
-    const supStats = stats[id];
-    supStats.typeAvgRes = {};
-    for (const type of Object.keys(supStats.typeTotalTimes)) {
-      if (supStats.typeCounts[type] > 0) {
-        supStats.typeAvgRes[type] =
-          supStats.typeTotalTimes[type] / supStats.typeCounts[type];
-      }
-    }
-  }
-  return stats;
-}
-
-function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now) {
-  let score = 0;
-  const reasons = [];
-
-  const supFactory = aiResolveFactory(sup);
-  const alertFactory = aiResolveFactory(alert);
-  if (supFactory && alertFactory && supFactory === alertFactory) {
-    score += 30;
-    reasons.push('Same factory (+30)');
-  } else {
-    score -= 25;
-    reasons.push('Different factory (-25)');
-  }
-
-  const supStats = stats[sup.uid];
-  const type = alert.type || '';
-  const typeCount = supStats?.typeCounts[type] || 0;
-  if (typeCount > 0) {
-    const bonus = Math.min(typeCount * 4, 40);
-    score += bonus;
-    reasons.push(`${typeCount} past ${type} alert${typeCount > 1 ? 's' : ''} resolved (+${bonus})`);
-  } else {
-    reasons.push(`No prior ${type} experience (0)`);
-  }
-
-  const avgTime = supStats?.typeAvgRes?.[type];
-  if (avgTime !== undefined && avgTime !== null) {
-    const speedBonus = Math.min(Math.max(0, 60 - avgTime), 25);
-    score += speedBonus;
-    reasons.push(`Avg resolution ${Math.floor(avgTime)}min for ${type} (+${Math.floor(speedBonus)})`);
-  }
-
-  const stationKey = `${alert.usine || ''}|${alert.convoyeur}|${alert.poste}`;
-  const stationCount = supStats?.stationCounts[stationKey] || 0;
-  if (stationCount > 0) {
-    const bonus = Math.min(stationCount * 6, 30);
-    score += bonus;
-    reasons.push(`${stationCount} fix${stationCount > 1 ? 'es' : ''} at this workstation (+${bonus})`);
-  }
-
-  const conveyorKey = `${alert.usine || ''}|${alert.convoyeur}`;
-  const conveyorCount = supStats?.conveyorCounts[conveyorKey] || 0;
-  if (conveyorCount > 0) {
-    const bonus = Math.min(conveyorCount * 1.5, 15);
-    score += bonus;
-    reasons.push(`${conveyorCount} fix${conveyorCount > 1 ? 'es' : ''} on Line ${alert.convoyeur} (+${bonus})`);
-  }
-
-  if (!alert.isCritical && recentAssignments > 0) {
-    const penalty = recentAssignments * 8;
-    score -= penalty;
-    reasons.push(`Recent load: ${recentAssignments} assignment${recentAssignments > 1 ? 's' : ''} in 10min (-${penalty})`);
-  }
-
-  const feedback = feedbackSummary[sup.uid];
-  if (feedback) {
-    const accepted = feedback.acceptedAssignments || 0;
-    const rejected = feedback.rejectedAssignments || 0;
-    const aborted = feedback.abortedAssignments || 0;
-    const resolved = feedback.resolvedOutcomes || 0;
-    const adjustment = Math.min(
-      Math.max(accepted * 2 + resolved * 3 - rejected * 2 - aborted * 1.5, -20),
-      20,
-    );
-    score += adjustment;
-    if (adjustment !== 0) {
-      reasons.push(`Feedback adjustment (${adjustment > 0 ? '+' : ''}${adjustment})`);
-    }
-  }
-
-  return { score: Math.max(0, score), reasons };
-}
-
-async function handleSuggestAssignee(request, env) {
-  try {
-    const url = new URL(request.url);
-    const alertId = url.searchParams.get('alertId');
-    if (!alertId) return jsonResponse({ error: 'alertId required' }, 400);
-
-    const coreCtx = await loadCoreData(env);
-    const { token, alertsMap, usersMap } = coreCtx;
-    const alert = alertsMap[alertId];
-    if (!alert) return jsonResponse({ error: 'alert not found' }, 404);
-
-    let feedbackSummary = {};
-    try {
-      const feedbackRes = await fetch(`${env.FB_DB_URL}ai_feedback/summary.json?auth=${token}`);
-      if (feedbackRes.ok) feedbackSummary = (await feedbackRes.json()) || {};
-    } catch (e) {}
-
-    const supStats = buildSupStats(alertsMap);
-    const busy = new Set();
-    for (const current of Object.values(alertsMap || {})) {
-      if (current.status === 'en_cours') {
-        if (current.superviseurId) busy.add(current.superviseurId);
-        if (current.assistantId) busy.add(current.assistantId);
-      }
-    }
-
-    const targetFactory = aiResolveFactory(alert);
-    const now = Date.now();
-    const candidates = [];
-
-    for (const [uid, user] of Object.entries(usersMap || {})) {
-      if (!user || user.role !== 'supervisor') continue;
-      if (user.aiOptOut === true) continue;
-      const userFactory = aiResolveFactory(user);
-      if (!targetFactory || !userFactory || userFactory !== targetFactory) continue;
-
-      const recent = Object.values(alertsMap || {}).filter(
-        (current) =>
-          current.superviseurId === uid &&
-          current.takenAtTimestamp &&
-          now - new Date(current.takenAtTimestamp).getTime() < 10 * 60 * 1000,
-      ).length;
-
-      const name =
-        String(user.fullName || '').trim() ||
-        `${String(user.firstName || '')} ${String(user.lastName || '')}`.trim();
-      const candidate = {
-        uid,
-        name,
-        fcmToken: user.fcmToken,
-        usine: user.usine,
-        factoryId: user.factoryId,
-        status: user.status,
-        busy: busy.has(uid),
-        avatar: user.avatar || null,
-      };
-      const { score, reasons } = scoreSupervisor(
-        { ...candidate, uid },
-        alert,
-        supStats,
-        feedbackSummary,
-        recent,
-        now,
-      );
-      candidates.push({ ...candidate, score, reasons });
-    }
-
-    candidates.sort((a, b) => b.score - a.score);
-    const top3 = candidates.slice(0, 3);
-    const topSum = top3.reduce((sum, candidate) => sum + candidate.score, 0);
-    const best = top3[0];
-    const confidence = best && topSum > 0 ? Math.min(1.0, best.score / topSum) : 0;
-
-    return jsonResponse({
-      alertId,
-      best: best
-        ? {
-            uid: best.uid,
-            name: best.name,
-            score: best.score,
-            reasons: best.reasons,
-            busy: best.busy,
-            status: best.status,
-            avatar: best.avatar,
-          }
-        : null,
-      confidence: Number(confidence.toFixed(2)),
-      confidencePct: Math.round(confidence * 100),
-      runners: top3.slice(1).map((candidate) => ({
-        uid: candidate.uid,
-        name: candidate.name,
-        score: candidate.score,
-        busy: candidate.busy,
-      })),
-      candidateCount: candidates.length,
-      generatedAt: new Date().toISOString(),
-    });
-  } catch (e) {
-    return jsonResponse({ error: String(e) }, 500);
-  }
-}
-
-// ============================================================
 // AI Assignment Engine (capped at MAX_AI_FACTORIES)
 // ============================================================
 const AI_COOLDOWN_MS = 5 * 60 * 1000;
@@ -1453,7 +631,6 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
   const getRes = await fetch(alertUrl, { headers: { 'X-Firebase-ETag': 'true' } });
   if (!getRes.ok) return false;
   const etag = getRes.headers.get('ETag');
-  if (!etag) return false;
   const current = await getRes.json();
 
   if (!current || current.status !== 'disponible' || current.superviseurId) return false;
@@ -1476,8 +653,6 @@ async function aiAssignAlert(alertId, supervisor, token, env) {
 
   if (putRes.status === 412 || !putRes.ok) return false;
 
-  // Cooldown starts only after the ETag-protected assignment write succeeds.
-  // Failed/raced attempts must not sideline the supervisor.
   const cooldownUntil = new Date(Date.now() + AI_COOLDOWN_MS).toISOString();
 
   // Write in-app notification + send FCM
@@ -1652,8 +827,6 @@ export default {
         await processAlerts(env, coreCtx);
         await checkEscalations(env, coreCtx);
         await runAIAssignments(env, coreCtx);
-        try { await refreshPredictionsIfStale(env, coreCtx, 30); } catch (e) { console.error('[PREDICT] ' + e.message); }
-        try { await generateMorningBriefing(env, coreCtx, false); } catch (e) { console.error('[BRIEFING] ' + e.message); }
         // fan‑out is only called via /notify endpoint now
       })(),
     );
@@ -1667,22 +840,14 @@ export default {
     }
 
     if (url.pathname === '/config') return handleConfigRequest();
-
-    const authError = requireSharedSecret(request, env);
-    if (authError) return authError;
-
-    if (url.pathname === '/ai-proxy') return handleAIRequest(request, env);
     if (url.pathname === '/gemini-proxy') return handleGeminiRequest(request, env);
-    if (url.pathname === '/auto-fix') return handleAutoFix(request, env);
-    if (url.pathname === '/auto-fix-full') return handleAutoFixFull(request, env);
-    if (url.pathname === '/predict') return handlePredictions(env);
-    if (url.pathname === '/briefing') return handleBriefing(request, env);
-    if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
-    if (url.pathname === '/admin/create-supervisor') return handleCreateSupervisor(request, env);
 
     if (url.pathname === '/ai-retry') {
       ctx.waitUntil(runAIAssignments(env, null));
-      return jsonResponse({ queued: true });
+      return new Response(JSON.stringify({ queued: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (url.pathname === '/notify') {
@@ -1696,7 +861,10 @@ export default {
           }
         })(),
       );
-      return jsonResponse({ queued: true });
+      return new Response(JSON.stringify({ queued: true }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     // Default / manual trigger: full run except fan‑out (call /notify separately if needed)
@@ -1708,24 +876,7 @@ export default {
     } catch (e) {
       console.error('[MANUAL] Error: ' + e.message);
     }
-    return jsonResponse({ ok: true });
+    return new Response('OK', { status: 200, headers: corsHeaders });
   },
-};
-
-// Test-only named exports. Cloudflare Workers consume only the default export;
-// Jest imports these pure helpers directly.
-export {
-  aiSanitizeFactoryId,
-  aiResolveFactory,
-  buildSupStats,
-  scoreSupervisor,
-  buildPredictiveModel,
-  notifTitle,
-  base64UrlEncode,
-  getFcmTokensForFactory,
-  _toMs,
-  _briefingDateKey,
-  _aggregateWeek,
-  _typeName,
 };
 

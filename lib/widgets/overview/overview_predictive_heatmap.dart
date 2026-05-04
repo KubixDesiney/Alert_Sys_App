@@ -1,11 +1,17 @@
-part of '../../screens/admin_dashboard_screen.dart';
+import 'dart:math' as math;
 
-class _PredictiveRiskHeatmap extends StatelessWidget {
+import 'package:flutter/material.dart';
+
+import '../../services/predictive_models.dart';
+import '../../theme.dart';
+import '../../utils/alert_meta.dart';
+
+class PredictiveRiskHeatmap extends StatelessWidget {
   final Map<String, Map<String, int>> stats;
   final PredictiveModel? model;
   final String? activeFilter;
   final void Function(String) onTap;
-  const _PredictiveRiskHeatmap({
+  const PredictiveRiskHeatmap({
     required this.stats,
     required this.model,
     required this.activeFilter,
@@ -173,7 +179,8 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    final color = _typeColor(widget.type);
+    final meta = typeMeta(widget.type, context.appTheme);
+    final color = meta.color;
     final curve = widget.curve;
     final p = curve?.total24h ?? 0;
     final riskColor = _riskColor(context, p);
@@ -211,7 +218,7 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
                     ),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(_typeIcon(widget.type),
+                  child: Icon(meta.icon,
                       size: 15, color: Colors.white),
                 ),
                 const SizedBox(width: 10),
@@ -220,7 +227,7 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _typeLabel(widget.type),
+                        meta.label,
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,

@@ -1,4 +1,31 @@
-part of 'admin_dashboard_screen.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:csv/csv.dart';
+import 'package:excel/excel.dart' as excel;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:universal_html/html.dart' as html;
+
+import '../../models/alert_model.dart';
+import '../../models/hierarchy_model.dart';
+import '../../services/predictive_intel_service.dart';
+import '../../services/predictive_models.dart';
+import '../../services/service_locator.dart';
+import '../../theme.dart';
+import '../../widgets/overview/ai_morning_briefing_hero.dart';
+import '../../widgets/overview/overview_critical_alerts_card.dart';
+import '../../widgets/overview/overview_insights_strip.dart';
+import '../../widgets/overview/overview_predictive_failure_card.dart';
+import '../../widgets/overview/overview_predictive_heatmap.dart';
+import '../../widgets/overview/overview_stat_card.dart';
+import 'admin/admin_dashboard_shared.dart';
+
+String _fmtTs(DateTime d) => formatAdminTimestamp(d);
 
 // HEALTH SCORE CARD — semi-circular gauge
 // ═══════════════════════════════════════════════════════════════════════════
@@ -310,7 +337,7 @@ class _HealthGaugePainter extends CustomPainter {
 // Premium presentation layer over the existing alert/filter/export logic.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _OverviewTab extends StatefulWidget {
+class AdminOverviewTab extends StatefulWidget {
   final int total, solved, inProgress, pending;
   final List<AlertModel> alerts;
   final List<AlertModel> allAlerts;
@@ -330,7 +357,7 @@ class _OverviewTab extends StatefulWidget {
   final VoidCallback onExportCsv;
   final VoidCallback onExportExcel;
 
-  const _OverviewTab({
+  const AdminOverviewTab({
     required this.onExportCsv,
     required this.onExportExcel,
     required this.total,
@@ -357,10 +384,10 @@ class _OverviewTab extends StatefulWidget {
   });
 
   @override
-  State<_OverviewTab> createState() => _OverviewTabState();
+  State<AdminOverviewTab> createState() => _OverviewTabState();
 }
 
-class _OverviewTabState extends State<_OverviewTab> {
+class _OverviewTabState extends State<AdminOverviewTab> {
   List<Factory> _factories = [];
   String? _historyFilter;
 
@@ -387,7 +414,7 @@ class _OverviewTabState extends State<_OverviewTab> {
   }
 
   void _loadFactories() {
-    HierarchyService().getFactories().listen((factories) {
+    ServiceLocator.instance.hierarchyService.getFactories().listen((factories) {
       if (mounted) setState(() => _factories = factories);
     });
   }
@@ -591,8 +618,8 @@ class _OverviewTabState extends State<_OverviewTab> {
     return '${d.inMinutes}m';
   }
 
-  List<_Insight> _smartInsights() {
-    final insights = <_Insight>[];
+  List<InsightItem> _smartInsights() {
+    final insights = <InsightItem>[];
     final ts = _typeStats();
     String? biggest;
     var biggestVal = 0;
@@ -603,24 +630,24 @@ class _OverviewTabState extends State<_OverviewTab> {
       }
     });
     if (biggest != null && biggestVal > 0) {
-      insights.add(_Insight(
-        icon: _typeIcon(biggest!),
-        color: _typeColor(biggest!),
+      insights.add(InsightItem(
+        icon: adminTypeIcon(context, biggest!),
+        color: adminTypeColor(context, biggest!),
         text:
-            '${_typeLabel(biggest!)} leads this period — $biggestVal alert${biggestVal > 1 ? 's' : ''}.',
+            '${adminTypeLabel(context, biggest!)} leads this period — $biggestVal alert${biggestVal > 1 ? 's' : ''}.',
       ));
     }
 
     if (widget.total > 0) {
       final rate = (widget.solved / widget.total * 100).round();
       if (rate >= 80) {
-        insights.add(_Insight(
+        insights.add(InsightItem(
           icon: Icons.trending_up_rounded,
           color: AppColors.green,
           text: 'Resolution rate at $rate% — operations running smoothly.',
         ));
       } else if (rate < 50) {
-        insights.add(_Insight(
+        insights.add(InsightItem(
           icon: Icons.priority_high_rounded,
           color: AppColors.orange,
           text: 'Resolution rate is $rate% — workload may need redistribution.',
@@ -629,7 +656,7 @@ class _OverviewTabState extends State<_OverviewTab> {
     }
 
     if (_criticalUnclaimedCount > 0) {
-      insights.add(_Insight(
+      insights.add(InsightItem(
         icon: Icons.warning_amber_rounded,
         color: AppColors.red,
         text:
@@ -639,7 +666,7 @@ class _OverviewTabState extends State<_OverviewTab> {
 
     final avg = _avgResolutionTime();
     if (avg.inMinutes > 0) {
-      insights.add(_Insight(
+      insights.add(InsightItem(
         icon: Icons.timer_outlined,
         color: AppColors.blue,
         text: 'Average resolution time: ${_fmtDuration(avg)}.',
@@ -679,7 +706,7 @@ class _OverviewTabState extends State<_OverviewTab> {
     for (final alert in alertsToExport) {
       csvData.add([
         alert.id,
-        _typeLabel(alert.type),
+        adminTypeLabel(context, alert.type),
         alert.usine,
         alert.convoyeur,
         alert.poste,
@@ -734,7 +761,7 @@ class _OverviewTabState extends State<_OverviewTab> {
     for (final alert in alertsToExport) {
       sheet.appendRow([
         excel.TextCellValue(alert.id),
-        excel.TextCellValue(_typeLabel(alert.type)),
+        excel.TextCellValue(adminTypeLabel(context, alert.type)),
         excel.TextCellValue(alert.usine),
         excel.TextCellValue(alert.convoyeur.toString()),
         excel.TextCellValue(alert.poste.toString()),
@@ -785,7 +812,7 @@ class _OverviewTabState extends State<_OverviewTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _AIMorningBriefingHero(
+          AIMorningBriefingHero(
             briefing: _briefing,
             timeRangeLabel: widget.timeRangeLabel,
             timeRangeSubtitle: widget.timeRangeSubtitle,
@@ -843,15 +870,15 @@ class _OverviewTabState extends State<_OverviewTab> {
           }),
           const SizedBox(height: 18),
           if (insights.isNotEmpty) ...[
-            _InsightsStrip(insights: insights),
+            InsightsStrip(insights: insights),
             const SizedBox(height: 18),
           ],
-          _PredictiveFailureCard(
+          PredictiveFailureCard(
             model: _predictions,
-            describeType: _typeLabel,
+            describeType: (type) => adminTypeLabel(context, type),
           ),
           const SizedBox(height: 18),
-          _PredictiveRiskHeatmap(
+          PredictiveRiskHeatmap(
             stats: ts,
             model: _predictions,
             activeFilter: _historyFilter,
@@ -859,7 +886,7 @@ class _OverviewTabState extends State<_OverviewTab> {
           ),
           const SizedBox(height: 18),
           if (_criticalUnclaimedCount > 0) ...[
-            _CriticalAlertsCard(
+            CriticalAlertsCard(
               alerts: _criticalUnclaimedAlerts,
               onAlertTap: (a) => _setHistoryFilter(a.type),
               describe: _getAlertDisplayDescription,
@@ -903,7 +930,7 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
-  Widget _statCardReceived(AppTheme theme, List<int> spark) => _EliteStatCard(
+  Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
         label: 'Received',
         value: widget.pending,
         icon: Icons.inbox_rounded,
@@ -917,7 +944,7 @@ class _OverviewTabState extends State<_OverviewTab> {
         onCriticalTap: () => _setHistoryFilter('critical'),
       );
 
-  Widget _statCardClaimed(AppTheme theme, List<int> spark) => _EliteStatCard(
+  Widget _statCardClaimed(AppTheme theme, List<int> spark) => EliteStatCard(
         label: 'Claimed',
         value: widget.inProgress,
         icon: Icons.hourglass_bottom_rounded,
@@ -929,7 +956,7 @@ class _OverviewTabState extends State<_OverviewTab> {
         onTap: () => _setHistoryFilter('en_cours'),
       );
 
-  Widget _statCardFixed(AppTheme theme, List<int> spark) => _EliteStatCard(
+  Widget _statCardFixed(AppTheme theme, List<int> spark) => EliteStatCard(
         label: 'Fixed',
         value: widget.solved,
         icon: Icons.verified_rounded,
@@ -941,7 +968,7 @@ class _OverviewTabState extends State<_OverviewTab> {
         onTap: () => _setHistoryFilter('validated'),
       );
 
-  Widget _statCardTotal(AppTheme theme, List<int> spark) => _EliteStatCard(
+  Widget _statCardTotal(AppTheme theme, List<int> spark) => EliteStatCard(
         label: 'Total',
         value: widget.total,
         icon: Icons.dashboard_rounded,
@@ -1141,7 +1168,7 @@ class _FilterPanel extends StatelessWidget {
                     'manque_ressource'
                   ].map((t) => DropdownMenuItem(
                         value: t,
-                        child: Text(_typeLabel(t),
+                        child: Text(adminTypeLabel(context, t),
                             style: const TextStyle(fontSize: 13)),
                       )),
                 ],
@@ -1301,7 +1328,10 @@ class _ActiveFilterBanner extends StatelessWidget {
     }
     if (filterType != 'all') {
       chips
-          .add(_ActiveChip(label: _typeLabel(filterType), color: theme.orange));
+          .add(_ActiveChip(
+            label: adminTypeLabel(context, filterType),
+            color: theme.orange,
+          ));
     }
     if (filterStatus != 'all') {
       chips.add(_ActiveChip(label: filterStatus, color: theme.orange));
@@ -1547,7 +1577,7 @@ class _AlertHistoryRow extends StatelessWidget {
             width: 4,
             height: 38,
             decoration: BoxDecoration(
-              color: _typeColor(alert.type),
+              color: adminTypeColor(context, alert.type),
               borderRadius: BorderRadius.circular(99),
             ),
           ),
@@ -1557,7 +1587,7 @@ class _AlertHistoryRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${_typeLabel(alert.type)} — ${alert.description}',
+                  '${adminTypeLabel(context, alert.type)} — ${alert.description}',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,

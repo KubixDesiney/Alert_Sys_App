@@ -5,7 +5,10 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
+import '../services/service_locator.dart';
 import '../theme.dart';
+import '../utils/alert_meta.dart';
+import '../utils/user_friendly_error.dart';
 
 const _purple = Color(0xFF9333EA);
 const _purpleLt = Color(0xFFF3E8FF);
@@ -22,7 +25,7 @@ class CollaborationProgressScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final userId = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final service = CollaborationService();
+    final service = ServiceLocator.instance.collaborationService;
     final t = context.appTheme;
 
     return Scaffold(
@@ -229,7 +232,7 @@ class _SentCardState extends State<_SentCard> {
     if (confirmed != true || !mounted) return;
     setState(() => _cancelling = true);
     try {
-      await CollaborationService().cancelCollaborationRequest(
+      await ServiceLocator.instance.collaborationService.cancelCollaborationRequest(
           widget.request.id, widget.request.alertId);
     } finally {
       if (mounted) setState(() => _cancelling = false);
@@ -418,7 +421,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
     setState(() => _loading = true);
     final user = FirebaseAuth.instance.currentUser!;
     try {
-      await CollaborationService().respondToCollaborationRequest(
+      await ServiceLocator.instance.collaborationService.respondToCollaborationRequest(
         requestId: widget.request.id,
         responderId: user.uid,
         responderName: user.email?.split('@').first ?? 'Supervisor',
@@ -435,7 +438,10 @@ class _ReceivedCardState extends State<_ReceivedCard> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: _red));
+            SnackBar(
+              content: Text(UserFriendlyError.message(e)),
+              backgroundColor: _red,
+            ));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -509,7 +515,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
               Row(children: [
                 Icon(Icons.warning_amber_rounded, size: 14, color: t.orange),
                 const SizedBox(width: 6),
-                Text(_typeLabel(r.alertType ?? ''),
+                Text(typeMeta(r.alertType ?? '', context.appTheme).label,
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -832,14 +838,6 @@ class _InfoRow extends StatelessWidget {
       );
 }
 
-String _typeLabel(String type) => switch (type) {
-      'qualite' => 'Quality',
-      'maintenance' => 'Maintenance',
-      'defaut_produit' => 'Damaged Product',
-      'manque_ressource' => 'Resource Deficiency',
-      _ => type.isEmpty ? 'Unknown' : type,
-    };
-
 // ============================================================================
 // REQUEST COLLABORATION DIALOG (send new request)
 // ============================================================================
@@ -854,7 +852,7 @@ class RequestCollaborationDialog extends StatefulWidget {
 
 class _RequestCollaborationDialogState
     extends State<RequestCollaborationDialog> {
-  final _service = CollaborationService();
+  final _service = ServiceLocator.instance.collaborationService;
   final _authService = AuthService();
   final _messageController = TextEditingController();
   List<UserModel> _supervisors = [];
