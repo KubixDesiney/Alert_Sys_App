@@ -142,7 +142,6 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     AIAssignmentService.instance.init().then((_) {
       if (!mounted) return;
       setState(() {});
-      AIAssignmentService.instance.processAlerts(widget.alerts);
     });
     AIAssignmentService.instance.addListener(_onAIChange);
 
@@ -158,7 +157,6 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     super.didUpdateWidget(old);
     if (!identical(widget.alerts, old.alerts)) {
       _detectNewAlertsForRipple();
-      AIAssignmentService.instance.processAlerts(widget.alerts);
       _lastUpdate = DateTime.now();
     }
   }
@@ -986,7 +984,6 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   Future<void> _toggleAI(bool on) async {
     await AIAssignmentService.instance.setEnabled(on);
-    if (on) AIAssignmentService.instance.processAlerts(widget.alerts);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
