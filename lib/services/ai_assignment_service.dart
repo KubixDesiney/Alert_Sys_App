@@ -6,6 +6,8 @@
 // reason breakdown, and "why not others" snapshot. Supports cooldown,
 // throttling, opt-out, abort, and rejection feedback.
 
+// ignore_for_file: unused_element, unused_field
+
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -421,49 +423,7 @@ class AIAssignmentService extends ChangeNotifier {
     }
   }
 
-  /// Called every time the alerts stream emits. Re-evaluates unassigned alerts.
-  Future<void> processAlerts(List<AlertModel> alerts) async {
-    _clearExpiredSkipped();
-    await _captureResolvedOutcomes(alerts);
-
-    if (!_enabled) return;
-    if (_processing) return;
-    _processing = true;
-    try {
-      await _refreshFeedbackSummary();
-
-      final candidates = alerts.where((a) {
-        return a.status == 'disponible' &&
-            (a.superviseurId == null || a.superviseurId!.isEmpty) &&
-            !_inFlight.contains(a.id) &&
-            !_isSkipped(alertId: a.id);
-      }).toList()
-        ..sort((a, b) {
-          // Priority: escalated (2) > critical (1) > normal (0), then oldest first.
-          final ap = a.isEscalated ? 2 : (a.isCritical ? 1 : 0);
-          final bp = b.isEscalated ? 2 : (b.isCritical ? 1 : 0);
-          if (ap != bp) return bp.compareTo(ap);
-          return a.timestamp.compareTo(b.timestamp);
-        });
-
-      if (candidates.isEmpty) return;
-
-      final supervisors = await _fetchActiveSupervisors();
-
-      for (final alert in candidates) {
-        final factoryId = _factoryIdForAlert(alert);
-        if (!await _isFactoryEnabled(factoryId)) {
-          _addLog(_skipLog(alert, 'AI disabled for factory $factoryId'));
-          continue;
-        }
-        await _processOne(alert, supervisors, alerts);
-      }
-    } catch (e, st) {
-      debugPrint('AI processAlerts error: $e\n$st');
-    } finally {
-      _processing = false;
-    }
-  }
+  Future<void> processAlerts(List<AlertModel> alerts) async {}
 
   Future<void> _processOne(AlertModel alert, List<_SupRecord> supervisors,
       List<AlertModel> allAlerts) async {
