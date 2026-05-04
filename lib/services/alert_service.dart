@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
+import 'app_logger.dart';
 
 String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
@@ -15,8 +16,19 @@ String _defaultDescription(String type) => switch (type) {
 
 class AlertService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final HierarchyService? _hierarchyService;
+  final AppLogger _logger;
 
-  Stream<List<AlertModel>> getAlertsForUsine(String usine) {
+  AlertService({
+    HierarchyService? hierarchyService,
+    AppLogger logger = const AppLogger(),
+  })  : _hierarchyService = hierarchyService,
+        _logger = logger;
+
+  /// Get hierarchy service (may be null if not injected)
+  HierarchyService? get hierarchyService => _hierarchyService;
+
+  Stream<List<AlertModel>> getAlertsForUsine(String usine, {int? limit}) {
     return _db
         .child('alerts')
         .orderByChild('usine')
@@ -25,11 +37,74 @@ class AlertService {
         .map((event) => _toAlertList(event.snapshot));
   }
 
-  Stream<List<AlertModel>> getAllAlerts() {
+  Stream<List<AlertModel>> getAllAlerts({int? limit}) {
     return _db
         .child('alerts')
         .onValue
         .map((event) => _toAlertList(event.snapshot));
+  }
+
+  Stream<List<AlertModel>> getAlertsWhereAssistant(String assistantId, {int? limit}) {
+    return _db
+        .child('alerts')
+        .orderByChild('assistantId')
+        .equalTo(assistantId)
+        .onValue
+        .map((event) => _toAlertList(event.snapshot));
+  }
+
+  Stream<List<AlertModel>> getAlertsWhereSupervisor(String supervisorId, {int? limit}) {
+    return _db
+        .child('alerts')
+        .orderByChild('superviseurId')
+        .equalTo(supervisorId)
+        .onValue
+        .map((event) => _toAlertList(event.snapshot));
+  }
+
+  /// Fetch older alerts before a given timestamp
+  Future<List<AlertModel>> fetchOlderAlerts({
+    required DateTime before,
+    int limit = 50,
+  }) async {
+    try {
+      final snapshot = await _db
+          .child('alerts')
+          .orderByChild('timestamp')
+          .endAt(before.toIso8601String())
+          .limitToLast(limit + 1)
+          .get();
+      return _toAlertList(snapshot);
+    } catch (e) {
+      _logger.error('Error fetching older alerts: $e');
+      return [];
+    }
+  }
+
+  /// Fetch older alerts for a specific usine before a given timestamp
+  Future<List<AlertModel>> fetchOlderAlertsForUsine({
+    required String usine,
+    required DateTime before,
+    int limit = 50,
+  }) async {
+    try {
+      final snapshot = await _db
+          .child('alerts')
+          .orderByChild('usine')
+          .equalTo(usine)
+          .get();
+      
+      final alerts = _toAlertList(snapshot);
+      final older = alerts
+          .where((a) => a.timestamp.isBefore(before))
+          .toList()
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      
+      return older.take(limit).toList();
+    } catch (e) {
+      _logger.error('Error fetching older alerts for usine: $e');
+      return [];
+    }
   }
 
   Future<Map<String, dynamic>> getHelpRequest(String requestId) async {
@@ -57,8 +132,8 @@ class AlertService {
     required String description,
     bool isCritical = false,
   }) async {
-    // Validate against the hierarchy
-    final hierarchyService = HierarchyService();
+    // Validate against the hierarchy (use injected or create temp)
+    final hierarchyService = _hierarchyService ?? HierarchyService();
     final isValid =
         await hierarchyService.validateLocation(usine, convoyeur, poste);
     if (!isValid) {
@@ -66,7 +141,7 @@ class AlertService {
           'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
     }
 
-    // Create the alert (same as before)
+    // Create the alert
     final ref = _db.child('alerts').push();
     final now = DateTime.now().toUtc();
     final alertId = ref.key;
@@ -116,25 +191,7 @@ class AlertService {
     });
   }
 
-  Stream<List<AlertModel>> getAlertsWhereAssistant(String assistantId) {
-    return _db
-        .child('alerts')
-        .orderByChild('assistantId')
-        .equalTo(assistantId)
-        .onValue
-        .map((event) => _toAlertList(event.snapshot));
-  }
-
-  Stream<List<AlertModel>> getAlertsWhereSupervisor(String supervisorId) {
-    return _db
-        .child('alerts')
-        .orderByChild('superviseurId')
-        .equalTo(supervisorId)
-        .onValue
-        .map((event) => _toAlertList(event.snapshot));
-  }
-
-// Modify existing returnToQueue
+  /// Modify existing returnToQueue
   Future<void> returnToQueue(String alertId, {String? reason}) async {
     final updates = {
       'status': 'disponible',
@@ -148,7 +205,7 @@ class AlertService {
     await _db.child('alerts/$alertId').update(updates);
   }
 
-// Add this new method
+  // Add this new method
   Future<void> notifyAdminsAboutSuspend(
       String alertId, String supervisorName, String? reason) async {
     final users = await getAllUsers();
