@@ -260,6 +260,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
     }
 
+    final alertNumber = await _reserveNextAlertNumber();
+
     // ✅ 2. Original alert creation (unchanged)
     final ref = _db.ref('alerts').push();
     final now = DateTime.now();
@@ -269,6 +271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'usine': usine,
       'convoyeur': convoyeur,
       'poste': poste,
+      'alertNumber': alertNumber,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
       'timestamp': now.toIso8601String(),
       'description': description,
@@ -299,6 +302,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } catch (e) {
       debugPrint('Manual worker trigger failed: $e');
     }
+  }
+
+  Future<int> _reserveNextAlertNumber() async {
+    final result = await _db.ref('alertCounter').runTransaction((current) {
+      final currentValue = (current as num?)?.toInt() ?? 0;
+      return Transaction.success(currentValue + 1);
+    });
+    final alertNumber = (result.snapshot.value as num?)?.toInt() ?? 0;
+    if (!result.committed || alertNumber <= 0) {
+      throw Exception('Failed to allocate alert number.');
+    }
+    return alertNumber;
   }
 
   // ── Export methods (cross‑platform) ────────────────────────────────────
