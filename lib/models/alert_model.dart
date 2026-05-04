@@ -43,6 +43,16 @@ class AlertModel {
   String? resolutionReason;
   DateTime? resolvedAt;
 
+  bool get hasAlertNumber => alertNumber > 0;
+
+  String get alertLabel {
+    if (hasAlertNumber) {
+      return '#$alertNumber';
+    }
+    final shortId = id.length >= 6 ? id.substring(0, 6) : id;
+    return '#${shortId.toUpperCase()}';
+  }
+
   AlertModel({
     required this.id,
     this.alertNumber = 0,

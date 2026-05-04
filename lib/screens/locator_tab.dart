@@ -1102,7 +1102,7 @@ class _MobileRoutePanel extends StatelessWidget {
               ],
             ),
           ),
-          if (claim != null && claim.alertNumber != 0)
+          if (claim != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
               decoration: BoxDecoration(
@@ -1111,7 +1111,7 @@ class _MobileRoutePanel extends StatelessWidget {
                 border: Border.all(color: color.withValues(alpha: 0.25)),
               ),
               child: Text(
-                '#${claim.alertNumber}',
+                claim.alertLabel,
                 style: TextStyle(
                   color: color,
                   fontSize: 12,

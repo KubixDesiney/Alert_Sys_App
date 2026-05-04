@@ -216,9 +216,7 @@ class _TreeAlertSheet extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                alert.alertNumber > 0
-                    ? '#${alert.alertNumber} · ${_shortId(alert.id)}'
-                    : _shortId(alert.id),
+                '${alert.alertLabel} · ${_shortId(alert.id)}',
                 style: TextStyle(
                   color: t.muted,
                   fontSize: 11.5,

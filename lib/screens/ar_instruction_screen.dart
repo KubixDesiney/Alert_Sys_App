@@ -595,8 +595,7 @@ class _InstructionSheetState extends State<_InstructionSheet> {
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
-                    'Alert: ${alert.type}'
-                    '${alert.alertNumber > 0 ? ' (#${alert.alertNumber})' : ''}',
+                    'Alert: ${alert.type} ${alert.alertLabel}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),

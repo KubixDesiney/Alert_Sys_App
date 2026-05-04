@@ -141,6 +141,8 @@ class AlertService {
           'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
     }
 
+    final alertNumber = await _reserveNextAlertNumber();
+
     // Create the alert
     final ref = _db.child('alerts').push();
     final now = DateTime.now().toUtc();
@@ -150,6 +152,7 @@ class AlertService {
       'usine': usine,
       'convoyeur': convoyeur,
       'poste': poste,
+      'alertNumber': alertNumber,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
       'timestamp': now.toIso8601String(),
       'description':
@@ -179,6 +182,18 @@ class AlertService {
           'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e');
     }
     return alertId;
+  }
+
+  Future<int> _reserveNextAlertNumber() async {
+    final result = await _db.child('alertCounter').runTransaction((current) {
+      final currentValue = (current as num?)?.toInt() ?? 0;
+      return Transaction.success(currentValue + 1);
+    });
+    final alertNumber = (result.snapshot.value as num?)?.toInt() ?? 0;
+    if (!result.committed || alertNumber <= 0) {
+      throw Exception('Failed to allocate alert number.');
+    }
+    return alertNumber;
   }
 
   Future<void> takeAlert(
