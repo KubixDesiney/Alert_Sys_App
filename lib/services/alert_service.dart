@@ -198,16 +198,65 @@ class AlertService {
 
   Future<void> takeAlert(
       String alertId, String superviseurId, String superviseurName) async {
-    await _db.child('alerts/$alertId').update({
-      'status': 'en_cours',
-      'superviseurId': superviseurId,
-      'superviseurName': superviseurName,
-      'takenAtTimestamp': DateTime.now().toIso8601String(),
+    final nowIso = DateTime.now().toIso8601String();
+    final activeClaimRef = _db.child('supervisor_active_alerts/$superviseurId');
+    final activeClaimResult = await activeClaimRef.runTransaction((current) {
+      if (current == null) {
+        return Transaction.success({
+          'alertId': alertId,
+          'claimedAt': nowIso,
+        });
+      }
+
+      final currentMap = current is Map
+          ? Map<String, dynamic>.from(current)
+          : <String, dynamic>{};
+      final currentAlertId = currentMap['alertId']?.toString();
+      if (currentAlertId == alertId) {
+        return Transaction.success(current);
+      }
+
+      return Transaction.abort();
     });
+
+    if (!activeClaimResult.committed) {
+      throw Exception(
+        'You already have an alert in progress. Please resolve it before claiming a new one.',
+      );
+    }
+
+    final alertResult = await _db.child('alerts/$alertId').runTransaction((current) {
+      if (current == null) return Transaction.abort();
+      final currentMap = current is Map
+          ? Map<String, dynamic>.from(current)
+          : <String, dynamic>{};
+      final currentStatus = currentMap['status']?.toString();
+      final currentSupervisorId = currentMap['superviseurId']?.toString();
+      if (currentStatus != 'disponible' ||
+          (currentSupervisorId != null && currentSupervisorId.isNotEmpty)) {
+        return Transaction.abort();
+      }
+
+      currentMap['status'] = 'en_cours';
+      currentMap['superviseurId'] = superviseurId;
+      currentMap['superviseurName'] = superviseurName;
+      currentMap['takenAtTimestamp'] = nowIso;
+      return Transaction.success(currentMap);
+    });
+
+    if (!alertResult.committed) {
+      await _clearSupervisorActiveAlert(superviseurId, alertId);
+      throw Exception('This alert was already claimed by someone else.');
+    }
   }
 
   /// Modify existing returnToQueue
   Future<void> returnToQueue(String alertId, {String? reason}) async {
+    final alertSnap = await _db.child('alerts/$alertId').get();
+    final alertData = alertSnap.value;
+    final superviseurId = alertData is Map
+        ? (alertData['superviseurId']?.toString())
+        : null;
     final updates = {
       'status': 'disponible',
       'superviseurId': null,
@@ -218,6 +267,7 @@ class AlertService {
       updates['suspendReason'] = reason;
     }
     await _db.child('alerts/$alertId').update(updates);
+    await _clearSupervisorActiveAlert(superviseurId, alertId);
   }
 
   // Add this new method
@@ -245,6 +295,11 @@ class AlertService {
 
   Future<void> resolveAlert(String alertId, String reason, int elapsedMinutes,
       {String? assistingSupervisorId, String? assistingSupervisorName}) async {
+    final alertSnap = await _db.child('alerts/$alertId').get();
+    final alertData = alertSnap.value;
+    final superviseurId = alertData is Map
+        ? (alertData['superviseurId']?.toString())
+        : null;
     final Map<String, dynamic> updates = {
       'status': 'validee',
       'elapsedTime': elapsedMinutes,
@@ -270,6 +325,26 @@ class AlertService {
     updates['aiRecommendationReason'] = null;
 
     await _db.child('alerts/$alertId').update(updates);
+    await _clearSupervisorActiveAlert(superviseurId, alertId);
+  }
+
+  Future<void> _clearSupervisorActiveAlert(
+    String? supervisorId,
+    String alertId,
+  ) async {
+    if (supervisorId == null || supervisorId.isEmpty) return;
+    await _db.child('supervisor_active_alerts/$supervisorId').runTransaction(
+      (current) {
+        if (current == null) return Transaction.abort();
+        final currentMap = current is Map
+            ? Map<String, dynamic>.from(current)
+            : <String, dynamic>{};
+        if (currentMap['alertId']?.toString() != alertId) {
+          return Transaction.abort();
+        }
+        return Transaction.success(null);
+      },
+    );
   }
 
   Future<void> addComment(String alertId, String comment) async {

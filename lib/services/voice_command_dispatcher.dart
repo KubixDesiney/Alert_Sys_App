@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:typed_data';
 import '../providers/alert_provider.dart';
+import '../utils/alert_claim_error.dart';
 import 'voice_auth_service.dart';
 import 'voice_command_parser.dart';
 import 'voice_service.dart';
@@ -110,7 +111,7 @@ class VoiceCommandDispatcher {
           break;
       }
     } catch (e) {
-      return _speakResult(false, 'Action failed. ${_shortError(e)}');
+      return _speakResult(false, formatAlertClaimError(e));
     }
     return const VoiceCommandExecutionResult(
       success: false,
@@ -157,11 +158,6 @@ class VoiceCommandDispatcher {
     } catch (_) {
       return null;
     }
-  }
-
-  static String _shortError(Object e) {
-    final s = e.toString();
-    return s.length > 80 ? '${s.substring(0, 80)}...' : s;
   }
 
   static String _authFailureMessage(VoiceVerificationResult auth) {
