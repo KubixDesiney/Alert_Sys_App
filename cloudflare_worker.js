@@ -116,6 +116,272 @@ function base64UrlEncode(data) {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+function _briefingDateKey(date) {
+  const d = new Date(date);
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function _typeName(type) {
+  switch (String(type || '')) {
+    case 'qualite':
+      return 'Quality';
+    case 'maintenance':
+      return 'Maintenance';
+    case 'defaut_produit':
+      return 'Damaged Product';
+    case 'manque_ressource':
+      return 'Resource Deficiency';
+    default:
+      return String(type || '');
+  }
+}
+
+function _toMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+function _aggregateWeek(alertsMap = {}) {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const stats = {
+    total: 0,
+    solved: 0,
+    inProgress: 0,
+    pending: 0,
+    critical: 0,
+    aiAssigned: 0,
+    fastestMin: 0,
+    slowestMin: 0,
+    avgResolutionMin: 0,
+  };
+
+  let resolutionCount = 0;
+  let resolutionTotal = 0;
+
+  for (const alert of Object.values(alertsMap || {})) {
+    const ts = _toMs(alert?.timestamp);
+    if (ts == null || ts < cutoff) continue;
+
+    stats.total++;
+    if (alert?.isCritical === true) stats.critical++;
+    if (alert?.aiAssigned === true) stats.aiAssigned++;
+
+    if (alert?.status === 'validee') {
+      stats.solved++;
+      const elapsed = Number(alert?.elapsedTime);
+      if (Number.isFinite(elapsed)) {
+        resolutionCount++;
+        resolutionTotal += elapsed;
+        if (stats.fastestMin === 0 || elapsed < stats.fastestMin) stats.fastestMin = elapsed;
+        if (elapsed > stats.slowestMin) stats.slowestMin = elapsed;
+      }
+    } else if (alert?.status === 'en_cours') {
+      stats.inProgress++;
+    } else if (alert?.status === 'disponible') {
+      stats.pending++;
+    }
+  }
+
+  if (resolutionCount > 0) {
+    stats.avgResolutionMin = Math.round(resolutionTotal / resolutionCount);
+  }
+
+  return stats;
+}
+
+function buildSupStats(alertsMap = {}) {
+  const stats = {};
+
+  const ensure = (uid) => {
+    if (!stats[uid]) {
+      stats[uid] = {
+        typeCounts: {},
+        typeTotalTimes: {},
+        typeAvgRes: {},
+        stationCounts: {},
+        conveyorCounts: {},
+      };
+    }
+    return stats[uid];
+  };
+
+  for (const alert of Object.values(alertsMap || {})) {
+    if (!alert || alert.status !== 'validee') continue;
+    if (typeof alert.elapsedTime !== 'number' || !Number.isFinite(alert.elapsedTime)) continue;
+
+    const ids = [alert.superviseurId, alert.assistantId].filter(Boolean);
+    if (ids.length === 0) continue;
+
+    const type = String(alert.type || 'unknown');
+    const factory = String(alert.usine || '');
+    const stationKey = `${factory}|${alert.convoyeur}|${alert.poste}`;
+    const conveyorKey = `${factory}|${alert.convoyeur}`;
+
+    for (const uid of ids) {
+      const entry = ensure(uid);
+      entry.typeCounts[type] = (entry.typeCounts[type] || 0) + 1;
+      entry.typeTotalTimes[type] = (entry.typeTotalTimes[type] || 0) + alert.elapsedTime;
+      entry.typeAvgRes[type] = Math.round(entry.typeTotalTimes[type] / entry.typeCounts[type]);
+      entry.stationCounts[stationKey] = (entry.stationCounts[stationKey] || 0) + 1;
+      entry.conveyorCounts[conveyorKey] = (entry.conveyorCounts[conveyorKey] || 0) + 1;
+    }
+  }
+
+  return stats;
+}
+
+function scoreSupervisor(supervisor, alert, stats = {}, feedback = {}, recentLoad = 0) {
+  const uid = supervisor?.uid || supervisor?.id || '';
+  const reasons = [];
+
+  const alertFactory = aiSanitizeFactoryId(alert?.usine || alert?.factoryId || '');
+  const supervisorFactory = aiSanitizeFactoryId(supervisor?.usine || supervisor?.factoryId || '');
+
+  if (alertFactory && supervisorFactory && alertFactory !== supervisorFactory) {
+    reasons.push('Different factory');
+    return { score: 0, reasons };
+  }
+
+  let score = 0;
+  if (alertFactory && supervisorFactory && alertFactory === supervisorFactory) {
+    score += 30;
+    reasons.push('Same factory (+30)');
+  }
+
+  const supStats = stats[uid];
+  const type = String(alert?.type || 'unknown');
+  const typeCount = supStats?.typeCounts?.[type] || 0;
+  if (typeCount > 0) {
+    const experienceBonus = Math.min(40, typeCount * 5);
+    score += experienceBonus;
+    reasons.push(`past ${type} experience (+${experienceBonus})`);
+  }
+
+  if (!alert?.isCritical && Number.isFinite(recentLoad) && recentLoad > 0) {
+    const loadPenalty = Math.min(30, recentLoad * 10);
+    score -= loadPenalty;
+    reasons.push(`Recent load (-${loadPenalty})`);
+  }
+
+  const fb = feedback[uid] || {};
+  const accepted = Number(fb.acceptedAssignments || 0);
+  const rejected = Number(fb.rejectedAssignments || 0);
+  const aborted = Number(fb.abortedAssignments || 0);
+  const resolved = Number(fb.resolvedOutcomes || 0);
+  const feedbackRaw = accepted + resolved - rejected - aborted;
+  const feedbackAdjust = Math.max(-20, Math.min(20, Math.round(feedbackRaw / 5)));
+  if (feedbackAdjust !== 0) {
+    score += feedbackAdjust;
+    reasons.push(`Feedback adjustment (${feedbackAdjust >= 0 ? '+' : ''}${feedbackAdjust})`);
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, reasons };
+}
+
+function buildPredictiveModel(alertsMap = {}) {
+  const generatedAt = new Date().toISOString();
+  const knownTypes = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
+  const horizonMs = 180 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const curves = {};
+  for (const type of knownTypes) {
+    curves[type] = {
+      buckets: Array.from({ length: 12 }, (_, index) => ({
+        offsetHours: index * 2,
+        probability: Math.max(0, Math.min(1, Math.round((1 - index / 14) * 100) / 100)),
+      })),
+    };
+  }
+
+  const predictions = [];
+  const factoryRiskMap = new Map();
+
+  for (const alert of Object.values(alertsMap || {})) {
+    const type = String(alert?.type || '');
+    if (!knownTypes.includes(type)) continue;
+
+    const ts = _toMs(alert?.timestamp);
+    if (ts == null || now - ts > horizonMs) continue;
+
+    const ageDays = (now - ts) / 86400000;
+    const score = Math.max(1, Math.round(100 - ageDays * 2 + (alert?.isCritical ? 10 : 0)));
+
+    predictions.push({
+      type,
+      usine: alert?.usine || '',
+      convoyeur: alert?.convoyeur ?? null,
+      poste: alert?.poste ?? null,
+      score,
+      generatedAt,
+    });
+
+    const factoryId = aiSanitizeFactoryId(alert?.usine || alert?.factoryId || '');
+    if (factoryId) {
+      const current = factoryRiskMap.get(factoryId) || { id: factoryId, count: 0, score: 0 };
+      current.count += 1;
+      current.score += score;
+      factoryRiskMap.set(factoryId, current);
+    }
+  }
+
+  predictions.sort((a, b) => b.score - a.score);
+
+  return {
+    generatedAt,
+    curves,
+    predictions,
+    factoryRisk: [...factoryRiskMap.values()].sort((a, b) => b.score - a.score),
+  };
+}
+
+function getWorkerSecret(env) {
+  return String(env?.WORKER_SHARED_SECRET || env?.ALERTSYS_WORKER_SHARED_SECRET || '').trim();
+}
+
+function enforceWorkerAuth(request, env) {
+  const expectedSecret = getWorkerSecret(env);
+  if (!expectedSecret) {
+    return new Response('Worker shared secret not configured', {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'text/plain' },
+    });
+  }
+
+  const providedSecret = request.headers.get('X-AlertSys-Worker-Secret') || '';
+  if (providedSecret !== expectedSecret) {
+    return new Response('Unauthorized', {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'text/plain' },
+    });
+  }
+
+  return null;
+}
+
+export {
+  _briefingDateKey,
+  _aggregateWeek,
+  _typeName,
+  notifTitle,
+  base64UrlEncode,
+  getFcmTokensForFactory,
+  buildSupStats,
+  scoreSupervisor,
+  buildPredictiveModel,
+  _toMs,
+  aiSanitizeFactoryId,
+  aiResolveFactory,
+};
+
 // ============================================================
 // FCM access token
 // ============================================================
@@ -837,6 +1103,11 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    if (url.pathname === '/notify' || url.pathname === '/ai-retry' || url.pathname === '/') {
+      const authResponse = enforceWorkerAuth(request, env);
+      if (authResponse) return authResponse;
     }
 
     if (url.pathname === '/config') return handleConfigRequest();
