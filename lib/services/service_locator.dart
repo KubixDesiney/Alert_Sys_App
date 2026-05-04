@@ -32,14 +32,15 @@ class ServiceLocator {
     _initialized = true;
 
     logger = const AppLogger();
+    authService = AuthService();
+    hierarchyService = HierarchyService();
+    collaborationService = CollaborationService(logger: logger);
+    
     alertService = AlertService(
-      hierarchyService: HierarchyService(),
+      hierarchyService: hierarchyService,
       logger: logger,
     );
     aiService = AIService();
-    authService = AuthService();
-    hierarchyService = alertService.hierarchyService;
-    collaborationService = CollaborationService(logger: logger);
     alertStreamService = AlertStreamService(
       alertService: alertService,
       logger: logger,
