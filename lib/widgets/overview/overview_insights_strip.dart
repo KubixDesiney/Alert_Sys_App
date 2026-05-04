@@ -1,15 +1,17 @@
-part of '../../screens/admin_dashboard_screen.dart';
+import 'package:flutter/material.dart';
 
-class _Insight {
+import '../../theme.dart';
+
+class InsightItem {
   final IconData icon;
   final Color color;
   final String text;
-  _Insight({required this.icon, required this.color, required this.text});
+  InsightItem({required this.icon, required this.color, required this.text});
 }
 
-class _InsightsStrip extends StatelessWidget {
-  final List<_Insight> insights;
-  const _InsightsStrip({required this.insights});
+class InsightsStrip extends StatelessWidget {
+  final List<InsightItem> insights;
+  const InsightsStrip({required this.insights});
 
   @override
   Widget build(BuildContext context) {

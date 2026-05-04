@@ -1,9 +1,191 @@
+import 'package:flutter/material.dart';
+
 import 'package:firebase_database/firebase_database.dart';
 import '../models/collaboration_model.dart';
+import '../theme.dart';
+import 'app_logger.dart';
 import 'worker_trigger_queue.dart';
 
+class CollaborationApprovalCandidate {
+  const CollaborationApprovalCandidate({
+    required this.supervisorId,
+    required this.supervisorName,
+    required this.supervisorUsine,
+    required this.claimedAlerts,
+  });
+
+  final String supervisorId;
+  final String supervisorName;
+  final String supervisorUsine;
+  final List<CollaborationClaimedAlert> claimedAlerts;
+}
+
+class CollaborationClaimedAlert {
+  const CollaborationClaimedAlert({
+    required this.alertId,
+    required this.usine,
+  });
+
+  final String alertId;
+  final String usine;
+}
+
+class CollaborationApprovalPlan {
+  const CollaborationApprovalPlan({
+    required this.crossFactoryTransfers,
+    required this.existingClaimedAlerts,
+  });
+
+  final List<Map<String, String>> crossFactoryTransfers;
+  final List<Map<String, String>> existingClaimedAlerts;
+
+  bool get requiresTransferConfirmation => crossFactoryTransfers.isNotEmpty;
+  bool get requiresOriginalAlertConfirmation => existingClaimedAlerts.isNotEmpty;
+}
+
+class CollaborationApprovalDecision {
+  const CollaborationApprovalDecision({
+    required this.confirmTransfer,
+    required this.confirmCancelOriginal,
+    required this.cancelExistingAlertIds,
+  });
+
+  final bool confirmTransfer;
+  final bool confirmCancelOriginal;
+  final List<String> cancelExistingAlertIds;
+}
+
 class CollaborationService {
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  CollaborationService({
+    AppLogger? logger,
+    DatabaseReference? database,
+  })  : _logger = logger ?? const AppLogger(),
+        _db = database ?? FirebaseDatabase.instance.ref();
+
+  final DatabaseReference _db;
+  final AppLogger _logger;
+
+  CollaborationApprovalPlan buildApprovalPlan({
+    required String alertUsine,
+    required List<CollaborationApprovalCandidate> candidates,
+  }) {
+    final crossFactoryTransfers = <Map<String, String>>[];
+    final existingClaimedAlerts = <Map<String, String>>[];
+
+    for (final candidate in candidates) {
+      if (candidate.supervisorUsine.isNotEmpty &&
+          candidate.supervisorUsine != alertUsine) {
+        crossFactoryTransfers.add({
+          'name': candidate.supervisorName,
+          'fromUsine': candidate.supervisorUsine,
+        });
+      }
+
+      for (final alert in candidate.claimedAlerts) {
+        existingClaimedAlerts.add({
+          'alertId': alert.alertId,
+          'usine': alert.usine,
+        });
+      }
+    }
+
+    return CollaborationApprovalPlan(
+      crossFactoryTransfers: crossFactoryTransfers,
+      existingClaimedAlerts: existingClaimedAlerts,
+    );
+  }
+
+  /// Build an approval plan for a collaboration request by fetching necessary
+  /// metadata (supervisor usine and their claimed alerts) from the database.
+  Future<CollaborationApprovalPlan> buildApprovalPlanForRequest(
+      CollaborationRequest request) async {
+    // Fetch alert to determine its usine
+    final alertSnap =
+        await _db.child('alerts/${request.alertId}').get();
+    final alertUsine = alertSnap.exists
+        ? (alertSnap.child('usine').value as String? ?? '')
+        : '';
+
+    final candidates = <CollaborationApprovalCandidate>[];
+    for (int i = 0; i < request.targetSupervisorIds.length; i++) {
+      final supId = request.targetSupervisorIds[i];
+      final supName = request.targetSupervisorNames[i];
+
+      final supSnap = await _db.child('users/$supId').get();
+      final supUsine = supSnap.exists
+          ? (supSnap.child('usine').value as String? ?? '')
+          : '';
+
+      // Fetch claimed alerts for this supervisor
+      final claimed = <CollaborationClaimedAlert>[];
+      final snap = await _db
+          .child('alerts')
+          .orderByChild('superviseurId')
+          .equalTo(supId)
+          .once();
+      if (snap.snapshot.exists && snap.snapshot.value != null) {
+        final alertsMap = Map<String, dynamic>.from(snap.snapshot.value as Map);
+        for (final entry in alertsMap.entries) {
+          final a = Map<String, dynamic>.from(entry.value);
+          if (a['status'] == 'en_cours') {
+            claimed.add(CollaborationClaimedAlert(
+              alertId: entry.key,
+              usine: a['usine'] as String? ?? 'Unknown',
+            ));
+          }
+        }
+      }
+
+      candidates.add(CollaborationApprovalCandidate(
+        supervisorId: supId,
+        supervisorName: supName,
+        supervisorUsine: supUsine,
+        claimedAlerts: claimed,
+      ));
+    }
+
+    return buildApprovalPlan(alertUsine: alertUsine, candidates: candidates);
+  }
+
+  Future<CollaborationApprovalDecision?> requestApprovalDecision({
+    required BuildContext context,
+    required CollaborationApprovalPlan plan,
+    required String targetUsine,
+  }) async {
+    var confirmTransfer = false;
+    var confirmCancelOriginal = false;
+
+    if (plan.requiresTransferConfirmation) {
+      final confirmed = await _showCrossFactoryDialog(
+        context,
+        plan.crossFactoryTransfers,
+        targetUsine,
+      );
+      if (confirmed != true) {
+        return null;
+      }
+      confirmTransfer = true;
+    }
+
+    if (plan.requiresOriginalAlertConfirmation) {
+      final confirmed = await _showCancelOriginalDialog(
+        context,
+        plan.existingClaimedAlerts,
+      );
+      if (confirmed != true) {
+        return null;
+      }
+      confirmCancelOriginal = true;
+    }
+
+    return CollaborationApprovalDecision(
+      confirmTransfer: confirmTransfer,
+      confirmCancelOriginal: confirmCancelOriginal,
+      cancelExistingAlertIds: confirmCancelOriginal
+          ? plan.existingClaimedAlerts.map((e) => e['alertId']!).toList()
+          : const [],
+    );
+  }
 
   // In collaboration_service.dart
 
@@ -87,6 +269,7 @@ class CollaborationService {
 
     // Trigger FCM fan-out so target supervisors receive a push immediately.
     await WorkerTriggerQueue.instance.enqueueNotify();
+    _logger.info('Collaboration request created: $requestId');
 
     return requestId;
   }
@@ -499,6 +682,280 @@ class CollaborationService {
         'assistantRespondedAt': DateTime.now().toIso8601String(),
       });
     }
+  }
+
+  Future<bool?> _showCrossFactoryDialog(
+    BuildContext context,
+    List<Map<String, String>> transfers,
+    String toUsine,
+  ) {
+    final t = context.appTheme;
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: t.orangeLt,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.assignment_outlined,
+                      color: t.orange,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Cross-Factory Transfer Required',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: t.navy,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Approving this collaboration will require supervisor(s) to be transferred to work on an alert in a different factory.',
+                style: TextStyle(fontSize: 13, color: t.muted),
+              ),
+              const SizedBox(height: 16),
+              ...transfers.map((transfer) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: t.orangeLt,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: t.orange.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: t.orange,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                transfer['name']!,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: t.navy,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text.rich(
+                                TextSpan(
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: t.navy,
+                                  ),
+                                  children: [
+                                    const TextSpan(text: 'Will be transferred from '),
+                                    TextSpan(
+                                      text: transfer['fromUsine']!,
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    const TextSpan(text: ' to '),
+                                    TextSpan(
+                                      text: toUsine,
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  )),
+              const SizedBox(height: 12),
+              Text(
+                'Do you confirm this transfer?',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: t.navy,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      icon: const Icon(Icons.check_circle, size: 16),
+                      label: const Text(
+                        'Confirm Transfer & Approve',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool?> _showCancelOriginalDialog(
+    BuildContext context,
+    List<Map<String, String>> existingAlerts,
+  ) {
+    final t = context.appTheme;
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: t.orangeLt,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.warning_amber_rounded,
+                      color: t.orange,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Cancel Original Alert?',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: t.navy,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Approving this collaboration will cancel the original alert.',
+                style: TextStyle(fontSize: 13, color: t.muted),
+              ),
+              const SizedBox(height: 16),
+              ...existingAlerts.map((alert) {
+                final alertId = alert['alertId']!;
+                final shortId =
+                    'Alert #${alertId.length >= 6 ? alertId.substring(0, 6) : alertId}';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: t.orangeLt,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: t.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: t.orange, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              shortId,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: t.navy,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Factory: ${alert['usine']!}',
+                              style: TextStyle(fontSize: 12, color: t.navy),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'The original alert will be canceled and replaced by this collaboration.',
+                              style: TextStyle(fontSize: 11, color: t.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              Text(
+                'Do you confirm canceling the original alert and approving this collaboration?',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: t.navy,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      icon: const Icon(Icons.check_circle, size: 16),
+                      label: const Text('Confirm & Approve'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // Reject collaboration request

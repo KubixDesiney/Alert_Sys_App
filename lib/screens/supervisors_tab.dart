@@ -1,14 +1,41 @@
-part of 'admin_dashboard_screen.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
+
+import '../../models/alert_model.dart';
+import '../../models/hierarchy_model.dart';
+import '../../models/user_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/service_locator.dart';
+import '../../theme.dart';
+import '../../utils/alert_meta.dart';
+import 'admin/admin_dashboard_shared.dart';
+
+const _navy = adminNavy;
+const _navyLt = adminNavyLt;
+const _red = adminRed;
+const _white = adminWhite;
+const _border = adminBorder;
+const _muted = adminMuted;
+const _text = adminText;
+const _green = adminGreen;
+const _greenLt = adminGreenLt;
+const _orange = adminOrange;
+const _blue = adminBlue;
+
+Color _typeColor(String type) => typeMeta(type, const AppTheme(isDark: false)).color;
+String _typeLabel(String type) => typeMeta(type, const AppTheme(isDark: false)).label;
+String _fmtMin(int min) => formatAdminMinutes(min);
+String _fmtDate(DateTime d) => formatAdminDate(d);
 
 // SUPERVISORS TAB (unchanged from original – keep as is)
 // ═══════════════════════════════════════════════════════════════════════════
-class _SupervisorsTab extends StatefulWidget {
+class AdminSupervisorsTab extends StatefulWidget {
   final List<UserModel> supervisors;
   final List<AlertModel> alerts;
   final VoidCallback onAdd;
   final void Function(UserModel) onDelete;
   final Future<void> Function() onRefresh;
-  const _SupervisorsTab({
+  const AdminSupervisorsTab({
     required this.supervisors,
     required this.alerts,
     required this.onAdd,
@@ -16,14 +43,14 @@ class _SupervisorsTab extends StatefulWidget {
     required this.onRefresh,
   });
   @override
-  State<_SupervisorsTab> createState() => _SupervisorsTabState();
+  State<AdminSupervisorsTab> createState() => _SupervisorsTabState();
 }
 
-class _SupervisorsTabState extends State<_SupervisorsTab>
+class _SupervisorsTabState extends State<AdminSupervisorsTab>
     with SingleTickerProviderStateMixin {
   late TabController _sub;
   final TextEditingController _searchCtrl = TextEditingController();
-  final HierarchyService _hierarchyService = HierarchyService();
+  final _hierarchyService = ServiceLocator.instance.hierarchyService;
   StreamSubscription<List<Factory>>? _factoriesSubscription;
   List<Factory> _factories = [];
   String _searchQuery = '';
@@ -983,7 +1010,7 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
   }
 
   Future<void> _loadFactories() async {
-    final hierarchyService = HierarchyService();
+    final hierarchyService = ServiceLocator.instance.hierarchyService;
     hierarchyService.getFactories().listen((factories) {
       if (mounted) {
         setState(() {
@@ -1201,7 +1228,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _SheetLabel('First Name'),
+                      SheetLabel('First Name'),
                       TextField(
                         controller: firstCtrl,
                         decoration: const InputDecoration(
@@ -1211,7 +1238,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _SheetLabel('Last Name'),
+                      SheetLabel('Last Name'),
                       TextField(
                         controller: lastCtrl,
                         decoration: const InputDecoration(
@@ -1221,7 +1248,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _SheetLabel('Phone'),
+                      SheetLabel('Phone'),
                       TextField(
                         controller: phoneCtrl,
                         keyboardType: TextInputType.phone,
@@ -1232,7 +1259,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      _SheetLabel('Assigned Plant'),
+                      SheetLabel('Assigned Plant'),
                       DropdownButtonFormField<String>(
                         value: selectedUsine,
                         decoration: const InputDecoration(
@@ -1578,19 +1605,19 @@ class _MiniChip extends StatelessWidget {
       );
 }
 
-class _SheetField extends StatelessWidget {
+class SheetField extends StatelessWidget {
   final String label, hint;
   final TextEditingController ctrl;
   final bool obscure;
   final TextInputType keyboard;
-  const _SheetField(this.label, this.ctrl, this.hint,
+  const SheetField(this.label, this.ctrl, this.hint,
       {this.obscure = false, this.keyboard = TextInputType.text});
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SheetLabel(label),
+          SheetLabel(label),
           TextField(
             controller: ctrl,
             obscureText: obscure,
@@ -1619,9 +1646,9 @@ class _SheetField extends StatelessWidget {
       );
 }
 
-class _SheetLabel extends StatelessWidget {
+class SheetLabel extends StatelessWidget {
   final String text;
-  const _SheetLabel(this.text);
+  const SheetLabel(this.text);
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(bottom: 6),

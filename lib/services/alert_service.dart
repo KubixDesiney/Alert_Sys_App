@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
-import 'worker_trigger_queue.dart';
 
 String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
@@ -13,18 +15,6 @@ String _defaultDescription(String type) => switch (type) {
 
 class AlertService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-
-  /// Atomically increments and returns the next short, speakable alert number.
-  /// Voice commands rely on this because Firebase push keys are not pronounceable.
-  Future<int> nextAlertNumber() async {
-    final ref = _db.child('alertCounter');
-    final result = await ref.runTransaction((current) {
-      final currentVal = (current as num?)?.toInt() ?? 999;
-      return Transaction.success(currentVal + 1);
-    });
-    final committed = result.snapshot.value;
-    return (committed as num?)?.toInt() ?? 1000;
-  }
 
   Stream<List<AlertModel>> getAlertsForUsine(String usine) {
     return _db
@@ -76,21 +66,16 @@ class AlertService {
           'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
     }
 
-    final number = await nextAlertNumber();
-    final assetId =
-        await hierarchyService.getAssetIdForLocation(usine, convoyeur, poste);
-
+    // Create the alert (same as before)
     final ref = _db.child('alerts').push();
     final now = DateTime.now().toUtc();
-    final alertId = ref.key!;
+    final alertId = ref.key;
     final alertData = {
-      'alertNumber': number,
       'type': type,
       'usine': usine,
       'convoyeur': convoyeur,
       'poste': poste,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
-      if (assetId != null) 'assetId': assetId,
       'timestamp': now.toIso8601String(),
       'description':
           description.trim().isEmpty ? _defaultDescription(type) : description,
@@ -107,7 +92,17 @@ class AlertService {
       'elapsedTime': null,
     };
     await ref.set(alertData);
-    await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
+    // Trigger the Cloudflare Worker to send notifications immediately
+    try {
+      await http.post(
+        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev/'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'alertId': alertId}),
+      );
+    } catch (e) {
+      debugPrint(
+          'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e');
+    }
     return alertId;
   }
 
@@ -315,12 +310,9 @@ class AlertService {
       return;
 
     final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
-    final alertNumber =
-        (alertSnap.child('alertNumber').value as num?)?.toInt() ?? 0;
     await _db.child('alerts/$alertId').update({'notificationSent': true});
 
     final users = await getAllUsers();
-    final numberPrefix = alertNumber > 0 ? '#$alertNumber ' : '';
 
     for (var entry in users.entries) {
       final role = entry.value['role'] ?? 'supervisor';
@@ -329,11 +321,10 @@ class AlertService {
         final notification = {
           'type': 'new_alert',
           'alertId': alertId,
-          'alertNumber': alertNumber,
           'alertType': alertType,
           'alertDescription': description,
           'usine': usine,
-          'message': 'New alert ${numberPrefix}from $usine: $alertType',
+          'message': 'New alert from $usine: $alertType',
           'timestamp': DateTime.now().toIso8601String(),
           'status': 'pending',
           'pushSent': false,
