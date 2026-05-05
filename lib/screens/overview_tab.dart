@@ -1206,6 +1206,11 @@ class _CriticalArrivalDialog extends StatefulWidget {
 class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
+  AssigneeSuggestion? _suggestion;
+  bool _loadingSuggestion = false;
+  bool _assigning = false;
+  String? _assignError;
+  bool _assignedDone = false;
 
   @override
   void initState() {
@@ -1214,12 +1219,55 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
       vsync: this,
       duration: const Duration(milliseconds: 1150),
     )..repeat(reverse: true);
+    _loadSuggestion();
   }
 
   @override
   void dispose() {
     _pulse.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSuggestion() async {
+    setState(() {
+      _loadingSuggestion = true;
+    });
+    final s = await PredictiveIntelService.instance
+        .suggestAssignee(widget.alert.id);
+    if (!mounted) return;
+    setState(() {
+      _suggestion = s;
+      _loadingSuggestion = false;
+    });
+  }
+
+  Future<void> _assignSupervisor() async {
+    if (_assigning || _assignedDone) return;
+    final s = _suggestion;
+    final uid = s?.bestUid;
+    if (uid == null || uid.isEmpty) return;
+    setState(() {
+      _assigning = true;
+      _assignError = null;
+    });
+    try {
+      await ServiceLocator.instance.alertService.takeAlert(
+        widget.alert.id,
+        uid,
+        s?.bestName ?? 'AI assignment',
+      );
+      if (!mounted) return;
+      setState(() {
+        _assigning = false;
+        _assignedDone = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _assigning = false;
+        _assignError = 'Assignment failed. Please retry.';
+      });
+    }
   }
 
   @override
@@ -1360,6 +1408,49 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                           ),
                         ),
                       ],
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0x2A7B4BFF),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0x668E6BFF)),
+                        ),
+                        child: _loadingSuggestion
+                            ? const Text(
+                                'AI suggestion: analyzing best supervisor...',
+                                style: TextStyle(
+                                  color: Color(0xFFE7DDFF),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            : Text(
+                                _suggestion?.bestUid != null
+                                    ? 'AI suggestion: ${_suggestion?.bestName ?? 'Supervisor'} (${_suggestion?.confidencePct ?? 0}%)'
+                                    : 'AI suggestion: no eligible supervisor right now.',
+                                style: const TextStyle(
+                                  color: Color(0xFFE7DDFF),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                      if (_assignError != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _assignError!,
+                          style: const TextStyle(
+                            color: Color(0xFFFFC5C9),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1377,6 +1468,28 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                       ),
                     ),
                     const Spacer(),
+                    FilledButton(
+                      onPressed: _assigning ? null : _assignSupervisor,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF7B4BFF),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFF6B3EE0),
+                        disabledForegroundColor: const Color(0xFFE8DEFF),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      child: Text(
+                        _assigning
+                            ? 'Assigning...'
+                            : (_assignedDone
+                                ? 'Assigned'
+                                : 'Assign Supervisor'),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     FilledButton(
                       onPressed: () => Navigator.of(context).pop(),
                       style: FilledButton.styleFrom(
