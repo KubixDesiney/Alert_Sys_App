@@ -1,8 +1,9 @@
 String formatAlertClaimError(Object error) {
   final message = error.toString().toLowerCase();
 
-  if (message.contains('already have an alert in progress')) {
-    return 'You already have an alert in progress. Resolve it before claiming another one.';
+  if (message.contains('already have an alert in progress') ||
+      message.contains('already have a claimed alert')) {
+    return 'You already have a claimed alert. Resolve it before claiming another one.';
   }
 
   if (message.contains('already claimed by someone else')) {
