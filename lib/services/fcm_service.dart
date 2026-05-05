@@ -43,6 +43,8 @@ class FcmService {
   static String? pendingAlertId;
   static bool _hasPendingVoiceClaim = false;
   static Timer? _pendingVoiceClaimTimer;
+  static String? _pendingAlertNavId;
+  static Timer? _pendingAlertNavTimer;
 
   // Action ID for the "Speak command" notification action. When the user
   // taps it (works on the lock screen), Android brings the app forward and
@@ -121,8 +123,9 @@ class FcmService {
 
   void _handleForegroundMessage(RemoteMessage message) {
     final alertId = message.data['alertId'];
-    final title = message.notification?.title ?? 'New Alert';
-    final body = message.notification?.body ?? 'Tap to view details';
+    // FCM messages are now data-only; title/body live in message.data.
+    final title = message.notification?.title ?? message.data['title'] ?? 'New Alert';
+    final body = message.notification?.body ?? message.data['body'] ?? 'Tap to view details';
 
     if (alertId == null) return;
 
@@ -280,13 +283,42 @@ class FcmService {
   Future<bool> _handleInitialNotificationLaunch() async {
     final details = await _localNotifications.getNotificationAppLaunchDetails();
     final response = details?.notificationResponse;
-    final launchedFromVoiceAction = details?.didNotificationLaunchApp == true &&
-        response?.actionId == voiceClaimActionId;
-    if (launchedFromVoiceAction) {
-      _navigateToVoiceClaim(response?.payload);
+    if (details?.didNotificationLaunchApp != true || response == null) {
+      return false;
+    }
+    if (response.actionId == voiceClaimActionId) {
+      _navigateToVoiceClaim(response.payload);
+      return true;
+    }
+    // Plain notification tap (e.g. from a fullScreenIntent alert) — navigate
+    // to the alert detail. The navigator may not be ready yet, so defer.
+    final alertId = response.payload;
+    if (alertId != null && alertId.isNotEmpty) {
+      _deferNavigateToAlert(alertId);
       return true;
     }
     return false;
+  }
+
+  void _deferNavigateToAlert(String alertId) {
+    _pendingAlertNavId = alertId;
+    _pendingAlertNavTimer ??= Timer.periodic(
+      const Duration(milliseconds: 150),
+      (_) {
+        if (_pendingAlertNavId == null) {
+          _pendingAlertNavTimer?.cancel();
+          _pendingAlertNavTimer = null;
+          return;
+        }
+        if (navigatorKey.currentState != null) {
+          final id = _pendingAlertNavId!;
+          _pendingAlertNavId = null;
+          _pendingAlertNavTimer?.cancel();
+          _pendingAlertNavTimer = null;
+          _navigateToAlertDetailById(id);
+        }
+      },
+    );
   }
 
   static Future<void> showVoiceActionNotificationForMessage(
