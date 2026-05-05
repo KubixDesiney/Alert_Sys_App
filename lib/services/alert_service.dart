@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
 import 'app_logger.dart';
+import 'worker_auth_config.dart';
 
 String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
@@ -170,11 +171,11 @@ class AlertService {
       'elapsedTime': null,
     };
     await ref.set(alertData);
-    // Trigger the Cloudflare Worker to send notifications immediately
+    // Trigger the Cloudflare Worker to run AI assignment + push broadcast.
     try {
       await http.post(
-        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev/'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('${WorkerAuthConfig.baseUrl}/on-alert-created'),
+        headers: WorkerAuthConfig.headers(json: true),
         body: jsonEncode({'alertId': alertId}),
       );
     } catch (e) {

@@ -119,7 +119,9 @@ function base64UrlEncode(data) {
 // Shared secret enforcement
 // ============================================================
 function getWorkerSecret(env) {
-  return String(env?.WORKER_SHARED_SECRET || '').trim();
+  return String(
+    env?.WORKER_SHARED_SECRET || env?.ALERTSYS_WORKER_SHARED_SECRET || '',
+  ).trim();
 }
 
 function enforceWorkerAuth(request, env) {
@@ -222,12 +224,24 @@ async function sendFcm(token, title, body, data, env) {
       body: JSON.stringify({
         message: {
           token,
+          notification: { title, body },
           data: { ...stringData, title, body },
-          android: { priority: 'high' },
+          android: {
+            priority: 'high',
+            notification: {
+              channel_id: 'alerts_voice_critical',
+              visibility: 'PUBLIC',
+              click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            },
+          },
           apns: {
             headers: { 'apns-priority': '10' },
             payload: {
-              aps: { contentAvailable: true, sound: 'default' },
+              aps: {
+                alert: { title, body },
+                contentAvailable: true,
+                sound: 'default',
+              },
             },
           },
         },
@@ -994,6 +1008,16 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
         timestamp: nowIso,
       }),
     }),
+    fetch(`${env.FB_DB_URL}ai_runtime/cooldownSignals/${supervisor.uid}.json?auth=${token}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actionId,
+        alertId,
+        cooldownUntil,
+        assignedAt: nowIso,
+      }),
+    }),
   ]);
 
   if (supervisor.fcmToken) {
@@ -1077,7 +1101,7 @@ async function runAIAssignments(env, ctx) {
       if (!isNaN(cooldown) && cooldown > now) continue;
       const userFactory = aiResolveFactory(u);
       if (!userFactory || userFactory !== factoryId) continue;
-      candidates.push(u);
+      candidates.push({ ...u, uid });
     }
     if (candidates.length === 0) continue;
 
@@ -1305,6 +1329,9 @@ export default {
     ctx.waitUntil((async () => {
       let coreCtx;
       try { coreCtx = await loadCoreData(env); } catch (e) { console.error('[CRON] Load failed: ' + e.message); return; }
+      try { await runAIAssignments(env, coreCtx); } catch (e) { console.error('[AI_ASSIGN] ' + e.message); }
+      try { await processAlerts(env, coreCtx); } catch (e) { console.error('[PUSH_ALERTS] ' + e.message); }
+      try { await fanOutPendingNotifications(env, coreCtx); } catch (e) { console.error('[FANOUT] ' + e.message); }
       await checkEscalations(env, coreCtx);
       try { await refreshPredictionsIfStale(env, coreCtx, 30); } catch (e) { console.error('[PREDICT] ' + e.message); }
       try { await generateMorningBriefing(env, coreCtx, false); } catch (e) { console.error('[BRIEFING] ' + e.message); }
@@ -1321,7 +1348,7 @@ export default {
     const authRoutes = [
       '/ai-proxy', '/predict', '/briefing', '/suggest-assignee',
       '/auto-fix', '/auto-fix-full',
-      '/notify', '/ai-retry', '/admin/create-supervisor', '/',
+      '/notify', '/ai-retry', '/admin/create-supervisor', '/on-alert-created', '/',
     ];
     if (authRoutes.includes(url.pathname)) {
       const authResponse = enforceWorkerAuth(request, env);
@@ -1336,6 +1363,15 @@ export default {
     if (url.pathname === '/briefing') return handleBriefing(request, env);
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
     if (url.pathname === '/admin/create-supervisor') return handleCreateSupervisor(request, env);
+
+    if (url.pathname === '/on-alert-created') {
+      ctx.waitUntil((async () => {
+        const coreCtx = await loadCoreData(env);
+        await runAIAssignments(env, coreCtx);
+        await processAlerts(env, coreCtx);
+      })());
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     if (url.pathname === '/ai-retry') {
       ctx.waitUntil((async () => {

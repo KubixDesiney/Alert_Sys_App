@@ -61,8 +61,7 @@ class WorkerTriggerQueue {
 
   Future<void> enqueueAlertTrigger(String alertId) {
     return enqueuePost(
-      Uri.parse(WorkerAuthConfig.baseUrl),
-      headers: const {'Content-Type': 'application/json'},
+      Uri.parse('${WorkerAuthConfig.baseUrl}/on-alert-created'),
       jsonBody: {'alertId': alertId},
     );
   }
