@@ -29,12 +29,11 @@ class AdminEscalationScreen extends StatefulWidget {
 class _AdminEscalationScreenState extends State<AdminEscalationScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final _service = CollaborationService();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -139,42 +138,6 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                             ],
                           ),
                         ),
-                        Tab(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.shield, size: 16),
-                              const SizedBox(width: 6),
-                              const Text('Collaborations'),
-                              const SizedBox(width: 4),
-                              StreamBuilder<List<CollaborationRequest>>(
-                                stream:
-                                    _service.getPendingCollaborationRequests(),
-                                builder: (context, snapshot) {
-                                  final count = snapshot.data?.length ?? 0;
-                                  if (count == 0)
-                                    return const SizedBox.shrink();
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: _red,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      '$count',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: _white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
                         const Tab(
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -197,7 +160,6 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                 controller: _tabController,
                 children: const [
                   _EscalatedAlertsTab(),
-                  _CollaborationsTab(),
                   _SettingsTab(),
                 ],
               ),
@@ -337,10 +299,10 @@ class _EscalatedAlertsTab extends StatelessWidget {
 }
 
 // ============================================================================
-// COLLABORATIONS TAB
+// COLLABORATIONS TAB — surfaced under the Supervisors section.
 // ============================================================================
-class _CollaborationsTab extends StatelessWidget {
-  const _CollaborationsTab();
+class CollaborationsTab extends StatelessWidget {
+  const CollaborationsTab({super.key});
 
   @override
   Widget build(BuildContext context) {

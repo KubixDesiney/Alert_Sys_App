@@ -142,6 +142,8 @@ function _aggregateWeek(alertsMap = {}) {
     fastestMin: 0,
     slowestMin: 0,
     avgResolutionMin: 0,
+    byType: {},
+    byFactory: {},
   };
   let resolutionCount = 0;
   let resolutionTotal = 0;
@@ -151,6 +153,10 @@ function _aggregateWeek(alertsMap = {}) {
     stats.total++;
     if (alert?.isCritical === true) stats.critical++;
     if (alert?.aiAssigned === true) stats.aiAssigned++;
+    const type = String(alert?.type || '');
+    const factory = String(alert?.usine || '');
+    stats.byType[type] = (stats.byType[type] || 0) + 1;
+    stats.byFactory[factory] = (stats.byFactory[factory] || 0) + 1;
     if (alert?.status === 'validee') {
       stats.solved++;
       const elapsed = Number(alert?.elapsedTime);

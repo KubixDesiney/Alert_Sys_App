@@ -9,6 +9,7 @@ import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
 import 'admin/admin_dashboard_shared.dart';
+import 'admin_escalation_screen.dart' show CollaborationsTab;
 
 const _navy = adminNavy;
 const _navyLt = adminNavyLt;
@@ -58,7 +59,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
   @override
   void initState() {
     super.initState();
-    _sub = TabController(length: 3, vsync: this);
+    _sub = TabController(length: 4, vsync: this);
     _loadFactories();
   }
 
@@ -116,6 +117,11 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
                   icon: Icons.bar_chart,
                   index: 2,
                   ctrl: _sub),
+              _SubPill(
+                  label: 'Collaborations',
+                  icon: Icons.shield,
+                  index: 3,
+                  ctrl: _sub),
             ],
           ),
         ),
@@ -143,6 +149,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
             _AssignmentsSubTab(
               supervisors: widget.supervisors,
             ),
+            const CollaborationsTab(),
           ],
         ),
       ),

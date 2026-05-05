@@ -65,7 +65,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final _auth = AuthService();
 
   // Filter state
-  String _timeRange = 'week';
+  String _timeRange = 'all';
   String _selectedUsine = 'all';
   String _filterConvoyeur = 'all';
   String _filterPoste = 'all';
@@ -89,7 +89,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _loadSavedFilters() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _timeRange = prefs.getString(_prefTimeRange) ?? 'week';
+      _timeRange = prefs.getString(_prefTimeRange) ?? 'all';
       _selectedUsine = prefs.getString(_prefUsine) ?? 'all';
     });
     _applyFilters();
@@ -469,7 +469,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _applyFilters();
       _saveFilters();
     } else {
-      setState(() => _timeRange = 'week');
+      setState(() => _timeRange = 'all');
     }
   }
 
@@ -1171,7 +1171,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           },
           onReset: () {
             setState(() {
-              _timeRange = 'week';
+              _timeRange = 'all';
               _selectedUsine = 'all';
               _filterConvoyeur = 'all';
               _filterPoste = 'all';
