@@ -1070,7 +1070,7 @@ function aiResolveFactory(obj) {
   return usine ? aiSanitizeFactoryId(usine) : null;
 }
 
-async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env, token) {
+async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env, token, allCandidates = []) {
   const alertUrl = `${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`;
   const getRes = await fetch(alertUrl, { headers: { 'X-Firebase-ETag': 'true' } });
   if (!getRes.ok) return false;
@@ -1115,7 +1115,7 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
       }),
     }),
     fetch(`${env.FB_DB_URL}ai_decisions/${alertId}.json?auth=${token}`, {
-      method: 'PATCH',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         alertId,
@@ -1123,8 +1123,17 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
         assignedToName: supervisor.name,
         confidence,
         reasonSummary,
+        breakdown: supervisor.reasons || [],
         decisionMode: 'worker_auto',
         timestamp: nowIso,
+        // Full candidate list so the app can show "why not others".
+        consideredCandidates: allCandidates.map((c) => ({
+          supervisorId: c.uid,
+          name: c.name,
+          score: c.score,
+          reasons: c.reasons || [],
+          skipReason: c.skipReason ?? null,
+        })),
       }),
     }),
   ]);
@@ -1236,7 +1245,7 @@ async function runAIAssignments(env, ctx) {
     const topSum = scored.slice(0, 3).reduce((s, c) => s + c.score, 0);
     const confidence = topSum > 0 ? Math.min(best.score / topSum, 1.0) : 1.0;
     const reasonSummary = best.reasons.join(' • ');
-    const ok = await aiAssignAlert(alert.id, best, reasonSummary, confidence, env, token);
+    const ok = await aiAssignAlert(alert.id, best, reasonSummary, confidence, env, token, scored);
     if (ok) { busy.add(best.uid); assignedCount++; }
   }
 }
