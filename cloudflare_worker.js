@@ -512,12 +512,18 @@ async function loadCoreData(env) {
 }
 
 // ============ FCM tokens for a factory ============
-function getFcmTokensForFactory(factoryName, usersMap, alertsMap) {
+// allSupervisors=true → notify every supervisor in the factory (new alerts).
+// allSupervisors=false → skip supervisors who already own an in-progress alert
+//                        (used for escalations / AI-assignment notifications).
+function getFcmTokensForFactory(factoryName, usersMap, alertsMap, { allSupervisors = false } = {}) {
   const targetId = aiSanitizeFactoryId(factoryName);
   const busySupervisors = new Set();
-  for (const a of Object.values(alertsMap)) {
-    if (a.status === 'en_cours') {
-      if (a.superviseurId) busySupervisors.add(a.superviseurId);
+  if (!allSupervisors) {
+    for (const a of Object.values(alertsMap)) {
+      if (a.status === 'en_cours') {
+        if (a.superviseurId) busySupervisors.add(a.superviseurId);
+        if (a.assistantId) busySupervisors.add(a.assistantId);
+      }
     }
   }
   const tokens = new Set();
@@ -564,7 +570,9 @@ async function processAlerts(env, ctx) {
       body: JSON.stringify('sending'),
     });
     if (claimRes.status === 412 || !claimRes.ok) continue;
-    const fcmTokens = getFcmTokensForFactory(alert.usine, usersMap, alertsMap);
+    // New-alert push: notify ALL supervisors in this factory, regardless of
+    // whether they are currently handling another alert.
+    const fcmTokens = getFcmTokensForFactory(alert.usine, usersMap, alertsMap, { allSupervisors: true });
     if (fcmTokens.length === 0) {
       await fetch(flagUrl, { method: 'PUT', body: JSON.stringify(false) });
       continue;
@@ -598,23 +606,30 @@ async function checkEscalations(env, ctx) {
     return;
   }
   const now = Date.now();
-  let processed = 0;
-  for (const [alertId, alert] of Object.entries(alertsMap)) {
-    if (processed >= MAX_ESCALATION_CHECKS) break;
+
+  // Pre-filter to only active, unescalated alerts so the MAX_ESCALATION_CHECKS
+  // budget is not consumed by already-handled entries.
+  const candidates = Object.entries(alertsMap).filter(
+    ([, a]) => a && !a.isEscalated && a.status !== 'validee' && a.status !== 'cancelled',
+  );
+
+  let escalated = 0;
+  for (const [alertId, alert] of candidates) {
+    if (escalated >= MAX_ESCALATION_CHECKS) break;
     try {
-      if (alert.isEscalated === true) { processed++; continue; }
-      if (alert.status === 'validee' || alert.status === 'cancelled') { processed++; continue; }
       let threshold = settings[alert.type] || settings[String(alert.type || '').toLowerCase()];
       if (!threshold && settings.default) threshold = settings.default;
-      if (!threshold) { processed++; continue; }
+      if (!threshold) continue;
+
       let createdAtMs;
       if (typeof alert.timestamp === 'number') {
         createdAtMs = alert.timestamp;
       } else if (typeof alert.timestamp === 'string') {
         const parsed = Date.parse(alert.timestamp);
-        if (isNaN(parsed)) { processed++; continue; }
+        if (isNaN(parsed)) continue;
         createdAtMs = parsed;
-      } else { processed++; continue; }
+      } else { continue; }
+
       let shouldEscalate = false;
       let reason = '';
       if (alert.status === 'disponible') {
@@ -629,7 +644,7 @@ async function checkEscalations(env, ctx) {
           takenMs = alert.takenAtTimestamp;
         } else {
           const parsed = Date.parse(alert.takenAtTimestamp);
-          if (isNaN(parsed)) { processed++; continue; }
+          if (isNaN(parsed)) continue;
           takenMs = parsed;
         }
         const mins = (now - takenMs) / 60000;
@@ -637,8 +652,10 @@ async function checkEscalations(env, ctx) {
           shouldEscalate = true;
           reason = `Claimed but not resolved for ${Math.floor(mins)} minutes`;
         }
-      } else { processed++; continue; }
-      if (!shouldEscalate) { processed++; continue; }
+      } else { continue; }
+
+      if (!shouldEscalate) continue;
+
       const patchRes = await fetch(`${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -646,7 +663,7 @@ async function checkEscalations(env, ctx) {
       });
       if (!patchRes.ok) {
         console.error(`[ESCALATION] Failed to patch alert ${alertId}: ${patchRes.status}`);
-        processed++; continue;
+        continue;
       }
       try {
         await fetch(`${env.FB_DB_URL}alerts/${alertId}/aiHistory.json?auth=${token}`, {
@@ -655,6 +672,7 @@ async function checkEscalations(env, ctx) {
           body: JSON.stringify({ event: 'escalated_worker', reason, timestamp: new Date().toISOString() }),
         });
       } catch (e) { console.error('[ESCALATION] Failed to write aiHistory: ' + e.message); }
+
       const escalMsg = `⚠️ Alert Escalated: ${alert.type}`;
       const escalBody = `${alert.usine} — ${alert.description}\n${reason}`;
       const escalData = { alertId, type: alert.type || '', usine: alert.usine || '', escalated: 'true' };
@@ -670,46 +688,116 @@ async function checkEscalations(env, ctx) {
         }
       }
       console.log(`[ESCALATION] Escalated alert ${alertId} (${alert.type}) reason=${reason}`);
-      processed++;
+      escalated++;
     } catch (e) {
       console.error('[ESCALATION] Error processing alert: ' + e.message);
-      processed++;
     }
   }
 }
 
-// ============ Gemini proxy ============
-async function handleGeminiRequest(request, env) {
-  const fallback = '• Check equipment status.\n• Verify sensor connections.\n• Restart the affected machine.';
+// ============ Workers AI helpers ============
+const _AI_FALLBACK = '• Check equipment status.\n• Verify sensor connections.\n• Restart the affected machine.';
+
+const _TYPE_LABELS = {
+  qualite: 'Quality',
+  maintenance: 'Maintenance',
+  defaut_produit: 'Damaged Product',
+  manque_ressource: 'Resource Deficiency',
+};
+
+async function _runLlama(prompt, env) {
+  if (!env.AI) return null;
+  try {
+    const resp = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return (resp.response || '').trim() || null;
+  } catch (e) {
+    console.error('[AI] Llama run failed: ' + e.message);
+    return null;
+  }
+}
+
+// /ai-proxy – generic prompt relay (used by auto-fix features)
+async function handleAiProxy(request, env) {
   try {
     const { prompt } = await request.json();
-    const key = env.GEMINI_API_KEY;
-    if (!key) {
-      return new Response(JSON.stringify({ suggestion: fallback, note: 'No API key' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    });
-    if (!res.ok) {
-      return new Response(JSON.stringify({ suggestion: fallback, note: 'Gemini error' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const data = await res.json();
-    const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No suggestion available';
+    const suggestion = await _runLlama(String(prompt || ''), env) ?? _AI_FALLBACK;
     return new Response(JSON.stringify({ suggestion }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch {
-    return new Response(JSON.stringify({ suggestion: fallback, note: 'Error' }), {
+  } catch (e) {
+    return new Response(JSON.stringify({ suggestion: _AI_FALLBACK }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// /ai-suggest – context-aware alert resolution suggestion.
+// Reads the last 10 resolved alerts at the same factory/conveyor/station/type
+// from Firebase so Llama can learn from real past fixes.
+async function handleAiSuggest(request, env) {
+  try {
+    const { type, usine, convoyeur, poste, description } = await request.json();
+    if (!type || !usine) {
+      return new Response(JSON.stringify({ suggestion: _AI_FALLBACK }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Fetch resolved alerts for this factory so we can extract past fixes.
+    let pastResolutions = [];
+    try {
+      const token = await getFirebaseToken(env);
+      const res = await fetch(
+        `${env.FB_DB_URL}alerts.json?auth=${token}&orderBy="usine"&equalTo=${encodeURIComponent(usine)}`,
+      );
+      if (res.ok) {
+        const data = (await res.json()) || {};
+        pastResolutions = Object.values(data)
+          .filter(
+            (a) =>
+              a &&
+              a.status === 'validee' &&
+              a.type === type &&
+              Number(a.convoyeur) === Number(convoyeur) &&
+              Number(a.poste) === Number(poste) &&
+              a.resolutionReason,
+          )
+          .sort((a, b) => (String(b.resolvedAt || '') > String(a.resolvedAt || '') ? 1 : -1))
+          .slice(0, 10)
+          .map((a) => a.resolutionReason);
+      }
+    } catch (e) {
+      console.error('[AI-SUGGEST] History fetch failed: ' + e.message);
+    }
+
+    const typeLabel = _TYPE_LABELS[type] || type;
+    const historyBlock =
+      pastResolutions.length > 0
+        ? `Past resolutions for this exact location (most recent first):\n${pastResolutions.map((r) => `- ${r}`).join('\n')}`
+        : 'No past resolutions on record for this specific location.';
+
+    const prompt = `You are an industrial operations assistant. A supervisor needs a resolution suggestion.
+
+Alert type: ${typeLabel}
+Description: ${description}
+Location: Factory: ${usine}, Conveyor line: ${convoyeur}, Workstation: #${poste}
+
+${historyBlock}
+
+Provide a concise, actionable resolution in 2-3 bullet points. Base it on the past fixes when available; otherwise suggest the most likely root cause and immediate action.`;
+
+    const suggestion = await _runLlama(prompt, env) ?? _AI_FALLBACK;
+    return new Response(JSON.stringify({ suggestion }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ suggestion: _AI_FALLBACK }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -828,16 +916,8 @@ async function handleAutoFix(request, env) {
     const prompt =
       'Fix this Dart/Flutter code using the error list. Return only the fixed source code.\n\n' +
       `Errors:\n${errors}\n\nCode:\n${code}`;
-    const aiResponse = await handleGeminiRequest(
-      new Request('https://worker.local/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      }),
-      env,
-    );
-    const aiData = await aiResponse.json();
-    return new Response(JSON.stringify({ fixedCode: String(aiData?.suggestion || '') }), {
+    const suggestion = await _runLlama(prompt, env) ?? '';
+    return new Response(JSON.stringify({ fixedCode: suggestion }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -858,18 +938,10 @@ async function handleAutoFixFull(request, env) {
     const prompt =
       'Fix the provided project files based on the errors. Return only a JSON array of objects with path and content.\n\n' +
       `Errors:\n${errors}\n\nFiles:\n${combined}`;
-    const aiResponse = await handleGeminiRequest(
-      new Request('https://worker.local/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      }),
-      env,
-    );
-    const aiData = await aiResponse.json();
+    const raw = await _runLlama(prompt, env) ?? '[]';
     let fixedFiles = [];
     try {
-      fixedFiles = JSON.parse(String(aiData?.suggestion || '[]'));
+      fixedFiles = JSON.parse(raw);
       if (!Array.isArray(fixedFiles)) fixedFiles = [];
     } catch (_) {
       fixedFiles = [];
@@ -1309,7 +1381,8 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
     if (url.pathname === '/config') return handleConfigRequest();
-    if (url.pathname === '/ai-proxy') return handleGeminiRequest(request, env);
+    if (url.pathname === '/ai-proxy') return handleAiProxy(request, env);
+    if (url.pathname === '/ai-suggest') return handleAiSuggest(request, env);
     if (url.pathname === '/predict') return handlePredictions(env);
     if (url.pathname === '/briefing') return handleBriefing(request, env);
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
