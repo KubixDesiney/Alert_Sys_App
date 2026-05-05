@@ -12,10 +12,12 @@ class CriticalAlertsCard extends StatelessWidget {
   final List<AlertModel> alerts;
   final void Function(AlertModel) onAlertTap;
   final String Function(AlertModel) describe;
+  final double maxHeight;
   const CriticalAlertsCard({
     required this.alerts,
     required this.onAlertTap,
     required this.describe,
+    this.maxHeight = 360,
   });
 
   Widget _alertTile(BuildContext context, AlertModel alert) {
@@ -29,6 +31,7 @@ class CriticalAlertsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
+    final rows = alerts.map((a) => _alertTile(context, a)).toList();
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       decoration: BoxDecoration(
@@ -84,7 +87,17 @@ class CriticalAlertsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          ...alerts.map((a) => _alertTile(context, a)),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: maxHeight,
+            ),
+            child: Scrollbar(
+              thumbVisibility: rows.length > 3,
+              child: SingleChildScrollView(
+                child: Column(children: rows),
+              ),
+            ),
+          ),
         ],
       ),
     );
