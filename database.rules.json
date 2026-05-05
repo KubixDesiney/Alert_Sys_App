@@ -29,6 +29,15 @@
       }
     },
 
+    "supervisor_active_alerts": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$supervisorId": {
+        ".read": "auth != null && (auth.uid === $supervisorId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && (auth.uid === $supervisorId || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+
     "work_instructions": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",

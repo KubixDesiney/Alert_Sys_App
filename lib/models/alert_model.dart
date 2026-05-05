@@ -1,5 +1,8 @@
 class AlertModel {
   final String id;
+  // Unique action ID for idempotency - tracks AI assignments and escalations
+  // Prevents duplicate logging and ensures actions only happen once
+  final String? actionId;
   // Short, human-speakable, auto-incrementing number assigned at creation.
   // Voice commands reference this (e.g. "claim alert 1025"). 0 = legacy/unmigrated.
   final int alertNumber;
@@ -55,6 +58,7 @@ class AlertModel {
 
   AlertModel({
     required this.id,
+    this.actionId,
     this.alertNumber = 0,
     required this.type,
     required this.usine,
@@ -108,6 +112,7 @@ class AlertModel {
     final assetId = rawAssetId?.toString().trim();
     return AlertModel(
       id: id,
+      actionId: data['actionId'],
       alertNumber: (data['alertNumber'] as num?)?.toInt() ?? 0,
       type: data['type'] ?? 'qualite',
       isCritical: data['isCritical'] ?? false,
@@ -158,6 +163,7 @@ class AlertModel {
   }
 
   Map<String, dynamic> toMap() => {
+        'actionId': actionId,
         'alertNumber': alertNumber,
         'type': type,
         'isCritical': isCritical,
@@ -226,6 +232,7 @@ class AlertModel {
     String? helpRequesterId,
     String? helpRequesterName,
     String? collaborationRequestId,
+    String? actionId,
     bool clearSuperviseur = false,
     bool clearTakenAt = false,
     bool? isEscalated,
@@ -243,6 +250,7 @@ class AlertModel {
   }) =>
       AlertModel(
         id: id,
+        actionId: actionId ?? this.actionId,
         alertNumber: alertNumber,
         type: type,
         isCritical: isCritical ?? this.isCritical,
