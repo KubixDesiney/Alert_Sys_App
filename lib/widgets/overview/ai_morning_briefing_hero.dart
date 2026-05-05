@@ -11,11 +11,13 @@ class AIMorningBriefingHero extends StatefulWidget {
   final String timeRangeLabel;
   final String timeRangeSubtitle;
   final Future<void> Function() onRefresh;
+  final bool compact;
   const AIMorningBriefingHero({
     required this.briefing,
     required this.timeRangeLabel,
     required this.timeRangeSubtitle,
     required this.onRefresh,
+    this.compact = false,
   });
 
   @override
@@ -92,13 +94,23 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
 
   @override
   Widget build(BuildContext context) {
-    final theme = context.appTheme;
     final isDark = context.isDark;
     final summary = _displaySummary();
     final b = widget.briefing;
+    final compact = widget.compact;
+
+    final pad = compact
+        ? const EdgeInsets.fromLTRB(16, 12, 14, 12)
+        : const EdgeInsets.fromLTRB(20, 18, 18, 20);
+    final titleSize = compact ? 16.5 : 22.0;
+    final summarySize = compact ? 12.0 : 13.5;
+    final summaryMaxLines = compact ? 2 : 6;
+    final spacingTitle = compact ? 6.0 : 14.0;
+    final spacingAfterSummary = compact ? 8.0 : 14.0;
+    final spacingAfterChips = compact ? 8.0 : 12.0;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(compact ? 16 : 20),
       child: Stack(
         children: [
           Positioned.fill(
@@ -137,46 +149,53 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 18, 20),
+            padding: pad,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
                     const _LivePulseDot(),
                     const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(99),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.auto_awesome_rounded,
-                              size: 11, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text(
-                            _modelLabel(),
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.4,
-                              color: Colors.white,
-                            ),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.2),
                           ),
-                        ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.auto_awesome_rounded,
+                                size: 11, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                _modelLabel(),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.4,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 8 : 10,
+                          vertical: compact ? 4 : 6),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(99),
@@ -188,12 +207,12 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.calendar_month_rounded,
-                              size: 13, color: Colors.white),
-                          const SizedBox(width: 6),
+                              size: 12, color: Colors.white),
+                          const SizedBox(width: 5),
                           Text(
                             widget.timeRangeLabel,
                             style: const TextStyle(
-                              fontSize: 11.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
@@ -203,15 +222,15 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                SizedBox(height: spacingTitle),
                 ShaderMask(
                   shaderCallback: (rect) => const LinearGradient(
                     colors: [Colors.white, Color(0xFFE0E7FF)],
                   ).createShader(rect),
-                  child: const Text(
+                  child: Text(
                     'Operations Briefing',
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: titleSize,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
                       height: 1.1,
@@ -219,31 +238,33 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                SizedBox(height: compact ? 6 : 10),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 480),
                   child: Text(
                     summary,
                     key: ValueKey(summary.hashCode),
+                    maxLines: summaryMaxLines,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 13.5,
+                      fontSize: summarySize,
                       color: Colors.white.withValues(alpha: 0.92),
-                      height: 1.55,
+                      height: compact ? 1.35 : 1.55,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                SizedBox(height: spacingAfterSummary),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
+                  spacing: 6,
+                  runSpacing: 5,
                   children: [
                     if (b?.topType != null)
                       _briefChip(
                         Icons.local_fire_department_rounded,
-                        '${typeMeta(b!.topType!, context.appTheme).label} leads · ${b.topTypeCount}',
+                        '${typeMeta(b!.topType!, context.appTheme).label} · ${b.topTypeCount}',
                       ),
-                    if (b?.topFactory != null)
+                    if (b?.topFactory != null && !compact)
                       _briefChip(
                         Icons.factory_rounded,
                         '${b!.topFactory} most active',
@@ -259,26 +280,31 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                SizedBox(height: spacingAfterChips),
                 Row(
                   children: [
-                    Text(
-                      widget.timeRangeSubtitle,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.white.withValues(alpha: 0.72),
-                        fontWeight: FontWeight.w500,
+                    Expanded(
+                      child: Text(
+                        widget.timeRangeSubtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
                         borderRadius: BorderRadius.circular(99),
                         onTap: _doRefresh,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 7),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: compact ? 10 : 12,
+                              vertical: compact ? 5 : 7),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
@@ -307,15 +333,13 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                               else
                                 const Icon(Icons.auto_awesome_rounded,
                                     size: 13, color: Colors.white),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 5),
                               Text(
                                 _refreshing ? 'Generating…' : 'Regenerate',
-                                style: TextStyle(
-                                  fontSize: 11.5,
+                                style: const TextStyle(
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w800,
-                                  color: theme.text == Colors.white
-                                      ? Colors.white
-                                      : Colors.white,
+                                  color: Colors.white,
                                 ),
                               ),
                             ],
