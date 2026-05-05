@@ -18,7 +18,6 @@ import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../../widgets/overview/ai_morning_briefing_hero.dart';
 import '../../widgets/overview/overview_critical_alerts_card.dart';
-import '../../widgets/overview/overview_insights_strip.dart';
 import '../../widgets/overview/overview_predictive_failure_card.dart';
 import '../../widgets/overview/overview_predictive_heatmap.dart';
 import '../../widgets/overview/overview_stat_card.dart';
@@ -398,6 +397,9 @@ class AdminOverviewTab extends StatefulWidget {
 class _OverviewTabState extends State<AdminOverviewTab> {
   List<Factory> _factories = [];
   String? _historyFilter;
+  final Set<String> _announcedCriticalIds = <String>{};
+  final List<AlertModel> _criticalDialogQueue = <AlertModel>[];
+  bool _criticalDialogOpen = false;
 
   MorningBriefing? _briefing;
   PredictiveModel? _predictions;
@@ -415,6 +417,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   @override
   void initState() {
     super.initState();
+    _seedKnownCriticalAlerts();
     _loadFactories();
     _bindPredictiveStreams();
     _warmPredictiveCaches();
@@ -425,6 +428,82 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     _briefSub?.cancel();
     _predSub?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant AdminOverviewTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _detectIncomingCriticalAlerts(oldWidget.allAlerts);
+    });
+  }
+
+  void _seedKnownCriticalAlerts() {
+    for (final a in widget.allAlerts) {
+      if (!a.isCritical) continue;
+      _announcedCriticalIds.add(a.id);
+    }
+  }
+
+  void _detectIncomingCriticalAlerts(List<AlertModel> previousAlerts) {
+    final previousIds = previousAlerts
+        .where((a) => a.isCritical)
+        .map((a) => a.id)
+        .toSet();
+    final incoming = widget.allAlerts.where((a) {
+      if (!a.isCritical) return false;
+      if (a.status != 'disponible') return false;
+      if (_announcedCriticalIds.contains(a.id)) return false;
+      return !previousIds.contains(a.id);
+    }).toList();
+    if (incoming.isEmpty) return;
+    for (final a in incoming) {
+      _announcedCriticalIds.add(a.id);
+      _criticalDialogQueue.add(a);
+    }
+    _requestShowNextCriticalDialog();
+  }
+
+  void _requestShowNextCriticalDialog() {
+    if (!mounted || _criticalDialogOpen || _criticalDialogQueue.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _criticalDialogOpen || _criticalDialogQueue.isEmpty) {
+        return;
+      }
+      _showNextCriticalDialog();
+    });
+  }
+
+  Future<void> _showNextCriticalDialog() async {
+    if (!mounted || _criticalDialogOpen || _criticalDialogQueue.isEmpty) return;
+    _criticalDialogOpen = true;
+    final alert = _criticalDialogQueue.removeAt(0);
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'critical-arrival',
+      barrierColor: Colors.black.withValues(alpha: 0.68),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, _, __) => _CriticalArrivalDialog(
+        alert: alert,
+        describe: _getAlertDisplayDescription,
+      ),
+      transitionBuilder: (_, anim, __, child) {
+        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.88, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+    _criticalDialogOpen = false;
+    if (_criticalDialogQueue.isNotEmpty) {
+      _requestShowNextCriticalDialog();
+    }
   }
 
   void _loadFactories() {
@@ -655,64 +734,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     return '${d.inMinutes}m';
   }
 
-  List<InsightItem> _smartInsights() {
-    final insights = <InsightItem>[];
-    final ts = _typeStats();
-    String? biggest;
-    var biggestVal = 0;
-    ts.forEach((k, v) {
-      if (v['total']! > biggestVal) {
-        biggestVal = v['total']!;
-        biggest = k;
-      }
-    });
-    if (biggest != null && biggestVal > 0) {
-      insights.add(InsightItem(
-        icon: adminTypeIcon(context, biggest!),
-        color: adminTypeColor(context, biggest!),
-        text:
-            '${adminTypeLabel(context, biggest!)} leads this period — $biggestVal alert${biggestVal > 1 ? 's' : ''}.',
-      ));
-    }
-
-    if (widget.total > 0) {
-      final rate = (widget.solved / widget.total * 100).round();
-      if (rate >= 80) {
-        insights.add(InsightItem(
-          icon: Icons.trending_up_rounded,
-          color: AppColors.green,
-          text: 'Resolution rate at $rate% — operations running smoothly.',
-        ));
-      } else if (rate < 50) {
-        insights.add(InsightItem(
-          icon: Icons.priority_high_rounded,
-          color: AppColors.orange,
-          text: 'Resolution rate is $rate% — workload may need redistribution.',
-        ));
-      }
-    }
-
-    if (_criticalUnclaimedCount > 0) {
-      insights.add(InsightItem(
-        icon: Icons.warning_amber_rounded,
-        color: AppColors.red,
-        text:
-            '$_criticalUnclaimedCount critical alert${_criticalUnclaimedCount > 1 ? 's' : ''} awaiting assignment.',
-      ));
-    }
-
-    final avg = _avgResolutionTime();
-    if (avg.inMinutes > 0) {
-      insights.add(InsightItem(
-        icon: Icons.timer_outlined,
-        color: AppColors.blue,
-        text: 'Average resolution time: ${_fmtDuration(avg)}.',
-      ));
-    }
-
-    return insights;
-  }
-
   // Filter the predictive model client-side so cards reflect the master factory
   // selector even though the model is computed globally on the edge.
   PredictiveModel? _scopedPredictions() {
@@ -898,7 +919,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   Widget build(BuildContext context) {
     final theme = context.appTheme;
     final ts = _typeStats();
-    final insights = _smartInsights();
     final health = _healthScore();
     final receivedSpark = _last7DaysCounts((a) => a.status == 'disponible');
     final claimedSpark = _last7DaysCounts((a) => a.status == 'en_cours');
@@ -984,7 +1004,11 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         children: [
           healthCard,
           const SizedBox(height: 12),
-          statGrid,
+          Expanded(
+            child: SingleChildScrollView(
+              child: statGrid,
+            ),
+          ),
         ],
       );
 
@@ -1057,14 +1081,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
                 alerts: _criticalUnclaimedAlerts,
                 onAlertTap: (a) => _setHistoryFilter(a.type),
                 describe: _getAlertDisplayDescription,
+                maxHeight: 300,
               ),
-            )
-          : const SizedBox.shrink();
-
-      final insightsBlock = insights.isNotEmpty
-          ? Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: InsightsStrip(insights: insights),
             )
           : const SizedBox.shrink();
 
@@ -1090,10 +1108,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
                 ],
               ),
             ),
+            critical,
             const SizedBox(height: 14),
             predictiveRow,
-            critical,
-            insightsBlock,
           ],
         );
       } else {
@@ -1109,10 +1126,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
             statGrid,
             const SizedBox(height: 14),
             SizedBox(height: 520, child: historyBox),
+            critical,
             const SizedBox(height: 14),
             predictiveRow,
-            critical,
-            insightsBlock,
           ],
         );
       }
@@ -1173,6 +1189,218 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         isActive: _historyFilter == 'total',
         onTap: () => _setHistoryFilter('total'),
       );
+}
+
+class _CriticalArrivalDialog extends StatefulWidget {
+  final AlertModel alert;
+  final String Function(AlertModel) describe;
+  const _CriticalArrivalDialog({
+    required this.alert,
+    required this.describe,
+  });
+
+  @override
+  State<_CriticalArrivalDialog> createState() => _CriticalArrivalDialogState();
+}
+
+class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1150),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alert = widget.alert;
+    final typeColor = adminTypeColor(context, alert.type);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 620),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF2D0006),
+                  Color(0xFF5A000D),
+                  Color(0xFF7E0A16),
+                ],
+              ),
+              border: Border.all(color: const Color(0xFFFF6B73), width: 1.2),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x99FF1D2E),
+                  blurRadius: 30,
+                  spreadRadius: 2,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    AnimatedBuilder(
+                      animation: _pulse,
+                      builder: (_, __) {
+                        final scale = 0.9 + (_pulse.value * 0.24);
+                        return Transform.scale(
+                          scale: scale,
+                          child: Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0x33FF6B73),
+                              border: Border.all(
+                                color: const Color(0xFFFF8F96),
+                                width: 1.1,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.warning_amber_rounded,
+                              color: Color(0xFFFFD8DB),
+                              size: 24,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'CRITICAL ALERT ARRIVED',
+                            style: TextStyle(
+                              color: const Color(0xFFFFDDE0),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            adminTypeLabel(context, alert.type),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      color: const Color(0xFFFFCAD0),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: const Color(0x55140004),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0x66FF8D95)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.describe(alert),
+                        style: const TextStyle(
+                          color: Color(0xFFFFECED),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${alert.usine} · Line ${alert.convoyeur} · WS ${alert.poste}',
+                        style: const TextStyle(
+                          color: Color(0xFFFFCAD0),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (alert.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          alert.description,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFFFE1E4),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(Icons.emergency_rounded, color: typeColor, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Immediate attention required',
+                      style: TextStyle(
+                        color: const Color(0xFFFFD6D9),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF2E42),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                      ),
+                      child: const Text(
+                        'Acknowledge',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
