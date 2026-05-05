@@ -18,10 +18,16 @@ import 'services/offline_database_service.dart';
 import 'services/service_locator.dart';
 import 'services/voice_service.dart';
 import 'services/worker_trigger_queue.dart';
+import 'services/background_sync_service.dart';
+import 'services/app_lifecycle_observer.dart';
 import 'theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+    // Add app lifecycle observer for handling foreground/background transitions
+    final lifecycleObserver = AppLifecycleObserver();
+    WidgetsBinding.instance.addObserver(lifecycleObserver);
+  
   // Global error handler
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
@@ -62,6 +68,9 @@ void main() async {
   await _safeInitFirebase();
   ServiceLocator.instance.init();
   await OfflineDatabaseService.configure();
+    // Initialize background sync service for offline support
+    BackgroundSyncService.instance.initialize();
+  
   WorkerTriggerQueue.instance.start();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 

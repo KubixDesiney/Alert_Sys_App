@@ -282,61 +282,30 @@ class AuthService {
     required DateTime hiredDate,
   }) async {
     try {
-      final adminUser = _auth.currentUser;
-      final idToken = await adminUser?.getIdToken();
-      if (adminUser == null || idToken == null || idToken.isEmpty) {
-        return 'You must be signed in as an admin to create supervisors.';
-      }
-
-      final response = await http
-          .post(
-            Uri.parse('${WorkerAuthConfig.baseUrl}/admin/create-supervisor'),
-            headers: WorkerAuthConfig.headers(
-              json: true,
-              firebaseIdToken: idToken,
-            ),
-            body: jsonEncode({
-              'firstName': firstName,
-              'lastName': lastName,
-              'email': email,
-              'password': password,
-              'phone': phone,
-              'usine': usine,
-              'hiredDate': hiredDate.toIso8601String(),
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body);
-        final uid = decoded is Map ? decoded['uid']?.toString() : null;
-        debugPrint('Supervisor $uid created via worker');
-        return null;
-      }
-
-      final decoded = jsonDecode(response.body);
-      final error = decoded is Map ? decoded['error']?.toString() : null;
-      return _friendlyCreateSupervisorError(error, response.statusCode);
+      UserCredential userCredential =
+          await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = userCredential.user!.uid;
+      await _db.child('users/$uid').set({
+        'firstName': firstName,
+        'lastName': lastName,
+        'fullName': '$firstName $lastName',
+        'email': email,
+        'phone': phone,
+        'role': 'supervisor',
+        'usine': usine,
+        'status': 'active',
+        'hiredDate': hiredDate.toIso8601String(),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+      return null; // success
+    } on FirebaseAuthException catch (e) {
+      return e.message;
     } catch (e) {
-      debugPrint('Create supervisor worker error: $e');
-      return 'Could not create supervisor. Please try again.';
+      return e.toString();
     }
-  }
-
-  String _friendlyCreateSupervisorError(String? error, int statusCode) {
-    final code = (error ?? '').toUpperCase();
-    if (code.contains('EMAIL_EXISTS')) return 'Email already in use.';
-    if (code.contains('WEAK_PASSWORD')) {
-      return 'Password too weak (min 6 chars).';
-    }
-    if (code.contains('INVALID_EMAIL')) return 'Invalid email address.';
-    if (code.contains('ADMIN ROLE REQUIRED') || statusCode == 403) {
-      return 'Only admins can create supervisor accounts.';
-    }
-    if (code.contains('FIREBASE USER TOKEN REQUIRED') || statusCode == 401) {
-      return 'Please sign in again before creating a supervisor.';
-    }
-    return 'Could not create supervisor. Please check the details and try again.';
   }
 
   Future<void> deleteSupervisor(String uid) async {
