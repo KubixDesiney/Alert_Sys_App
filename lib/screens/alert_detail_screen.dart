@@ -30,7 +30,6 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
   late Future<AlertModel> _alertFuture;
   Future<CollaborationRequest?>? _collabFuture;
   final _commentController = TextEditingController();
-  final _reasonController = TextEditingController();
   bool _isAiLoading = false;
   bool _isRecommendationActionLoading = false;
   String? _aiSuggestion;
@@ -74,13 +73,34 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
   }
 
   void _resolveWithReason(AlertProvider provider, AlertModel alert) async {
-    final reason = _reasonController.text.trim();
-    if (reason.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a resolution reason')));
+    final reasonController = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Resolve Alert'),
+        content: TextField(
+          controller: reasonController,
+          decoration: const InputDecoration(hintText: 'Resolution reason'),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, reasonController.text),
+            child: const Text('Resolve'),
+          ),
+        ],
+      ),
+    );
+
+    if (reason == null || reason.trim().isEmpty) {
       return;
     }
-    await provider.resolveAlert(alert.id, reason);
+
+    await provider.resolveAlert(alert.id, reason.trim());
     if (mounted) Navigator.pop(context);
   }
 
@@ -180,6 +200,50 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
       if (mounted) {
         setState(() => _isRecommendationActionLoading = false);
       }
+    }
+  }
+
+  Future<void> _toggleCritical(AlertModel alert) async {
+    final provider = context.read<AlertProvider>();
+    String? note;
+
+    if (!alert.isCritical) {
+      note = await showDialog<String>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Mark as Critical'),
+          content: TextField(
+            decoration: const InputDecoration(
+              hintText: 'Optional note (reason, impact, etc.)',
+            ),
+            maxLines: 3,
+            onChanged: (value) => note = value,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, note ?? ''),
+              child: const Text('Mark Critical'),
+            ),
+          ],
+        ),
+      );
+
+      if (note == null) return;
+    }
+
+    await provider.toggleCritical(
+      alert.id,
+      !alert.isCritical,
+      note: note?.trim().isNotEmpty == true ? note!.trim() : null,
+    );
+    if (mounted) {
+      setState(() {
+        _alertFuture = _loadAlert();
+      });
     }
   }
 
@@ -518,20 +582,94 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       child: const Text('Claim')),
                 if (alert.status == 'en_cours' &&
                     alert.superviseurId == provider.currentSuperviseurId) ...[
-                  Row(children: [
-                    Expanded(
-                        child: ElevatedButton(
-                            onPressed: () => provider.returnToQueue(alert.id),
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange),
-                            child: const Text('Detach'))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: ElevatedButton(
-                            onPressed: () =>
-                                _showResolveDialog(provider, alert),
-                            child: const Text('Resolve'))),
-                  ]),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          String? reason;
+                          await showDialog<String>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Suspend Alert'),
+                              content: TextField(
+                                decoration: const InputDecoration(
+                                  hintText: 'Optional reason for suspension',
+                                ),
+                                onChanged: (value) => reason = value,
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () async {
+                                    Navigator.pop(context);
+                                    await provider.returnToQueue(
+                                      alert.id,
+                                      reason: reason?.trim().isEmpty == true
+                                          ? null
+                                          : reason?.trim(),
+                                    );
+                                  },
+                                  child: const Text('Suspend'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (mounted) {
+                            setState(() {
+                              _alertFuture = _loadAlert();
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.rotate_left, size: 16),
+                        label: const Text('Suspend'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.orange,
+                          side: const BorderSide(color: Colors.orange),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _toggleCritical(alert),
+                        icon: Icon(
+                          alert.isCritical
+                              ? Icons.warning_rounded
+                              : Icons.warning_amber_rounded,
+                          size: 16,
+                        ),
+                        label: Text(
+                          alert.isCritical ? 'Unflag Critical' : 'Mark Critical',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor:
+                              alert.isCritical ? Colors.red : Colors.orange,
+                          side: BorderSide(
+                            color: alert.isCritical ? Colors.red : Colors.orange,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _resolveWithReason(provider, alert),
+                        icon: const Icon(Icons.check_circle_outline, size: 16),
+                        label: const Text('Fixed'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _isAiLoading ? null : () => _getAiAssist(alert),
+                        icon: const Icon(Icons.auto_awesome, size: 16),
+                        label: const Text('AI Assist'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.purple,
+                          side: const BorderSide(color: Colors.purple),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ],
             ),
@@ -541,24 +679,4 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     );
   }
 
-  void _showResolveDialog(AlertProvider provider, AlertModel alert) {
-    showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-              title: const Text('Resolve Alert'),
-              content: TextField(
-                  controller: _reasonController,
-                  decoration:
-                      const InputDecoration(hintText: 'Resolution reason'),
-                  maxLines: 3),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel')),
-                ElevatedButton(
-                    onPressed: () => _resolveWithReason(provider, alert),
-                    child: const Text('Resolve')),
-              ],
-            ));
-  }
 }
