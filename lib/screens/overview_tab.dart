@@ -1124,8 +1124,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     });
   }
 
-  Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
-        label: 'Received',
+    Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
+      label: 'Pending',
         value: widget.pending,
         icon: Icons.inbox_rounded,
         color: theme.orange,
@@ -1765,7 +1765,7 @@ class _AlertHistoryBox extends StatelessWidget {
   String _chipLabel(BuildContext ctx, String key) {
     switch (key) {
       case 'pending':
-        return 'AVAILABLE';
+        return 'PENDING';
       case 'en_cours':
         return 'CLAIMED';
       case 'validated':
@@ -2012,10 +2012,10 @@ class _FilterSheet extends StatelessWidget {
                       value: 'all',
                       child: Text('All Statuses',
                           style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
+                    DropdownMenuItem(
                       value: 'disponible',
                       child:
-                          Text('Available', style: TextStyle(fontSize: 13))),
+                        Text('Pending', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'en_cours',
                       child:
@@ -2148,7 +2148,7 @@ class _AlertHistoryRow extends StatelessWidget {
     final sl = switch (alert.status) {
       'validee' => 'Fixed',
       'en_cours' => 'Claimed',
-      _ => 'Available',
+      _ => 'Pending',
     };
     final desc = alert.description.trim().isEmpty
         ? '(no description)'

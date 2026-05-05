@@ -859,7 +859,7 @@ async function handleBriefing(request, env) {
 - Total alerts: ${stats.total}
 - Resolved: ${stats.solved} (${resolutionRate}% resolution rate)
 - Critical alerts: ${stats.critical}
-- Currently in progress: ${stats.inProgress}, pending: ${stats.pending}
+- Currently claimed: ${stats.inProgress}, pending: ${stats.pending}
 - Average resolution time: ${stats.avgResolutionMin} minutes
 - Fastest fix: ${stats.fastestMin ?? 'n/a'} min · slowest: ${stats.slowestMin ?? 'n/a'} min
 - Most frequent alert type: ${topType ? `${_typeName(topType[0])} (${topType[1]})` : 'none'}

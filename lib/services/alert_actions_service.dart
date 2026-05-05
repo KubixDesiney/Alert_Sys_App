@@ -29,7 +29,7 @@ class AlertActionsService {
         .any((a) => a.status == 'en_cours' && a.superviseurId == superviseurId);
     if (existingInProgress) {
       throw Exception(
-        'You already have an alert in progress. Please resolve it before claiming a new one.',
+        'You already have a claimed alert. Please resolve it before claiming a new one.',
       );
     }
 

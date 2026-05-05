@@ -1466,7 +1466,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                     _MiniChip(Icons.check_circle_outline,
                         '${solved.length} fixed', _green),
                     _MiniChip(
-                        Icons.timer, '$inProg in progress', _blue),
+                      Icons.timer, '$inProg claimed', _blue),
                     if (avgMin != null)
                       _MiniChip(Icons.av_timer,
                           'Avg ${_fmtMin(avgMin)}', _orange),
