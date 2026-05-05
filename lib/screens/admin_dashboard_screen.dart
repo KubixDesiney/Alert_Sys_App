@@ -18,7 +18,6 @@ import '../services/auth_service.dart';
 import '../providers/alert_provider.dart';
 import 'alert_detail_screen.dart';
 import 'package:http/http.dart' as http;
-import '../services/worker_auth_config.dart';
 import 'admin_escalation_screen.dart';
 import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
@@ -289,11 +288,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'elapsedTime': null,
     });
 
-    // Trigger worker: AI assignment + push broadcast.
+    // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
     try {
       await http.post(
-        Uri.parse('${WorkerAuthConfig.baseUrl}/on-alert-created'),
-        headers: WorkerAuthConfig.headers(json: true),
+        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'type': type,
           'description': description,

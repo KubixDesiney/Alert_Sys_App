@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
-import 'worker_auth_config.dart';
+const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
 
 class RemoteConfig {
   final String onesignalAppId;
@@ -9,11 +9,11 @@ class RemoteConfig {
 }
 
 class ConfigService {
-  static String get configUrl => '${WorkerAuthConfig.baseUrl}/config';
+  static String get configUrl => '$_workerBaseUrl/config';
 
   static Future<RemoteConfig> fetchConfig() async {
     final response = await http
-        .get(Uri.parse(configUrl), headers: WorkerAuthConfig.headers())
+        .get(Uri.parse(configUrl))
         .timeout(
           const Duration(seconds: 5),
           onTimeout: () => throw Exception('Config fetch timeout'),

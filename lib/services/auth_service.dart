@@ -1,13 +1,9 @@
-import 'dart:convert';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
-import 'package:http/http.dart' as http;
 import 'fcm_service.dart';
 import 'offline_account_cache.dart';
-import 'worker_auth_config.dart';
 import 'worker_trigger_queue.dart';
 
 class AuthService {
