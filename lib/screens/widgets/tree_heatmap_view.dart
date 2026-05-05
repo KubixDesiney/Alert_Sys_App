@@ -123,7 +123,7 @@ class TreeHeatmapView extends StatelessWidget {
         const SizedBox(width: 4),
         _legendStop(t.red, 'Unclaimed', t),
         const SizedBox(width: 4),
-        _legendStop(t.yellow, 'In progress', t),
+        _legendStop(t.yellow, 'Claimed', t),
       ],
     );
   }

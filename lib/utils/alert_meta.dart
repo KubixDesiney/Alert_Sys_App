@@ -64,14 +64,14 @@ AlertMeta statusMeta(String status, AppTheme t) {
   switch (status) {
     case 'disponible':
       return AlertMeta(
-        label: 'AVAILABLE',
+        label: 'PENDING',
         icon: Icons.notifications_active_outlined,
         color: t.red,
         bg: t.redLt,
       );
     case 'en_cours':
       return AlertMeta(
-        label: 'IN PROGRESS',
+        label: 'CLAIMED',
         icon: Icons.autorenew,
         color: t.yellow,
         bg: t.yellowLt,

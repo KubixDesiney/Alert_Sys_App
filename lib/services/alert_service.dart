@@ -226,7 +226,7 @@ class AlertService {
 
     if (!activeClaimResult.committed) {
       throw Exception(
-        'You already have an alert in progress. Please resolve it before claiming a new one.',
+        'You already have a claimed alert. Please resolve it before claiming a new one.',
       );
     }
 

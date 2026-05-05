@@ -34,12 +34,12 @@ void main() {
   });
 
   group('statusMeta', () {
-    test('AVAILABLE for disponible', () {
-      expect(statusMeta('disponible', t).label, 'AVAILABLE');
+    test('PENDING for disponible', () {
+      expect(statusMeta('disponible', t).label, 'PENDING');
     });
 
-    test('IN PROGRESS for en_cours', () {
-      expect(statusMeta('en_cours', t).label, 'IN PROGRESS');
+    test('CLAIMED for en_cours', () {
+      expect(statusMeta('en_cours', t).label, 'CLAIMED');
     });
 
     test('RESOLVED for validee', () {

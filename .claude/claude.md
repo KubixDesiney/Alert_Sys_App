@@ -184,8 +184,8 @@ Special allowances:
 ## I. Alert Lifecycle and Command Flow
 
 Lifecycle states:
-- disponible: unclaimed and available.
-- en_cours: claimed and in progress.
+- disponible: unclaimed and pending.
+- en_cours: claimed.
 - validee: resolved.
 
 Main actions:
@@ -221,7 +221,7 @@ AlertProvider handles:
 - Stream initialization for supervisor or production manager mode.
 - Loading flags and current time ticker for elapsed clock UI.
 - Incremental pagination using loadOlderAlerts.
-- Derived lists: available, in-progress, fixed, assisted.
+	- Derived lists: pending, claimed, fixed, assisted.
 - Unified methods for take, resolve, comments, help, assistance, critical flags.
 - Local optimistic updates via _updateLocal callback.
 

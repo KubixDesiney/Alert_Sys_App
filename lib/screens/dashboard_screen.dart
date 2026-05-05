@@ -245,7 +245,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                   ),
                   const SizedBox(height: 12),
                   _SummaryCard(
-                    label: 'Manage Alerts Received',
+                    label: 'Manage Pending Alerts',
                     count: available.length,
                     color: const Color(0xFFF97316),
                     bgColor: const Color(0xFFFFEDD5),
@@ -1511,7 +1511,7 @@ class _DetailPanel extends StatelessWidget {
       required this.superviseurName});
 
   String get _title => switch (activeView) {
-        'received' => 'Manage Alerts Received',
+        'received' => 'Manage Pending Alerts',
         'claimed' => 'Claimed Alerts',
         _ => 'Fixed Alerts'
       };
@@ -1569,13 +1569,13 @@ class _ReceivedView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (alerts.isEmpty)
       return _empty(Icons.notifications_off, Colors.orange,
-          'No alerts available', 'All alerts are being handled');
+          'No pending alerts', 'All alerts are being handled');
     return Column(
         children: alerts
             .map((a) => _AlertRow(
                   alert: a,
                   rowColor: const Color(0xFFFFF7ED),
-                  statusLabel: 'Available',
+                  statusLabel: 'Pending',
                   statusColor: Colors.orange,
                   trailing: ElevatedButton.icon(
                     onPressed: () async {
@@ -1841,7 +1841,7 @@ class _ClaimedView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (alerts.isEmpty)
       return _empty(Icons.error_outline, const Color(0xFF94A3B8),
-          'No alerts in progress', 'Claim an alert to start');
+          'No claimed alerts', 'Claim an alert to start');
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     return Column(
         children: alerts.map((a) {
