@@ -4,15 +4,6 @@ import 'dart:convert';
 const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
 
 class AIService {
-  static String get _workerUrl => '$_workerBaseUrl/ai-proxy';
-
-  static const _typeLabels = {
-    'qualite': 'Quality',
-    'maintenance': 'Maintenance',
-    'defaut_produit': 'Damaged Product',
-    'manque_ressource': 'Resource Deficiency',
-  };
-
   Future<String> getResolutionSuggestion({
     required String alertType,
     required String alertDescription,
@@ -21,25 +12,18 @@ class AIService {
     required int poste,
     List<String> pastResolutions = const [],
   }) async {
-    final typeLabel = _typeLabels[alertType] ?? alertType;
-    final locationInfo =
-        'Factory: $usine, Conveyor line: $convoyeur, Workstation ID: #$poste';
-    final prompt = '''
-You are an industrial operations assistant. A supervisor needs a resolution suggestion for the following alert:
-
-Alert type: $typeLabel
-Description: $alertDescription
-Location: $locationInfo
-
-${pastResolutions.isNotEmpty ? 'Past resolutions logged for this alert type at this location:\n' + pastResolutions.map((r) => '- $r').join('\n') : 'No past resolutions on record for this specific location.'}
-
-Provide a concise, actionable resolution suggestion in 2-3 bullet points. Focus on the most likely root cause and immediate fix based on the alert type and description. If past resolutions exist, prioritize the most relevant one.
-''';
     try {
+      // /ai-suggest fetches Firebase history itself and uses Llama 3.2.
       final response = await http.post(
-        Uri.parse(_workerUrl),
+        Uri.parse('$_workerBaseUrl/ai-suggest'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'prompt': prompt}),
+        body: jsonEncode({
+          'type': alertType,
+          'usine': usine,
+          'convoyeur': convoyeur,
+          'poste': poste,
+          'description': alertDescription,
+        }),
       );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
