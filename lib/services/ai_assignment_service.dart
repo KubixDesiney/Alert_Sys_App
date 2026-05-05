@@ -509,8 +509,16 @@ class AIAssignmentService extends ChangeNotifier {
       double confidence, List<AICandidate> all) async {
     final reasonSummary = best.reasons.join(' • ');
     final now = DateTime.now();
+    // Generate unique ActionID to ensure idempotency across all sync operations
+    final actionId = 'ai_assign_${alert.id}_${now.millisecondsSinceEpoch}';
+
+    // Check if this exact action was already processed to prevent duplicates
+    if (alert.actionId == actionId) {
+      return; // Already processed
+    }
 
     await _db.child('alerts/${alert.id}').update({
+      'actionId': actionId,
       'status': 'en_cours',
       'superviseurId': best.supervisor.id,
       'superviseurName': best.supervisor.fullName,
@@ -523,6 +531,7 @@ class AIAssignmentService extends ChangeNotifier {
 
     await _db.child('notifications/${best.supervisor.id}').push().set({
       'type': 'ai_assigned',
+      'actionId': actionId,
       'alertId': alert.id,
       'alertType': alert.type,
       'alertDescription': alert.description,
@@ -540,6 +549,7 @@ class AIAssignmentService extends ChangeNotifier {
     if (_decisionStoreAvailable) {
       try {
         await _db.child('ai_decisions/${alert.id}').set({
+          'actionId': actionId,
           'alertId': alert.id,
           'assignedTo': best.supervisor.id,
           'assignedToName': best.supervisor.fullName,
@@ -566,6 +576,7 @@ class AIAssignmentService extends ChangeNotifier {
     }
 
     await _db.child('alerts/${alert.id}/aiHistory').push().set({
+      'actionId': actionId,
       'event': 'assigned',
       'supervisorId': best.supervisor.id,
       'supervisorName': best.supervisor.fullName,
@@ -595,7 +606,7 @@ class AIAssignmentService extends ChangeNotifier {
     );
 
     _addLog(AILogEntry(
-      id: _genId(),
+      id: actionId,
       alertId: alert.id,
       alertLabel: _alertLabel(alert),
       alertType: alert.type,
@@ -1566,9 +1577,11 @@ class AIAssignmentService extends ChangeNotifier {
             continue; // Skip old entries
           }
 
+          // Use actionId from history for idempotency - prevents duplicate processing
+          final actionId = historyData['actionId']?.toString() ?? '${alertId}_${historyEntry.key}';
+          
           // Check if already in _logs to avoid duplicates
-          final logId = '${alertId}_${historyEntry.key}';
-          if (_logs.any((log) => log.id == logId)) {
+          if (_logs.any((log) => log.id == actionId)) {
             continue;
           }
 
@@ -1577,7 +1590,7 @@ class AIAssignmentService extends ChangeNotifier {
           final status = _parseLogStatus(event);
 
           final logEntry = AILogEntry(
-            id: logId,
+            id: actionId,
             alertId: alertId,
             alertLabel: alertLabel,
             alertType: alertType,
@@ -1603,10 +1616,29 @@ class AIAssignmentService extends ChangeNotifier {
   void _startRealtimeAiHistoryListener() {
     try {
       // Listen for new alerts (child added) and changes (child changed)
-      _alertsAddedSubscription =
-          _db.child('alerts').onChildAdded.listen(_handleAlertSnapshot);
-      _alertsChangedSubscription =
-          _db.child('alerts').onChildChanged.listen(_handleAlertSnapshot);
+      // These listeners will persist in the background to catch events while asleep
+      _alertsAddedSubscription?.cancel();
+      _alertsChangedSubscription?.cancel();
+      
+      _alertsAddedSubscription = _db.child('alerts').onChildAdded.listen(
+        _handleAlertSnapshot,
+        onError: (Object e) {
+          if (kDebugMode) print('[AI_SYNC] onChildAdded error: $e');
+          // Reconnect on error
+          Future.delayed(const Duration(seconds: 5), _startRealtimeAiHistoryListener);
+        },
+      );
+      
+      _alertsChangedSubscription = _db.child('alerts').onChildChanged.listen(
+        _handleAlertSnapshot,
+        onError: (Object e) {
+          if (kDebugMode) print('[AI_SYNC] onChildChanged error: $e');
+          // Reconnect on error
+          Future.delayed(const Duration(seconds: 5), _startRealtimeAiHistoryListener);
+        },
+      );
+      
+      if (kDebugMode) print('[AI_SYNC] Realtime listeners started');
     } catch (e) {
       if (kDebugMode) print('[AI_SYNC] Failed to start realtime listener: $e');
     }
@@ -1634,8 +1666,11 @@ class AIAssignmentService extends ChangeNotifier {
         final histVal = entry.value;
         if (histVal is! Map) continue;
 
-        final logId = '${alertId}_$histKey';
-        if (_processedHistoryIds.contains(logId)) continue;
+        // Use actionId from history for idempotency - prevents duplicate processing
+        final actionId = histVal['actionId']?.toString() ?? '${alertId}_$histKey';
+        
+        if (_processedHistoryIds.contains(actionId)) continue;
+        _processedHistoryIds.add(actionId);
 
         final timestamp = _parseTimestamp(histVal['timestamp']);
         if (timestamp == null) continue;
@@ -1643,7 +1678,7 @@ class AIAssignmentService extends ChangeNotifier {
         final status = _parseLogStatus(histVal['event']);
 
         final logEntry = AILogEntry(
-          id: logId,
+          id: actionId,
           alertId: alertId,
           alertLabel: alertLabel,
           alertType: alertType,
