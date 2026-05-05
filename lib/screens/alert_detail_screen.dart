@@ -34,15 +34,31 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
   bool _isRecommendationActionLoading = false;
   String? _aiSuggestion;
   final _collabService = CollaborationService();
+  Map<String, dynamic>? _aiDecision;
+  bool _showWhyNotOthers = false;
 
   @override
   void initState() {
     super.initState();
     _alertFuture = _loadAlert();
+    _loadAiDecision();
     if (widget.showCollaborationDecision && widget.collabRequestId != null) {
       _collabFuture =
           _collabService.getCollaborationRequest(widget.collabRequestId!);
     }
+  }
+
+  Future<void> _loadAiDecision() async {
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('ai_decisions/${widget.alertId}')
+          .get();
+      if (!mounted || !snap.exists || snap.value == null) return;
+      setState(() {
+        _aiDecision =
+            Map<String, dynamic>.from(snap.value as Map);
+      });
+    } catch (_) {}
   }
 
   Future<AlertModel> _loadAlert() async {
@@ -369,6 +385,17 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                               style: const TextStyle(color: Colors.black54),
                             ),
                           ],
+                          // ── Why not others? ──────────────────────────────
+                          if (_aiDecision != null) ...[
+                            const SizedBox(height: 12),
+                            _WhyNotOthersPanel(
+                              decision: _aiDecision!,
+                              expanded: _showWhyNotOthers,
+                              onToggle: () => setState(
+                                () => _showWhyNotOthers = !_showWhyNotOthers,
+                              ),
+                            ),
+                          ],
                           if (alert.aiRecommendationPending) ...[
                             const SizedBox(height: 12),
                             Row(
@@ -679,4 +706,144 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     );
   }
 
+}
+
+// ── Why-not-others panel ─────────────────────────────────────────────────────
+
+class _WhyNotOthersPanel extends StatelessWidget {
+  const _WhyNotOthersPanel({
+    required this.decision,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final Map<String, dynamic> decision;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final rawCandidates = decision['consideredCandidates'];
+    if (rawCandidates == null) return const SizedBox.shrink();
+
+    final candidates = (rawCandidates as List<dynamic>)
+        .map((c) => Map<String, dynamic>.from(c as Map))
+        .toList();
+
+    if (candidates.isEmpty) return const SizedBox.shrink();
+
+    // Sort: highest score first; skipped candidates last.
+    candidates.sort((a, b) {
+      final aSkip = a['skipReason'] != null;
+      final bSkip = b['skipReason'] != null;
+      if (aSkip != bSkip) return aSkip ? 1 : -1;
+      return ((b['score'] as num?)?.toDouble() ?? 0)
+          .compareTo((a['score'] as num?)?.toDouble() ?? 0);
+    });
+
+    final assignedId = decision['assignedTo']?.toString() ?? '';
+    final others =
+        candidates.where((c) => c['supervisorId'] != assignedId).toList();
+
+    if (others.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Icon(
+                  expanded
+                      ? Icons.expand_less
+                      : Icons.expand_more,
+                  size: 18,
+                  color: Colors.blueGrey,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Why not others? (${others.length})',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blueGrey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (expanded)
+          ...others.map((c) {
+            final name = c['name']?.toString() ?? 'Unknown';
+            final score = (c['score'] as num?)?.round() ?? 0;
+            final skip = c['skipReason']?.toString();
+            final reasons = (c['reasons'] as List<dynamic>?)
+                    ?.map((r) => r.toString())
+                    .toList() ??
+                [];
+
+            return Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        skip != null ? Icons.block : Icons.person_outline,
+                        size: 14,
+                        color:
+                            skip != null ? Colors.red : Colors.blueGrey,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: skip != null
+                                ? Colors.red.shade700
+                                : Colors.black87,
+                          ),
+                        ),
+                      ),
+                      if (skip == null)
+                        Text(
+                          'Score: $score',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black54),
+                        ),
+                    ],
+                  ),
+                  if (skip != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 18, top: 2),
+                      child: Text(
+                        skip,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.red.shade400),
+                      ),
+                    )
+                  else
+                    ...reasons.map(
+                      (r) => Padding(
+                        padding: const EdgeInsets.only(left: 18, top: 1),
+                        child: Text(
+                          '• $r',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black54),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
 }

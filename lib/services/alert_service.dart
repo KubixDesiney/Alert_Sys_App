@@ -198,6 +198,11 @@ class AlertService {
 
   Future<void> takeAlert(
       String alertId, String superviseurId, String superviseurName) async {
+    // Auto-clean stale supervisor_active_alerts entries. This happens when an
+    // alert was resolved/returned without properly clearing the node (crash,
+    // network failure, or a worker-assigned alert that bypassed this path).
+    await _cleanupStaleActiveClaim(superviseurId);
+
     final nowIso = DateTime.now().toIso8601String();
     final activeClaimRef = _db.child('supervisor_active_alerts/$superviseurId');
     final activeClaimResult = await activeClaimRef.runTransaction((current) {
@@ -345,6 +350,42 @@ class AlertService {
         return Transaction.success(null);
       },
     );
+  }
+
+  // Removes a stale supervisor_active_alerts entry before a new claim attempt.
+  // Stale entries occur when an alert was resolved/returned by the worker or when
+  // the app crashed before the cleanup write completed.
+  Future<void> _cleanupStaleActiveClaim(String supervisorId) async {
+    if (supervisorId.isEmpty) return;
+    final snap =
+        await _db.child('supervisor_active_alerts/$supervisorId').get();
+    if (!snap.exists || snap.value == null) return;
+
+    final data = snap.value is Map
+        ? Map<String, dynamic>.from(snap.value as Map)
+        : <String, dynamic>{};
+    final storedAlertId = data['alertId']?.toString() ?? '';
+    if (storedAlertId.isEmpty) {
+      await _db.child('supervisor_active_alerts/$supervisorId').remove();
+      return;
+    }
+
+    final alertSnap = await _db.child('alerts/$storedAlertId').get();
+    if (!alertSnap.exists || alertSnap.value == null) {
+      await _db.child('supervisor_active_alerts/$supervisorId').remove();
+      return;
+    }
+
+    final alertData = Map<String, dynamic>.from(alertSnap.value as Map);
+    final status = alertData['status']?.toString() ?? '';
+    final assignedTo = alertData['superviseurId']?.toString() ?? '';
+
+    // Clear if the stored alert is no longer active for this supervisor.
+    if (status == 'validee' ||
+        status == 'cancelled' ||
+        assignedTo != supervisorId) {
+      await _db.child('supervisor_active_alerts/$supervisorId').remove();
+    }
   }
 
   Future<void> addComment(String alertId, String comment) async {
