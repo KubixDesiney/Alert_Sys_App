@@ -14,7 +14,6 @@ import 'package:universal_html/html.dart' as html;
 import '../../models/alert_model.dart';
 import '../../models/hierarchy_model.dart';
 import '../../services/predictive_intel_service.dart';
-import '../../services/predictive_models.dart';
 import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../../widgets/overview/ai_morning_briefing_hero.dart';
@@ -27,6 +26,7 @@ import 'admin/admin_dashboard_shared.dart';
 
 String _fmtTs(DateTime d) => formatAdminTimestamp(d);
 
+// ═══════════════════════════════════════════════════════════════════════════
 // HEALTH SCORE CARD — semi-circular gauge
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -67,22 +67,28 @@ class _HealthScoreCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
       decoration: BoxDecoration(
-        color: theme.card,
-        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: context.isDark
+              ? [theme.card, theme.card.withValues(alpha: 0.85)]
+              : [Colors.white, color.withValues(alpha: 0.04)],
+        ),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: theme.border),
         boxShadow: [
           BoxShadow(
-            color: color.withValues(alpha: context.isDark ? 0.10 : 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+            color: color.withValues(alpha: context.isDark ? 0.14 : 0.08),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: LayoutBuilder(builder: (ctx, c) {
         final narrow = c.maxWidth < 520;
         final gauge = SizedBox(
-          width: narrow ? 160 : 190,
-          height: narrow ? 100 : 118,
+          width: narrow ? 150 : 180,
+          height: narrow ? 96 : 112,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
@@ -111,7 +117,7 @@ class _HealthScoreCard extends StatelessWidget {
                       builder: (_, v, __) => Text(
                         v.toStringAsFixed(0),
                         style: TextStyle(
-                          fontSize: narrow ? 30 : 36,
+                          fontSize: narrow ? 28 : 34,
                           fontWeight: FontWeight.w800,
                           color: color,
                           height: 1,
@@ -288,7 +294,7 @@ class _HealthGaugePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final stroke = 14.0;
+    const stroke = 14.0;
     final center = Offset(size.width / 2, size.height - 4);
     final radius = math.min(size.width / 2, size.height) - stroke / 2 - 2;
     final rect = Rect.fromCircle(center: center, radius: radius);
@@ -334,7 +340,9 @@ class _HealthGaugePainter extends CustomPainter {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ELITE OVERVIEW TAB — Production Manager Dashboard
-// Premium presentation layer over the existing alert/filter/export logic.
+// Compact "single-eye" layout: factory selector commands all data; production
+// health and alert history sit side-by-side; stat cards and predictive
+// intelligence flow underneath.
 // ═══════════════════════════════════════════════════════════════════════════
 
 class AdminOverviewTab extends StatefulWidget {
@@ -397,6 +405,12 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   StreamSubscription<PredictiveModel?>? _predSub;
   bool _briefingWarmed = false;
   bool _predictionsWarmed = false;
+
+  // Pagination state for the alert history list.
+  int _pageSize = 10;
+  int _pageIndex = 0;
+
+  static const _pageSizeOptions = [5, 10, 25, 50, 100];
 
   @override
   void initState() {
@@ -484,7 +498,10 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   List<AlertModel> get _criticalUnclaimedAlerts => widget.allAlerts
-      .where((a) => a.isCritical && a.status == 'disponible')
+      .where((a) =>
+          a.isCritical &&
+          a.status == 'disponible' &&
+          (widget.selectedUsine == 'all' || a.usine == widget.selectedUsine))
       .toList();
 
   int get _criticalUnclaimedCount => _criticalUnclaimedAlerts.length;
@@ -520,6 +537,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   void _setHistoryFilter(String? filter) {
     setState(() {
       _historyFilter = (_historyFilter == filter) ? null : filter;
+      _pageIndex = 0;
     });
   }
 
@@ -554,6 +572,20 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           ..sort(),
       ];
 
+  // Factory list combining hierarchy and observed alerts so the master selector
+  // surfaces every factory the PM can act on.
+  List<String> _factoryOptions() {
+    final names = <String>{};
+    for (final f in _factories) {
+      if (f.name.isNotEmpty) names.add(f.name);
+    }
+    for (final a in widget.allAlerts) {
+      if (a.usine.isNotEmpty && a.usine != 'all') names.add(a.usine);
+    }
+    final list = names.toList()..sort();
+    return ['all', ...list];
+  }
+
   String _getAlertDisplayDescription(AlertModel alert) {
     if (alert.description.trim().isNotEmpty) return alert.description;
     switch (alert.type) {
@@ -575,6 +607,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     final today = DateTime(now.year, now.month, now.day);
     final out = List<int>.filled(7, 0);
     for (final a in widget.allAlerts) {
+      if (widget.selectedUsine != 'all' && a.usine != widget.selectedUsine) {
+        continue;
+      }
       if (!test(a)) continue;
       final d = DateTime(a.timestamp.year, a.timestamp.month, a.timestamp.day);
       final daysAgo = today.difference(d).inDays;
@@ -605,7 +640,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         .where((a) =>
             a.status == 'validee' &&
             a.elapsedTime != null &&
-            a.elapsedTime! > 0)
+            a.elapsedTime! > 0 &&
+            (widget.selectedUsine == 'all' ||
+                a.usine == widget.selectedUsine))
         .toList();
     if (solved.isEmpty) return Duration.zero;
     final totalMin = solved.fold<int>(0, (sum, a) => sum + a.elapsedTime!);
@@ -674,6 +711,22 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     }
 
     return insights;
+  }
+
+  // Filter the predictive model client-side so cards reflect the master factory
+  // selector even though the model is computed globally on the edge.
+  PredictiveModel? _scopedPredictions() {
+    final m = _predictions;
+    if (m == null) return null;
+    if (widget.selectedUsine == 'all') return m;
+    return PredictiveModel(
+      curves: m.curves,
+      predictions:
+          m.predictions.where((p) => p.usine == widget.selectedUsine).toList(),
+      factoryRisk:
+          m.factoryRisk.where((f) => f.name == widget.selectedUsine).toList(),
+      generatedAt: m.generatedAt,
+    );
   }
 
   void _exportFilteredAlerts(List<AlertModel> alertsToExport) async {
@@ -794,6 +847,53 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     await Share.shareXFiles([XFile(file.path)], text: 'Exported alerts Excel');
   }
 
+  void _openFilterSheet() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: _FilterSheet(
+          usines: _usines(),
+          convoyeurs: _convoyeurs(),
+          postes: _postes(),
+          selectedUsine: widget.selectedUsine,
+          filterConvoyeur: widget.filterConvoyeur,
+          filterPoste: widget.filterPoste,
+          filterType: widget.filterType,
+          filterStatus: widget.filterStatus,
+          timeRange: widget.timeRange,
+          onUsine: widget.onUsineChange,
+          onConvoyeur: widget.onConvoyeurChange,
+          onPoste: widget.onPosteChange,
+          onType: widget.onTypeChange,
+          onStatus: widget.onStatusChange,
+          onTime: widget.onTimeRangeChange,
+          onReset: () {
+            widget.onReset();
+            setState(() {
+              _historyFilter = null;
+              _pageIndex = 0;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  int _activeFilterCount() {
+    var n = 0;
+    if (widget.timeRange != 'all') n++;
+    if (widget.selectedUsine != 'all') n++;
+    if (widget.filterConvoyeur != 'all') n++;
+    if (widget.filterPoste != 'all') n++;
+    if (widget.filterType != 'all') n++;
+    if (widget.filterStatus != 'all') n++;
+    if (_historyFilter != null) n++;
+    return n;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
@@ -806,128 +906,222 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     final totalSpark = _last7DaysCounts((_) => true);
     final resolutionRate =
         widget.total == 0 ? 0.0 : (widget.solved / widget.total) * 100.0;
+    final scopedPreds = _scopedPredictions();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return LayoutBuilder(builder: (ctx, constraints) {
+      final wide = constraints.maxWidth >= 980;
+
+      final factoryRow = _FactoryMasterBar(
+        factories: _factoryOptions(),
+        selected: widget.selectedUsine,
+        activeCount: _activeFilterCount(),
+        timeRangeLabel: widget.timeRangeLabel,
+        onChanged: widget.onUsineChange,
+        onOpenFilters: _openFilterSheet,
+        onReset: () {
+          widget.onReset();
+          setState(() {
+            _historyFilter = null;
+            _pageIndex = 0;
+          });
+        },
+      );
+
+      final briefing = AIMorningBriefingHero(
+        briefing: _briefing,
+        timeRangeLabel: widget.timeRangeLabel,
+        timeRangeSubtitle: widget.timeRangeSubtitle,
+        onRefresh: _refreshBriefing,
+        compact: true,
+      );
+
+      final healthCard = _HealthScoreCard(
+        value: health,
+        resolutionRate: resolutionRate,
+        criticalCount: _criticalUnclaimedCount,
+        avgResponseLabel: _fmtDuration(_avgResolutionTime()),
+        totalAlerts: widget.total,
+      );
+
+      final statGrid = LayoutBuilder(builder: (gctx, gc) {
+        // The four stat cards stay in a snug 2x2 or 1x4 layout under the
+        // health gauge, never stretching wider than the alert history.
+        final twoCol = gc.maxWidth < 520;
+        final cards = [
+          _statCardReceived(theme, receivedSpark),
+          _statCardClaimed(theme, claimedSpark),
+          _statCardFixed(theme, fixedSpark),
+          _statCardTotal(theme, totalSpark),
+        ];
+        if (twoCol) {
+          return Column(children: [
+            Row(children: [
+              Expanded(child: cards[0]),
+              const SizedBox(width: 10),
+              Expanded(child: cards[1]),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: cards[2]),
+              const SizedBox(width: 10),
+              Expanded(child: cards[3]),
+            ]),
+          ]);
+        }
+        return Row(children: [
+          Expanded(child: cards[0]),
+          const SizedBox(width: 10),
+          Expanded(child: cards[1]),
+          const SizedBox(width: 10),
+          Expanded(child: cards[2]),
+          const SizedBox(width: 10),
+          Expanded(child: cards[3]),
+        ]);
+      });
+
+      final leftColumn = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AIMorningBriefingHero(
-            briefing: _briefing,
-            timeRangeLabel: widget.timeRangeLabel,
-            timeRangeSubtitle: widget.timeRangeSubtitle,
-            onRefresh: _refreshBriefing,
-          ),
-          const SizedBox(height: 14),
-          _ActiveFilterBanner(
-            timeRange: widget.timeRange,
-            timeRangeLabel: widget.timeRangeLabel,
-            selectedUsine: widget.selectedUsine,
-            filterConvoyeur: widget.filterConvoyeur,
-            filterPoste: widget.filterPoste,
-            filterType: widget.filterType,
-            filterStatus: widget.filterStatus,
-            onRemoveUsine: () => widget.onUsineChange('all'),
-            onReset: widget.onReset,
-          ),
-          const SizedBox(height: 18),
-          _HealthScoreCard(
-            value: health,
-            resolutionRate: resolutionRate,
-            criticalCount: _criticalUnclaimedCount,
-            avgResponseLabel: _fmtDuration(_avgResolutionTime()),
-            totalAlerts: widget.total,
-          ),
-          const SizedBox(height: 14),
-          LayoutBuilder(builder: (ctx, c) {
-            final narrow = c.maxWidth < 720;
-            if (narrow) {
-              return Column(
-                children: [
-                  Row(children: [
-                    Expanded(child: _statCardReceived(theme, receivedSpark)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _statCardClaimed(theme, claimedSpark)),
-                  ]),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    Expanded(child: _statCardFixed(theme, fixedSpark)),
-                    const SizedBox(width: 12),
-                    Expanded(child: _statCardTotal(theme, totalSpark)),
-                  ]),
-                ],
-              );
-            }
-            return Row(children: [
-              Expanded(child: _statCardReceived(theme, receivedSpark)),
-              const SizedBox(width: 12),
-              Expanded(child: _statCardClaimed(theme, claimedSpark)),
-              const SizedBox(width: 12),
-              Expanded(child: _statCardFixed(theme, fixedSpark)),
-              const SizedBox(width: 12),
-              Expanded(child: _statCardTotal(theme, totalSpark)),
-            ]);
-          }),
-          const SizedBox(height: 18),
-          if (insights.isNotEmpty) ...[
-            InsightsStrip(insights: insights),
-            const SizedBox(height: 18),
-          ],
-          PredictiveFailureCard(
-            model: _predictions,
-            describeType: (type) => adminTypeLabel(context, type),
-          ),
-          const SizedBox(height: 18),
-          PredictiveRiskHeatmap(
-            stats: ts,
-            model: _predictions,
-            activeFilter: _historyFilter,
-            onTap: _setHistoryFilter,
-          ),
-          const SizedBox(height: 18),
-          if (_criticalUnclaimedCount > 0) ...[
-            CriticalAlertsCard(
-              alerts: _criticalUnclaimedAlerts,
-              onAlertTap: (a) => _setHistoryFilter(a.type),
-              describe: _getAlertDisplayDescription,
-            ),
-            const SizedBox(height: 18),
-          ],
-          _HistoryHeader(
-            count: _displayedAlerts.length,
-            onCsv: () => _exportFilteredAlerts(_displayedAlerts),
-            onExcel: () => _exportFilteredAlertsExcel(_displayedAlerts),
-          ),
+          healthCard,
           const SizedBox(height: 12),
-          _FilterPanel(
-            usines: _usines(),
-            convoyeurs: _convoyeurs(),
-            postes: _postes(),
-            selectedUsine: widget.selectedUsine,
-            filterConvoyeur: widget.filterConvoyeur,
-            filterPoste: widget.filterPoste,
-            filterType: widget.filterType,
-            filterStatus: widget.filterStatus,
-            timeRange: widget.timeRange,
-            onUsine: widget.onUsineChange,
-            onConvoyeur: widget.onConvoyeurChange,
-            onPoste: widget.onPosteChange,
-            onType: widget.onTypeChange,
-            onStatus: widget.onStatusChange,
-            onTime: widget.onTimeRangeChange,
-            onReset: () {
-              widget.onReset();
-              setState(() => _historyFilter = null);
-            },
-          ),
-          const SizedBox(height: 14),
-          if (_displayedAlerts.isEmpty)
-            const _EmptyState()
-          else
-            ..._displayedAlerts.map((a) => _AlertHistoryRow(alert: a)),
+          statGrid,
         ],
-      ),
-    );
+      );
+
+      final pages = _displayedAlerts;
+      final pageCount = pages.isEmpty
+          ? 1
+          : ((pages.length + _pageSize - 1) ~/ _pageSize);
+      final clampedPage = _pageIndex.clamp(0, pageCount - 1);
+      final start = clampedPage * _pageSize;
+      final end = math.min(start + _pageSize, pages.length);
+      final pageItems = pages.sublist(start, end);
+
+      final historyBox = _AlertHistoryBox(
+        alerts: pages,
+        pageItems: pageItems,
+        pageIndex: clampedPage,
+        pageCount: pageCount,
+        pageSize: _pageSize,
+        pageSizeOptions: _pageSizeOptions,
+        activeFilterChip: _historyFilter,
+        onClearChip: () => setState(() => _historyFilter = null),
+        onPageSizeChange: (s) => setState(() {
+          _pageSize = s;
+          _pageIndex = 0;
+        }),
+        onPrev: clampedPage > 0
+            ? () => setState(() => _pageIndex = clampedPage - 1)
+            : null,
+        onNext: clampedPage < pageCount - 1
+            ? () => setState(() => _pageIndex = clampedPage + 1)
+            : null,
+        onOpenFilters: _openFilterSheet,
+        onCsv: () => _exportFilteredAlerts(pages),
+        onExcel: () => _exportFilteredAlertsExcel(pages),
+        scope: widget.selectedUsine == 'all'
+            ? 'All Plants'
+            : widget.selectedUsine,
+      );
+
+      final predictiveRow = LayoutBuilder(builder: (pctx, pc) {
+        final stack = pc.maxWidth < 720;
+        final failure = PredictiveFailureCard(
+          model: scopedPreds,
+          describeType: (type) => adminTypeLabel(context, type),
+        );
+        final risk = PredictiveRiskHeatmap(
+          stats: ts,
+          model: scopedPreds,
+          activeFilter: _historyFilter,
+          onTap: _setHistoryFilter,
+        );
+        if (stack) {
+          return Column(children: [
+            failure,
+            const SizedBox(height: 12),
+            risk,
+          ]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: failure),
+          const SizedBox(width: 12),
+          Expanded(child: risk),
+        ]);
+      });
+
+      final critical = _criticalUnclaimedCount > 0
+          ? Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: CriticalAlertsCard(
+                alerts: _criticalUnclaimedAlerts,
+                onAlertTap: (a) => _setHistoryFilter(a.type),
+                describe: _getAlertDisplayDescription,
+              ),
+            )
+          : const SizedBox.shrink();
+
+      final insightsBlock = insights.isNotEmpty
+          ? Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: InsightsStrip(insights: insights),
+            )
+          : const SizedBox.shrink();
+
+      // Wide layout: production health + history side by side; predictive
+      // intelligence stacked underneath.
+      Widget body;
+      if (wide) {
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            briefing,
+            const SizedBox(height: 12),
+            factoryRow,
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 520,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(flex: 6, child: leftColumn),
+                  const SizedBox(width: 14),
+                  Expanded(flex: 5, child: historyBox),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            predictiveRow,
+            critical,
+            insightsBlock,
+          ],
+        );
+      } else {
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            briefing,
+            const SizedBox(height: 12),
+            factoryRow,
+            const SizedBox(height: 14),
+            healthCard,
+            const SizedBox(height: 12),
+            statGrid,
+            const SizedBox(height: 14),
+            SizedBox(height: 520, child: historyBox),
+            const SizedBox(height: 14),
+            predictiveRow,
+            critical,
+            insightsBlock,
+          ],
+        );
+      }
+
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 60),
+        child: body,
+      );
+    });
   }
 
   Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
@@ -981,12 +1175,613 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FACTORY MASTER BAR — single big selector that scopes the whole tab.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _FactoryMasterBar extends StatelessWidget {
+  final List<String> factories;
+  final String selected;
+  final int activeCount;
+  final String timeRangeLabel;
+  final void Function(String) onChanged;
+  final VoidCallback onOpenFilters;
+  final VoidCallback onReset;
+  const _FactoryMasterBar({
+    required this.factories,
+    required this.selected,
+    required this.activeCount,
+    required this.timeRangeLabel,
+    required this.onChanged,
+    required this.onOpenFilters,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final isDark = context.isDark;
+    final isAll = selected == 'all';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  t.navy.withValues(alpha: 0.18),
+                  t.purple.withValues(alpha: 0.10),
+                ]
+              : [
+                  t.navyLt,
+                  t.purple.withValues(alpha: 0.05),
+                ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.navy.withValues(alpha: 0.32)),
+      ),
+      child: LayoutBuilder(builder: (ctx, c) {
+        final narrow = c.maxWidth < 620;
+        final factoryPicker = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: t.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: t.border),
+          ),
+          child: Row(children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [t.navy, t.purple],
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child:
+                  const Icon(Icons.factory_rounded, size: 17, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'PLANT SCOPE',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
+                      color: t.muted,
+                    ),
+                  ),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: factories.contains(selected) ? selected : 'all',
+                      isExpanded: true,
+                      isDense: true,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: t.text,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      dropdownColor: t.card,
+                      icon: Icon(Icons.keyboard_arrow_down_rounded,
+                          color: t.navy),
+                      items: factories
+                          .map((f) => DropdownMenuItem(
+                                value: f,
+                                child: Text(
+                                  f == 'all' ? 'All Plants' : f,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: t.text,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) onChanged(v);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ]),
+        );
+
+        final scopeChip = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isAll
+                ? t.muted.withValues(alpha: 0.14)
+                : t.green.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(
+              color: (isAll ? t.muted : t.green).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(
+              isAll ? Icons.public_rounded : Icons.location_on_rounded,
+              size: 13,
+              color: isAll ? t.muted : t.green,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              isAll ? 'Aggregate' : 'Scoped',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: isAll ? t.muted : t.green,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ]),
+        );
+
+        final timeChip = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: t.orange.withValues(alpha: 0.13),
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(color: t.orange.withValues(alpha: 0.35)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.calendar_month_rounded, size: 13, color: t.orange),
+            const SizedBox(width: 5),
+            Text(
+              timeRangeLabel,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: t.orange,
+              ),
+            ),
+          ]),
+        );
+
+        final filterBtn = OutlinedButton.icon(
+          onPressed: onOpenFilters,
+          icon: const Icon(Icons.tune_rounded, size: 16),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Filters',
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              if (activeCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: t.navy,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    '$activeCount',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ]
+            ],
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: t.navy,
+            backgroundColor: t.card,
+            side: BorderSide(color: t.border),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+
+        final resetBtn = activeCount > 0
+            ? IconButton(
+                onPressed: onReset,
+                icon: Icon(Icons.refresh_rounded, color: t.red),
+                tooltip: 'Reset filters',
+                style: IconButton.styleFrom(
+                  backgroundColor: t.card,
+                  side: BorderSide(color: t.border),
+                  padding: const EdgeInsets.all(9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              )
+            : const SizedBox.shrink();
+
+        if (narrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              factoryPicker,
+              const SizedBox(height: 10),
+              Row(children: [
+                scopeChip,
+                const SizedBox(width: 6),
+                timeChip,
+                const Spacer(),
+                filterBtn,
+                if (activeCount > 0) ...[
+                  const SizedBox(width: 6),
+                  resetBtn,
+                ],
+              ]),
+            ],
+          );
+        }
+        return Row(children: [
+          Expanded(flex: 5, child: factoryPicker),
+          const SizedBox(width: 12),
+          scopeChip,
+          const SizedBox(width: 6),
+          timeChip,
+          const SizedBox(width: 10),
+          filterBtn,
+          if (activeCount > 0) ...[
+            const SizedBox(width: 6),
+            resetBtn,
+          ],
+        ]);
+      }),
+    );
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CRITICAL ALERT ROW WITH AI ONE-TAP RESOLUTION SUGGESTION
-// Lazily fetches the suggestion from the worker, lets PM assign with 1 tap.
+// ALERT HISTORY BOX — scrollable list with filter icon, paging, exports.
 // ═══════════════════════════════════════════════════════════════════════════
-// HISTORY HEADER + EXPORT
+
+class _AlertHistoryBox extends StatelessWidget {
+  final List<AlertModel> alerts;
+  final List<AlertModel> pageItems;
+  final int pageIndex;
+  final int pageCount;
+  final int pageSize;
+  final List<int> pageSizeOptions;
+  final String? activeFilterChip;
+  final VoidCallback onClearChip;
+  final void Function(int) onPageSizeChange;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+  final VoidCallback onOpenFilters;
+  final VoidCallback onCsv;
+  final VoidCallback onExcel;
+  final String scope;
+
+  const _AlertHistoryBox({
+    required this.alerts,
+    required this.pageItems,
+    required this.pageIndex,
+    required this.pageCount,
+    required this.pageSize,
+    required this.pageSizeOptions,
+    required this.activeFilterChip,
+    required this.onClearChip,
+    required this.onPageSizeChange,
+    required this.onPrev,
+    required this.onNext,
+    required this.onOpenFilters,
+    required this.onCsv,
+    required this.onExcel,
+    required this.scope,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.border),
+        boxShadow: [
+          BoxShadow(
+            color: theme.navy.withValues(alpha: context.isDark ? 0.12 : 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
+            child: Row(children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [theme.navy, theme.blue],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.history_rounded,
+                    size: 16, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Alert History',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: theme.text,
+                      ),
+                    ),
+                    Text(
+                      '${alerts.length} alert${alerts.length == 1 ? '' : 's'} · $scope',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.muted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (activeFilterChip != null) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: theme.purple.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: theme.purple.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.filter_alt_rounded,
+                        size: 11, color: theme.purple),
+                    const SizedBox(width: 4),
+                    Text(
+                      _chipLabel(context, activeFilterChip!),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: theme.purple,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: onClearChip,
+                      child:
+                          Icon(Icons.close, size: 12, color: theme.purple),
+                    ),
+                  ]),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Tooltip(
+                message: 'Filter & search',
+                child: InkWell(
+                  onTap: onOpenFilters,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.navy.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: theme.navy.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child:
+                        Icon(Icons.tune_rounded, size: 16, color: theme.navy),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+          Divider(color: theme.border, height: 1),
+          // Scrollable list
+          Expanded(
+            child: pageItems.isEmpty
+                ? const _EmptyState()
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    itemCount: pageItems.length,
+                    itemBuilder: (_, i) =>
+                        _AlertHistoryRow(alert: pageItems[i]),
+                  ),
+          ),
+          Divider(color: theme.border, height: 1),
+          // Pagination controls
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            child: Row(children: [
+              Text(
+                'Show',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: theme.scaffold,
+                  border: Border.all(color: theme.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: pageSize,
+                    isDense: true,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    dropdownColor: theme.card,
+                    items: pageSizeOptions
+                        .map((s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(
+                                '$s',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: theme.text,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) onPageSizeChange(v);
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'per page',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: theme.muted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: onPrev,
+                icon: const Icon(Icons.chevron_left_rounded),
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 30, minHeight: 30),
+                color: theme.navy,
+                disabledColor: theme.muted.withValues(alpha: 0.4),
+                tooltip: 'Previous page',
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: theme.navy.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  '${pageIndex + 1} / $pageCount',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.navy,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: onNext,
+                icon: const Icon(Icons.chevron_right_rounded),
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 30, minHeight: 30),
+                color: theme.navy,
+                disabledColor: theme.muted.withValues(alpha: 0.4),
+                tooltip: 'Next page',
+              ),
+            ]),
+          ),
+          Divider(color: theme.border, height: 1),
+          // Export footer
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Row(children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onCsv,
+                  icon: const Icon(Icons.table_chart_outlined, size: 14),
+                  label: const Text('CSV',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.text,
+                    side: BorderSide(color: theme.border),
+                    backgroundColor: theme.scaffold,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onExcel,
+                  icon: const Icon(Icons.grid_on_outlined, size: 14),
+                  label: const Text('Excel',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.green,
+                    side: BorderSide(
+                      color: theme.green.withValues(alpha: 0.45),
+                    ),
+                    backgroundColor: theme.greenLt,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _chipLabel(BuildContext ctx, String key) {
+    switch (key) {
+      case 'pending':
+        return 'AVAILABLE';
+      case 'en_cours':
+        return 'CLAIMED';
+      case 'validated':
+        return 'FIXED';
+      case 'critical':
+        return 'CRITICAL';
+      case 'total':
+        return 'TOTAL';
+      default:
+        return adminTypeLabel(ctx, key).toUpperCase();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMPTY STATE
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _EmptyState extends StatelessWidget {
@@ -995,9 +1790,10 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.appTheme;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 44),
+      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 16),
       alignment: Alignment.center,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             width: 56,
@@ -1021,6 +1817,7 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'No alerts match your filters.',
+            textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: theme.muted),
           ),
         ],
@@ -1030,10 +1827,10 @@ class _EmptyState extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FILTER PANEL
+// FILTER SHEET — full filter panel surfaced from the icon button.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _FilterPanel extends StatelessWidget {
+class _FilterSheet extends StatelessWidget {
   final List<String> usines, convoyeurs, postes;
   final String selectedUsine,
       filterConvoyeur,
@@ -1049,7 +1846,7 @@ class _FilterPanel extends StatelessWidget {
       onTime;
   final VoidCallback onReset;
 
-  const _FilterPanel({
+  const _FilterSheet({
     required this.usines,
     required this.convoyeurs,
     required this.postes,
@@ -1071,47 +1868,75 @@ class _FilterPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.card,
-        border: Border.all(color: theme.border),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.tune_rounded, size: 16, color: theme.navy),
-              const SizedBox(width: 8),
-              Text(
-                'Filters',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: theme.text,
+    return SafeArea(
+      child: LayoutBuilder(builder: (ctx, c) {
+        final maxHeight = c.maxHeight > 0 ? c.maxHeight * 0.86 : 720.0;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 820, maxHeight: maxHeight),
+          child: Container(
+            decoration: BoxDecoration(
+              color: theme.card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: theme.border),
+            ),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+              children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: theme.border,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
               ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: onReset,
-                icon: const Icon(Icons.refresh_rounded, size: 14),
-                label: const Text('Reset',
-                    style:
-                        TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.navy,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: theme.navy.withValues(alpha: 0.13),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child:
+                      Icon(Icons.tune_rounded, size: 18, color: theme.navy),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          LayoutBuilder(builder: (ctx, c) {
-            final twoCol = c.maxWidth < 640;
-            final children = [
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Filter alerts',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: theme.text,
+                        ),
+                      ),
+                      Text(
+                        'Refine the history list — every selection scopes the dashboard',
+                        style:
+                            TextStyle(fontSize: 11.5, color: theme.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    onReset();
+                    Navigator.of(ctx).pop();
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 14),
+                  label: const Text('Reset',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700)),
+                  style: TextButton.styleFrom(foregroundColor: theme.red),
+                ),
+              ]),
+              const SizedBox(height: 14),
               _FilterDropdown(
                 label: 'Plant',
                 value: selectedUsine,
@@ -1126,6 +1951,7 @@ class _FilterPanel extends StatelessWidget {
                     .toList(),
                 onChanged: onUsine,
               ),
+              const SizedBox(height: 10),
               _FilterDropdown(
                 label: 'Conveyor',
                 value: filterConvoyeur,
@@ -1140,6 +1966,7 @@ class _FilterPanel extends StatelessWidget {
                     .toList(),
                 onChanged: onConvoyeur,
               ),
+              const SizedBox(height: 10),
               _FilterDropdown(
                 label: 'Post',
                 value: filterPoste,
@@ -1154,13 +1981,15 @@ class _FilterPanel extends StatelessWidget {
                     .toList(),
                 onChanged: onPoste,
               ),
+              const SizedBox(height: 10),
               _FilterDropdown(
                 label: 'Alert Type',
                 value: filterType,
                 items: [
                   const DropdownMenuItem(
                       value: 'all',
-                      child: Text('All Types', style: TextStyle(fontSize: 13))),
+                      child: Text('All Types',
+                          style: TextStyle(fontSize: 13))),
                   ...[
                     'qualite',
                     'maintenance',
@@ -1174,26 +2003,30 @@ class _FilterPanel extends StatelessWidget {
                 ],
                 onChanged: onType,
               ),
+              const SizedBox(height: 10),
               _FilterDropdown(
                 label: 'Status',
                 value: filterStatus,
                 items: const [
                   DropdownMenuItem(
                       value: 'all',
-                      child:
-                          Text('All Statuses', style: TextStyle(fontSize: 13))),
+                      child: Text('All Statuses',
+                          style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'disponible',
-                      child: Text('Available', style: TextStyle(fontSize: 13))),
+                      child:
+                          Text('Available', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'en_cours',
-                      child: Text('Claimed', style: TextStyle(fontSize: 13))),
+                      child:
+                          Text('Claimed', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'validee',
                       child: Text('Fixed', style: TextStyle(fontSize: 13))),
                 ],
                 onChanged: onStatus,
               ),
+              const SizedBox(height: 10),
               _FilterDropdown(
                 label: 'Time Range',
                 value: timeRange,
@@ -1206,293 +2039,43 @@ class _FilterPanel extends StatelessWidget {
                       child: Text('Today', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'week',
-                      child:
-                          Text('Last 7 Days', style: TextStyle(fontSize: 13))),
+                      child: Text('Last 7 Days',
+                          style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'month',
-                      child:
-                          Text('This Month', style: TextStyle(fontSize: 13))),
+                      child: Text('This Month',
+                          style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'year',
-                      child: Text('This Year', style: TextStyle(fontSize: 13))),
+                      child:
+                          Text('This Year', style: TextStyle(fontSize: 13))),
                   DropdownMenuItem(
                       value: 'custom',
                       child: Text('Custom', style: TextStyle(fontSize: 13))),
                 ],
                 onChanged: onTime,
               ),
-            ];
-            final colCount = twoCol ? 2 : 3;
-            final rows = <Widget>[];
-            for (var i = 0; i < children.length; i += colCount) {
-              final rowChildren = <Widget>[];
-              for (var j = 0; j < colCount; j++) {
-                if (i + j < children.length) {
-                  if (j > 0) rowChildren.add(const SizedBox(width: 10));
-                  rowChildren.add(Expanded(child: children[i + j]));
-                } else {
-                  if (j > 0) rowChildren.add(const SizedBox(width: 10));
-                  rowChildren.add(const Expanded(child: SizedBox()));
-                }
-              }
-              rows.add(Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(children: rowChildren),
-              ));
-            }
-            return Column(children: rows);
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SHARED SUBCOMPONENTS (active filter banner, dropdown, history row, export)
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _ActiveFilterBanner extends StatelessWidget {
-  final String timeRange;
-  final String timeRangeLabel;
-  final String selectedUsine;
-  final String filterConvoyeur;
-  final String filterPoste;
-  final String filterType;
-  final String filterStatus;
-  final VoidCallback onRemoveUsine;
-  final VoidCallback onReset;
-
-  const _ActiveFilterBanner({
-    required this.timeRange,
-    required this.timeRangeLabel,
-    required this.selectedUsine,
-    required this.filterConvoyeur,
-    required this.filterPoste,
-    required this.filterType,
-    required this.filterStatus,
-    required this.onRemoveUsine,
-    required this.onReset,
-  });
-
-  bool get _hasNonDefaultFilters =>
-      timeRange != 'all' ||
-      selectedUsine != 'all' ||
-      filterConvoyeur != 'all' ||
-      filterPoste != 'all' ||
-      filterType != 'all' ||
-      filterStatus != 'all';
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.appTheme;
-    if (!_hasNonDefaultFilters) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: theme.blueLt,
-          border: Border.all(color: theme.blue.withValues(alpha: 0.35)),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.check_circle_outline, size: 15, color: theme.blue),
-            const SizedBox(width: 6),
-            Text(
-              'Showing all alerts — no filters active',
-              style: TextStyle(
-                fontSize: 12,
-                color: theme.blue,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final chips = <Widget>[];
-    if (timeRange != 'all') {
-      chips.add(_ActiveChip(label: timeRangeLabel, color: theme.orange));
-    }
-    if (selectedUsine != 'all') {
-      chips.add(_ActiveChip(
-          label: selectedUsine, color: theme.orange, onRemove: onRemoveUsine));
-    }
-    if (filterConvoyeur != 'all') {
-      chips.add(
-          _ActiveChip(label: 'Line $filterConvoyeur', color: theme.orange));
-    }
-    if (filterPoste != 'all') {
-      chips.add(_ActiveChip(label: 'Post $filterPoste', color: theme.orange));
-    }
-    if (filterType != 'all') {
-      chips
-          .add(_ActiveChip(
-            label: adminTypeLabel(context, filterType),
-            color: theme.orange,
-          ));
-    }
-    if (filterStatus != 'all') {
-      chips.add(_ActiveChip(label: filterStatus, color: theme.orange));
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.orangeLt,
-        border: Border.all(color: theme.orange.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, size: 15, color: theme.orange),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Filters active — some alerts may be hidden',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: theme.orange,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              GestureDetector(
-                onTap: onReset,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: theme.orange,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'Reset all',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800),
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.check_rounded, size: 16),
+                label: const Text('Apply',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.navy,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
             ],
           ),
-          if (chips.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 4, children: chips),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ActiveChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback? onRemove;
-  const _ActiveChip({required this.label, required this.color, this.onRemove});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-            color: color, borderRadius: BorderRadius.circular(99)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 11,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700)),
-          if (onRemove != null) ...[
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: onRemove,
-              child: const Icon(Icons.close, size: 12, color: Colors.white),
-            ),
-          ],
-        ]),
-      );
-}
-
-class _ExportBtn extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  const _ExportBtn(
-      {required this.label, required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.appTheme;
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: theme.text,
-        side: BorderSide(color: theme.border),
-        backgroundColor: theme.card,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-      icon: Icon(icon, size: 14),
-      label: Text(label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
-class _HistoryHeader extends StatelessWidget {
-  final int count;
-  final VoidCallback onCsv;
-  final VoidCallback onExcel;
-  const _HistoryHeader({
-    required this.count,
-    required this.onCsv,
-    required this.onExcel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = context.appTheme;
-    return Row(
-      children: [
-        Icon(Icons.history_rounded, size: 18, color: theme.navy),
-        const SizedBox(width: 8),
-        Text(
-          'Alert History',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: theme.text,
           ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: theme.navy.withValues(alpha: 0.13),
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: theme.navy,
-            ),
-          ),
-        ),
-        const Spacer(),
-        _ExportBtn(
-            label: 'CSV', icon: Icons.table_chart_outlined, onTap: onCsv),
-        const SizedBox(width: 8),
-        _ExportBtn(
-            label: 'Excel', icon: Icons.grid_on_outlined, onTap: onExcel),
-      ],
+        );
+      }),
     );
   }
 }
@@ -1524,7 +2107,7 @@ class _FilterDropdown extends StatelessWidget {
         ),
         const SizedBox(height: 5),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: theme.scaffold,
             border: Border.all(color: theme.border),
@@ -1532,7 +2115,7 @@ class _FilterDropdown extends StatelessWidget {
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
-              value: value,
+              value: items.any((i) => i.value == value) ? value : 'all',
               isExpanded: true,
               style: TextStyle(fontSize: 13, color: theme.text),
               dropdownColor: theme.card,
@@ -1545,6 +2128,10 @@ class _FilterDropdown extends StatelessWidget {
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ALERT HISTORY ROW
+// ═══════════════════════════════════════════════════════════════════════════
 
 class _AlertHistoryRow extends StatelessWidget {
   final AlertModel alert;
@@ -1563,74 +2150,144 @@ class _AlertHistoryRow extends StatelessWidget {
       'en_cours' => 'Claimed',
       _ => 'Available',
     };
+    final desc = alert.description.trim().isEmpty
+        ? '(no description)'
+        : alert.description;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
       decoration: BoxDecoration(
-        color: theme.card,
+        color: theme.scaffold,
         border: Border.all(color: theme.border),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 4,
-            height: 38,
-            decoration: BoxDecoration(
-              color: adminTypeColor(context, alert.type),
-              borderRadius: BorderRadius.circular(99),
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${adminTypeLabel(context, alert.type)} — ${alert.description}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: theme.text,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 4,
+                height: 36,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: BoxDecoration(
+                  color: adminTypeColor(context, alert.type),
+                  borderRadius: BorderRadius.circular(99),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${alert.usine}  ·  Line ${alert.convoyeur}  ·  Post ${alert.poste}  ·  ${_fmtTs(alert.timestamp)}',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 10,
-                    color: theme.muted,
-                  ),
-                ),
-                if (alert.superviseurName != null)
-                  Text('Assigned: ${alert.superviseurName}',
-                      style: TextStyle(fontSize: 11, color: theme.blue)),
-                if (alert.criticalNote != null &&
-                    alert.criticalNote!.isNotEmpty)
-                  Text('Critical note: ${alert.criticalNote}',
-                      style: TextStyle(fontSize: 11, color: theme.red)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: sc.withValues(alpha: 0.13),
-              border: Border.all(color: sc.withValues(alpha: 0.4)),
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Text(
-              sl,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: sc,
               ),
-            ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: adminTypeColor(context, alert.type)
+                              .withValues(alpha: 0.13),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          adminTypeLabel(context, alert.type),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: adminTypeColor(context, alert.type),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      if (alert.isCritical)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.red.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            'CRITICAL',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: theme.red,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: sc.withValues(alpha: 0.13),
+                          border: Border.all(color: sc.withValues(alpha: 0.4)),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        child: Text(
+                          sl,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: sc,
+                          ),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 6),
+                    // Full description, no ellipsis — wraps so PM can read all of it.
+                    Text(
+                      desc,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: theme.text,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${alert.usine}  ·  Line ${alert.convoyeur}  ·  Post ${alert.poste}  ·  ${_fmtTs(alert.timestamp)}',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 10,
+                        color: theme.muted,
+                      ),
+                    ),
+                    if (alert.superviseurName != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(children: [
+                          Icon(Icons.person_outline,
+                              size: 11, color: theme.blue),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Assigned: ${alert.superviseurName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 11, color: theme.blue),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    if (alert.criticalNote != null &&
+                        alert.criticalNote!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Critical note: ${alert.criticalNote}',
+                          style: TextStyle(fontSize: 11, color: theme.red),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
