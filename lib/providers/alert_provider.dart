@@ -148,34 +148,78 @@ class AlertProvider extends ChangeNotifier {
     super.dispose();
   }
 
+  // ── Derived list memoization ──────────────────────────────────────────────
+  // Filtering 100+ alerts on every rebuild is wasteful; widgets call these
+  // getters dozens of times per frame. Cache by _alerts identity — every
+  // mutation reassigns _alerts so identity change is the invalidation signal.
+  List<AlertModel>? _availableCache;
+  List<AlertModel>? _inProgressCache;
+  List<AlertModel>? _fixedCache;
+  Object? _cacheKey;
+  final Map<String, List<AlertModel>> _perSupervisorInProgress = {};
+  final Map<String, List<AlertModel>> _perSupervisorValidated = {};
+  final Map<String, List<AlertModel>> _perSupervisorAssisted = {};
+
+  void _ensureCacheFresh() {
+    if (identical(_cacheKey, _alerts)) return;
+    _cacheKey = _alerts;
+    _availableCache = null;
+    _inProgressCache = null;
+    _fixedCache = null;
+    _perSupervisorInProgress.clear();
+    _perSupervisorValidated.clear();
+    _perSupervisorAssisted.clear();
+  }
+
   List<AlertModel> get allAlerts => _alerts;
-  List<AlertModel> get availableAlerts =>
-      _alerts.where((a) => a.status == 'disponible').toList();
-  List<AlertModel> get allInProgressAlerts =>
-      _alerts.where((a) => a.status == 'en_cours').toList();
-  List<AlertModel> get allFixedAlerts =>
-      _alerts.where((a) => a.status == 'validee').toList();
 
-  List<AlertModel> inProgressAlerts(String superviseurId) => _alerts
-      .where((a) =>
+  List<AlertModel> get availableAlerts {
+    _ensureCacheFresh();
+    return _availableCache ??= List.unmodifiable(
+        _alerts.where((a) => a.status == 'disponible'));
+  }
+
+  List<AlertModel> get allInProgressAlerts {
+    _ensureCacheFresh();
+    return _inProgressCache ??= List.unmodifiable(
+        _alerts.where((a) => a.status == 'en_cours'));
+  }
+
+  List<AlertModel> get allFixedAlerts {
+    _ensureCacheFresh();
+    return _fixedCache ??= List.unmodifiable(
+        _alerts.where((a) => a.status == 'validee'));
+  }
+
+  List<AlertModel> inProgressAlerts(String superviseurId) {
+    _ensureCacheFresh();
+    return _perSupervisorInProgress.putIfAbsent(
+      superviseurId,
+      () => List.unmodifiable(_alerts.where((a) =>
           a.status == 'en_cours' &&
-          (a.superviseurId == superviseurId || a.assistantId == superviseurId))
-      .toList();
+          (a.superviseurId == superviseurId ||
+              a.assistantId == superviseurId))),
+    );
+  }
 
-  List<AlertModel> validatedAlerts(String superviseurId) => _alerts
-      .where((a) => a.status == 'validee' && a.superviseurId == superviseurId)
-      .toList();
+  List<AlertModel> validatedAlerts(String superviseurId) {
+    _ensureCacheFresh();
+    return _perSupervisorValidated.putIfAbsent(
+      superviseurId,
+      () => List.unmodifiable(_alerts.where(
+          (a) => a.status == 'validee' && a.superviseurId == superviseurId)),
+    );
+  }
 
   List<AlertModel> assistedAlerts(String superviseurId) {
-    return _alerts.where((a) {
-      if (a.status != 'validee') {
-        return false;
-      }
-      if (a.assistantId == superviseurId) {
-        return true;
-      }
-      return a.collaborators?.any((c) => c['id'] == superviseurId) ?? false;
-    }).toList();
+    _ensureCacheFresh();
+    return _perSupervisorAssisted.putIfAbsent(superviseurId, () {
+      return List.unmodifiable(_alerts.where((a) {
+        if (a.status != 'validee') return false;
+        if (a.assistantId == superviseurId) return true;
+        return a.collaborators?.any((c) => c['id'] == superviseurId) ?? false;
+      }));
+    });
   }
 
   DateTime get currentTime => _currentTime;
