@@ -8,21 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:universal_html/html.dart' as html;
 
 import '../models/alert_model.dart';
-
-class _PdfPalette {
-  static const navy = PdfColor.fromInt(0xFF0D4A75);
-  static const purple = PdfColor.fromInt(0xFF6D28D9);
-  static const text = PdfColor.fromInt(0xFF1E293B);
-  static const muted = PdfColor.fromInt(0xFF64748B);
-  static const subtle = PdfColor.fromInt(0xFF94A3B8);
-  static const cardBg = PdfColor.fromInt(0xFFF8FAFC);
-  static const stripe = PdfColor.fromInt(0xFFF1F5F9);
-  static const green = PdfColor.fromInt(0xFF16A34A);
-  static const orange = PdfColor.fromInt(0xFFEA580C);
-  static const red = PdfColor.fromInt(0xFFDC2626);
-  static const blue = PdfColor.fromInt(0xFF2563EB);
-  static const yellow = PdfColor.fromInt(0xFFD97706);
-}
+import 'pdf/pdf_common.dart';
 
 class AlertPdfService {
   static const String _dash = '-';
@@ -32,26 +18,9 @@ class AlertPdfService {
     return v.isEmpty ? _dash : _safePdfText(v);
   }
 
-  static String _safePdfText(String value) {
-    return value
-        .replaceAll('—', '-')
-        .replaceAll('–', '-')
-        .replaceAll('−', '-')
-        .replaceAll('·', '-')
-        .replaceAll('•', '*')
-        .replaceAll('…', '...')
-        .replaceAll('"', '"')
-        .replaceAll('"', '"')
-        .replaceAll(''', "'")
-        .replaceAll(''', "'");
-  }
-
-  static String _truncate(String value, {required int maxChars}) {
-    final v = _safePdfText(value).trim();
-    if (v.length <= maxChars) return v;
-    if (maxChars <= 3) return v.substring(0, maxChars);
-    return '${v.substring(0, maxChars - 3)}...';
-  }
+  static String _safePdfText(String value) => PdfTextSafe.normalize(value);
+  static String _truncate(String value, {required int maxChars}) =>
+      PdfTextSafe.truncate(value, maxChars: maxChars);
 
   static Future<void> exportAndShare({
     required List<AlertModel> alerts,
@@ -194,7 +163,7 @@ class AlertPdfService {
   }) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(20),
-      color: _PdfPalette.navy,
+      color: PdfPalette.navy,
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -277,25 +246,25 @@ class AlertPdfService {
     required int resolutionRate,
   }) {
     return pw.Row(children: [
-      _kpiCard('Total', '$total', _PdfPalette.navy, _PdfPalette.cardBg),
+      _kpiCard('Total', '$total', PdfPalette.navy, PdfPalette.cardBg),
       _kpiSpacer(),
       _kpiCard(
-          'Pending', '$pending', _PdfPalette.orange, _PdfPalette.cardBg),
+          'Pending', '$pending', PdfPalette.orange, PdfPalette.cardBg),
       _kpiSpacer(),
       _kpiCard(
-          'Claimed', '$inProgress', _PdfPalette.blue, _PdfPalette.cardBg),
+          'Claimed', '$inProgress', PdfPalette.blue, PdfPalette.cardBg),
       _kpiSpacer(),
-      _kpiCard('Resolved', '$solved', _PdfPalette.green, _PdfPalette.cardBg),
+      _kpiCard('Resolved', '$solved', PdfPalette.green, PdfPalette.cardBg),
       _kpiSpacer(),
       _kpiCard(
-          'Critical', '$critical', _PdfPalette.red, _PdfPalette.cardBg),
+          'Critical', '$critical', PdfPalette.red, PdfPalette.cardBg),
       _kpiSpacer(),
       _kpiCard(
           'Avg fix', avgMin > 0 ? '${avgMin}m' : '-',
-          _PdfPalette.purple, _PdfPalette.cardBg),
+          PdfPalette.purple, PdfPalette.cardBg),
       _kpiSpacer(),
-      _kpiCard('Resolution', '$resolutionRate%', _PdfPalette.yellow,
-          _PdfPalette.cardBg),
+      _kpiCard('Resolution', '$resolutionRate%', PdfPalette.yellow,
+          PdfPalette.cardBg),
     ]);
   }
 
@@ -348,7 +317,7 @@ class AlertPdfService {
     final maxVal = entries.first.value;
     return pw.Container(
       padding: const pw.EdgeInsets.fromLTRB(14, 12, 14, 12),
-      color: _PdfPalette.cardBg,
+      color: PdfPalette.cardBg,
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -357,7 +326,7 @@ class AlertPdfService {
               'Distribution by alert type',
               style: pw.TextStyle(
                 fontSize: 11,
-                color: _PdfPalette.text,
+                color: PdfPalette.text,
                 fontWeight: pw.FontWeight.bold,
               ),
             ),
@@ -366,7 +335,7 @@ class AlertPdfService {
               '$total alerts analysed',
               style: pw.TextStyle(
                 fontSize: 8,
-                color: _PdfPalette.muted,
+                color: PdfPalette.muted,
               ),
             ),
           ]),
@@ -400,7 +369,7 @@ class AlertPdfService {
             label,
             style: pw.TextStyle(
               fontSize: 9,
-              color: _PdfPalette.text,
+              color: PdfPalette.text,
               fontWeight: pw.FontWeight.bold,
             ),
           ),
@@ -432,7 +401,7 @@ class AlertPdfService {
             textAlign: pw.TextAlign.right,
             style: pw.TextStyle(
               fontSize: 9,
-              color: _PdfPalette.text,
+              color: PdfPalette.text,
               fontWeight: pw.FontWeight.bold,
             ),
           ),
@@ -487,7 +456,7 @@ class AlertPdfService {
     }
 
     return pw.Container(
-      color: _PdfPalette.navy,
+      color: PdfPalette.navy,
       padding: const pw.EdgeInsets.symmetric(vertical: 7, horizontal: 6),
       child: pw.Row(children: headerCells),
     );
@@ -501,10 +470,10 @@ class AlertPdfService {
       return pw.Container(
         padding: const pw.EdgeInsets.symmetric(vertical: 32),
         alignment: pw.Alignment.center,
-        color: _PdfPalette.cardBg,
+        color: PdfPalette.cardBg,
         child: pw.Text(
           'No alerts to display.',
-          style: pw.TextStyle(fontSize: 11, color: _PdfPalette.muted),
+          style: pw.TextStyle(fontSize: 11, color: PdfPalette.muted),
         ),
       );
     }
@@ -514,7 +483,7 @@ class AlertPdfService {
     // Data rows
     for (var i = 0; i < alerts.length; i++) {
       final a = alerts[i];
-      final bgColor = i.isOdd ? _PdfPalette.stripe : PdfColors.white;
+      final bgColor = i.isOdd ? PdfPalette.stripe : PdfColors.white;
       final cells = _buildAlertRow(a, _tableFlexes, labelType);
 
       rows.add(
@@ -557,20 +526,20 @@ class AlertPdfService {
             ? '-'
             : _truncate(_dashIfBlank(a.description), maxChars: 110),
         fontSize: 6.7,
-        color: _PdfPalette.text,
+        color: PdfPalette.text,
       ),
       _statusBadgeCell(_statusLabel(a.status), statusColor),
       _cellText(
         _dashIfBlank(a.superviseurName),
         color: (a.superviseurName ?? '').trim().isEmpty
-            ? _PdfPalette.subtle
-            : _PdfPalette.text,
+            ? PdfPalette.subtle
+            : PdfPalette.text,
       ),
       _cellText(
         _dashIfBlank(a.assistantName),
         color: (a.assistantName ?? '').trim().isEmpty
-            ? _PdfPalette.subtle
-            : _PdfPalette.text,
+            ? PdfPalette.subtle
+            : PdfPalette.text,
       ),
       _cellText(
         _dashIfBlank(a.resolutionReason).isEmpty
@@ -578,8 +547,8 @@ class AlertPdfService {
             : _truncate(_dashIfBlank(a.resolutionReason), maxChars: 60),
         fontSize: 6.6,
         color: _dashIfBlank(a.resolutionReason).isEmpty
-            ? _PdfPalette.subtle
-            : _PdfPalette.text,
+            ? PdfPalette.subtle
+            : PdfPalette.text,
       ),
       _cellText(
         _safePdfText(_fmtElapsed(a.elapsedTime)),
@@ -591,7 +560,7 @@ class AlertPdfService {
               alignment: pw.Alignment.center,
               child: pw.Container(
                 padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                color: _PdfPalette.red,
+                color: PdfPalette.red,
                 child: pw.Text(
                   '!',
                   style: pw.TextStyle(
@@ -602,7 +571,7 @@ class AlertPdfService {
                 ),
               ),
             )
-          : _cellText('-', align: pw.TextAlign.center, color: _PdfPalette.subtle),
+          : _cellText('-', align: pw.TextAlign.center, color: PdfPalette.subtle),
     ];
 
     return List.generate(
@@ -620,7 +589,7 @@ class AlertPdfService {
   static pw.Widget _cellText(
     String text, {
     double fontSize = 7,
-    PdfColor color = _PdfPalette.text,
+    PdfColor color = PdfPalette.text,
     pw.FontWeight? weight,
     pw.TextAlign align = pw.TextAlign.left,
     bool mono = false,
@@ -685,14 +654,14 @@ class AlertPdfService {
       pw.Container(
         width: 4,
         height: 18,
-        color: _PdfPalette.navy,
+        color: PdfPalette.navy,
       ),
       pw.SizedBox(width: 8),
       pw.Text(
         label,
         style: pw.TextStyle(
           fontSize: 13,
-          color: _PdfPalette.text,
+          color: PdfPalette.text,
           fontWeight: pw.FontWeight.bold,
         ),
       ),
@@ -700,12 +669,12 @@ class AlertPdfService {
       pw.Container(
         padding:
             const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        color: _withAlpha(_PdfPalette.navy, 0.13),
+        color: _withAlpha(PdfPalette.navy, 0.13),
         child: pw.Text(
           '$count entries',
           style: pw.TextStyle(
             fontSize: 8,
-            color: _PdfPalette.navy,
+            color: PdfPalette.navy,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
@@ -732,22 +701,22 @@ class AlertPdfService {
         'STATUS',
         style: pw.TextStyle(
           fontSize: 7,
-          color: _PdfPalette.muted,
+          color: PdfPalette.muted,
           fontWeight: pw.FontWeight.bold,
         ),
       ),
       pw.SizedBox(width: 8),
-      chip('AVAILABLE', _PdfPalette.orange),
+      chip('AVAILABLE', PdfPalette.orange),
       pw.SizedBox(width: 5),
-      chip('CLAIMED', _PdfPalette.blue),
+      chip('CLAIMED', PdfPalette.blue),
       pw.SizedBox(width: 5),
-      chip('FIXED', _PdfPalette.green),
+      chip('FIXED', PdfPalette.green),
       pw.SizedBox(width: 14),
       pw.Text(
         'TYPE',
         style: pw.TextStyle(
           fontSize: 7,
-          color: _PdfPalette.muted,
+          color: PdfPalette.muted,
           fontWeight: pw.FontWeight.bold,
         ),
       ),
@@ -766,13 +735,13 @@ class AlertPdfService {
     return pw.Container(
       margin: const pw.EdgeInsets.only(bottom: 8),
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: _PdfPalette.cardBg,
+      color: PdfPalette.cardBg,
       child: pw.Row(children: [
         pw.Text(
           'AlertSys - Operations Report',
           style: pw.TextStyle(
             fontSize: 10,
-            color: _PdfPalette.text,
+            color: PdfPalette.text,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
@@ -781,7 +750,7 @@ class AlertPdfService {
           '$scope · $range',
           style: pw.TextStyle(
             fontSize: 8,
-            color: _PdfPalette.muted,
+            color: PdfPalette.muted,
           ),
         ),
       ]),
@@ -792,13 +761,13 @@ class AlertPdfService {
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 12),
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: _PdfPalette.cardBg,
+      color: PdfPalette.cardBg,
       child: pw.Row(children: [
         pw.Text(
           'Page ${ctx.pageNumber}',
           style: pw.TextStyle(
             fontSize: 8,
-            color: _PdfPalette.muted,
+            color: PdfPalette.muted,
           ),
         ),
         pw.Spacer(),
@@ -806,7 +775,7 @@ class AlertPdfService {
           'Generated on ${_fmtDate(DateTime.now())}',
           style: pw.TextStyle(
             fontSize: 8,
-            color: _PdfPalette.muted,
+            color: PdfPalette.muted,
           ),
         ),
       ]),
@@ -816,7 +785,7 @@ class AlertPdfService {
   static pw.Widget _watermarkFooter() {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      color: _PdfPalette.navy,
+      color: PdfPalette.navy,
       child: pw.Column(
         children: [
           pw.Text(
@@ -848,26 +817,26 @@ class AlertPdfService {
   static PdfColor _typeColor(String type) {
     switch (type) {
       case 'qualite':
-        return _PdfPalette.red;
+        return PdfPalette.red;
       case 'maintenance':
-        return _PdfPalette.blue;
+        return PdfPalette.blue;
       case 'defaut_produit':
-        return _PdfPalette.green;
+        return PdfPalette.green;
       case 'manque_ressource':
-        return _PdfPalette.orange;
+        return PdfPalette.orange;
       default:
-        return _PdfPalette.muted;
+        return PdfPalette.muted;
     }
   }
 
   static PdfColor _statusColor(String status) {
     switch (status) {
       case 'validee':
-        return _PdfPalette.green;
+        return PdfPalette.green;
       case 'en_cours':
-        return _PdfPalette.blue;
+        return PdfPalette.blue;
       default:
-        return _PdfPalette.orange;
+        return PdfPalette.orange;
     }
   }
 
@@ -882,25 +851,10 @@ class AlertPdfService {
     }
   }
 
-  static String _fmtDateTime(DateTime dt) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(dt.day)}/${two(dt.month)}/${dt.year}  ${two(dt.hour)}:${two(dt.minute)}';
-  }
-
-  static String _fmtDate(DateTime dt) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(dt.day)}/${two(dt.month)}/${dt.year}';
-  }
-
-  static String _fmtElapsed(int? minutes) {
-    if (minutes == null || minutes <= 0) return _dash;
-    if (minutes < 60) return '${minutes}m';
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    return m == 0 ? '${h}h' : '${h}h ${m}m';
-  }
-
-  static PdfColor _withAlpha(PdfColor c, double alpha) {
-    return PdfColor(c.red, c.green, c.blue, alpha.clamp(0.0, 1.0));
-  }
+  static String _fmtDateTime(DateTime dt) => PdfFmt.dateTime(dt);
+  static String _fmtDate(DateTime dt) => PdfFmt.date(dt);
+  static String _fmtElapsed(int? minutes) =>
+      PdfFmt.elapsed(minutes, dashIfBlank: _dash);
+  static PdfColor _withAlpha(PdfColor c, double alpha) =>
+      pdfWithAlpha(c, alpha);
 }
