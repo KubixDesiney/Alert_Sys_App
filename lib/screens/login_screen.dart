@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
+import '../widgets/common/offline_banner.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -82,8 +83,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: t.scaffold,
-      body: SafeArea(
-        child: Center(
+      body: Column(
+        children: [
+          OfflineBanner.live(),
+          Expanded(
+            child: SafeArea(
+              child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             child: ConstrainedBox(
@@ -332,6 +337,9 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
+            ),
+        ],
       ),
     );
   }

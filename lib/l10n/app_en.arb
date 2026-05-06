@@ -1,0 +1,22 @@
+{
+  "@@locale": "en",
+  "appTitle": "AlertSys",
+  "loginTitle": "Sign in",
+  "loginEmailLabel": "Email",
+  "loginPasswordLabel": "Password",
+  "loginSubmit": "Sign in",
+  "loginError": "Could not sign you in. Check your credentials and try again.",
+  "dashboardHeaderTitle": "Dashboard",
+  "dashboardHeaderGreeting": "Welcome back, {name}",
+  "@dashboardHeaderGreeting": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "adminDashboardTitle": "Admin Dashboard",
+  "offlineBannerMessage": "You are offline. Changes will sync when reconnected.",
+  "voiceEnrollmentPromptTitle": "Set up voice control",
+  "voiceEnrollmentPromptBody": "Enroll your voice so you can claim and resolve alerts hands-free.",
+  "voiceEnrollmentPromptStart": "Start enrollment",
+  "voiceEnrollmentPromptDismiss": "Not now"
+}

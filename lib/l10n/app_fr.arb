@@ -1,0 +1,17 @@
+{
+  "@@locale": "fr",
+  "appTitle": "AlertSys",
+  "loginTitle": "Connexion",
+  "loginEmailLabel": "E-mail",
+  "loginPasswordLabel": "Mot de passe",
+  "loginSubmit": "Se connecter",
+  "loginError": "Connexion impossible. Vérifiez vos identifiants et réessayez.",
+  "dashboardHeaderTitle": "Tableau de bord",
+  "dashboardHeaderGreeting": "Bon retour, {name}",
+  "adminDashboardTitle": "Tableau de bord administrateur",
+  "offlineBannerMessage": "Vous êtes hors ligne. Les modifications seront synchronisées à la reconnexion.",
+  "voiceEnrollmentPromptTitle": "Configurer la commande vocale",
+  "voiceEnrollmentPromptBody": "Enregistrez votre voix pour réclamer et résoudre les alertes mains libres.",
+  "voiceEnrollmentPromptStart": "Démarrer l'enregistrement",
+  "voiceEnrollmentPromptDismiss": "Plus tard"
+}
