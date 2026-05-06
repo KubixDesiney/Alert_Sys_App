@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../services/service_locator.dart';
 import '../../services/shift_service.dart';
 import '../../theme.dart';
+import '../../widgets/common/app_loading_indicator.dart';
 
 /// Bottom-sheet style modal for creating or editing a shift.
 class ShiftCreationDialog extends StatefulWidget {
@@ -44,6 +45,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   final Set<String> _selectedIds = <String>{};
 
   List<UserModel> _all = [];
+  List<ShiftModel> _otherShifts = [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -86,9 +88,15 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   Future<void> _loadSupervisors() async {
     try {
       final list = await AuthService().fetchSupervisors();
+      List<ShiftModel> shifts = const [];
+      try {
+        shifts = await _shifts.fetchShiftsOnce();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _all = list;
+        _otherShifts =
+            shifts.where((s) => s.id != widget.existing?.id).toList();
         _loading = false;
       });
       if (_randomize && _selectedIds.isEmpty) _doRandomize();
@@ -101,11 +109,40 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
     }
   }
 
+  /// Returns the first shift (other than this one) that already contains
+  /// [supervisorId], or null if the supervisor is free.
+  ShiftModel? _conflictingShiftFor(String supervisorId) {
+    for (final s in _otherShifts) {
+      if (s.supervisors.any((sup) => sup.id == supervisorId)) return s;
+    }
+    return null;
+  }
+
+  Future<void> _showDoubleAssignmentRejection({
+    required UserModel user,
+    required ShiftModel conflict,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (_) => _DoubleAssignmentDialog(
+        user: user,
+        existingShift: conflict,
+        attemptedShiftName: _nameCtrl.text.trim().isEmpty
+            ? 'this shift'
+            : _nameCtrl.text.trim(),
+      ),
+    );
+  }
+
   void _doRandomize() {
     final eligible =
         _all.where((u) => u.role == 'supervisor').toList(growable: false);
-    final picks =
-        ShiftService.randomizePool(eligible, _maxSupervisors);
+    final picks = ShiftService.randomizePool(
+      eligible,
+      _maxSupervisors,
+      excludeAlreadyAssigned: _otherShifts,
+    );
     setState(() {
       _selectedIds
         ..clear()
@@ -313,23 +350,31 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                           query: _searchQuery,
                           selected: _selectedIds,
                           onToggle: (uid) {
-                            setState(() {
-                              if (_selectedIds.contains(uid)) {
-                                _selectedIds.remove(uid);
-                              } else {
-                                if (_selectedIds.length >= _maxSupervisors) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          'Max $_maxSupervisors supervisors per shift'),
-                                      backgroundColor: t.orange,
-                                    ),
-                                  );
-                                  return;
-                                }
-                                _selectedIds.add(uid);
-                              }
-                            });
+                            if (_selectedIds.contains(uid)) {
+                              setState(() => _selectedIds.remove(uid));
+                              return;
+                            }
+                            if (_selectedIds.length >= _maxSupervisors) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Max $_maxSupervisors supervisors per shift'),
+                                  backgroundColor: t.orange,
+                                ),
+                              );
+                              return;
+                            }
+                            final conflict = _conflictingShiftFor(uid);
+                            if (conflict != null) {
+                              final user =
+                                  _all.firstWhere((u) => u.id == uid);
+                              _showDoubleAssignmentRejection(
+                                user: user,
+                                conflict: conflict,
+                              );
+                              return;
+                            }
+                            setState(() => _selectedIds.add(uid));
                           },
                         ),
                         if (_error != null) ...[
@@ -789,7 +834,7 @@ class _SupervisorList extends StatelessWidget {
     if (loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 28),
-        child: Center(child: CircularProgressIndicator()),
+        child: AppLoadingIndicator(),
       );
     }
     final filtered = all.where((u) {
@@ -968,6 +1013,152 @@ class _Footer extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DoubleAssignmentDialog extends StatelessWidget {
+  final UserModel user;
+  final ShiftModel existingShift;
+  final String attemptedShiftName;
+  const _DoubleAssignmentDialog({
+    required this.user,
+    required this.existingShift,
+    required this.attemptedShiftName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      backgroundColor: t.card,
+      surfaceTintColor: Colors.transparent,
+      title: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: t.red,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.block_flipped, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Double Assignment Blocked',
+                  style: TextStyle(
+                    color: t.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${user.fullName} is already assigned',
+                  style: TextStyle(
+                    color: t.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'A supervisor cannot work two shifts at the same time. ${user.fullName} is already assigned to:',
+              style: TextStyle(
+                color: t.text,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: t.scaffold,
+                border: Border.all(color: t.border),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        switch (existingShift.kind) {
+                          ShiftKind.morning => Icons.wb_sunny,
+                          ShiftKind.afternoon => Icons.wb_twilight,
+                          ShiftKind.night => Icons.nights_stay,
+                        },
+                        size: 16,
+                        color: t.navy,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          existingShift.name,
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    existingShift.timeRangeLabel,
+                    style: TextStyle(
+                      color: t.muted,
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'If you need to move ${user.firstName} to "$attemptedShiftName", first remove them from "${existingShift.name}".',
+              style: TextStyle(
+                color: t.muted,
+                fontSize: 12,
+                height: 1.5,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'Understood',
+            style: TextStyle(
+              color: t.navy,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../config/app_config.dart';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
 import 'app_logger.dart';
@@ -173,7 +174,7 @@ class AlertService {
     // Trigger the Cloudflare Worker to send notifications immediately
     try {
       await http.post(
-        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev/'),
+        Uri.parse('${AppConfig.workerBaseUrl}/'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'alertId': alertId}),
       );

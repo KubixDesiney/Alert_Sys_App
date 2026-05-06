@@ -23,6 +23,7 @@ import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
+import '../config/app_config.dart';
 import '../services/ai_assignment_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
@@ -292,7 +293,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
     try {
       await http.post(
-        Uri.parse('https://alert-notifier.aziz-nagati01.workers.dev'),
+        Uri.parse(AppConfig.workerBaseUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'type': type,

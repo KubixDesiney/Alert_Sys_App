@@ -28,6 +28,7 @@ import '../services/work_instruction_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../widgets/ai_logs_panel.dart';
+import '../widgets/common/app_loading_indicator.dart';
 import 'widgets/tree_alert_sheet.dart';
 import 'widgets/tree_connector_painter.dart';
 import 'widgets/tree_filter_bar.dart';
@@ -660,7 +661,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                     if (snapshot.connectionState == ConnectionState.waiting)
                       const Padding(
                         padding: EdgeInsets.all(24),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: AppLoadingIndicator(),
                       )
                     else if (history.isEmpty)
                       _StationEmptyHistory(t: t)

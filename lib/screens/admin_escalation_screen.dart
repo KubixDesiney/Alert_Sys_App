@@ -6,6 +6,8 @@ import '../services/collaboration_service.dart';
 import '../models/alert_model.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
+import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 
 const _navy = AppColors.navy;
 const _white = AppColors.white;
@@ -337,7 +339,7 @@ class CollaborationsTab extends StatelessWidget {
             stream: service.getPendingCollaborationRequests(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const AppLoadingIndicator();
               }
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Container(
@@ -391,7 +393,7 @@ class CollaborationsTab extends StatelessWidget {
             stream: service.getAllCollaborationRequests(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const AppLoadingIndicator();
               }
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Container(
@@ -743,7 +745,7 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: _red));
+            SnackBar(content: Text(UserFriendlyError.message(e)), backgroundColor: _red));
       }
     }
   }

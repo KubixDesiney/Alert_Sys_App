@@ -18,6 +18,8 @@ import '../models/factory_map_model.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../theme.dart';
+import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 
 class FactoryMappingTab extends StatefulWidget {
   final List<Factory> factories;
@@ -163,7 +165,7 @@ class _FactoryMappingTabState extends State<FactoryMappingTab> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Save failed: $e'),
+          content: Text('Save failed: ${UserFriendlyError.message(e)}'),
           backgroundColor: context.appTheme.red,
         ),
       );
@@ -265,11 +267,11 @@ class _FactoryMappingTabState extends State<FactoryMappingTab> {
     }
     final factory = _selectedFactory;
     if (factory == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingIndicator();
     }
     final draft = _draft;
     if (draft == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingIndicator();
     }
 
     return Padding(

@@ -260,6 +260,65 @@ class ShiftModel {
       );
 }
 
+// ---------------------------------------------------------------------------
+// ShiftLogEntry — a single AI Commander action written to shift_ai_logs/{id}
+// ---------------------------------------------------------------------------
+
+class ShiftLogEntry {
+  final String id;
+  final String shiftId;
+  final DateTime at;
+
+  /// Event kind: assigned, skipped, handover, created, updated, evaluate, …
+  final String kind;
+
+  final String? alertLabel;
+  final String? supervisorName;
+  final String? supervisorId;
+  final String? factory;
+  final double confidence;
+  final String reason;
+
+  const ShiftLogEntry({
+    required this.id,
+    required this.shiftId,
+    required this.at,
+    required this.kind,
+    this.alertLabel,
+    this.supervisorName,
+    this.supervisorId,
+    this.factory,
+    this.confidence = 0,
+    required this.reason,
+  });
+
+  factory ShiftLogEntry.fromMap(String id, Map<String, dynamic> m) =>
+      ShiftLogEntry(
+        id: id,
+        shiftId: m['shiftId']?.toString() ?? '',
+        at: DateTime.tryParse(m['at']?.toString() ?? '') ?? DateTime.now(),
+        kind: m['kind']?.toString() ?? 'evaluate',
+        alertLabel: m['alertLabel']?.toString(),
+        supervisorName: m['supervisorName']?.toString(),
+        supervisorId: m['supervisorId']?.toString(),
+        factory: m['factory']?.toString(),
+        confidence: (m['confidence'] as num?)?.toDouble() ?? 0,
+        reason: m['reason']?.toString() ?? '',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'shiftId': shiftId,
+        'at': at.toIso8601String(),
+        'kind': kind,
+        if (alertLabel != null) 'alertLabel': alertLabel,
+        if (supervisorName != null) 'supervisorName': supervisorName,
+        if (supervisorId != null) 'supervisorId': supervisorId,
+        if (factory != null) 'factory': factory,
+        'confidence': confidence,
+        'reason': reason,
+      };
+}
+
 int _coerceInt(dynamic v, int fallback) {
   if (v is int) return v;
   if (v is num) return v.toInt();

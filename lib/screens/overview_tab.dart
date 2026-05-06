@@ -23,6 +23,7 @@ import '../../widgets/overview/overview_predictive_failure_card.dart';
 import '../../widgets/overview/overview_predictive_heatmap.dart';
 import '../../widgets/overview/overview_stat_card.dart';
 import 'admin/admin_dashboard_shared.dart';
+import '../utils/user_friendly_error.dart';
 
 String _fmtTs(DateTime d) => formatAdminTimestamp(d);
 
@@ -840,7 +841,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('PDF export failed: $e'),
+          content: Text('PDF export failed: ${UserFriendlyError.message(e)}'),
           backgroundColor: Colors.red,
         ),
       );

@@ -114,22 +114,26 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
       child: Stack(
         children: [
           Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _meshCtrl,
-              builder: (_, __) => CustomPaint(
-                painter: _AuroraMeshPainter(
-                  t: _meshCtrl.value,
-                  dark: isDark,
+            child: RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _meshCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _AuroraMeshPainter(
+                    t: _meshCtrl.value,
+                    dark: isDark,
+                  ),
                 ),
               ),
             ),
           ),
           Positioned.fill(
             child: IgnorePointer(
-              child: AnimatedBuilder(
-                animation: _sparkleCtrl,
-                builder: (_, __) => CustomPaint(
-                  painter: _SparklePainter(t: _sparkleCtrl.value),
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _sparkleCtrl,
+                  builder: (_, __) => CustomPaint(
+                    painter: _SparklePainter(t: _sparkleCtrl.value),
+                  ),
                 ),
               ),
             ),

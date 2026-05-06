@@ -6,12 +6,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
 import '../models/shift_model.dart';
 import '../models/user_model.dart';
 import 'app_logger.dart';
-
-const String _shiftWorkerBaseUrl =
-    'https://alert-notifier.aziz-nagati01.workers.dev';
 
 /// CRUD + helpers for the Shifts module. Persists into RTDB under `/shifts`
 /// and triggers the Cloudflare worker `/shift-ai-action` endpoint when AI
@@ -23,6 +21,7 @@ class ShiftService {
   final FirebaseDatabase _db = FirebaseDatabase.instance;
 
   DatabaseReference get _root => _db.ref('shifts');
+  DatabaseReference get _logsRoot => _db.ref('shift_ai_logs');
 
   Stream<List<ShiftModel>> streamShifts() {
     return _root.onValue.map((event) {
@@ -106,14 +105,31 @@ class ShiftService {
   }
 
   /// Pick up to [maxSupervisors] from [pool], preferring evenly across factories.
+  /// Excludes supervisors already assigned to [excludeAlreadyAssigned] shifts.
   static List<AssignedSupervisor> randomizePool(
     List<UserModel> pool,
     int maxSupervisors, {
     int? seed,
+    List<ShiftModel>? excludeAlreadyAssigned,
   }) {
     if (pool.isEmpty) return [];
+
+    // Collect IDs of supervisors already assigned to other shifts.
+    final assignedIds = <String>{};
+    if (excludeAlreadyAssigned != null) {
+      for (final shift in excludeAlreadyAssigned) {
+        for (final sup in shift.supervisors) {
+          assignedIds.add(sup.id);
+        }
+      }
+    }
+
+    // Filter out supervisors who are already assigned.
+    final available = pool.where((u) => !assignedIds.contains(u.id)).toList();
+    if (available.isEmpty) return [];
+
     final rnd = seed == null ? Random() : Random(seed);
-    final shuffled = List<UserModel>.from(pool)..shuffle(rnd);
+    final shuffled = List<UserModel>.from(available)..shuffle(rnd);
     final byFactory = <String, List<UserModel>>{};
     for (final u in shuffled) {
       byFactory.putIfAbsent(u.usine, () => []).add(u);
@@ -142,17 +158,74 @@ class ShiftService {
     return null;
   }
 
+  // ── Commander log helpers ───────────────────────────────────────────────────
+
+  /// Live stream of AI Commander log entries for [shiftId], newest first.
+  Stream<List<ShiftLogEntry>> streamShiftLogs(String shiftId) {
+    return _logsRoot.child(shiftId).onValue.map((event) {
+      final raw = event.snapshot.value;
+      if (raw == null) return <ShiftLogEntry>[];
+      final list = <ShiftLogEntry>[];
+      if (raw is Map) {
+        for (final entry in raw.entries) {
+          if (entry.value is Map) {
+            list.add(ShiftLogEntry.fromMap(
+              entry.key.toString(),
+              Map<String, dynamic>.from(entry.value as Map),
+            ));
+          }
+        }
+      }
+      list.sort((a, b) => b.at.compareTo(a.at));
+      return list;
+    });
+  }
+
+  /// Write a single commander action entry to `shift_ai_logs/{shiftId}`.
+  Future<void> logCommanderAction({
+    required String shiftId,
+    required String kind,
+    required String reason,
+    String? alertLabel,
+    String? supervisorName,
+    String? supervisorId,
+    String? factory,
+    double confidence = 0,
+  }) async {
+    final ref = _logsRoot.child(shiftId).push();
+    final entry = ShiftLogEntry(
+      id: ref.key!,
+      shiftId: shiftId,
+      at: DateTime.now(),
+      kind: kind,
+      alertLabel: alertLabel,
+      supervisorName: supervisorName,
+      supervisorId: supervisorId,
+      factory: factory,
+      confidence: confidence,
+      reason: reason,
+    );
+    await ref.set(entry.toMap());
+  }
+
   /// Manually request the worker to perform an AI shift action. The worker
   /// also polls cron, so this is best-effort — a failure is silently logged.
-  Future<bool> triggerShiftAiAction(ShiftModel s, {String action = 'evaluate'}) {
-    return _triggerWorker(s, action: action);
+  Future<bool> triggerShiftAiAction(ShiftModel s, {String action = 'evaluate'}) async {
+    final result = await _triggerWorker(s, action: action);
+    // Persist an entry so the logs panel reflects this trigger immediately.
+    logCommanderAction(
+      shiftId: s.id,
+      kind: action,
+      reason: 'AI Commander triggered: $action on shift "${s.name}"',
+    ).ignore();
+    return result;
   }
 
   Future<bool> _triggerWorker(ShiftModel s, {required String action}) async {
     try {
       final res = await http
           .post(
-            Uri.parse('$_shiftWorkerBaseUrl/shift-ai-action'),
+            Uri.parse(AppConfig.shiftAiActionEndpoint),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'shiftId': s.id,
@@ -177,7 +250,7 @@ class ShiftService {
     try {
       final res = await http
           .post(
-            Uri.parse('$_shiftWorkerBaseUrl/shift-ai-action'),
+            Uri.parse(AppConfig.shiftAiActionEndpoint),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'shiftId': shift.id,

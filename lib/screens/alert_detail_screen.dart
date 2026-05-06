@@ -10,6 +10,8 @@ import '../services/ai_assignment_service.dart';
 import '../services/ai_service.dart';
 import '../theme.dart';
 import '../utils/alert_claim_error.dart';
+import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 
 class AlertDetailScreen extends StatefulWidget {
   final String alertId;
@@ -173,7 +175,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(content: Text(UserFriendlyError.message(e))),
       );
     }
   }
@@ -280,7 +282,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
         future: _alertFuture,
         builder: (context, snapshot) {
           if (!snapshot.hasData)
-            return const Center(child: CircularProgressIndicator());
+            return const AppLoadingIndicator();
           final alert = snapshot.data!;
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),

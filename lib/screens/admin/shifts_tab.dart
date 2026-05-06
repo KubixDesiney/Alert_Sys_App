@@ -6,9 +6,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../models/shift_model.dart';
 import '../../services/service_locator.dart';
+import '../../services/shift_pdf_service.dart';
 import '../../services/shift_service.dart';
 import '../../theme.dart';
+import '../../utils/user_friendly_error.dart';
+import '../../widgets/common/app_loading_indicator.dart';
 import '../../widgets/shifts/shift_card.dart';
+import '../../widgets/shifts/shift_logs_panel.dart';
 import 'shift_creation_dialog.dart';
 
 /// Top-level container for the Shifts module. Renders sub-tabs:
@@ -30,6 +34,7 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
 
   List<ShiftModel> _shifts = [];
   bool _loading = true;
+  ShiftModel? _logsShift;
 
   final ShiftService _service = ServiceLocator.instance.shiftService;
 
@@ -72,41 +77,59 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
     }
   }
 
+  void _openLogs(ShiftModel s) => setState(() => _logsShift = s);
+  void _closeLogs() => setState(() => _logsShift = null);
+
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    return Stack(
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final hostSize = Size(constraints.maxWidth, constraints.maxHeight);
+        return Stack(
           children: [
-            _SubTabBar(controller: _sub),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : TabBarView(
-                      controller: _sub,
-                      children: [
-                        _ScheduleView(
-                          shifts: _shifts,
-                          onTap: (s) => _openCreate(existing: s),
-                          onDelete: (s) => _confirmDelete(s),
+            Column(
+              children: [
+                _SubTabBar(controller: _sub),
+                Expanded(
+                  child: _loading
+                      ? const AppLoadingIndicator()
+                      : TabBarView(
+                          controller: _sub,
+                          children: [
+                            _ScheduleView(
+                              shifts: _shifts,
+                              onTap: (s) => _openCreate(existing: s),
+                              onDelete: (s) => _confirmDelete(s),
+                              onViewLogs: _openLogs,
+                            ),
+                            _LiveView(
+                              shifts: _shifts,
+                              onViewLogs: _openLogs,
+                            ),
+                            _TimelineView(shifts: _shifts),
+                          ],
                         ),
-                        _LiveView(shifts: _shifts),
-                        _TimelineView(shifts: _shifts),
-                      ],
-                    ),
+                ),
+              ],
             ),
+            Positioned(
+              right: 22,
+              bottom: 22,
+              child: _PulsingFab(
+                onTap: _openCreate,
+                color: t.navy,
+              ),
+            ),
+            if (_logsShift != null)
+              ShiftLogsPanel(
+                shift: _logsShift!,
+                onClose: _closeLogs,
+                hostSize: hostSize,
+              ),
           ],
-        ),
-        Positioned(
-          right: 22,
-          bottom: 22,
-          child: _PulsingFab(
-            onTap: _openCreate,
-            color: t.navy,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -215,8 +238,13 @@ class _ScheduleView extends StatelessWidget {
   final List<ShiftModel> shifts;
   final void Function(ShiftModel) onTap;
   final void Function(ShiftModel) onDelete;
-  const _ScheduleView(
-      {required this.shifts, required this.onTap, required this.onDelete});
+  final void Function(ShiftModel) onViewLogs;
+  const _ScheduleView({
+    required this.shifts,
+    required this.onTap,
+    required this.onDelete,
+    required this.onViewLogs,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -252,6 +280,7 @@ class _ScheduleView extends StatelessWidget {
                 shift: s,
                 isActiveNow: s.containsTime(now),
                 onTap: () => onTap(s),
+                onViewLogs: () => onViewLogs(s),
               ),
               Positioned(
                 top: 6,
@@ -278,7 +307,8 @@ class _ScheduleView extends StatelessWidget {
 // ────────────────────────── LIVE VIEW ────────────────────────────────────────
 class _LiveView extends StatefulWidget {
   final List<ShiftModel> shifts;
-  const _LiveView({required this.shifts});
+  final void Function(ShiftModel) onViewLogs;
+  const _LiveView({required this.shifts, required this.onViewLogs});
 
   @override
   State<_LiveView> createState() => _LiveViewState();
@@ -326,6 +356,7 @@ class _LiveViewState extends State<_LiveView> {
                 _confettiShown[s.id] = true;
                 _showConfetti(context);
               },
+              onViewLogs: () => widget.onViewLogs(s),
             ),
           ),
         if (upcoming.isNotEmpty) ...[
@@ -362,15 +393,21 @@ class _LiveViewState extends State<_LiveView> {
 class _LiveShiftPanel extends StatefulWidget {
   final ShiftModel shift;
   final VoidCallback onConfettiNeeded;
-  const _LiveShiftPanel(
-      {required this.shift, required this.onConfettiNeeded});
+  final VoidCallback onViewLogs;
+  const _LiveShiftPanel({
+    required this.shift,
+    required this.onConfettiNeeded,
+    required this.onViewLogs,
+  });
 
   @override
   State<_LiveShiftPanel> createState() => _LiveShiftPanelState();
 }
 
+
 class _LiveShiftPanelState extends State<_LiveShiftPanel> {
   bool _requestingHandover = false;
+  bool _generatingReport = false;
   String? _handoverSummary;
 
   @override
@@ -392,59 +429,92 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 18,
             offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Column(
-        children: [
-          ShiftCard(shift: widget.shift, isActiveNow: true),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.timer, color: t.navy, size: 18),
-                    const SizedBox(width: 6),
-                    Text('Time remaining',
-                        style: TextStyle(
-                            color: t.muted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700)),
-                    const Spacer(),
-                    _CountdownText(minutes: remaining, color: t.navy),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 8,
-                    backgroundColor: t.scaffold,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                        progress > 0.85 ? t.orange : t.navy),
-                  ),
-                ),
-                if (remaining <= 30 && remaining > 0) ...[
-                  const SizedBox(height: 14),
-                  _HandoverBanner(
-                    minutes: remaining,
-                    requesting: _requestingHandover,
-                    summary: _handoverSummary,
-                    onGenerate: _generateHandover,
-                  ),
-                ],
-                const SizedBox(height: 14),
-                _ReadinessGrid(shift: widget.shift),
-              ],
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Left: Shift card (compact)
+            SizedBox(
+              width: 220,
+              height: 140,
+              child: ShiftCard(shift: widget.shift, isActiveNow: true),
             ),
-          ),
-        ],
+            const SizedBox(width: 16),
+            // Right: All info stacked
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Time remaining
+                  Row(
+                    children: [
+                      Icon(Icons.timer, color: t.navy, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Time remaining',
+                          style: TextStyle(
+                              color: t.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      _CountdownText(minutes: remaining, color: t.navy),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 6,
+                      backgroundColor: t.scaffold,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          progress > 0.85 ? t.orange : t.navy),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Readiness grid
+                  _ReadinessGrid(shift: widget.shift),
+                  const SizedBox(height: 10),
+                  // Buttons row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ViewLogsButton(onTap: widget.onViewLogs),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _ReportButton(
+                          generating: _generatingReport,
+                          onGenerate: _generateReport,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Handover banner (compact)
+                  if (remaining <= 30 && remaining > 0) ...[
+                    const SizedBox(height: 10),
+                    _HandoverBanner(
+                      minutes: remaining,
+                      requesting: _requestingHandover,
+                      summary: _handoverSummary,
+                      onGenerate: _generateHandover,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -459,6 +529,26 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
       _handoverSummary = result ??
           'Could not reach the AI handover service. Please try again later.';
     });
+  }
+
+  Future<void> _generateReport() async {
+    setState(() => _generatingReport = true);
+    try {
+      await ShiftPdfService.exportAndShare(
+        shift: widget.shift,
+        day: DateTime.now(),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to generate report: ${UserFriendlyError.message(e)}'),
+          backgroundColor: context.appTheme.red,
+        ),
+      );
+    }
+    if (!mounted) return;
+    setState(() => _generatingReport = false);
   }
 }
 
@@ -1246,4 +1336,59 @@ class _ConfettiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ConfettiPainter old) => old.t != t;
+}
+
+// ────────────────────────── VIEW LOGS BUTTON ─────────────────────────────────
+class _ViewLogsButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ViewLogsButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: const Icon(Icons.history, size: 14),
+      label: const Text('Logs'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: t.navy,
+        side: BorderSide(color: t.navy.withValues(alpha: 0.3)),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        minimumSize: const Size(0, 32),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+// ────────────────────────── REPORT BUTTON ───────────────────────────────────
+class _ReportButton extends StatelessWidget {
+  final bool generating;
+  final VoidCallback onGenerate;
+  const _ReportButton({required this.generating, required this.onGenerate});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return ElevatedButton.icon(
+      onPressed: generating ? null : onGenerate,
+      icon: generating
+          ? const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white))
+          : const Icon(Icons.file_download, size: 14, color: Colors.white),
+      label: Text(generating ? 'Generating…' : 'Export'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: t.orange,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        minimumSize: const Size(0, 32),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
 }
