@@ -20,6 +20,9 @@ import 'locator_tab.dart';
 import '../widgets/voice_command_button.dart';
 import '../utils/user_friendly_error.dart';
 import '../widgets/common/app_loading_indicator.dart';
+import '../widgets/dashboard/dashboard_badges.dart';
+import '../widgets/dashboard/dashboard_bottom_nav.dart';
+import '../widgets/dashboard/elapsed_timer.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
 import '../models/collaboration_model.dart';
@@ -139,7 +142,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // reachable on both dashboard pages without obstructing alert cards.
       floatingActionButton: const VoiceCommandButton(),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: _DashboardBottomNav(
+      bottomNavigationBar: DashboardBottomNav(
         currentIndex: _currentPage,
         onTap: _goToPage,
       ),
@@ -1862,7 +1865,7 @@ class _ClaimedView extends StatelessWidget {
         statusLabel: _getStatusLabel(a, isMine, currentUserId),
         statusColor: Colors.blue,
         pulseDot: !isMine,
-        extraContent: _ElapsedTimer(alert: a, provider: provider),
+        extraContent: ElapsedTimer(alert: a, provider: provider),
         assistantsDisplay: assistantsDisplay,
         onCriticalToggle: isMine ? () => _toggleCritical(a, context) : null,
         // Hold gesture opens collaboration flow while preserving existing logic.
@@ -2200,7 +2203,7 @@ class _AlertRow extends StatelessWidget {
                       color: Colors.red, size: 16),
                 if (alert.isCritical) const SizedBox(width: 4),
                 pulseDot
-                    ? _PulseDot(color: typeMeta(alert.type, context.appTheme).color)
+                    ? PulseDot(color: typeMeta(alert.type, context.appTheme).color)
                     : Container(
                         width: 10,
                         height: 10,
@@ -2249,9 +2252,9 @@ class _AlertRow extends StatelessWidget {
               ]),
               const SizedBox(height: 6),
               Wrap(spacing: 6, runSpacing: 4, children: [
-                _OutlineBadge(
+                OutlineBadge(
                     '${alert.usine} — Line ${alert.convoyeur} — Workstation ${alert.poste}'),
-                _FilledBadge(
+                FilledBadge(
                     label: statusLabel, color: statusColor, icon: statusIcon),
               ]),
               const SizedBox(height: 6),
@@ -2469,38 +2472,6 @@ class _HoldToCollabCardState extends State<_HoldToCollabCard>
   }
 }
 
-class _ElapsedTimer extends StatelessWidget {
-  final AlertModel alert;
-  final AlertProvider provider;
-  const _ElapsedTimer({required this.alert, required this.provider});
-
-  @override
-  Widget build(BuildContext context) {
-    context.watch<AlertProvider>();
-    final elapsed = provider.getElapsedTime(alert);
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-          color: const Color(0xFFDBEAFE),
-          border: Border.all(color: const Color(0xFF93C5FD)),
-          borderRadius: BorderRadius.circular(7)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.timer, size: 15, color: Color(0xFF1D4ED8)),
-        const SizedBox(width: 6),
-        Flexible(
-            child: Text('Elapsed time: $elapsed',
-                style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1D4ED8)),
-                overflow: TextOverflow.ellipsis)),
-      ]),
-    );
-  }
-}
-
 class _AssistantsView extends StatelessWidget {
   final CollaborationRequest? request;
   const _AssistantsView({required this.request});
@@ -2544,80 +2515,6 @@ class _AssistantsView extends StatelessWidget {
   }
 }
 
-class _PulseDot extends StatefulWidget {
-  final Color color;
-  const _PulseDot({required this.color});
-  @override
-  State<_PulseDot> createState() => _PulseDotState();
-}
-
-class _PulseDotState extends State<_PulseDot>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _anim;
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
-    _anim = Tween(begin: 0.3, end: 1.0).animate(_ctrl);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => FadeTransition(
-      opacity: _anim,
-      child: Container(
-          width: 10,
-          height: 10,
-          decoration:
-              BoxDecoration(color: widget.color, shape: BoxShape.circle)));
-}
-
-class _OutlineBadge extends StatelessWidget {
-  final String text;
-  const _OutlineBadge(this.text);
-  @override
-  Widget build(BuildContext context) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFD1D5DB)),
-          borderRadius: BorderRadius.circular(99)),
-      child: Text(text,
-          style: const TextStyle(fontSize: 10, color: Color(0xFF374151))));
-}
-
-class _FilledBadge extends StatelessWidget {
-  final String label;
-  final Color color;
-  final IconData? icon;
-  const _FilledBadge({required this.label, required this.color, this.icon});
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-            color: color, borderRadius: BorderRadius.circular(99)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (icon != null) ...[
-            Icon(icon, size: 11, color: _white),
-            const SizedBox(width: 3)
-          ],
-          Flexible(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 10, color: _white, fontWeight: FontWeight.w600),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1)),
-        ]),
-      );
-}
-
 Widget _empty(IconData icon, Color color, String title, String sub) => Padding(
       padding: const EdgeInsets.symmetric(vertical: 36),
       child: Center(
@@ -2640,105 +2537,3 @@ Widget _empty(IconData icon, Color color, String title, String sub) => Padding(
       ),
     );
 
-// ============================================================================
-// BOTTOM NAVIGATION BAR
-// ============================================================================
-class _DashboardBottomNav extends StatelessWidget {
-  final int currentIndex;
-  final void Function(int) onTap;
-  const _DashboardBottomNav({required this.currentIndex, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Container(
-      decoration: BoxDecoration(
-        color: t.navBar,
-        border: Border(top: BorderSide(color: t.border, width: 1)),
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              _NavBtn(
-                icon: Icons.dashboard,
-                label: 'Dashboard',
-                selected: currentIndex == 0,
-                onTap: () => onTap(0),
-              ),
-              _NavBtn(
-                icon: Icons.map,
-                label: 'Locator',
-                selected: currentIndex == 1,
-                onTap: () => onTap(1),
-              ),
-              _NavBtn(
-                icon: Icons.qr_code_scanner,
-                label: 'Station Scan',
-                selected: currentIndex == 2,
-                onTap: () => onTap(2),
-              ),
-              _NavBtn(
-                icon: Icons.handshake,
-                label: 'Collab Progress',
-                selected: currentIndex == 3,
-                onTap: () => onTap(3),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  const _NavBtn({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-          decoration: selected
-              ? BoxDecoration(
-                  color: t.navy,
-                  borderRadius: BorderRadius.circular(12),
-                )
-              : const BoxDecoration(),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: selected ? Colors.white : t.muted),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                  color: selected ? Colors.white : t.muted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
