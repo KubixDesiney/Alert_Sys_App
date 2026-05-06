@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alert_model.dart';
 import '../models/user_model.dart';
 import '../utils/factory_id.dart';
+import 'ai/ai_scoring_engine.dart';
 
 enum AILogStatus { success, skipped, recommended, rejected, aborted }
 
@@ -984,179 +985,26 @@ class AIAssignmentService extends ChangeNotifier {
     return supervisors.map((s) => _evaluateOne(alert, s, allAlerts)).toList();
   }
 
+  /// Thin delegate to [AIScoringEngine]. Live state (cooldowns, feedback)
+  /// is read here and passed in as inputs so the engine itself stays pure.
   AICandidate _evaluateOne(
       AlertModel alert, _SupRecord rec, List<AlertModel> allAlerts) {
-    final sup = rec.user;
-
-    // ── Disqualifiers ─────────────────────────────────────────────────────
-    if (rec.aiOptOut) {
-      return AICandidate(
-        supervisor: sup,
-        score: 0,
-        reasons: const [],
-        skipReason: 'Opted out of AI auto-assignment',
-      );
-    }
-    if (sup.status != 'active') {
-      return AICandidate(
-        supervisor: sup,
-        score: 0,
-        reasons: const [],
-        skipReason: 'Not currently active',
-      );
-    }
-    final hasInProgress = allAlerts.any((a) =>
-        a.status == 'en_cours' &&
-        (a.superviseurId == sup.id || a.assistantId == sup.id));
-    if (hasInProgress) {
-      return AICandidate(
-        supervisor: sup,
-        score: 0,
-        reasons: const [],
-        skipReason: 'Already has an active alert',
-      );
-    }
-    if (!alert.isCritical) {
-      final cd = _supervisorCooldown[sup.id];
-      if (cd != null && DateTime.now().difference(cd) < _cooldownDuration) {
-        final remaining = _cooldownDuration - DateTime.now().difference(cd);
-        return AICandidate(
-          supervisor: sup,
-          score: 0,
-          reasons: const [],
-          skipReason:
-              'In cooldown (${remaining.inMinutes}m ${remaining.inSeconds % 60}s remaining)',
-        );
-      }
-    }
-
-    // ── Scoring ───────────────────────────────────────────────────────────
-    double score = 0;
-    final reasons = <String>[];
-
-    // Same factory → big bonus, different factory → strong penalty
-    if (sup.usine == alert.usine) {
-      score += 30;
-      reasons.add('Same factory (+30)');
-    } else {
-      score -= 25;
-      reasons.add('Different factory (−25)');
-    }
-
-    // Type experience: count of resolved alerts of this type
-    final typeResolved = allAlerts
-        .where((a) =>
-            a.type == alert.type &&
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
-        .length;
-    if (typeResolved > 0) {
-      final bonus = (typeResolved * 4).clamp(0, 40).toDouble();
-      score += bonus;
-      reasons.add(
-          '$typeResolved past ${alert.type} alert${typeResolved > 1 ? 's' : ''} resolved (+${bonus.toStringAsFixed(0)})');
-    } else {
-      reasons.add('No prior ${alert.type} experience (0)');
-    }
-
-    // Best avg resolution time for this type
-    final supTypeAlerts = allAlerts
-        .where((a) =>
-            a.type == alert.type &&
-            a.status == 'validee' &&
-            a.elapsedTime != null &&
-            a.superviseurId == sup.id)
-        .toList();
-    if (supTypeAlerts.isNotEmpty) {
-      final avg = supTypeAlerts.fold<int>(0, (s, a) => s + a.elapsedTime!) /
-          supTypeAlerts.length;
-      // Faster is better; bonus capped at 25.
-      final speedBonus = (60 - avg).clamp(0, 25).toDouble();
-      score += speedBonus;
-      reasons.add(
-          'Avg resolution ${avg.toStringAsFixed(0)}min for ${alert.type} (+${speedBonus.toStringAsFixed(0)})');
-    }
-
-    // Workstation familiarity
-    final stationResolved = allAlerts
-        .where((a) =>
-            a.usine == alert.usine &&
-            a.convoyeur == alert.convoyeur &&
-            a.poste == alert.poste &&
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
-        .length;
-    if (stationResolved > 0) {
-      final bonus = (stationResolved * 6).clamp(0, 30).toDouble();
-      score += bonus;
-      reasons.add(
-          '$stationResolved fix${stationResolved > 1 ? 'es' : ''} at this workstation (+${bonus.toStringAsFixed(0)})');
-    }
-
-    // Conveyor familiarity (lighter weight)
-    final conveyorResolved = allAlerts
-        .where((a) =>
-            a.usine == alert.usine &&
-            a.convoyeur == alert.convoyeur &&
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
-        .length;
-    if (conveyorResolved > 0) {
-      final bonus = (conveyorResolved * 1.5).clamp(0, 15).toDouble();
-      score += bonus;
-      reasons.add(
-          '${conveyorResolved} fix${conveyorResolved > 1 ? 'es' : ''} on Line ${alert.convoyeur} (+${bonus.toStringAsFixed(0)})');
-    }
-
-    // Recent load balancing — penalize anyone who already received an AI
-    // assignment within the last 10 minutes.
-    final recentAssignments = allAlerts
-        .where((a) =>
-            a.superviseurId == sup.id &&
-            a.takenAtTimestamp != null &&
-            DateTime.now().difference(a.takenAtTimestamp!) <
-                const Duration(minutes: 10))
-        .length;
-    if (!alert.isCritical && recentAssignments > 0) {
-      final penalty = (recentAssignments * 8).toDouble();
-      score -= penalty;
-      reasons.add(
-          'Recent load: $recentAssignments assignment${recentAssignments > 1 ? 's' : ''} in 10min (−${penalty.toStringAsFixed(0)})');
-    }
-
-    // Critical alerts: prefer supervisors with critical-resolution history
-    if (alert.isCritical) {
-      final criticalResolved = allAlerts
-          .where((a) =>
-              a.isCritical == true &&
-              a.status == 'validee' &&
-              a.superviseurId == sup.id)
-          .length;
-      if (criticalResolved > 0) {
-        final bonus = (criticalResolved * 5).clamp(0, 20).toDouble();
-        score += bonus;
-        reasons.add(
-            'Resolved $criticalResolved critical alert${criticalResolved > 1 ? 's' : ''} (+${bonus.toStringAsFixed(0)})');
-      }
-    }
-
-    final fb = _feedbackSummary[sup.id];
-    if (fb != null) {
-      final bonus = fb.rankAdjustment;
-      if (bonus != 0) {
-        score += bonus;
-        reasons.add(
-            'Feedback adjustment (${bonus >= 0 ? '+' : ''}${bonus.toStringAsFixed(0)})');
-      }
-    }
-
-    return AICandidate(
-      supervisor: sup,
-      score: score.clamp(0, 1000),
-      reasons: reasons,
-      skipReason: null,
+    return _scoringEngine.evaluate(
+      alert: alert,
+      candidate: AIScoringInputs(
+        supervisor: rec.user,
+        aiOptOut: rec.aiOptOut,
+        cooldownStart: _supervisorCooldown[rec.user.id],
+        feedbackRankAdjustment:
+            _feedbackSummary[rec.user.id]?.rankAdjustment ?? 0,
+      ),
+      allAlerts: allAlerts,
+      now: DateTime.now(),
     );
   }
+
+  static const AIScoringEngine _scoringEngine =
+      AIScoringEngine(cooldownDuration: _cooldownDuration);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
