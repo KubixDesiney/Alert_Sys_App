@@ -9,6 +9,7 @@ class ShiftCard extends StatefulWidget {
   final ShiftModel shift;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onViewLogs;
   final bool isActiveNow;
 
   const ShiftCard({
@@ -16,6 +17,7 @@ class ShiftCard extends StatefulWidget {
     required this.shift,
     this.onTap,
     this.onLongPress,
+    this.onViewLogs,
     this.isActiveNow = false,
   });
 
@@ -73,14 +75,14 @@ class _ShiftCardState extends State<ShiftCard> with SingleTickerProviderStateMix
               boxShadow: [
                 BoxShadow(
                   color: (isDark ? Colors.black : Colors.black26)
-                      .withOpacity(_hovering ? 0.32 : 0.18),
+                      .withValues(alpha: _hovering ? 0.32 : 0.18),
                   blurRadius: _hovering ? 22 : 14,
                   offset: const Offset(0, 6),
                 ),
               ],
               border: Border.all(
                 color: widget.isActiveNow
-                    ? t.green.withOpacity(0.85)
+                    ? t.green.withValues(alpha: 0.85)
                     : t.border,
                 width: widget.isActiveNow ? 2 : 1,
               ),
@@ -92,86 +94,76 @@ class _ShiftCardState extends State<ShiftCard> with SingleTickerProviderStateMix
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    ShiftAnimatedBackground(
-                      kind: s.kind,
-                      isDark: isDark,
-                    ),
-                    // Foreground gradient veil to ensure text contrast.
+                    ShiftAnimatedBackground(kind: s.kind, isDark: isDark),
+                    // Foreground gradient veil for text contrast.
                     DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            Colors.black.withOpacity(isDark ? 0.30 : 0.10),
-                            Colors.black.withOpacity(isDark ? 0.55 : 0.30),
+                            Colors.black.withValues(alpha: isDark ? 0.30 : 0.10),
+                            Colors.black.withValues(alpha: isDark ? 0.55 : 0.30),
                           ],
                         ),
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              _ShiftKindChip(kind: s.kind),
-                              const Spacer(),
-                              if (widget.isActiveNow)
-                                _LivePulseBadge(color: t.green),
-                              if (s.aiCommander) ...[
-                                const SizedBox(width: 6),
-                                _AiBadge(),
+                          // Badges row — FittedBox scales it down if needed, keeping single-row height.
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _ShiftKindChip(kind: s.kind),
+                                if (widget.isActiveNow) ...[
+                                  const SizedBox(width: 6),
+                                  _LivePulseBadge(color: t.green),
+                                ],
+                                if (s.aiCommander) ...[
+                                  const SizedBox(width: 6),
+                                  _AiBadge(),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                           const Spacer(),
                           Text(
                             s.name,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 22,
+                              fontSize: 18,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.2,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Row(
                             children: [
                               const Icon(Icons.schedule,
-                                  color: Colors.white70, size: 14),
+                                  color: Colors.white70, size: 12),
                               const SizedBox(width: 4),
-                              Text(
-                                s.timeRangeLabel,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.18),
-                                  borderRadius: BorderRadius.circular(99),
-                                  border: Border.all(
-                                      color: Colors.white.withOpacity(0.35)),
-                                ),
+                              Flexible(
                                 child: Text(
-                                  '${(s.durationMinutes / 60).toStringAsFixed(1)}h',
+                                  s.timeRangeLabel,
                                   style: const TextStyle(
                                     color: Colors.white,
+                                    fontWeight: FontWeight.w600,
                                     fontSize: 11,
-                                    fontWeight: FontWeight.w700,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 8),
                           _SupervisorAvatars(
                             sups: s.supervisors,
                             max: 5,
@@ -212,9 +204,9 @@ class _ShiftKindChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.22),
+        color: Colors.white.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(99),
-        border: Border.all(color: Colors.white.withOpacity(0.45)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.45)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -278,7 +270,7 @@ class _AiBadgeState extends State<_AiBadge>
             borderRadius: BorderRadius.circular(99),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF60A5FA).withOpacity(0.55),
+                color: const Color(0xFF60A5FA).withValues(alpha: 0.55),
                 blurRadius: 8 + 4 * t,
                 spreadRadius: 0.5,
               ),
@@ -345,7 +337,7 @@ class _LivePulseBadgeState extends State<_LivePulseBadge>
             borderRadius: BorderRadius.circular(99),
             boxShadow: [
               BoxShadow(
-                color: widget.color.withOpacity(0.4 + 0.4 * _ctrl.value),
+                color: widget.color.withValues(alpha: 0.4 + 0.4 * _ctrl.value),
                 blurRadius: 6 + 6 * _ctrl.value,
               ),
             ],
@@ -388,7 +380,7 @@ class _SupervisorAvatars extends StatelessWidget {
       return Row(
         children: [
           Icon(Icons.person_off,
-              color: Colors.white.withOpacity(0.7), size: 14),
+              color: Colors.white.withValues(alpha: 0.7), size: 14),
           const SizedBox(width: 6),
           const Text(
             'No supervisors yet',
@@ -419,10 +411,10 @@ class _SupervisorAvatars extends StatelessWidget {
                 width: 30,
                 height: 30,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.20),
+                  color: Colors.white.withValues(alpha: 0.20),
                   shape: BoxShape.circle,
-                  border:
-                      Border.all(color: Colors.white.withOpacity(0.55), width: 2),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.55), width: 2),
                 ),
                 child: Center(
                   child: Text(
@@ -468,7 +460,7 @@ class _AvatarChip extends StatelessWidget {
           boxShadow: [
             if (s.ready)
               BoxShadow(
-                color: const Color(0xFF22C55E).withOpacity(0.7),
+                color: const Color(0xFF22C55E).withValues(alpha: 0.7),
                 blurRadius: 6,
                 spreadRadius: 0.5,
               ),

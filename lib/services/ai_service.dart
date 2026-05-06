@@ -1,7 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
+import '../config/app_config.dart';
 
 class AIService {
   Future<String> getResolutionSuggestion({
@@ -15,7 +15,7 @@ class AIService {
     try {
       // /ai-suggest fetches Firebase history itself and uses Llama 3.2.
       final response = await http.post(
-        Uri.parse('$_workerBaseUrl/ai-suggest'),
+        Uri.parse(AppConfig.aiSuggestEndpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'type': alertType,

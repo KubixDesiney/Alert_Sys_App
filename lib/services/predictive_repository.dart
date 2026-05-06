@@ -3,9 +3,8 @@ import 'dart:convert';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
 import 'predictive_models.dart';
-
-const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
 
 class PredictiveRepository {
   PredictiveRepository({FirebaseDatabase? database, http.Client? client})
@@ -15,8 +14,8 @@ class PredictiveRepository {
   final FirebaseDatabase _db;
   final http.Client _client;
 
-  static String get workerBase => _workerBaseUrl;
-  static const Duration requestTimeout = Duration(seconds: 8);
+  static String get workerBase => AppConfig.workerBaseUrl;
+  static const Duration requestTimeout = AppConfig.defaultRequestTimeout;
   static const Duration cacheTtl = Duration(minutes: 5);
 
   MorningBriefing? _briefingCache;

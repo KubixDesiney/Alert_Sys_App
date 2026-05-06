@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-const String _workerBaseUrl = 'https://alert-notifier.aziz-nagati01.workers.dev';
+import '../config/app_config.dart';
 
 class WorkerTriggerQueue {
   WorkerTriggerQueue._();
@@ -52,16 +52,16 @@ class WorkerTriggerQueue {
   }
 
   Future<void> enqueueNotify() {
-    return enqueuePost(Uri.parse('$_workerBaseUrl/notify'));
+    return enqueuePost(Uri.parse('${AppConfig.workerBaseUrl}/notify'));
   }
 
   Future<void> enqueueAiRetry() {
-    return enqueuePost(Uri.parse('$_workerBaseUrl/ai-retry'));
+    return enqueuePost(Uri.parse('${AppConfig.workerBaseUrl}/ai-retry'));
   }
 
   Future<void> enqueueAlertTrigger(String alertId) {
     return enqueuePost(
-      Uri.parse('$_workerBaseUrl/'),
+      Uri.parse('${AppConfig.workerBaseUrl}/'),
       jsonBody: {'alertId': alertId},
     );
   }

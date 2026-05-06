@@ -11,6 +11,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../theme.dart';
+import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 import 'factory_mapping_tab.dart';
 
 const _navy = AppColors.navy;
@@ -125,7 +127,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not create Asset ID: $e')),
+        SnackBar(content: Text('Could not create Asset ID: ${UserFriendlyError.message(e)}')),
       );
       return;
     }
@@ -236,7 +238,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not relink asset: $e')),
+        SnackBar(content: Text('Could not relink asset: ${UserFriendlyError.message(e)}')),
       );
     }
   }
@@ -619,7 +621,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: _red),
+            SnackBar(content: Text(UserFriendlyError.message(e)), backgroundColor: _red),
           );
         }
       }
@@ -823,7 +825,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingIndicator();
     }
     final t = context.appTheme;
     return DefaultTabController(
@@ -1319,7 +1321,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Download failed: $e')),
+        SnackBar(content: Text('Download failed: ${UserFriendlyError.message(e)}')),
       );
     } finally {
       if (mounted) setState(() => _downloading = false);
@@ -1362,7 +1364,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Print failed: $e')),
+        SnackBar(content: Text('Print failed: ${UserFriendlyError.message(e)}')),
       );
     } finally {
       if (mounted) setState(() => _printing = false);

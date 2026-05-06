@@ -46,28 +46,30 @@ class _ShiftAnimatedBackgroundState extends State<ShiftAnimatedBackground>
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: widget.borderRadius,
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (ctx, _) {
-          final t = _ctrl.value;
-          switch (widget.kind) {
-            case ShiftKind.morning:
-              return CustomPaint(
-                painter: _MorningPainter(t: t, isDark: widget.isDark),
-                size: Size.infinite,
-              );
-            case ShiftKind.afternoon:
-              return CustomPaint(
-                painter: _AfternoonPainter(t: t, isDark: widget.isDark),
-                size: Size.infinite,
-              );
-            case ShiftKind.night:
-              return CustomPaint(
-                painter: _NightPainter(t: t, isDark: widget.isDark),
-                size: Size.infinite,
-              );
-          }
-        },
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (ctx, _) {
+            final t = _ctrl.value;
+            switch (widget.kind) {
+              case ShiftKind.morning:
+                return CustomPaint(
+                  painter: _MorningPainter(t: t, isDark: widget.isDark),
+                  size: Size.infinite,
+                );
+              case ShiftKind.afternoon:
+                return CustomPaint(
+                  painter: _AfternoonPainter(t: t, isDark: widget.isDark),
+                  size: Size.infinite,
+                );
+              case ShiftKind.night:
+                return CustomPaint(
+                  painter: _NightPainter(t: t, isDark: widget.isDark),
+                  size: Size.infinite,
+                );
+            }
+          },
+        ),
       ),
     );
   }

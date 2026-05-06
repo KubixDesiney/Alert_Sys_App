@@ -11,6 +11,7 @@ import '../services/work_instruction_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 import 'alert_detail_screen.dart';
 
 /// "Alert Scan" tab — live QR camera on top, workstation alert history below.
@@ -492,9 +493,7 @@ class _CameraCard extends StatelessWidget {
 
     Widget content;
     if (!permissionChecked) {
-      content = const Center(
-        child: CircularProgressIndicator(),
-      );
+      content = const AppLoadingIndicator();
     } else if (!isActive) {
       content = const Center(
         child: Text(
@@ -802,7 +801,7 @@ class _HistorySection extends StatelessWidget {
       );
     }
     if (loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingIndicator();
     }
 
     final resolvedCount = history.where((a) => a.status == 'validee').length;

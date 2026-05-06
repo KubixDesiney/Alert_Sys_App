@@ -21,6 +21,7 @@ import 'services/worker_trigger_queue.dart';
 import 'services/background_sync_service.dart';
 import 'services/app_lifecycle_observer.dart';
 import 'theme.dart';
+import 'widgets/common/app_loading_indicator.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -153,8 +154,7 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: AppLoadingIndicator.fullscreen());
         }
         if (snapshot.hasError) {
           return Scaffold(
@@ -302,7 +302,7 @@ class _RoleRouterState extends State<RoleRouter> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: AppLoadingIndicator.fullscreen());
     }
     if (_role == null) {
       if (_offlineAccountUnavailable) {

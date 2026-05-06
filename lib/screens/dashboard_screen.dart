@@ -18,6 +18,8 @@ import 'alert_detail_screen.dart';
 import 'alert_scan_screen.dart';
 import 'locator_tab.dart';
 import '../widgets/voice_command_button.dart';
+import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
 import '../models/collaboration_model.dart';
@@ -303,8 +305,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _notifications = [];
   List<Map<String, dynamic>> _pmActions = [];
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  late StreamSubscription<DatabaseEvent> _notifSubscription;
-  late StreamSubscription<DatabaseEvent> _pmSubscription;
+  StreamSubscription<DatabaseEvent>? _notifSubscription;
+  StreamSubscription<DatabaseEvent>? _pmSubscription;
 
   bool _isBuzzing = false;
   String? _buzzingNotificationId;
@@ -408,8 +410,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   @override
   void dispose() {
     _tabController.dispose();
-    _notifSubscription.cancel();
-    _pmSubscription.cancel();
+    _notifSubscription?.cancel();
+    _pmSubscription?.cancel();
     _stopBuzzing();
     super.dispose();
   }
@@ -1105,7 +1107,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error: $e')));
+                                SnackBar(content: Text(UserFriendlyError.message(e))));
                           }
                         }
                       },
@@ -1157,7 +1159,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Error: $e')));
+                                SnackBar(content: Text(UserFriendlyError.message(e))));
                           }
                         }
                       },
@@ -1750,7 +1752,7 @@ class _ClaimedView extends StatelessWidget {
     showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()));
+        builder: (_) => const AppLoadingIndicator());
     final pastResolutions =
         await provider.getPastResolutionsForType(alert.type, 3);
     final aiService = AIService();

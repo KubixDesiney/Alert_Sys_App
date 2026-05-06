@@ -13,6 +13,8 @@ import '../services/ai_assignment_service.dart';
 import '../models/user_model.dart';
 import '../theme.dart';
 import '../screens/alert_detail_screen.dart';
+import 'common/app_loading_indicator.dart';
+import '../utils/user_friendly_error.dart';
 import '../utils/factory_id.dart';
 
 class AILogsPanel extends StatefulWidget {
@@ -820,7 +822,7 @@ class _AIDetailsDialogState extends State<_AIDetailsDialog> {
               child: _loading
                   ? const Padding(
                       padding: EdgeInsets.all(40),
-                      child: Center(child: CircularProgressIndicator()),
+                      child: AppLoadingIndicator(),
                     )
                   : SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
@@ -1108,7 +1110,7 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed to save: $e'), backgroundColor: Colors.red),
+              content: Text('Failed to save: ${UserFriendlyError.message(e)}'), backgroundColor: Colors.red),
         );
       }
     }
@@ -1170,7 +1172,7 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
               child: _loading
                   ? const Padding(
                       padding: EdgeInsets.all(32),
-                      child: Center(child: CircularProgressIndicator()),
+                      child: AppLoadingIndicator(),
                     )
                   : _error != null
                       ? Padding(

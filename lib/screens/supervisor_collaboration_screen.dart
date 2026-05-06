@@ -9,6 +9,7 @@ import '../services/service_locator.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 
 const _purple = Color(0xFF9333EA);
 const _purpleLt = Color(0xFFF3E8FF);
@@ -999,7 +1000,7 @@ class _RequestCollaborationDialogState
                               letterSpacing: 1.2)),
                       const SizedBox(height: 8),
                       _loading
-                          ? const Center(child: CircularProgressIndicator())
+                          ? const AppLoadingIndicator()
                           : _buildSupervisorList(t),
 
                       if (_selectedSupervisors.isNotEmpty) ...[
@@ -1204,7 +1205,7 @@ class _RequestCollaborationDialogState
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: _red));
+          SnackBar(content: Text(UserFriendlyError.message(e)), backgroundColor: _red));
     } finally {
       if (mounted) setState(() => _sending = false);
     }

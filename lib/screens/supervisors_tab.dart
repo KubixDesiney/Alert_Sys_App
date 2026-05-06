@@ -8,6 +8,8 @@ import '../../services/auth_service.dart';
 import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
+import '../../utils/user_friendly_error.dart';
+import '../../widgets/common/app_loading_indicator.dart';
 import 'admin/admin_dashboard_shared.dart';
 import 'admin_escalation_screen.dart' show CollaborationsTab;
 
@@ -1047,7 +1049,7 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingIndicator();
     }
 
     final grouped = _groupByFactory();
@@ -1331,7 +1333,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             if (!mounted) return;
                             setDialogState(() => saving = false);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Update failed: $e')),
+                              SnackBar(content: Text('Update failed: ${UserFriendlyError.message(e)}')),
                             );
                           }
                         },

@@ -10,6 +10,8 @@ import '../models/alert_model.dart';
 import '../models/work_instruction.dart';
 import '../providers/alert_provider.dart';
 import '../services/work_instruction_service.dart';
+import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 
 /// AR-style work-instruction screen.
 ///
@@ -240,7 +242,7 @@ class _ArInstructionScreenState extends State<ArInstructionScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(sheetContext).showSnackBar(
-        SnackBar(content: Text('Failed to resolve alert: $e')),
+        SnackBar(content: Text('Failed to resolve alert: ${UserFriendlyError.message(e)}')),
       );
     }
   }
@@ -619,7 +621,7 @@ class _InstructionSheetState extends State<_InstructionSheet> {
       );
     }
     if (widget.loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingIndicator();
     }
     if (widget.error != null) {
       return _CenteredMessage(

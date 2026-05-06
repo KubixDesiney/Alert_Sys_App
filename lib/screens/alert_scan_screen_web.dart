@@ -9,6 +9,7 @@ import '../services/work_instruction_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
+import '../widgets/common/app_loading_indicator.dart';
 import 'alert_detail_screen.dart';
 
 class AlertScanScreen extends StatefulWidget {
@@ -546,7 +547,7 @@ class _HistorySection extends StatelessWidget {
         message: error!,
       );
     }
-    if (loading) return const Center(child: CircularProgressIndicator());
+    if (loading) return const AppLoadingIndicator();
 
     final resolvedCount = history.where((a) => a.status == 'validee').length;
     final activeCount = history.length - resolvedCount;

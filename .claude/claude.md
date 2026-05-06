@@ -764,6 +764,67 @@ When adding new features, follow these patterns:
 
 ---
 
+## AB. Shift Reporting and PDF Export
+
+The Shifts module includes comprehensive reporting capabilities that capture all activity during a shift window, including AI Shift Commander decisions, supervisor actions, and performance metrics.
+
+**ShiftPdfService** (lib/services/shift_pdf_service.dart):
+- Exports a beautiful, audit-ready PDF report for any shift.
+- Loads all alerts created/claimed/resolved/escalated within the shift time window.
+- Tracks supervisor readiness, AI commander actions, and handover summaries.
+- Generates metrics: total alerts, created, claimed, resolved, escalated counts.
+- Includes factory and supervisor performance breakdowns (bar charts).
+- Timeline view with chronological action log (created, claimed, resolved, ai_assigned, escalated, handover).
+- AI actions section highlighting all assignments with confidence scores.
+- Handover card displays AI-generated summary if available.
+- Theme-aligned colors and responsive layout for landscape A4 PDF.
+- Supports web download and mobile share-sheet export.
+
+ShiftAction model captures single events:
+- at: timestamp when action occurred.
+- kind: event type (created, claimed, resolved, ai_assigned, escalated, handover).
+- alertLabel, alertType, factory: context.
+- detail: human-readable description.
+- actor: supervisor or system responsible.
+- aiConfidence: optional ML confidence if AI action.
+
+**Shift Report UI Integration**:
+
+_ReportButton widget (in shifts_tab.dart):
+- Appears in _LiveView below readiness section when shift is active.
+- "Generate Shift Report" button with file-download icon and orange accent.
+- Shows progress spinner during PDF generation.
+- Launches ShiftPdfService.exportAndShare() for the current day.
+- Error snackbar on failure.
+
+**Rejection Dialog for Double Assignment**:
+
+_DoubleAssignmentDialog (in shift_creation_dialog.dart):
+- Blocks supervisor assignment to two simultaneous shifts.
+- Checks _conflictingShiftFor() during supervisor selection.
+- Beautiful modal with:
+  - Red block icon and "Double Assignment Blocked" header.
+  - Supervisor name and conflict details.
+  - Existing shift card showing kind icon, name, and time range.
+  - Guidance text on how to resolve (remove from conflicting shift first).
+- Non-blocking interaction; supervisor can try another assignment after closing.
+
+**Integration with AlertProvider**:
+- _loadActions() queries all alerts in RTDB under /alerts path.
+- Filters by shift time window using _windowFor() which handles overnight wrap.
+- Detects actions from alert fields: timestamp, takenAtTimestamp, resolvedAt, escalatedAt, aiAssignedAt.
+- Includes shift.lastHandoverSummary if set (written by worker handover endpoint).
+- Sorts all actions chronologically for timeline view.
+
+**Design Patterns**:
+- Window helper: _windowFor() computes [start, end) datetimes, accounting for overnight shifts.
+- Safe text: _safe() escapes special characters for PDF rendering.
+- Color mapping: _kindColor() returns PdfColor by action type; matches UI theme.
+- Date formatting: _fmtDateTime(), _fmtTime(), _fmtDateFile() for readability and file safety.
+- Slug generation: _slug() sanitizes shift names for filenames.
+
+---
+
 ## Quick File-to-Responsibility Index
 
 - lib/main.dart: bootstrap, providers, role routing.
@@ -779,8 +840,12 @@ When adding new features, follow these patterns:
 - lib/services/predictive_repository.dart: worker predictive endpoint client.
 - lib/services/hierarchy_service.dart: topology and asset mapping.
 - lib/services/collaboration_service.dart: collaboration request and PM approval.
+- lib/services/shift_service.dart: shift CRUD and AI action triggers.
+- lib/services/shift_pdf_service.dart: shift report PDF generation and export.
 - lib/services/offline_database_service.dart: RTDB offline config.
 - lib/services/worker_trigger_queue.dart: resilient worker trigger queue.
+- lib/screens/admin/shifts_tab.dart: shift scheduling UI (schedule, live, timeline tabs).
+- lib/screens/admin/shift_creation_dialog.dart: shift and supervisor configuration with conflict detection.
 - cloudflare_worker.js: edge orchestration and predictive/briefing logic.
 - functions/index.js: assignment retry and additional backend automation.
 - database.rules.json: data authorization and validation rules.
