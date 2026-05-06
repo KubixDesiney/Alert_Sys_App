@@ -108,18 +108,18 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
                   index: 0,
                   ctrl: _sub),
               _SubPill(
+                  label: 'Collaborations',
+                  icon: Icons.shield,
+                  index: 1,
+                  ctrl: _sub),
+              _SubPill(
                   label: 'Performance',
                   icon: Icons.show_chart,
-                  index: 1,
+                  index: 2,
                   ctrl: _sub),
               _SubPill(
                   label: 'Assignments',
                   icon: Icons.bar_chart,
-                  index: 2,
-                  ctrl: _sub),
-              _SubPill(
-                  label: 'Collaborations',
-                  icon: Icons.shield,
                   index: 3,
                   ctrl: _sub),
             ],
@@ -142,6 +142,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
               searchQuery: _searchQuery,
               onSearchChanged: (v) => setState(() => _searchQuery = v),
             ),
+            const CollaborationsTab(),
             _PerformanceSubTab(
               supervisors: widget.supervisors,
               alerts: widget.alerts,
@@ -149,7 +150,6 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
             _AssignmentsSubTab(
               supervisors: widget.supervisors,
             ),
-            const CollaborationsTab(),
           ],
         ),
       ),

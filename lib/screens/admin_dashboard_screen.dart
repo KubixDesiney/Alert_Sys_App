@@ -31,6 +31,7 @@ import 'alerts_tree_tab.dart';
 import '../utils/alert_meta.dart';
 import 'overview_tab.dart';
 import 'supervisors_tab.dart';
+import 'admin/shifts_tab.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy = AppColors.navy;
@@ -56,7 +57,7 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  int _tab = 0; // 0=Overview  1=Supervisors  2=Alerts
+  int _tab = 0; // 0=Overview  1=Supervisors  2=Shifts  3=Alerts  4=Escalations  5=Hierarchy
   List<UserModel> _supervisors = [];
   List<AlertModel> _alerts = [];
   bool _loading = true;
@@ -1196,10 +1197,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           onRefresh: _loadSupervisors,
         );
       case 2:
-        return AlertsTreeTab(alerts: _alerts);
+        return const AdminShiftsTab();
       case 3:
-        return const AdminEscalationScreen();
+        return AlertsTreeTab(alerts: _alerts);
       case 4:
+        return const AdminEscalationScreen();
+      case 5:
         return const HierarchyScreen();
       default:
         return const SizedBox.shrink();
@@ -1842,9 +1845,10 @@ class _PillTabBar extends StatelessWidget {
     const tabs = [
       {'icon': Icons.bar_chart, 'label': 'Overview'},
       {'icon': Icons.people, 'label': 'Supervisors'},
+      {'icon': Icons.schedule, 'label': 'Shifts'},
       {'icon': Icons.notifications_outlined, 'label': 'Alerts'},
-      {'icon': Icons.warning_amber, 'label': 'Escalations'}, // <-- NEW
-      {'icon': Icons.account_tree, 'label': 'Hierarchy'}, // NEW
+      {'icon': Icons.warning_amber, 'label': 'Escalations'},
+      {'icon': Icons.account_tree, 'label': 'Hierarchy'},
     ];
     final t = context.appTheme;
     return Container(

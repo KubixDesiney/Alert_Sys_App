@@ -13,6 +13,7 @@ import 'package:universal_html/html.dart' as html;
 
 import '../../models/alert_model.dart';
 import '../../models/hierarchy_model.dart';
+import '../../services/alert_pdf_service.dart';
 import '../../services/predictive_intel_service.dart';
 import '../../services/service_locator.dart';
 import '../../theme.dart';
@@ -398,6 +399,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   List<Factory> _factories = [];
   String? _historyFilter;
   final Set<String> _announcedCriticalIds = <String>{};
+  final Set<String> _handledCriticalIds = <String>{}; // alerts user acknowledged/assigned
   final List<AlertModel> _criticalDialogQueue = <AlertModel>[];
   bool _criticalDialogOpen = false;
 
@@ -455,6 +457,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       if (!a.isCritical) return false;
       if (a.status != 'disponible') return false;
       if (_announcedCriticalIds.contains(a.id)) return false;
+      if (_handledCriticalIds.contains(a.id)) return false; // never show again if handled
       return !previousIds.contains(a.id);
     }).toList();
     if (incoming.isEmpty) return;
@@ -500,6 +503,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         );
       },
     );
+    // Mark as handled once dialog is dismissed (whether acknowledged or assigned)
+    _handledCriticalIds.add(alert.id);
     _criticalDialogOpen = false;
     if (_criticalDialogQueue.isNotEmpty) {
       _requestShowNextCriticalDialog();
@@ -812,6 +817,36 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     await Share.shareXFiles([XFile(file.path)], text: 'Exported alerts CSV');
   }
 
+  Future<void> _exportFilteredAlertsPdf(List<AlertModel> alertsToExport) async {
+    if (alertsToExport.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No alerts to export'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    try {
+      await AlertPdfService.exportAndShare(
+        alerts: alertsToExport,
+        scopeLabel: widget.selectedUsine == 'all'
+            ? 'All Plants'
+            : widget.selectedUsine,
+        timeRangeLabel: widget.timeRangeLabel,
+        labelType: (t) => adminTypeLabel(context, t),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF export failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   void _exportFilteredAlertsExcel(List<AlertModel> alertsToExport) async {
     if (alertsToExport.isEmpty) return;
     final workbook = excel.Excel.createExcel();
@@ -1004,11 +1039,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         children: [
           healthCard,
           const SizedBox(height: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              child: statGrid,
-            ),
-          ),
+          Expanded(child: statGrid),
         ],
       );
 
@@ -1042,6 +1073,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
             : null,
         onOpenFilters: _openFilterSheet,
         onCsv: () => _exportFilteredAlerts(pages),
+        onPdf: () => _exportFilteredAlertsPdf(pages),
         onExcel: () => _exportFilteredAlertsExcel(pages),
         scope: widget.selectedUsine == 'all'
             ? 'All Plants'
@@ -1688,47 +1720,6 @@ class _FactoryMasterBar extends StatelessWidget {
           ]),
         );
 
-        final filterBtn = OutlinedButton.icon(
-          onPressed: onOpenFilters,
-          icon: const Icon(Icons.tune_rounded, size: 16),
-          label: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Filters',
-                  style:
-                      TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-              if (activeCount > 0) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: t.navy,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    '$activeCount',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ]
-            ],
-          ),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: t.navy,
-            backgroundColor: t.card,
-            side: BorderSide(color: t.border),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-
         final resetBtn = activeCount > 0
             ? IconButton(
                 onPressed: onReset,
@@ -1756,9 +1747,7 @@ class _FactoryMasterBar extends StatelessWidget {
                 const SizedBox(width: 6),
                 timeChip,
                 const Spacer(),
-                filterBtn,
                 if (activeCount > 0) ...[
-                  const SizedBox(width: 6),
                   resetBtn,
                 ],
               ]),
@@ -1771,10 +1760,8 @@ class _FactoryMasterBar extends StatelessWidget {
           scopeChip,
           const SizedBox(width: 6),
           timeChip,
-          const SizedBox(width: 10),
-          filterBtn,
+          const Spacer(),
           if (activeCount > 0) ...[
-            const SizedBox(width: 6),
             resetBtn,
           ],
         ]);
@@ -1801,6 +1788,7 @@ class _AlertHistoryBox extends StatelessWidget {
   final VoidCallback? onNext;
   final VoidCallback onOpenFilters;
   final VoidCallback onCsv;
+  final VoidCallback onPdf;
   final VoidCallback onExcel;
   final String scope;
 
@@ -1818,6 +1806,7 @@ class _AlertHistoryBox extends StatelessWidget {
     required this.onNext,
     required this.onOpenFilters,
     required this.onCsv,
+    required this.onPdf,
     required this.onExcel,
     required this.scope,
   });
@@ -1884,6 +1873,24 @@ class _AlertHistoryBox extends StatelessWidget {
                   ],
                 ),
               ),
+              OutlinedButton.icon(
+                onPressed: onOpenFilters,
+                icon: const Icon(Icons.tune_rounded, size: 14),
+                label: const Text('Filters',
+                    style: TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.navy,
+                  side: BorderSide(color: theme.border),
+                  backgroundColor: theme.scaffold,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               if (activeFilterChip != null) ...[
                 Container(
                   padding:
@@ -1915,27 +1922,7 @@ class _AlertHistoryBox extends StatelessWidget {
                     ),
                   ]),
                 ),
-                const SizedBox(width: 6),
               ],
-              Tooltip(
-                message: 'Filter & search',
-                child: InkWell(
-                  onTap: onOpenFilters,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.navy.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: theme.navy.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child:
-                        Icon(Icons.tune_rounded, size: 16, color: theme.navy),
-                  ),
-                ),
-              ),
             ]),
           ),
           Divider(color: theme.border, height: 1),
@@ -2051,7 +2038,8 @@ class _AlertHistoryBox extends StatelessWidget {
             ]),
           ),
           Divider(color: theme.border, height: 1),
-          // Export footer
+          // Export footer — CSV · PDF · Excel.
+          // PDF sits between CSV and Excel and uses Adobe-style PDF red.
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: Row(children: [
@@ -2073,6 +2061,10 @@ class _AlertHistoryBox extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _PdfExportButton(onTap: onPdf),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -2631,6 +2623,109 @@ class _AlertHistoryRow extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PDF EXPORT BUTTON — branded with Adobe-style PDF red and a glow effect.
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _PdfExportButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _PdfExportButton({required this.onTap});
+
+  @override
+  State<_PdfExportButton> createState() => _PdfExportButtonState();
+}
+
+class _PdfExportButtonState extends State<_PdfExportButton> {
+  bool _hover = false;
+  bool _pressed = false;
+
+  static const _pdfRed = Color(0xFFEC1C24); // signature Adobe Acrobat red
+  static const _pdfRedDark = Color(0xFFB71C1C);
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.isDark;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                _pdfRed,
+                _pressed ? _pdfRedDark : const Color(0xFFD81B1F),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: _pdfRed.withValues(alpha: 0.55),
+              width: 0.8,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: _pdfRed.withValues(
+                  alpha: _hover ? (isDark ? 0.45 : 0.35) : 0.18,
+                ),
+                blurRadius: _hover ? 14 : 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    width: 0.7,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'PDF',
+                  style: TextStyle(
+                    fontSize: 6.5,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 7),
+              const Text(
+                'PDF',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -498,6 +498,242 @@ Sequence 4: AI assignment run
 5. Sends notification to selected supervisor.
 6. Client syncs and displays assignment rationale/logs.
 
+## AA. Shifts Module: Scheduling and Coordination
+
+The Shifts module enables factory shift scheduling with AI-assisted supervisor assignment and handover coordination.
+
+**Purpose:**
+- Define and manage factory shift schedules (morning, afternoon, night).
+- Track supervisor readiness and availability within shifts.
+- Support AI Shift Commander for autonomous cross-factory assignment during active shifts.
+- Generate handover summaries via Workers AI when shifts end.
+- Provide voice-first shift enrollment and readiness commands.
+
+**Data Model:**
+
+ShiftModel (lib/models/shift_model.dart):
+- id: unique shift identifier.
+- name: display name (e.g., "Morning Shift 1").
+- startMinutes, endMinutes: time representation as minutes from midnight (0-1439), supporting overnight wrap-around.
+- kind: enum (morning, afternoon, night) derived from start hour (5-12, 12-20, 20-5).
+- maxSupervisors: capacity limit for the shift.
+- aiCommander: boolean enabling AI-driven cross-factory assignment override.
+- aiModel: model choice for AI decisions (defaults to llama).
+- aiConfidence: confidence floor (0-1) for accepting AI assignments.
+- randomize: boolean to shuffle candidate ordering when assigning.
+- supervisors: list of AssignedSupervisor objects with id, name, factory.
+- lastHandoverSummary, lastHandoverAt: cached handover metadata.
+
+Helper methods:
+- containsTime(DateTime): checks if a given time falls within the shift window, handling overnight wrap.
+- progress(): returns 0-1 fraction of shift elapsed.
+- minutesRemaining(): time remaining in shift.
+- formatMinutes(int): converts 0-1439 to "HH:MM" string.
+- timeRangeLabel(): returns human-readable "HH:MM - HH:MM" with next-day label if overnight.
+- ShiftKind detection based on start hour for consistent categorization.
+
+**Services:**
+
+ShiftService (lib/services/shift_service.dart):
+- streamShifts(): returns live RTDB stream of shifts from /shifts path.
+- fetchShiftsOnce(): one-time fetch for initialization (used by worker).
+- createShift(ShiftModel): writes new shift to database.
+- updateShift(ShiftModel): transactional update of existing shift.
+- deleteShift(String shiftId): removes a shift (admin-only via rules).
+- markCurrentUserReady(List<ShiftModel> shifts, bool ready): toggles current user's ready flag in the active shift's supervisors list.
+- requestHandoverSummary(ShiftModel shift): POST to /shift-ai-action with handover action, returns structured summary.
+- randomizePool(List<UserModel> supervisors, int count, List<ShiftModel> shifts): factory-balanced randomization. Buckets supervisors by factory first, then rounds through buckets to select evenly distributed candidates. Ensures no single factory dominates shift assignment.
+- activeShift(List<ShiftModel> shifts, DateTime now): static method returning the currently active shift, or null.
+
+Integration with ServiceLocator:
+- ShiftService is registered in ServiceLocator.init() for app-wide access.
+
+**UI Architecture:**
+
+AdminShiftsTab (lib/screens/admin/shifts_tab.dart) is a three-tabbed interface:
+
+1. _ScheduleView: Grid layout of shift cards (1-3 per row depending on width).
+   - ShiftCard widget with hover animations, gradient background, supervisor avatars.
+   - Tap opens shift editing dialog.
+   - Empty state when no shifts.
+
+2. _LiveView: Active shift monitoring with countdown timer and readiness tracking.
+   - _LiveShiftPanel: shows active shift progress, "I'm ready" button, readiness grid.
+   - _CountdownText: formatted hours/minutes to shift end.
+   - _HandoverBanner: appears when shift ending in ≤30 min, with AI handover trigger.
+   - _ReadinessGrid: live supervisor readiness chips with ready/not-ready states.
+   - _UpcomingShiftsList: queue of shifts scheduled later today.
+   - Empty state for no active shifts.
+
+3. _TimelineView: 24-hour visual timeline of shift coverage.
+   - _TimelineStrip and _TimelinePainter: custom painter rendering timeline blocks and now-marker.
+   - Shift blocks color-coded by kind.
+   - Shows supervisor count per shift.
+   - Empty state for no shifts.
+
+Shared UI components (lib/widgets/shifts/):
+
+ShiftCard: hover-scale animation, displays:
+- _ShiftKindChip: shift type badge with icon.
+- _AiBadge: pulsing gradient badge when AI Commander is enabled.
+- _LivePulseBadge: pulsing green "LIVE" indicator when shift is active.
+- _SupervisorAvatars: stacked avatar circles with initials, +N overflow indicator.
+- _AvatarChip: individual supervisor avatar with ready-state glow effect.
+
+ShiftAnimatedBackground (lib/widgets/shifts/shift_backgrounds.dart):
+- Three CustomPainter implementations (morning, afternoon, night) with smooth animations.
+- _MorningPainter: animated sunrise with moving sun, rays, flying birds, drifting clouds.
+- _AfternoonPainter: animated sunset with orange/pink gradients, factory silhouette with puffing smoke stacks.
+- _NightPainter: animated night sky with twinkling stars, crescent moon with craters, 3-band aurora borealis ribbons.
+- Dark mode support: reduces saturation and brightness on all painters.
+- Helper methods: _drawCloud(), _drawGround(), _drawFactorySilhouette(), _drawAurora().
+
+ShiftCreationDialog (lib/screens/admin/shift_creation_dialog.dart):
+- Full-screen modal for creating or editing shifts.
+- Fields: shift name, start/end time pickers (minute selection), max supervisors stepper.
+- AI Shift Commander toggle with nested settings:
+  - Model dropdown (llama selected by default).
+  - Confidence slider (0-1 range).
+- Randomize Shift Assignment toggle with re-randomize button.
+- Supervisor search bar and multi-select checkboxes.
+- Batch fetches supervisors on init with loading/error states.
+- Validates form before save.
+
+**Realtime Database Structure:**
+
+/shifts path added to database.rules.json:
+- Indexed on startMinutes and aiCommander for efficient queries.
+- Admin-only read/write at root and {shiftId} level.
+- Validators enforce:
+  - name: string.
+  - startMinutes, endMinutes: 0-1439 integers.
+  - maxSupervisors: 1-50 integer.
+  - aiCommander, randomize: boolean.
+  - aiConfidence: 0-1 float.
+  - supervisors.{supervisorId}.ready: boolean, writable by self or admin.
+- Nested ai_decisions writes when assignment occurs.
+- lastHandoverSummary and lastHandoverAt fields cached after handover generation.
+
+**Cloudflare Worker Integration:**
+
+cloudflare_worker.js includes shift-aware orchestration:
+
+Shift helper functions:
+- _shiftContainsTime(shift, DateTime): checks if time falls within shift window, handles overnight wrap.
+- pickActiveShift(shiftsMap, DateTime): returns currently active shift, or null.
+
+Enhanced core functions:
+- loadCoreData(): now fetches /shifts.json in parallel with alerts/users, returns shiftsMap and activeShift in context.
+- runAIAssignments(): extended with shift parameters:
+  - Extracts aiCommander, confidence floor, randomize flag, maxSupervisors from active shift.
+  - Overrides per-factory AI enable gate when AI Commander is active.
+  - Allows cross-factory candidates from shift supervisor roster when AI Commander enabled.
+  - Applies confidence floor check before assignment decision.
+  - Randomizes candidate ordering when shift.randomize is true.
+  - Prefixes assignment reason with shift name for traceability.
+
+New functions:
+- processShiftCollaborations(): runs within cron.
+  - Auto-approves pending collaboration requests when all assistant candidates have accepted.
+  - Skips PM approval step under AI Commander authority.
+  - Sends notifications to requester on approval.
+
+- processShiftEnding(): runs within 3 minutes of shift end time.
+  - Triggers handover summary generation via generateShiftHandoverSummary().
+  - Persists summary to shift node (lastHandoverSummary, lastHandoverAt).
+  - Fans out shift_handover notifications to all supervisors in shift roster.
+
+- generateShiftHandoverSummary(activeShift, alertsMap, usersMap): workers AI integration.
+  - Aggregates shift performance metrics: resolved count, pending count, critical count.
+  - Builds JSON context of recent alerts with status, type, supervisor.
+  - Calls env.AI.run() with Llama 3.2 3B model and system prompt.
+  - System prompt instructs: brief summary, key metrics, action items for next shift, factory-aware context.
+  - Returns structured summary object with stats and text.
+
+- handleShiftAiAction(): POST /shift-ai-action endpoint.
+  - Supports four action types: evaluate, created, updated, handover.
+  - evaluate/created/updated: re-runs AI assignments and collaboration approval.
+  - handover: generates summary and persists to shift, notifies supervisors.
+
+Cron and trigger updates:
+- scheduled() handler calls processShiftCollaborations() and processShiftEnding() during every minute cron.
+- default fetch trigger calls processShiftCollaborations().
+
+**Voice Command Integration:**
+
+VoiceCommandParser extended intents:
+- joinShift: "assign me to the morning shift", "join evening shift", etc.
+- shiftReady: "I am ready for shift", "mark me ready".
+- shiftHandover: "start shift handover", "generate handover report".
+
+VoiceCommandDispatcher handlers (lib/services/voice_command_dispatcher.dart):
+- _handleShiftReady(): marks current user as ready in active shift via ShiftService.markCurrentUserReady().
+- _handleJoinShift(String rawText): parses shift kind from raw text (morning, afternoon, evening, night).
+  - Fetches shifts from ShiftService.
+  - Adds current user to matching shift roster if not at capacity and not already joined.
+  - Confirms action via TTS.
+- _handleShiftHandover(): fetches active shift, calls ShiftService.requestHandoverSummary().
+  - Returns generated summary text to user via TTS.
+- _userFactory(String uid): helper to fetch user's factory affiliation from RTDB users/{uid}.
+
+**Operational Sequences:**
+
+Sequence 1: Shift creation
+1. Admin opens AdminShiftsTab, taps create button.
+2. ShiftCreationDialog opens with form.
+3. Admin configures name, time, AI settings, selects supervisors.
+4. Dialog validates and calls ShiftService.createShift().
+5. RTDB write persists shift under /shifts/{newId}.
+6. UI stream updates and card appears in _ScheduleView.
+
+Sequence 2: AI Commander assignment during active shift
+1. Worker runs scheduled cron.
+2. loadCoreData() fetches shifts and identifies activeShift.
+3. Alert requiring assignment triggers runAIAssignments().
+4. AI Commander flag is true, so per-factory enable check skipped.
+5. Candidates filtered from shift.supervisors (cross-factory allowed).
+6. Confidence floor and randomize applied.
+7. Best candidate assigned transactionally with aiHistory write.
+8. shift_ai_assignment notification sent to selected supervisor.
+
+Sequence 3: Shift handover
+1. Shift nears end time (≤30 min remaining).
+2. _HandoverBanner appears in _LiveView with trigger button.
+3. User taps "Generate Handover Report" or voice says "start shift handover".
+4. VoiceCommandDispatcher calls ShiftService.requestHandoverSummary().
+5. POST to /shift-ai-action with handover action.
+6. Worker generates summary via generateShiftHandoverSummary() with Workers AI.
+7. Summary persisted to shift node (lastHandoverSummary, lastHandoverAt).
+8. shift_handover notifications sent to all supervisors.
+9. Summary displayed in UI or spoken to user.
+
+Sequence 4: Supervisor shift enrollment via voice
+1. Supervisor says "assign me to the morning shift".
+2. VoiceCommandDispatcher._handleJoinShift() parses intent.
+3. Fetches shifts and finds morning shift not at capacity.
+4. Adds supervisor to shift.supervisors roster.
+5. Transactional update persists to RTDB.
+6. TTS confirms "You have been added to the morning shift."
+
+**Integration Points:**
+
+- AlertProvider: unchanged, shifts are orthogonal to alert lifecycle.
+- NotificationService: receives shift_handover and shift_ai_assignment payloads.
+- FcmService: routes shift-related notifications to UI or voice.
+- AIService: remains separate, shift AI Commander is a worker-side override.
+- Voice system: VoiceCommandParser and VoiceCommandDispatcher extended with shift intents.
+
+**Design Patterns Applied:**
+
+1. Factory-balanced randomization: ensures fair cross-factory assignment under AI Commander.
+2. Minutes-from-midnight time representation: allows simple numeric comparisons and overnight wrap-around.
+3. Transactional shift updates: supervisor roster adds via RTDB transaction for consistency.
+4. Theme-aware animations: CustomPaint uses isDark flag to reduce saturation in dark mode.
+5. Offline resilience: ShiftService fetches once at startup, shift state streamed via RTDB cache.
+6. Workers AI binding: Llama 3.2 3B model for concise, action-oriented handover summaries.
+
+---
+
 ## Z. Extension Guide and Engineering Rules
 
 When adding new features, follow these patterns:

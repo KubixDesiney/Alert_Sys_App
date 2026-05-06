@@ -175,6 +175,31 @@
       ".write": "auth != null"
     },
 
+    "shifts": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".indexOn": ["startMinutes", "aiCommander"],
+      "$shiftId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        "name": { ".validate": "newData.isString()" },
+        "startMinutes": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1439" },
+        "endMinutes": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1439" },
+        "maxSupervisors": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 50)" },
+        "aiCommander": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "randomize": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "aiConfidence": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 1)" },
+        "supervisors": {
+          "$supervisorId": {
+            "ready": {
+              ".write": "auth != null && (auth.uid === $supervisorId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+              ".validate": "newData.isBoolean()"
+            }
+          }
+        }
+      }
+    },
+
     "factories": {
       ".read": "auth != null",
       "$factoryId": {
