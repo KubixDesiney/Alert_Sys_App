@@ -21,6 +21,10 @@ enum VoiceIntent {
   showDashboard,
   showAlerts,
   showFixed,
+  // Shift commands.
+  joinShift,
+  shiftReady,
+  shiftHandover,
   unknown,
 }
 
@@ -289,6 +293,50 @@ class VoiceCommandParser {
 
   static VoiceIntent _detectIntent(String normalized, List<String> tokens) {
     if (tokens.isEmpty) return VoiceIntent.unknown;
+
+    // Shift commands — must be checked before claim/resolve so the verbs
+    // "take" / "join" don't get re-interpreted as alert claims.
+    if (_containsAnyPhrase(normalized, const {
+      'start shift handover',
+      'start handover',
+      'shift handover',
+      'generate handover',
+      'do handover',
+      'begin handover',
+    })) {
+      return VoiceIntent.shiftHandover;
+    }
+    if (_containsAnyPhrase(normalized, const {
+      'i am ready for shift',
+      'im ready for shift',
+      'mark me ready',
+      'ready for shift',
+      'shift ready',
+    })) {
+      return VoiceIntent.shiftReady;
+    }
+    if (_containsAnyPhrase(normalized, const {
+      'assign me to the morning shift',
+      'assign me to morning shift',
+      'assign me to the evening shift',
+      'assign me to evening shift',
+      'assign me to the afternoon shift',
+      'assign me to afternoon shift',
+      'assign me to the night shift',
+      'assign me to night shift',
+      'join morning shift',
+      'join the morning shift',
+      'join evening shift',
+      'join the evening shift',
+      'join afternoon shift',
+      'join the afternoon shift',
+      'join night shift',
+      'join the night shift',
+      'add me to the shift',
+      'put me on the shift',
+    })) {
+      return VoiceIntent.joinShift;
+    }
 
     if (_containsAnyPhrase(normalized, const {
           'mark critical',

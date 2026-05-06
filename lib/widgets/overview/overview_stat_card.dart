@@ -38,7 +38,7 @@ class EliteStatCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
         decoration: BoxDecoration(
           gradient: isActive
               ? LinearGradient(
@@ -83,7 +83,7 @@ class EliteStatCard extends StatelessWidget {
                 _TrendBadge(pct: trendPct),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               label.toUpperCase(),
               style: TextStyle(
@@ -109,7 +109,7 @@ class EliteStatCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             SizedBox(
               height: 28,
               child: spark.fold<int>(0, (a, b) => a + b) == 0

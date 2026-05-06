@@ -7,6 +7,7 @@ import 'auth_service.dart';
 import 'collaboration_service.dart';
 import 'hierarchy_service.dart';
 import 'notification_service.dart';
+import 'shift_service.dart';
 
 class ServiceLocator {
   ServiceLocator._();
@@ -22,6 +23,7 @@ class ServiceLocator {
   late final HierarchyService hierarchyService;
   late final CollaborationService collaborationService;
   late final AIService aiService;
+  late final ShiftService shiftService;
 
   bool _initialized = false;
 
@@ -41,6 +43,7 @@ class ServiceLocator {
       logger: logger,
     );
     aiService = AIService();
+    shiftService = ShiftService(logger: logger);
     alertStreamService = AlertStreamService(
       alertService: alertService,
       logger: logger,

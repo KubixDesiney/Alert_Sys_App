@@ -7,8 +7,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:typed_data';
+import '../models/shift_model.dart';
 import '../providers/alert_provider.dart';
 import '../utils/alert_claim_error.dart';
+import 'service_locator.dart';
+import 'shift_service.dart';
 import 'voice_auth_service.dart';
 import 'voice_command_parser.dart';
 import 'voice_service.dart';
@@ -61,6 +64,12 @@ class VoiceCommandDispatcher {
         return _speakResult(true, 'Showing alerts.');
       case VoiceIntent.showFixed:
         return _speakResult(true, 'Showing resolved alerts.');
+      case VoiceIntent.shiftReady:
+        return _handleShiftReady();
+      case VoiceIntent.joinShift:
+        return _handleJoinShift(cmd.rawText);
+      case VoiceIntent.shiftHandover:
+        return _handleShiftHandover();
       default:
         break;
     }
@@ -176,7 +185,96 @@ class VoiceCommandDispatcher {
     await VoiceService.instance.speak(message);
     return VoiceCommandExecutionResult(success: success, message: message);
   }
+
+  // ── Shift voice handlers ────────────────────────────────────────────────
+  Future<VoiceCommandExecutionResult> _handleShiftReady() async {
+    final svc = ServiceLocator.instance.shiftService;
+    final shifts = await svc.fetchShiftsOnce();
+    final id = await svc.markCurrentUserReady(shifts: shifts, ready: true);
+    if (id == null) {
+      return _speakResult(
+        false,
+        'You are not assigned to an active shift right now.',
+      );
+    }
+    return _speakResult(true, 'You are marked ready for the active shift.');
+  }
+
+  Future<VoiceCommandExecutionResult> _handleJoinShift(String rawText) async {
+    final svc = ServiceLocator.instance.shiftService;
+    final shifts = await svc.fetchShiftsOnce();
+    if (shifts.isEmpty) {
+      return _speakResult(
+          false, 'There are no shifts configured yet.');
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return _speakResult(false, 'You are not signed in.');
+    }
+    final lower = rawText.toLowerCase();
+    final wantedKind = lower.contains('night')
+        ? 'night'
+        : lower.contains('evening') || lower.contains('afternoon')
+            ? 'afternoon'
+            : lower.contains('morning')
+                ? 'morning'
+                : null;
+    final candidates = wantedKind == null
+        ? shifts
+        : shifts.where((s) => s.kind.name == wantedKind).toList();
+    if (candidates.isEmpty) {
+      return _speakResult(
+          false, 'I could not find a $wantedKind shift in the schedule.');
+    }
+    final target = candidates.first;
+    if (target.supervisors.length >= target.maxSupervisors) {
+      return _speakResult(
+          false, 'The ${target.name} is already at capacity.');
+    }
+    if (target.supervisors.any((s) => s.id == user.uid)) {
+      return _speakResult(true, 'You are already on the ${target.name}.');
+    }
+    final name = await _displayName(user.uid) ?? 'Supervisor';
+    final usine = await _userFactory(user.uid) ?? '';
+    final updated = target.copyWith(
+      supervisors: [
+        ...target.supervisors,
+        AssignedSupervisor(id: user.uid, name: name, factory: usine),
+      ],
+    );
+    await svc.updateShift(updated);
+    return _speakResult(true, 'You have been added to the ${target.name}.');
+  }
+
+  Future<VoiceCommandExecutionResult> _handleShiftHandover() async {
+    final svc = ServiceLocator.instance.shiftService;
+    final shifts = await svc.fetchShiftsOnce();
+    final active = ShiftService.activeShift(shifts, DateTime.now());
+    if (active == null) {
+      return _speakResult(
+          false, 'There is no active shift to hand over right now.');
+    }
+    final summary = await svc.requestHandoverSummary(active);
+    if (summary == null) {
+      return _speakResult(
+          false, 'I could not reach the AI handover service.');
+    }
+    return _speakResult(true,
+        'Handover for the ${active.name} generated and sent to the next shift.');
+  }
+
+  Future<String?> _userFactory(String uid) async {
+    try {
+      final snap = await FirebaseDatabase.instance.ref('users/$uid').get();
+      if (!snap.exists) return null;
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      return (m['usine'] ?? m['factoryId'])?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
 }
+
 
 class VoiceCommandExecutionResult {
   final bool success;

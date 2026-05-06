@@ -503,17 +503,41 @@ async function sendFcm(token, title, body, data, env) {
   }
 }
 
+// ============ Shift helpers ============
+function _shiftContainsTime(shift, nowMin) {
+  const s = Number(shift?.startMinutes ?? 0);
+  const e = Number(shift?.endMinutes ?? 0);
+  if (e >= s) return nowMin >= s && nowMin < e;
+  return nowMin >= s || nowMin < e;
+}
+
+function pickActiveShift(shiftsMap, now = new Date()) {
+  if (!shiftsMap) return null;
+  const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  for (const [id, shift] of Object.entries(shiftsMap || {})) {
+    if (!shift || typeof shift !== 'object') continue;
+    if (_shiftContainsTime(shift, nowMin)) {
+      return { id, ...shift };
+    }
+  }
+  return null;
+}
+
 // ============ Core data loader ============
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
-  const [alertsRes, usersRes] = await Promise.all([
+  const [alertsRes, usersRes, shiftsRes] = await Promise.all([
     fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
+    fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
   ]);
+  const shiftsMap = shiftsRes.ok ? ((await shiftsRes.json()) || {}) : {};
   return {
     token,
     alertsMap: alertsRes.ok ? ((await alertsRes.json()) || {}) : {},
     usersMap: usersRes.ok ? ((await usersRes.json()) || {}) : {},
+    shiftsMap,
+    activeShift: pickActiveShift(shiftsMap, new Date()),
   };
 }
 
@@ -1162,19 +1186,38 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
 
 async function runAIAssignments(env, ctx) {
   const token = ctx?.token ?? (await getFirebaseToken(env));
-  let alertsMap, usersMap;
+  let alertsMap, usersMap, activeShift;
   if (ctx) {
     alertsMap = ctx.alertsMap;
     usersMap = ctx.usersMap;
+    activeShift = ctx.activeShift ?? null;
   } else {
-    const [ar, ur] = await Promise.all([
+    const [ar, ur, sr] = await Promise.all([
       fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
       fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
+      fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
     ]);
     if (!ar.ok || !ur.ok) return;
     alertsMap = (await ar.json()) || {};
     usersMap = (await ur.json()) || {};
+    const shiftsMap = sr.ok ? ((await sr.json()) || {}) : {};
+    activeShift = pickActiveShift(shiftsMap, new Date());
   }
+  const aiCommander = !!(activeShift && activeShift.aiCommander === true);
+  const shiftConfidenceFloor =
+    activeShift && typeof activeShift.aiConfidence === 'number'
+      ? Number(activeShift.aiConfidence)
+      : 0;
+  const shiftRandomize = !!(activeShift && activeShift.randomize === true);
+  const shiftMaxSupervisors =
+    activeShift && Number.isFinite(Number(activeShift.maxSupervisors))
+      ? Number(activeShift.maxSupervisors)
+      : null;
+  const shiftSupervisorIds = new Set(
+    (activeShift && activeShift.supervisors && typeof activeShift.supervisors === 'object'
+      ? Object.keys(activeShift.supervisors)
+      : []),
+  );
   let feedbackSummary = {};
   try {
     const fbRes = await fetch(`${env.FB_DB_URL}ai_feedback/summary.json?auth=${token}`);
@@ -1203,8 +1246,14 @@ async function runAIAssignments(env, ctx) {
   for (let i = 0; i < Math.min(factoryIds.length, 20); i++) {
     if (assignedCount >= 1) break;
     const factoryId = factoryIds[i];
-    const enaRes = await fetch(`${env.FB_DB_URL}factories/${factoryId}/aiConfig/enabled.json?auth=${token}`);
-    const enabled = enaRes.ok ? await enaRes.json() : false;
+    let enabled = false;
+    if (aiCommander) {
+      // AI Shift Commander overrides per-factory toggle.
+      enabled = true;
+    } else {
+      const enaRes = await fetch(`${env.FB_DB_URL}factories/${factoryId}/aiConfig/enabled.json?auth=${token}`);
+      enabled = enaRes.ok ? await enaRes.json() : false;
+    }
     if (enabled !== true) continue;
     let factoryAlerts = byFactory[factoryId];
     factoryAlerts.sort((a, b) => {
@@ -1224,8 +1273,17 @@ async function runAIAssignments(env, ctx) {
       const cooldown = Date.parse(String(u.aiCooldownUntil || ''));
       if (!isNaN(cooldown) && cooldown > now) continue;
       const userFactory = aiResolveFactory(u);
-      if (!userFactory || userFactory !== factoryId) continue;
-      candidates.push({ ...u, uid });
+      // Under AI Commander, allow cross-factory candidates that are part of
+      // the shift roster (so the worker can do cross-factory transfers
+      // without PM approval). Otherwise, restrict to same-factory.
+      const sameFactory = userFactory && userFactory === factoryId;
+      const isShiftMember = aiCommander && shiftSupervisorIds.has(uid);
+      if (!sameFactory && !isShiftMember) continue;
+      // Honor max-per-shift cap when AI Commander is active.
+      if (aiCommander && shiftMaxSupervisors != null && shiftSupervisorIds.size > 0 && !shiftSupervisorIds.has(uid)) {
+        continue;
+      }
+      candidates.push({ ...u, uid, _shiftMember: isShiftMember });
     }
     if (candidates.length === 0) continue;
     const recentCounts = {};
@@ -1246,13 +1304,296 @@ async function runAIAssignments(env, ctx) {
       );
       return { uid: u.uid, name: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(), fcmToken: u.fcmToken, score, reasons };
     });
-    scored.sort((a, b) => b.score - a.score);
+    if (shiftRandomize) {
+      // Fisher–Yates shuffle so the AI Commander picks a random eligible
+      // supervisor instead of always the highest-scoring one.
+      for (let k = scored.length - 1; k > 0; k--) {
+        const j = Math.floor(Math.random() * (k + 1));
+        const tmp = scored[k];
+        scored[k] = scored[j];
+        scored[j] = tmp;
+      }
+    } else {
+      scored.sort((a, b) => b.score - a.score);
+    }
     const best = scored[0];
     const topSum = scored.slice(0, 3).reduce((s, c) => s + c.score, 0);
     const confidence = topSum > 0 ? Math.min(best.score / topSum, 1.0) : 1.0;
-    const reasonSummary = best.reasons.join(' • ');
+    if (aiCommander && shiftConfidenceFloor > 0 && confidence < shiftConfidenceFloor) {
+      // Don't act when AI Commander confidence is below the configured floor.
+      console.log(`[SHIFT-AI] Skipping: confidence ${confidence.toFixed(2)} < floor ${shiftConfidenceFloor.toFixed(2)}`);
+      continue;
+    }
+    let reasonSummary = best.reasons.join(' • ');
+    if (aiCommander) {
+      reasonSummary = `[Shift "${activeShift.name || activeShift.id}"] ` + reasonSummary;
+    }
     const ok = await aiAssignAlert(alert.id, best, reasonSummary, confidence, env, token, scored);
     if (ok) { busy.add(best.uid); assignedCount++; }
+  }
+}
+
+// ============ Shift collaboration auto-approve ============
+// When AI Shift Commander is on, auto-approve collaboration requests that
+// have all assistant approvals but are awaiting PM approval. Also handles
+// cross-factory transfers without human intervention.
+async function processShiftCollaborations(env, ctx) {
+  const activeShift = ctx?.activeShift;
+  if (!activeShift || activeShift.aiCommander !== true) return;
+
+  const token = ctx?.token ?? (await getFirebaseToken(env));
+  const res = await fetch(`${env.FB_DB_URL}collaboration_requests.json?auth=${token}`);
+  if (!res.ok) return;
+  const reqs = (await res.json()) || {};
+  const minConfidence =
+    typeof activeShift.aiConfidence === 'number' ? Number(activeShift.aiConfidence) : 0.65;
+
+  let processed = 0;
+  for (const [reqId, req] of Object.entries(reqs)) {
+    if (processed >= 5) break;
+    if (!req || typeof req !== 'object') continue;
+    if (req.status && req.status !== 'pending' && req.status !== 'awaiting_pm') continue;
+    if (req.pmApproved === true || req.pmApproved === false) continue;
+
+    // All assistants must have accepted before AI takes action.
+    const assistantDecisions = req.assistantDecisions
+      ? Object.values(req.assistantDecisions)
+      : [];
+    const accepted = assistantDecisions.every(
+      (d) => d && (d === 'accepted' || d.status === 'accepted'),
+    );
+    if (!accepted || assistantDecisions.length === 0) continue;
+
+    const nowIso = new Date().toISOString();
+    const patch = {
+      status: 'approved',
+      pmApproved: true,
+      pmApprovedBy: 'ai_shift_commander',
+      pmApprovedShiftId: activeShift.id,
+      pmApprovedAt: nowIso,
+      aiConfidence: minConfidence,
+      aiReason: `Auto-approved by AI Shift Commander during "${activeShift.name || activeShift.id}".`,
+    };
+    const patchRes = await fetch(
+      `${env.FB_DB_URL}collaboration_requests/${reqId}.json?auth=${token}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      },
+    );
+    if (patchRes.ok) {
+      processed++;
+      // Notify the requester so the UI updates.
+      if (req.requesterId) {
+        await fetch(
+          `${env.FB_DB_URL}notifications/${req.requesterId}.json?auth=${token}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'collab_auto_approved',
+              message: 'AI Shift Commander approved your collaboration request.',
+              alertId: req.alertId || null,
+              collaborationId: reqId,
+              timestamp: nowIso,
+              status: 'unread',
+            }),
+          },
+        );
+      }
+    }
+  }
+}
+
+// ============ Workers AI shift handover ============
+async function generateShiftHandoverSummary(env, ctx, shift) {
+  const alertsMap = ctx?.alertsMap || {};
+  // Aggregate alerts that fell within this shift window since shift start.
+  const items = [];
+  let resolved = 0;
+  let pending = 0;
+  let critical = 0;
+  for (const [, a] of Object.entries(alertsMap)) {
+    if (!a) continue;
+    const ts = _toMs(a.timestamp);
+    if (ts == null) continue;
+    // Cap to the last 12 hours to keep the prompt small.
+    if (ts < Date.now() - 12 * 60 * 60 * 1000) continue;
+    if (a.status === 'validee') resolved++;
+    if (a.status !== 'validee') pending++;
+    if (a.isCritical === true) critical++;
+    if (items.length < 12) {
+      items.push({
+        type: a.type,
+        usine: a.usine,
+        status: a.status,
+        critical: !!a.isCritical,
+        elapsedMin: a.elapsedTime,
+        description: (a.description || '').slice(0, 120),
+      });
+    }
+  }
+  let summary = `Shift "${shift.name || shift.id}" summary — Resolved: ${resolved}, Pending: ${pending}, Critical: ${critical}.`;
+  // Try Workers AI for a richer summary.
+  if (env && env.AI && typeof env.AI.run === 'function') {
+    try {
+      const prompt =
+        `You are an industrial shift handover assistant. Write a concise (5 lines max) handover summary for the incoming shift. ` +
+        `Resolved: ${resolved}, Pending: ${pending}, Critical: ${critical}. ` +
+        `Recent alerts JSON: ${JSON.stringify(items).slice(0, 1800)}. ` +
+        `Highlight risks, what needs attention next, and any cross-factory follow-ups.`;
+      const out = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
+        messages: [
+          { role: 'system', content: 'You are concise, factual, and action-oriented.' },
+          { role: 'user', content: prompt },
+        ],
+      });
+      const text = out?.response || out?.result?.response;
+      if (text && typeof text === 'string') {
+        summary = text.trim();
+      }
+    } catch (e) {
+      console.error('[SHIFT-AI] handover failed: ' + e.message);
+    }
+  }
+  return { summary, resolved, pending, critical };
+}
+
+// Detects shifts that are within ~3 minutes of ending and have AI Commander
+// enabled. For each such shift we generate a handover summary once and fan
+// it out to the supervisors. Idempotent via lastHandoverAt timestamp.
+async function processShiftEnding(env, ctx) {
+  const shiftsMap = ctx?.shiftsMap;
+  if (!shiftsMap) return;
+  const now = new Date();
+  const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  for (const [id, shift] of Object.entries(shiftsMap || {})) {
+    if (!shift || shift.aiCommander !== true) continue;
+    if (!_shiftContainsTime(shift, nowMin)) continue;
+    const e = Number(shift.endMinutes ?? 0);
+    const s = Number(shift.startMinutes ?? 0);
+    const endAbs = e >= s ? e : 1440 + e;
+    const nowAbs = nowMin >= s ? nowMin : 1440 + nowMin;
+    const minsToEnd = endAbs - nowAbs;
+    if (minsToEnd > 3 || minsToEnd < 0) continue;
+    // Skip if a handover was generated within the last 30 minutes.
+    const lastIso = shift.lastHandoverAt;
+    if (lastIso && Date.now() - Date.parse(lastIso) < 30 * 60 * 1000) continue;
+    const result = await generateShiftHandoverSummary(env, ctx, { id, ...shift });
+    const nowIso = new Date().toISOString();
+    await fetch(`${env.FB_DB_URL}shifts/${id}.json?auth=${ctx.token}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lastHandoverSummary: result.summary,
+        lastHandoverAt: nowIso,
+      }),
+    });
+    const supIds =
+      shift.supervisors && typeof shift.supervisors === 'object'
+        ? Object.keys(shift.supervisors)
+        : [];
+    for (const uid of supIds) {
+      await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${ctx.token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'shift_handover',
+          message: `Auto handover for "${shift.name || id}"`,
+          alertDescription: result.summary,
+          shiftId: id,
+          timestamp: nowIso,
+          status: 'unread',
+        }),
+      });
+    }
+  }
+}
+
+async function handleShiftAiAction(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const action = String(body?.action || 'evaluate').toLowerCase();
+    const shiftId = body?.shiftId ? String(body.shiftId) : null;
+    const coreCtx = await loadCoreData(env);
+    let shift = null;
+    if (shiftId && coreCtx.shiftsMap?.[shiftId]) {
+      shift = { id: shiftId, ...coreCtx.shiftsMap[shiftId] };
+    } else {
+      shift = coreCtx.activeShift;
+    }
+
+    if (action === 'evaluate' || action === 'created' || action === 'updated') {
+      // Re-run AI assignment + collaboration approval immediately.
+      await runAIAssignments(env, coreCtx);
+      await processShiftCollaborations(env, coreCtx);
+      return new Response(
+        JSON.stringify({ ok: true, action, shiftId: shift?.id ?? null }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (action === 'handover') {
+      if (!shift) {
+        return new Response(JSON.stringify({ ok: false, error: 'No shift' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const result = await generateShiftHandoverSummary(env, coreCtx, shift);
+      const nowIso = new Date().toISOString();
+      // Persist last handover on the shift node.
+      await fetch(`${env.FB_DB_URL}shifts/${shift.id}.json?auth=${coreCtx.token}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lastHandoverSummary: result.summary,
+          lastHandoverAt: nowIso,
+        }),
+      });
+      // Notify each shift supervisor with the summary.
+      const supIds =
+        shift.supervisors && typeof shift.supervisors === 'object'
+          ? Object.keys(shift.supervisors)
+          : [];
+      for (const uid of supIds) {
+        await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${coreCtx.token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'shift_handover',
+            message: `Handover for "${shift.name || shift.id}"`,
+            alertDescription: result.summary,
+            shiftId: shift.id,
+            timestamp: nowIso,
+            status: 'unread',
+          }),
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          summary: result.summary,
+          stats: {
+            resolved: result.resolved,
+            pending: result.pending,
+            critical: result.critical,
+          },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    return new Response(JSON.stringify({ ok: false, error: 'Unknown action' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ ok: false, error: e.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 }
 
@@ -1386,6 +1727,8 @@ export default {
         await processAlerts(env, coreCtx);
         await checkEscalations(env, coreCtx);
         await runAIAssignments(env, coreCtx);
+        await processShiftCollaborations(env, coreCtx);
+        await processShiftEnding(env, coreCtx);
       })(),
     );
   },
@@ -1403,6 +1746,7 @@ export default {
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
     if (url.pathname === '/auto-fix') return handleAutoFix(request, env);
     if (url.pathname === '/auto-fix-full') return handleAutoFixFull(request, env);
+    if (url.pathname === '/shift-ai-action') return handleShiftAiAction(request, env);
 
     if (url.pathname === '/ai-retry') {
       ctx.waitUntil(runAIAssignments(env, null));
@@ -1433,6 +1777,7 @@ export default {
       await runAIAssignments(env, coreCtx);
       await processAlerts(env, coreCtx);
       await checkEscalations(env, coreCtx);
+      await processShiftCollaborations(env, coreCtx);
     } catch (e) {
       console.error('[MANUAL] Error: ' + e.message);
     }
@@ -1454,5 +1799,7 @@ export {
   _briefingDateKey,
   _aggregateWeek,
   _typeName,
+  pickActiveShift,
+  _shiftContainsTime,
 };
 
