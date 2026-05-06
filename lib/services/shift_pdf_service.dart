@@ -10,22 +10,7 @@ import 'package:universal_html/html.dart' as html;
 
 import '../models/alert_model.dart';
 import '../models/shift_model.dart';
-
-class _Pal {
-  static const navy = PdfColor.fromInt(0xFF0D4A75);
-  static const purple = PdfColor.fromInt(0xFF6D28D9);
-  static const text = PdfColor.fromInt(0xFF1E293B);
-  static const muted = PdfColor.fromInt(0xFF64748B);
-  static const subtle = PdfColor.fromInt(0xFF94A3B8);
-  static const cardBg = PdfColor.fromInt(0xFFF8FAFC);
-  static const stripe = PdfColor.fromInt(0xFFF1F5F9);
-  static const green = PdfColor.fromInt(0xFF16A34A);
-  static const orange = PdfColor.fromInt(0xFFEA580C);
-  static const red = PdfColor.fromInt(0xFFDC2626);
-  static const blue = PdfColor.fromInt(0xFF2563EB);
-  static const yellow = PdfColor.fromInt(0xFFD97706);
-  static const aiPink = PdfColor.fromInt(0xFFC084FC);
-}
+import 'pdf/pdf_common.dart';
 
 /// Single timeline action that occurred during a shift window.
 class ShiftAction {
@@ -51,11 +36,7 @@ class ShiftAction {
 }
 
 class ShiftPdfService {
-  static String _safe(String v) => v
-      .replaceAll('—', '-')
-      .replaceAll('–', '-')
-      .replaceAll('•', '*')
-      .replaceAll('…', '...');
+  static String _safe(String v) => PdfTextSafe.normalize(v);
 
   /// Loads every action that happened during [shift] on [day], builds a
   /// shift report PDF, and either downloads it (web) or shares it.
@@ -271,13 +252,13 @@ class ShiftPdfService {
           if (byFactory.isNotEmpty) ...[
             _sectionHeader('Alerts by factory', byFactory.length),
             pw.SizedBox(height: 6),
-            _barBreakdown(byFactory, _Pal.navy),
+            _barBreakdown(byFactory, PdfPalette.navy),
             pw.SizedBox(height: 14),
           ],
           if (bySupervisor.isNotEmpty) ...[
             _sectionHeader('Top supervisors (resolutions)', bySupervisor.length),
             pw.SizedBox(height: 6),
-            _barBreakdown(bySupervisor, _Pal.green),
+            _barBreakdown(bySupervisor, PdfPalette.green),
             pw.SizedBox(height: 14),
           ],
           if (aiAssigned > 0) ...[
@@ -312,7 +293,7 @@ class ShiftPdfService {
   ) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(18),
-      decoration: const pw.BoxDecoration(color: _Pal.navy),
+      decoration: const pw.BoxDecoration(color: PdfPalette.navy),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -388,17 +369,17 @@ class ShiftPdfService {
     required int escalated,
   }) {
     return pw.Row(children: [
-      _kpi('Actions', '$total', _Pal.navy),
+      _kpi('Actions', '$total', PdfPalette.navy),
       _gap(),
-      _kpi('Created', '$created', _Pal.orange),
+      _kpi('Created', '$created', PdfPalette.orange),
       _gap(),
-      _kpi('Claimed', '$claimed', _Pal.blue),
+      _kpi('Claimed', '$claimed', PdfPalette.blue),
       _gap(),
-      _kpi('Resolved', '$resolved', _Pal.green),
+      _kpi('Resolved', '$resolved', PdfPalette.green),
       _gap(),
-      _kpi('AI calls', '$aiAssigned', _Pal.purple),
+      _kpi('AI calls', '$aiAssigned', PdfPalette.purple),
       _gap(),
-      _kpi('Escalated', '$escalated', _Pal.red),
+      _kpi('Escalated', '$escalated', PdfPalette.red),
     ]);
   }
 
@@ -408,7 +389,7 @@ class ShiftPdfService {
     return pw.Expanded(
       child: pw.Container(
         padding: const pw.EdgeInsets.fromLTRB(10, 9, 10, 10),
-        color: _Pal.cardBg,
+        color: PdfPalette.cardBg,
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -442,7 +423,7 @@ class ShiftPdfService {
     return pw.Container(
       padding: const pw.EdgeInsets.all(14),
       decoration: pw.BoxDecoration(
-        color: _Pal.cardBg,
+        color: PdfPalette.cardBg,
         border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
       ),
       child: pw.Row(
@@ -481,7 +462,7 @@ class ShiftPdfService {
                 pw.Text('SUPERVISORS',
                     style: pw.TextStyle(
                       fontSize: 7,
-                      color: _Pal.muted,
+                      color: PdfPalette.muted,
                       fontWeight: pw.FontWeight.bold,
                       letterSpacing: 0.8,
                     )),
@@ -490,7 +471,7 @@ class ShiftPdfService {
                   supervisors.isEmpty ? '-' : _safe(supervisors),
                   style: pw.TextStyle(
                     fontSize: 10,
-                    color: _Pal.text,
+                    color: PdfPalette.text,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
@@ -512,7 +493,7 @@ class ShiftPdfService {
             label.toUpperCase(),
             style: pw.TextStyle(
               fontSize: 7,
-              color: _Pal.muted,
+              color: PdfPalette.muted,
               fontWeight: pw.FontWeight.bold,
               letterSpacing: 0.8,
             ),
@@ -523,7 +504,7 @@ class ShiftPdfService {
             _safe(value),
             style: pw.TextStyle(
               fontSize: 10,
-              color: _Pal.text,
+              color: PdfPalette.text,
               fontWeight: pw.FontWeight.bold,
             ),
           ),
@@ -539,7 +520,7 @@ class ShiftPdfService {
     final maxVal = entries.first.value;
     return pw.Container(
       padding: const pw.EdgeInsets.fromLTRB(14, 12, 14, 12),
-      color: _Pal.cardBg,
+      color: PdfPalette.cardBg,
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: entries
@@ -552,7 +533,7 @@ class ShiftPdfService {
                         _safe(e.key.isEmpty ? '-' : e.key),
                         style: pw.TextStyle(
                           fontSize: 9,
-                          color: _Pal.text,
+                          color: PdfPalette.text,
                           fontWeight: pw.FontWeight.bold,
                         ),
                       ),
@@ -584,7 +565,7 @@ class ShiftPdfService {
                         textAlign: pw.TextAlign.right,
                         style: pw.TextStyle(
                           fontSize: 10,
-                          color: _Pal.text,
+                          color: PdfPalette.text,
                           fontWeight: pw.FontWeight.bold,
                         ),
                       ),
@@ -601,7 +582,7 @@ class ShiftPdfService {
     return pw.Column(children: [
       for (var i = 0; i < ais.length; i++)
         pw.Container(
-          color: i.isOdd ? _Pal.stripe : PdfColors.white,
+          color: i.isOdd ? PdfPalette.stripe : PdfColors.white,
           padding: const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 10),
           child: pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -609,7 +590,7 @@ class ShiftPdfService {
               pw.Container(
                 padding: const pw.EdgeInsets.symmetric(
                     horizontal: 6, vertical: 3),
-                color: _Pal.aiPink,
+                color: PdfPalette.aiPink,
                 child: pw.Text('AI',
                     style: pw.TextStyle(
                       fontSize: 8,
@@ -624,7 +605,7 @@ class ShiftPdfService {
                   _fmtTime(ais[i].at),
                   style: pw.TextStyle(
                     fontSize: 8,
-                    color: _Pal.muted,
+                    color: PdfPalette.muted,
                     font: pw.Font.courier(),
                   ),
                 ),
@@ -635,7 +616,7 @@ class ShiftPdfService {
                   ais[i].alertLabel,
                   style: pw.TextStyle(
                     fontSize: 9,
-                    color: _Pal.text,
+                    color: PdfPalette.text,
                     fontWeight: pw.FontWeight.bold,
                     font: pw.Font.courier(),
                   ),
@@ -644,7 +625,7 @@ class ShiftPdfService {
               pw.Expanded(
                 child: pw.Text(
                   _safe(ais[i].detail),
-                  style: const pw.TextStyle(fontSize: 9, color: _Pal.text),
+                  style: const pw.TextStyle(fontSize: 9, color: PdfPalette.text),
                 ),
               ),
               pw.SizedBox(width: 6),
@@ -655,7 +636,7 @@ class ShiftPdfService {
                   textAlign: pw.TextAlign.right,
                   style: pw.TextStyle(
                     fontSize: 8,
-                    color: _Pal.purple,
+                    color: PdfPalette.purple,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
@@ -665,12 +646,12 @@ class ShiftPdfService {
                 pw.Container(
                   padding: const pw.EdgeInsets.symmetric(
                       horizontal: 5, vertical: 2),
-                  color: _withAlpha(_Pal.purple, 0.14),
+                  color: _withAlpha(PdfPalette.purple, 0.14),
                   child: pw.Text(
                     '${(ais[i].aiConfidence! * 100).round()}%',
                     style: pw.TextStyle(
                       fontSize: 8,
-                      color: _Pal.purple,
+                      color: PdfPalette.purple,
                       fontWeight: pw.FontWeight.bold,
                     ),
                   ),
@@ -700,7 +681,7 @@ class ShiftPdfService {
           ),
         );
     return pw.Container(
-      color: _Pal.navy,
+      color: PdfPalette.navy,
       padding: const pw.EdgeInsets.symmetric(vertical: 7, horizontal: 6),
       child: pw.Row(children: [
         cell('TIME', 5),
@@ -719,16 +700,16 @@ class ShiftPdfService {
       return pw.Container(
         padding: const pw.EdgeInsets.symmetric(vertical: 28),
         alignment: pw.Alignment.center,
-        color: _Pal.cardBg,
+        color: PdfPalette.cardBg,
         child: pw.Text('No actions recorded during this shift.',
-            style: pw.TextStyle(fontSize: 11, color: _Pal.muted)),
+            style: pw.TextStyle(fontSize: 11, color: PdfPalette.muted)),
       );
     }
     final rows = <pw.Widget>[];
     for (var i = 0; i < actions.length; i++) {
       final a = actions[i];
       final color = _kindColor(a.kind);
-      final bg = i.isOdd ? _Pal.stripe : PdfColors.white;
+      final bg = i.isOdd ? PdfPalette.stripe : PdfColors.white;
       pw.Widget cell(String text, int flex,
               {PdfColor? c, bool mono = false}) =>
           pw.Expanded(
@@ -740,7 +721,7 @@ class ShiftPdfService {
                 maxLines: 3,
                 style: pw.TextStyle(
                   fontSize: 7.5,
-                  color: c ?? _Pal.text,
+                  color: c ?? PdfPalette.text,
                   font: mono ? pw.Font.courier() : null,
                 ),
               ),
@@ -773,10 +754,10 @@ class ShiftPdfService {
               ),
             ),
             cell(a.alertLabel, 4, mono: true),
-            cell(a.alertType, 5, c: _Pal.muted),
+            cell(a.alertType, 5, c: PdfPalette.muted),
             cell(a.factory, 6),
             cell(a.detail, 18),
-            cell(a.actor, 8, c: _Pal.muted),
+            cell(a.actor, 8, c: PdfPalette.muted),
           ],
         ),
       ));
@@ -789,8 +770,8 @@ class ShiftPdfService {
     return pw.Container(
       padding: const pw.EdgeInsets.all(14),
       decoration: pw.BoxDecoration(
-        color: _withAlpha(_Pal.purple, 0.06),
-        border: pw.Border.all(color: _Pal.purple, width: 1),
+        color: _withAlpha(PdfPalette.purple, 0.06),
+        border: pw.Border.all(color: PdfPalette.purple, width: 1),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -798,7 +779,7 @@ class ShiftPdfService {
           pw.Row(children: [
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              color: _Pal.purple,
+              color: PdfPalette.purple,
               child: pw.Text('AI HANDOVER',
                   style: pw.TextStyle(
                     fontSize: 8,
@@ -812,7 +793,7 @@ class ShiftPdfService {
               shift.lastHandoverAt == null
                   ? ''
                   : 'Generated ${_fmtDateTime(shift.lastHandoverAt!)}',
-              style: pw.TextStyle(fontSize: 8, color: _Pal.muted),
+              style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
             ),
           ]),
           pw.SizedBox(height: 8),
@@ -820,7 +801,7 @@ class ShiftPdfService {
             _safe(shift.lastHandoverSummary ?? ''),
             style: pw.TextStyle(
               fontSize: 10,
-              color: _Pal.text,
+              color: PdfPalette.text,
               lineSpacing: 3,
             ),
           ),
@@ -832,25 +813,25 @@ class ShiftPdfService {
   // ── Helpers ──────────────────────────────────────────────────────────
   static pw.Widget _sectionHeader(String label, int count) {
     return pw.Row(children: [
-      pw.Container(width: 4, height: 18, color: _Pal.navy),
+      pw.Container(width: 4, height: 18, color: PdfPalette.navy),
       pw.SizedBox(width: 8),
       pw.Text(
         label,
         style: pw.TextStyle(
           fontSize: 13,
-          color: _Pal.text,
+          color: PdfPalette.text,
           fontWeight: pw.FontWeight.bold,
         ),
       ),
       pw.SizedBox(width: 6),
       pw.Container(
         padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        color: _withAlpha(_Pal.navy, 0.13),
+        color: _withAlpha(PdfPalette.navy, 0.13),
         child: pw.Text(
           '$count',
           style: pw.TextStyle(
             fontSize: 8,
-            color: _Pal.navy,
+            color: PdfPalette.navy,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
@@ -863,20 +844,20 @@ class ShiftPdfService {
     return pw.Container(
       margin: const pw.EdgeInsets.only(bottom: 8),
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: _Pal.cardBg,
+      color: PdfPalette.cardBg,
       child: pw.Row(children: [
         pw.Text(
           'AlertSys - Shift Report - ${_safe(shift.name)}',
           style: pw.TextStyle(
             fontSize: 10,
-            color: _Pal.text,
+            color: PdfPalette.text,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
         pw.Spacer(),
         pw.Text(
           '${_fmtDateTime(window.start)}  ->  ${_fmtDateTime(window.end)}',
-          style: pw.TextStyle(fontSize: 8, color: _Pal.muted),
+          style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
         ),
       ]),
     );
@@ -886,13 +867,13 @@ class ShiftPdfService {
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 12),
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: _Pal.cardBg,
+      color: PdfPalette.cardBg,
       child: pw.Row(children: [
         pw.Text('Page ${ctx.pageNumber}',
-            style: pw.TextStyle(fontSize: 8, color: _Pal.muted)),
+            style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
         pw.Spacer(),
         pw.Text('Generated on ${_fmtDateTime(DateTime.now())}',
-            style: pw.TextStyle(fontSize: 8, color: _Pal.muted)),
+            style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
       ]),
     );
   }
@@ -900,7 +881,7 @@ class ShiftPdfService {
   static pw.Widget _watermark() {
     return pw.Container(
       padding: const pw.EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      color: _Pal.navy,
+      color: PdfPalette.navy,
       child: pw.Column(children: [
         pw.Text(
           'CONFIDENTIAL - INTERNAL USE',
@@ -920,24 +901,7 @@ class ShiftPdfService {
     );
   }
 
-  static PdfColor _kindColor(String kind) {
-    switch (kind) {
-      case 'created':
-        return _Pal.orange;
-      case 'claimed':
-        return _Pal.blue;
-      case 'resolved':
-        return _Pal.green;
-      case 'ai_assigned':
-        return _Pal.purple;
-      case 'escalated':
-        return _Pal.red;
-      case 'handover':
-        return _Pal.aiPink;
-      default:
-        return _Pal.muted;
-    }
-  }
+  static PdfColor _kindColor(String kind) => pdfActionColor(kind);
 
   static String _kindLabelText(String kind) {
     switch (kind) {
@@ -969,29 +933,10 @@ class ShiftPdfService {
     }
   }
 
-  static String _fmtDateTime(DateTime d) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(d.day)}/${two(d.month)}/${d.year} ${two(d.hour)}:${two(d.minute)}';
-  }
-
-  static String _fmtTime(DateTime d) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
-  }
-
-  static String _fmtDateFile(DateTime d) {
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${d.year}${two(d.month)}${two(d.day)}';
-  }
-
-  static String _slug(String name) {
-    return name
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-        .replaceAll(RegExp(r'^_|_$'), '');
-  }
-
-  static PdfColor _withAlpha(PdfColor c, double alpha) {
-    return PdfColor(c.red, c.green, c.blue, alpha.clamp(0.0, 1.0));
-  }
+  static String _fmtDateTime(DateTime d) => PdfFmt.dateTime(d);
+  static String _fmtTime(DateTime d) => PdfFmt.time(d);
+  static String _fmtDateFile(DateTime d) => PdfFmt.dateFile(d);
+  static String _slug(String name) => PdfFmt.slug(name);
+  static PdfColor _withAlpha(PdfColor c, double alpha) =>
+      pdfWithAlpha(c, alpha);
 }

@@ -28,6 +28,15 @@ enum VoiceIntent {
   unknown,
 }
 
+/// One transcript that the parser failed to interpret. Surfaced via
+/// [VoiceCommandParser.recentUnparsed] so the alias lists / intent rules can
+/// be tuned against real user speech rather than guesses.
+class UnparsedSample {
+  final DateTime at;
+  final String text;
+  const UnparsedSample({required this.at, required this.text});
+}
+
 class VoiceCommand {
   final VoiceIntent intent;
   final int? alertNumber;
@@ -49,6 +58,35 @@ class VoiceCommand {
 }
 
 class VoiceCommandParser {
+  /// In-memory ring of recent transcripts that the parser could not interpret.
+  /// Bounded to [_unparsedCapacity] to avoid leaking memory in long sessions.
+  /// Surfaced for diagnostics so the alias lists / intent rules can be tuned
+  /// based on real-world misses rather than guesswork.
+  static const int _unparsedCapacity = 50;
+  static final List<UnparsedSample> _unparsed = <UnparsedSample>[];
+
+  /// Snapshot of the most recently observed unparsed transcripts (newest
+  /// last). Returns an unmodifiable copy.
+  static List<UnparsedSample> recentUnparsed() =>
+      List.unmodifiable(_unparsed);
+
+  static void clearUnparsedLog() => _unparsed.clear();
+
+  static void _logUnparsed(String raw) {
+    if (raw.isEmpty) return;
+    _unparsed.add(UnparsedSample(at: DateTime.now(), text: raw));
+    if (_unparsed.length > _unparsedCapacity) {
+      _unparsed.removeRange(0, _unparsed.length - _unparsedCapacity);
+    }
+    // ignore: avoid_print
+    assert(() {
+      // Only emits in debug builds.
+      // ignore: avoid_print
+      print('[VoiceCommandParser] unparsed transcript: "$raw"');
+      return true;
+    }());
+  }
+
   // Single-word values: 0..19 + tens.
   static const Map<String, int> _ones = {
     'zero': 0,
@@ -224,6 +262,7 @@ class VoiceCommandParser {
 
     final intent = _detectIntent(normalized, tokens);
     if (intent == VoiceIntent.unknown) {
+      _logUnparsed(raw);
       return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
     }
 
