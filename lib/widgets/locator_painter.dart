@@ -78,6 +78,36 @@ class FactoryMapLocatorPainter extends CustomPainter {
     required this.pulse,
   });
 
+  /// Cross-instance route cache. The route between (start, target) is purely a
+  /// function of map topology + the two endpoints — it does not depend on
+  /// `pulse`, theme, or paint state. Recomputing it on every animation tick
+  /// (~60Hz) was burning CPU; this cache reuses the result until any of the
+  /// three change.
+  static MapCell? _cachedStart;
+  static String? _cachedTarget;
+  static FactoryMap? _cachedMap;
+  static List<MapCell>? _cachedPath;
+
+  static List<MapCell> _routeFor(
+    FactoryMap map,
+    MapCell start,
+    String targetKey,
+    List<MapCell> Function() compute,
+  ) {
+    if (identical(_cachedMap, map) &&
+        _cachedStart == start &&
+        _cachedTarget == targetKey &&
+        _cachedPath != null) {
+      return _cachedPath!;
+    }
+    final result = compute();
+    _cachedMap = map;
+    _cachedStart = start;
+    _cachedTarget = targetKey;
+    _cachedPath = result;
+    return result;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final cellSize = math.min(size.width / map.cols, size.height / map.rows);
@@ -292,7 +322,8 @@ class FactoryMapLocatorPainter extends CustomPainter {
     final targetNode = map.nodeByKey(target);
     if (targetNode == null) return;
 
-    final pathCells = _findRoute(start, targetNode);
+    final pathCells =
+        _routeFor(map, start, target, () => _findRoute(start, targetNode));
     final points = <Offset>[
       _center(start, ox, oy, s),
       ...pathCells.map((cell) => _center(cell, ox, oy, s)),
