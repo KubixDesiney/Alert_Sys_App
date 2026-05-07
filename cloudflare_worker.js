@@ -221,7 +221,7 @@ function buildSupStats(alertsMap = {}) {
   return stats;
 }
 
-function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now, { isCommander = false } = {}) {
+function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now, { isCommander = false, reinforcementAdjustment = 0 } = {}) {
   let score = 0;
   const reasons = [];
   const supFactory = aiSanitizeFactoryId(sup?.usine || sup?.factoryId || '');
@@ -288,6 +288,21 @@ function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, 
   if (adjustment !== 0) {
     score += adjustment;
     reasons.push(`Feedback adjustment (${adjustment > 0 ? '+' : ''}${adjustment})`);
+  }
+
+  // Reinforcement adjustment — same ±15% cap as the Dart AIScoringEngine.
+  // Only apply if the base score is positive (to match Dart's maxAdj > 0 check).
+  if (reinforcementAdjustment !== 0) {
+    const raw = score;
+    const maxAdj = raw * 0.15;
+    if (maxAdj > 0) {
+      const clamped = Math.max(-maxAdj, Math.min(maxAdj, reinforcementAdjustment));
+      if (Math.abs(clamped) >= 0.01) {
+        score += clamped;
+        const rounded = Math.round(clamped);
+        reasons.push(`Reinforcement adjustment (${rounded > 0 ? '+' : ''}${rounded})`);
+      }
+    }
   }
 
   return { score: Math.max(0, Math.round(score)), reasons };
@@ -1256,6 +1271,11 @@ async function runAIAssignments(env, ctx) {
     const fbRes = await fetch(`${env.FB_DB_URL}ai_feedback/summary.json?auth=${token}`);
     if (fbRes.ok) feedbackSummary = (await fbRes.json()) || {};
   } catch (e) {}
+  let reinforcementAdjustments = {};
+  try {
+    const adjRes = await fetch(`${env.FB_DB_URL}ai_feedback/adjustments.json?auth=${token}`);
+    if (adjRes.ok) reinforcementAdjustments = (await adjRes.json()) || {};
+  } catch (_) {}
   const supStats = buildSupStats(alertsMap);
   const busy = new Set();
   for (const a of Object.values(alertsMap)) {
@@ -1327,6 +1347,7 @@ async function runAIAssignments(env, ctx) {
     }
     const scored = candidates.map((u) => {
       const recent = recentCounts[u.uid] || 0;
+      const adj = reinforcementAdjustments[u.uid] || 0;
       const { score, reasons } = scoreSupervisor(
         { ...u, uid: u.uid, name: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(), fcmToken: u.fcmToken },
         alert,
@@ -1334,7 +1355,7 @@ async function runAIAssignments(env, ctx) {
         feedbackSummary,
         recent,
         now,
-        { isCommander: aiCommander },
+        { isCommander: aiCommander, reinforcementAdjustment: adj },
       );
       return { uid: u.uid, name: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(), fcmToken: u.fcmToken, score, reasons };
     });
