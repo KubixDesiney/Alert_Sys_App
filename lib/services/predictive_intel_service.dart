@@ -1,4 +1,5 @@
 export 'predictive_models.dart';
+export 'predictive_intel_stream_service.dart' show PredictiveAccuracy;
 
 import 'predictive_models.dart';
 import 'predictive_intel_stream_service.dart';
@@ -18,6 +19,7 @@ class PredictiveIntelService {
 
   Stream<MorningBriefing?> briefingStream() => streams.briefingStream();
   Stream<PredictiveModel?> predictionsStream() => streams.predictionsStream();
+  Stream<PredictiveAccuracy?> accuracyStream() => streams.accuracyStream();
 
   Future<MorningBriefing?> fetchBriefing({bool force = false}) =>
       repository.getBriefing(force: force);
