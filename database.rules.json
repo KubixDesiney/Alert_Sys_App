@@ -189,6 +189,10 @@
         "aiCommander": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "randomize": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "aiConfidence": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 1)" },
+        "handleAssignments": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "handleCollaborations": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "handleCrossFactoryTransfer": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "fullControl": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "supervisors": {
           "$supervisorId": {
             "ready": {
@@ -196,6 +200,27 @@
               ".validate": "newData.isBoolean()"
             }
           }
+        }
+      }
+    },
+
+    "shift_ai_logs": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'supervisor' || auth.token.role === 'admin')",
+      "$shiftId": {
+        ".read": "auth != null",
+        "$logId": {
+          ".read": "auth != null",
+          ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+          "at": { ".validate": "!newData.exists() || newData.isString()" },
+          "kind": { ".validate": "!newData.exists() || newData.isString()" },
+          "shiftId": { ".validate": "!newData.exists() || newData.isString()" },
+          "alertLabel": { ".validate": "!newData.exists() || newData.isString()" },
+          "supervisorName": { ".validate": "!newData.exists() || newData.isString()" },
+          "supervisorId": { ".validate": "!newData.exists() || newData.isString()" },
+          "factory": { ".validate": "!newData.exists() || newData.isString()" },
+          "confidence": { ".validate": "!newData.exists() || newData.isNumber()" },
+          "reason": { ".validate": "!newData.exists() || newData.isString()" }
         }
       }
     },
