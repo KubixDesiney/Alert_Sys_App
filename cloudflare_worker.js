@@ -1784,6 +1784,445 @@ async function runAIAssignments(env, ctx) {
 // When AI Shift Commander is on, auto-approve collaboration requests that
 // have all assistant approvals but are awaiting PM approval. Also handles
 // cross-factory transfers without human intervention.
+const COLLAB_LONG_FIX_MINUTES = 180;
+const COLLAB_OVERLOAD_UNCLAIMED = 3;
+const COLLAB_OVERLOAD_ESCALATED = 2;
+const COLLAB_OVERLOAD_SCORE = 5;
+
+function _collabDecisionAccepted(decision) {
+  if (!decision) return false;
+  if (typeof decision === 'string') return decision === 'accepted';
+  if (typeof decision === 'object') return decision.status === 'accepted';
+  return false;
+}
+
+function _collabAcceptedCollaborators(req = {}) {
+  const accepted = [];
+  const targetIds = Array.isArray(req.targetSupervisorIds) ? req.targetSupervisorIds : [];
+  const targetNames = Array.isArray(req.targetSupervisorNames) ? req.targetSupervisorNames : [];
+  for (let i = 0; i < targetIds.length; i++) {
+    const supId = String(targetIds[i] || '');
+    const supName = String(targetNames[i] || '');
+    const decision = req.assistantDecisions?.[supId] || 'pending';
+    if (_collabDecisionAccepted(decision)) {
+      accepted.push({ id: supId, name: supName || supId });
+    }
+  }
+  if (
+    accepted.length === 0 &&
+    req.assistantId &&
+    req.assistantName &&
+    req.assistantDecision === 'accepted'
+  ) {
+    accepted.push({
+      id: String(req.assistantId),
+      name: String(req.assistantName),
+    });
+  }
+  return accepted;
+}
+
+function _collabAlertFactory(req = {}, alert = {}) {
+  return aiResolveFactory(alert) || aiResolveFactory(req) || aiSanitizeFactoryId(req.factoryName || '');
+}
+
+function _collabAlertFactoryName(req = {}, alert = {}) {
+  return String(alert?.usine || alert?.factoryName || req?.usine || req?.factoryName || _collabAlertFactory(req, alert) || '');
+}
+
+function _collabAlertIsCritical(req = {}, alert = {}) {
+  return alert?.isCritical === true || req?.isCritical === true || req?.alertIsCritical === true;
+}
+
+function _collabFactoryLoad(alertsMap = {}, factoryId, now = Date.now()) {
+  const fid = aiSanitizeFactoryId(factoryId);
+  const load = {
+    factoryId: fid,
+    factoryName: fid,
+    active: 0,
+    unclaimed: 0,
+    escalated: 0,
+    critical: 0,
+    staleUnclaimed: 0,
+    oldestUnattendedMin: 0,
+    score: 0,
+    overloaded: false,
+  };
+  if (!fid) return load;
+
+  for (const alert of Object.values(alertsMap || {})) {
+    if (!alert || typeof alert !== 'object') continue;
+    const alertFid = aiResolveFactory(alert);
+    if (!alertFid || alertFid !== fid) continue;
+    if (alert.usine && load.factoryName === fid) load.factoryName = String(alert.usine);
+
+    const status = String(alert.status || '').toLowerCase();
+    if (status === 'validee' || status === 'cancelled' || status === 'canceled') continue;
+
+    load.active++;
+    if (alert.isCritical === true) load.critical++;
+    if (alert.isEscalated === true) load.escalated++;
+
+    if (status === 'disponible') {
+      load.unclaimed++;
+      const ts = _toMs(alert.timestamp);
+      if (ts != null) {
+        const ageMin = Math.max(0, Math.floor((now - ts) / 60000));
+        if (ageMin > load.oldestUnattendedMin) load.oldestUnattendedMin = ageMin;
+        if (ageMin >= 30) load.staleUnclaimed++;
+      }
+    }
+  }
+
+  load.score =
+    load.unclaimed +
+    load.escalated * 2 +
+    load.critical * 1.5 +
+    load.staleUnclaimed;
+  load.overloaded =
+    load.unclaimed >= COLLAB_OVERLOAD_UNCLAIMED ||
+    load.escalated >= COLLAB_OVERLOAD_ESCALATED ||
+    load.score >= COLLAB_OVERLOAD_SCORE;
+  return load;
+}
+
+function _collabLoadReason(load) {
+  const parts = [
+    `${load.unclaimed} unclaimed`,
+    `${load.escalated} escalated`,
+    `${load.critical} critical`,
+  ];
+  if (load.oldestUnattendedMin > 0) {
+    parts.push(`oldest unattended ${load.oldestUnattendedMin} min`);
+  }
+  return `${load.factoryName || load.factoryId} is overloaded: ${parts.join(', ')}.`;
+}
+
+function _collabWindowPressure(alertsMap = {}, factoryId, startMs, endMs) {
+  const fid = aiSanitizeFactoryId(factoryId);
+  const pressure = { unclaimed: 0, escalated: 0, slow: 0, score: 0 };
+  if (!fid || startMs == null || endMs == null) return pressure;
+  for (const alert of Object.values(alertsMap || {})) {
+    if (!alert || typeof alert !== 'object') continue;
+    const alertFid = aiResolveFactory(alert);
+    if (!alertFid || alertFid !== fid) continue;
+    const ts = _toMs(alert.timestamp);
+    if (ts == null || ts < startMs || ts > endMs) continue;
+    const status = String(alert.status || '').toLowerCase();
+    if (status === 'disponible') pressure.unclaimed++;
+    if (alert.isEscalated === true) pressure.escalated++;
+    const elapsed = Number(alert.elapsedTime);
+    if (Number.isFinite(elapsed) && elapsed >= 60) pressure.slow++;
+  }
+  pressure.score = pressure.unclaimed + pressure.escalated * 2 + pressure.slow;
+  return pressure;
+}
+
+function _collabDurationMin(req = {}, alert = {}) {
+  const elapsed = Number(alert?.elapsedTime);
+  if (Number.isFinite(elapsed) && elapsed > 0) return elapsed;
+  const startMs =
+    _toMs(alert?.takenAtTimestamp) ??
+    _toMs(req?.pmApprovedAt) ??
+    _toMs(req?.approvedAt) ??
+    _toMs(req?.assistantRespondedAt) ??
+    _toMs(req?.timestamp);
+  const endMs =
+    _toMs(alert?.resolvedAt) ??
+    _toMs(alert?.validatedAt) ??
+    _toMs(alert?.closedAt) ??
+    _toMs(req?.completedAt);
+  if (startMs == null || endMs == null || endMs <= startMs) return null;
+  return Math.round((endMs - startMs) / 60000);
+}
+
+function buildCollaborationLearning(reqs = {}, alertsMap = {}, usersMap = {}, now = Date.now()) {
+  const learning = {
+    generatedAt: new Date(now).toISOString(),
+    longFixMinutes: COLLAB_LONG_FIX_MINUTES,
+    pairs: {},
+    assistantFactories: {},
+  };
+
+  const ensurePair = (key, requesterId, assistantId, assistantName, assistantFactoryId) => {
+    if (!learning.pairs[key]) {
+      learning.pairs[key] = {
+        requesterId,
+        assistantId,
+        assistantName,
+        assistantFactoryId,
+        approved: 0,
+        longFixes: 0,
+        crossFactoryLongFixes: 0,
+        overloadAfter: 0,
+        worstDurationMin: 0,
+        lastConcern: null,
+      };
+    }
+    return learning.pairs[key];
+  };
+  const ensureFactory = (factoryId, factoryName) => {
+    const fid = aiSanitizeFactoryId(factoryId);
+    if (!fid) return null;
+    if (!learning.assistantFactories[fid]) {
+      learning.assistantFactories[fid] = {
+        factoryId: fid,
+        factoryName: factoryName || fid,
+        approved: 0,
+        longFixes: 0,
+        overloadAfter: 0,
+        worstDurationMin: 0,
+      };
+    }
+    return learning.assistantFactories[fid];
+  };
+
+  for (const [reqId, req] of Object.entries(reqs || {})) {
+    if (!req || typeof req !== 'object') continue;
+    if (req.pmApproved !== true && req.status !== 'approved') continue;
+    const alert = alertsMap?.[req.alertId] || {};
+    const alertFactoryId = _collabAlertFactory(req, alert);
+    const durationMin = _collabDurationMin(req, alert);
+    const accepted = _collabAcceptedCollaborators(req);
+    if (accepted.length === 0) continue;
+    const startMs =
+      _toMs(req.pmApprovedAt) ??
+      _toMs(req.approvedAt) ??
+      _toMs(req.assistantRespondedAt) ??
+      _toMs(req.timestamp) ??
+      _toMs(alert.takenAtTimestamp) ??
+      _toMs(alert.timestamp);
+    const endMs =
+      _toMs(alert.resolvedAt) ??
+      _toMs(alert.validatedAt) ??
+      (startMs != null && durationMin != null ? startMs + durationMin * 60000 : null);
+
+    for (const collaborator of accepted) {
+      const user = usersMap?.[collaborator.id] || {};
+      const assistantFactoryId = aiResolveFactory(user);
+      if (!assistantFactoryId) continue;
+      const assistantFactoryName = user.usine || user.factoryName || assistantFactoryId;
+      const crossFactory = alertFactoryId && assistantFactoryId && alertFactoryId !== assistantFactoryId;
+      const pairKey = `${req.requesterId || 'unknown'}|${collaborator.id}`;
+      const pair = ensurePair(
+        pairKey,
+        String(req.requesterId || ''),
+        collaborator.id,
+        collaborator.name,
+        assistantFactoryId,
+      );
+      const factory = ensureFactory(assistantFactoryId, assistantFactoryName);
+      pair.approved++;
+      if (factory) factory.approved++;
+
+      if (durationMin != null && durationMin >= COLLAB_LONG_FIX_MINUTES) {
+        const pressure = _collabWindowPressure(alertsMap, assistantFactoryId, startMs, endMs);
+        pair.longFixes++;
+        if (crossFactory) pair.crossFactoryLongFixes++;
+        if (pressure.score > 0) pair.overloadAfter++;
+        pair.worstDurationMin = Math.max(pair.worstDurationMin, durationMin);
+        pair.lastConcern =
+          `Request ${reqId} took ${Math.round(durationMin)} min` +
+          (pressure.score > 0
+            ? ` and ${assistantFactoryName} saw ${pressure.unclaimed} unclaimed, ${pressure.escalated} escalated, ${pressure.slow} slow alerts during that window.`
+            : '.');
+
+        if (factory) {
+          factory.longFixes++;
+          if (pressure.score > 0) factory.overloadAfter++;
+          factory.worstDurationMin = Math.max(factory.worstDurationMin, durationMin);
+        }
+      }
+    }
+  }
+
+  return learning;
+}
+
+function mergeCollaborationLearning(current = {}, prior = {}) {
+  const merged = {
+    generatedAt: current.generatedAt || new Date().toISOString(),
+    longFixMinutes: COLLAB_LONG_FIX_MINUTES,
+    pairs: { ...(prior?.pairs || {}) },
+    assistantFactories: { ...(prior?.assistantFactories || {}) },
+  };
+
+  for (const [key, cur] of Object.entries(current?.pairs || {})) {
+    const old = merged.pairs[key];
+    if (!old) {
+      merged.pairs[key] = cur;
+      continue;
+    }
+    merged.pairs[key] = {
+      ...old,
+      ...cur,
+      approved: Math.max(Number(old.approved || 0), Number(cur.approved || 0)),
+      longFixes: Math.max(Number(old.longFixes || 0), Number(cur.longFixes || 0)),
+      crossFactoryLongFixes: Math.max(
+        Number(old.crossFactoryLongFixes || 0),
+        Number(cur.crossFactoryLongFixes || 0),
+      ),
+      overloadAfter: Math.max(Number(old.overloadAfter || 0), Number(cur.overloadAfter || 0)),
+      worstDurationMin: Math.max(
+        Number(old.worstDurationMin || 0),
+        Number(cur.worstDurationMin || 0),
+      ),
+      lastConcern: cur.lastConcern || old.lastConcern || null,
+    };
+  }
+
+  for (const [key, cur] of Object.entries(current?.assistantFactories || {})) {
+    const old = merged.assistantFactories[key];
+    if (!old) {
+      merged.assistantFactories[key] = cur;
+      continue;
+    }
+    merged.assistantFactories[key] = {
+      ...old,
+      ...cur,
+      approved: Math.max(Number(old.approved || 0), Number(cur.approved || 0)),
+      longFixes: Math.max(Number(old.longFixes || 0), Number(cur.longFixes || 0)),
+      overloadAfter: Math.max(Number(old.overloadAfter || 0), Number(cur.overloadAfter || 0)),
+      worstDurationMin: Math.max(
+        Number(old.worstDurationMin || 0),
+        Number(cur.worstDurationMin || 0),
+      ),
+    };
+  }
+
+  return merged;
+}
+
+function _collabLearningRisk(req = {}, accepted = [], usersMap = {}, learning = {}) {
+  let best = null;
+  for (const collaborator of accepted) {
+    const user = usersMap?.[collaborator.id] || {};
+    const assistantFactoryId = aiResolveFactory(user);
+    if (!assistantFactoryId) continue;
+    const pairKey = `${req.requesterId || 'unknown'}|${collaborator.id}`;
+    const pair = learning?.pairs?.[pairKey];
+    const factory = learning?.assistantFactories?.[assistantFactoryId];
+    const pairRisk =
+      pair &&
+      pair.crossFactoryLongFixes > 0 &&
+      (pair.overloadAfter > 0 || pair.longFixes / Math.max(1, pair.approved) >= 0.5);
+    const factoryRisk =
+      factory &&
+      factory.longFixes >= 2 &&
+      factory.longFixes / Math.max(1, factory.approved) >= 0.5 &&
+      factory.overloadAfter > 0;
+    if (!pairRisk && !factoryRisk) continue;
+
+    const risk = {
+      collaborator,
+      assistantFactoryId,
+      assistantFactoryName: user.usine || user.factoryName || assistantFactoryId,
+      confidence: Math.min(
+        0.95,
+        0.7 +
+          (pair?.crossFactoryLongFixes || 0) * 0.08 +
+          (pair?.overloadAfter || 0) * 0.07 +
+          (factory?.overloadAfter || 0) * 0.03,
+      ),
+      reason:
+        pair?.lastConcern ||
+        `Past cross-factory collaborations involving ${user.usine || collaborator.name || collaborator.id} repeatedly ran long and were followed by factory pressure.`,
+      worstDurationMin: Math.max(pair?.worstDurationMin || 0, factory?.worstDurationMin || 0),
+    };
+    if (!best || risk.confidence > best.confidence) best = risk;
+  }
+  return best;
+}
+
+function evaluateShiftCollaborationDecision(reqId, req, {
+  acceptedCollaborators,
+  alertsMap = {},
+  usersMap = {},
+  learning = {},
+  confidence = 1,
+  activeShift = null,
+} = {}) {
+  const alert = alertsMap?.[req.alertId] || {};
+  const alertFactoryId = _collabAlertFactory(req, alert);
+  const alertFactoryName = _collabAlertFactoryName(req, alert);
+  const isCritical = _collabAlertIsCritical(req, alert);
+  const crossFactoryAssistants = [];
+
+  for (const collaborator of acceptedCollaborators || []) {
+    const user = usersMap?.[collaborator.id] || {};
+    const assistantFactoryId = aiResolveFactory(user);
+    if (!assistantFactoryId || !alertFactoryId || assistantFactoryId === alertFactoryId) continue;
+    crossFactoryAssistants.push({
+      ...collaborator,
+      factoryId: assistantFactoryId,
+      factoryName: user.usine || user.factoryName || assistantFactoryId,
+    });
+  }
+
+  if (!isCritical && crossFactoryAssistants.length > 0) {
+    for (const assistant of crossFactoryAssistants) {
+      const load = _collabFactoryLoad(alertsMap, assistant.factoryId);
+      if (load.overloaded) {
+        return {
+          action: 'decline',
+          confidence: Math.max(confidence, 0.92),
+          reason:
+            `AI Shift Commander declined this non-critical cross-factory collaboration to protect the whole company. ` +
+            `${_collabLoadReason(load)} Pulling ${assistant.name || 'the assistant'} from that factory would likely leave unattended alerts waiting longer.`,
+          checks: {
+            rule: 'assistant_factory_overloaded',
+            requestId: reqId,
+            alertFactoryId,
+            alertFactoryName,
+            assistantFactoryId: assistant.factoryId,
+            assistantFactoryName: assistant.factoryName,
+            load,
+          },
+        };
+      }
+    }
+
+    const learnedRisk = _collabLearningRisk(req, crossFactoryAssistants, usersMap, learning);
+    if (learnedRisk) {
+      return {
+        action: 'decline',
+        confidence: Math.max(confidence, learnedRisk.confidence),
+        reason:
+          `AI Shift Commander declined this non-critical cross-factory collaboration based on learned operational patterns. ` +
+          `${learnedRisk.reason} The request can be retried if the alert becomes critical or the assistant factory stabilizes.`,
+        checks: {
+          rule: 'learned_long_fix_overload_risk',
+          requestId: reqId,
+          alertFactoryId,
+          alertFactoryName,
+          assistantFactoryId: learnedRisk.assistantFactoryId,
+          assistantFactoryName: learnedRisk.assistantFactoryName,
+          worstDurationMin: learnedRisk.worstDurationMin,
+        },
+      };
+    }
+  }
+
+  const shiftName = activeShift?.name || activeShift?.id || 'active shift';
+  return {
+    action: 'approve',
+    confidence,
+    reason:
+      `Auto-approved by AI Shift Commander during "${shiftName}" after company-wide load and learning checks. ` +
+      (crossFactoryAssistants.length > 0
+        ? `Cross-factory assistance is allowed because the alert ${isCritical ? 'is critical' : 'is not blocked by overload or learned risk'}.`
+        : 'Collaboration stays within the alert factory.'),
+    checks: {
+      rule: 'approved_company_wide',
+      requestId: reqId,
+      alertFactoryId,
+      alertFactoryName,
+      crossFactory: crossFactoryAssistants.length > 0,
+      critical: isCritical,
+    },
+  };
+}
+
 async function processShiftCollaborations(env, ctx) {
   const activeShift = ctx?.targetShift ?? ctx?.activeShift;
   const capabilities = commanderCapabilities(activeShift);
@@ -1800,6 +2239,24 @@ async function processShiftCollaborations(env, ctx) {
   const res = await fetch(`${env.FB_DB_URL}collaboration_requests.json?auth=${token}`);
   if (!res.ok) return 0;
   const reqs = (await res.json()) || {};
+  const alertsMap = ctx?.alertsMap || {};
+  const usersMap = ctx?.usersMap || {};
+  let priorLearning = {};
+  try {
+    const learningRes = await fetch(`${env.FB_DB_URL}ai_collaboration_learning/latest.json?auth=${token}`);
+    if (learningRes.ok) priorLearning = (await learningRes.json()) || {};
+  } catch (_) {}
+  const learning = mergeCollaborationLearning(
+    buildCollaborationLearning(reqs, alertsMap, usersMap),
+    priorLearning,
+  );
+  try {
+    await fetch(`${env.FB_DB_URL}ai_collaboration_learning/latest.json?auth=${token}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(learning),
+    });
+  } catch (_) {}
   const minConfidence =
     typeof activeShift?.aiConfidence === 'number' ? Number(activeShift.aiConfidence) : 0.65;
 
@@ -1825,29 +2282,88 @@ async function processShiftCollaborations(env, ctx) {
       acceptedCount > 0 ? acceptedCount / denominator : 1,
     );
     if (collabConfidence < minConfidence) continue;
-    const acceptedCollaborators = [];
-    const targetIds = Array.isArray(req.targetSupervisorIds) ? req.targetSupervisorIds : [];
-    const targetNames = Array.isArray(req.targetSupervisorNames) ? req.targetSupervisorNames : [];
-    for (let i = 0; i < targetIds.length; i++) {
-      const supId = String(targetIds[i] || '');
-      const supName = String(targetNames[i] || '');
-      const decision = req.assistantDecisions?.[supId] || 'pending';
-      if (decision === 'accepted') {
-        acceptedCollaborators.push({ id: supId, name: supName });
-      }
-    }
-    if (
-      acceptedCollaborators.length === 0 &&
-      req.assistantId &&
-      req.assistantName &&
-      hasTopLevelAcceptance
-    ) {
-      acceptedCollaborators.push({
-        id: String(req.assistantId),
-        name: String(req.assistantName),
-      });
-    }
+    const acceptedCollaborators = _collabAcceptedCollaborators(req);
     const nowIso = new Date().toISOString();
+    const decision = evaluateShiftCollaborationDecision(reqId, req, {
+      acceptedCollaborators,
+      alertsMap,
+      usersMap,
+      learning,
+      confidence: collabConfidence,
+      activeShift,
+    });
+    if (decision.action === 'decline') {
+      const patch = {
+        status: 'rejected',
+        pmApproved: false,
+        pmApprovedBy: 'ai_shift_commander',
+        pmApprovedShiftId: activeShift.id,
+        pmDecision: 'declined',
+        rejectedBy: 'ai_shift_commander',
+        rejectedAt: nowIso,
+        rejectionReason: decision.reason,
+        aiDecision: 'declined',
+        aiConfidence: Number(decision.confidence.toFixed(4)),
+        aiReason: decision.reason,
+        aiChecks: decision.checks,
+      };
+      const [patchRes] = await Promise.all([
+        fetch(`${env.FB_DB_URL}collaboration_requests/${reqId}.json?auth=${token}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        }),
+        req.alertId
+          ? fetch(`${env.FB_DB_URL}alerts/${req.alertId}.json?auth=${token}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ collaborationRequestId: null }),
+            })
+          : Promise.resolve({ ok: true }),
+      ]);
+      if (patchRes.ok) {
+        processed++;
+        await writeShiftAiLog(env, token, activeShift.id, {
+          kind: 'collaboration_declined',
+          alertLabel:
+            req.alertTitle ||
+            req.alertLabel ||
+            req.alertType ||
+            req.alertId ||
+            'Collaboration request',
+          supervisorName: req.requesterName || req.requesterFullName || null,
+          supervisorId: req.requesterId || null,
+          factory: req.factoryName || req.usine || null,
+          confidence: decision.confidence,
+          reason: `Declined collaboration request ${reqId}. ${decision.reason}`,
+        });
+        const notifyTargets = new Map();
+        if (req.requesterId) notifyTargets.set(String(req.requesterId), 'requester');
+        for (const collaborator of acceptedCollaborators) {
+          if (collaborator.id) notifyTargets.set(String(collaborator.id), 'assistant');
+        }
+        for (const [uid, role] of notifyTargets.entries()) {
+          await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'collaboration_rejected',
+              collabRequestId: reqId,
+              collaborationId: reqId,
+              alertId: req.alertId || null,
+              message:
+                role === 'requester'
+                  ? `AI Shift Commander declined your collaboration request. Reason: ${decision.reason}`
+                  : `AI Shift Commander declined the collaboration request you accepted. Reason: ${decision.reason}`,
+              timestamp: nowIso,
+              status: 'unread',
+              pushSent: false,
+            }),
+          });
+        }
+      }
+      continue;
+    }
     const leadAssistant = acceptedCollaborators[0];
     const patch = {
       status: 'approved',
@@ -1855,8 +2371,10 @@ async function processShiftCollaborations(env, ctx) {
       pmApprovedBy: 'ai_shift_commander',
       pmApprovedShiftId: activeShift.id,
       pmApprovedAt: nowIso,
-      aiConfidence: collabConfidence,
-      aiReason: `Auto-approved by AI Shift Commander during "${activeShift.name || activeShift.id}" after ${acceptedCount}/${assistantDecisions.length} assistant approvals.`,
+      aiDecision: 'approved',
+      aiConfidence: Number(decision.confidence.toFixed(4)),
+      aiReason: decision.reason,
+      aiChecks: decision.checks,
     };
     const [patchRes, alertUpdateRes] = await Promise.all([
       fetch(
@@ -1892,10 +2410,11 @@ async function processShiftCollaborations(env, ctx) {
         supervisorName: req.requesterName || req.requesterFullName || null,
         supervisorId: req.requesterId || null,
         factory: req.factoryName || req.usine || null,
-        confidence: collabConfidence,
+        confidence: decision.confidence,
         reason:
           `Approved collaboration request ${reqId} for shift "${activeShift.name || activeShift.id}". ` +
           `Assistant approvals: ${acceptedCount}/${denominator}. ` +
+          `AI judgement: ${decision.reason} ` +
           `Requester: ${req.requesterName || req.requesterFullName || req.requesterId || 'Unknown'}. ` +
           `${acceptedCollaborators.length > 0
             ? (alertUpdateRes.ok
@@ -1912,11 +2431,13 @@ async function processShiftCollaborations(env, ctx) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               type: 'collab_auto_approved',
-              message: 'AI Shift Commander approved your collaboration request.',
+              message: `AI Shift Commander approved your collaboration request. Reason: ${decision.reason}`,
               alertId: req.alertId || null,
+              collabRequestId: reqId,
               collaborationId: reqId,
               timestamp: nowIso,
               status: 'unread',
+              pushSent: false,
             }),
           },
         );
@@ -1930,11 +2451,13 @@ async function processShiftCollaborations(env, ctx) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 type: 'collaboration_approved',
-                message: 'AI Shift Commander approved your collaboration request. You can now assist on this alert.',
+                message: `AI Shift Commander approved your collaboration request. You can now assist on this alert. Reason: ${decision.reason}`,
                 alertId: req.alertId || null,
+                collabRequestId: reqId,
                 collaborationId: reqId,
                 timestamp: nowIso,
                 status: 'unread',
+                pushSent: false,
               }),
             },
           );

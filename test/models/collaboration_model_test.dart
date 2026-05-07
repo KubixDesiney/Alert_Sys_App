@@ -12,6 +12,9 @@ void main() {
         'targetSupervisorNames': ['Bob', 'Carol'],
         'message': 'help',
         'status': 'pending',
+        'rejectionReason': 'Factory overloaded',
+        'aiDecision': 'declined',
+        'aiReason': 'Protecting the assistant factory',
         'timestamp': '2026-05-01T10:00:00.000Z',
       });
       expect(r.id, 'c1');
@@ -22,6 +25,9 @@ void main() {
       expect(r.status, 'pending');
       expect(r.assistantDecision, 'pending');
       expect(r.assistantDecisions, isEmpty);
+      expect(r.rejectionReason, 'Factory overloaded');
+      expect(r.aiDecision, 'declined');
+      expect(r.aiReason, 'Protecting the assistant factory');
     });
 
     test('parses assistantDecisions map', () {
@@ -50,8 +56,7 @@ void main() {
         approvedBy: 'pm1',
         approvedAt: DateTime.utc(2026, 5, 1, 10, 5),
       );
-      final restored =
-          CollaborationRequest.fromMap('c1', original.toMap());
+      final restored = CollaborationRequest.fromMap('c1', original.toMap());
       expect(restored.status, 'approved');
       expect(restored.approvedBy, 'pm1');
       expect(restored.approvedAt?.toUtc(), DateTime.utc(2026, 5, 1, 10, 5));
@@ -61,12 +66,14 @@ void main() {
   group('EscalationSettings', () {
     test('defaultSettings has all four alert types', () {
       final s = EscalationSettings.defaultSettings();
-      expect(s.thresholds.keys, containsAll([
-        'qualite',
-        'maintenance',
-        'defaut_produit',
-        'manque_ressource',
-      ]));
+      expect(
+          s.thresholds.keys,
+          containsAll([
+            'qualite',
+            'maintenance',
+            'defaut_produit',
+            'manque_ressource',
+          ]));
     });
 
     test('round-trips through toMap/fromMap', () {

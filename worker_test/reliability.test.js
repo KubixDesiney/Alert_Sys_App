@@ -604,6 +604,228 @@ describe('collaboration auto-approval confidence check', () => {
     );
     expect(approvalCalls.length).toBeGreaterThanOrEqual(1);
   });
+
+  test('declines non-critical cross-factory collaboration when assistant factory is overloaded', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const now = Date.now();
+
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      let body = null;
+      try { body = opts?.body ? JSON.parse(opts.body) : null; } catch (_) {}
+      fetchCalls.push({ url: u, method, body });
+
+      if (u.includes('cron_lock') && method === 'GET') {
+        return Promise.resolve(etagRes({ ts: now - 60000 }));
+      }
+      if (u.includes('cron_lock')) return Promise.resolve(jsonRes({ ts: now }));
+
+      if (u.includes('shifts.json')) {
+        const nowMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+        return Promise.resolve(jsonRes({
+          s1: {
+            name: 'Morning',
+            startMinutes: (nowMin - 60 + 1440) % 1440,
+            endMinutes: (nowMin + 60) % 1440,
+            aiCommander: true,
+            handleAssignments: false,
+            handleCollaborations: true,
+          },
+        }));
+      }
+      if (u.includes('alerts.json')) {
+        return Promise.resolve(jsonRes({
+          a1: {
+            status: 'en_cours',
+            type: 'qualite',
+            usine: 'Factory A',
+            isCritical: false,
+            collaborationRequestId: 'req1',
+            timestamp: new Date(now - 20 * 60000).toISOString(),
+          },
+          b1: { status: 'disponible', usine: 'Factory B', timestamp: new Date(now - 45 * 60000).toISOString() },
+          b2: { status: 'disponible', usine: 'Factory B', timestamp: new Date(now - 35 * 60000).toISOString() },
+          b3: { status: 'disponible', usine: 'Factory B', timestamp: new Date(now - 20 * 60000).toISOString() },
+          b4: { status: 'en_cours', usine: 'Factory B', isEscalated: true, timestamp: new Date(now - 50 * 60000).toISOString() },
+        }));
+      }
+      if (u.includes('users.json')) {
+        return Promise.resolve(jsonRes({
+          u1: { role: 'supervisor', usine: 'Factory A', fullName: 'Alice' },
+          u2: { role: 'supervisor', usine: 'Factory B', fullName: 'Bob' },
+        }));
+      }
+      if (u.includes('collaboration_requests.json')) {
+        return Promise.resolve(jsonRes({
+          req1: {
+            status: 'awaiting_pm',
+            requesterId: 'u1',
+            requesterName: 'Alice',
+            alertId: 'a1',
+            usine: 'Factory A',
+            alertType: 'qualite',
+            assistantDecision: 'accepted',
+            assistantDecisions: { u2: 'accepted' },
+            targetSupervisorIds: ['u2'],
+            targetSupervisorNames: ['Bob'],
+            requiresPMApproval: true,
+          },
+        }));
+      }
+      if (u.includes('accounts:signUp') || u.includes('identitytoolkit')) {
+        return Promise.resolve(jsonRes({ idToken: 'tok' }));
+      }
+      return Promise.resolve(jsonRes(null));
+    });
+
+    const ctx = makeCtx();
+    await worker.scheduled({}, env, ctx);
+    await ctx.flush();
+
+    const declineCall = fetchCalls.find(
+      (c) => c.url.includes('collaboration_requests/req1') && c.method === 'PATCH',
+    );
+    expect(declineCall).toBeTruthy();
+    expect(declineCall.body.status).toBe('rejected');
+    expect(declineCall.body.aiDecision).toBe('declined');
+    expect(declineCall.body.rejectionReason).toMatch(/overloaded/);
+    expect(declineCall.body.rejectionReason).toMatch(/non-critical cross-factory/);
+
+    const alertClear = fetchCalls.find(
+      (c) => c.url.includes('alerts/a1') && c.method === 'PATCH',
+    );
+    expect(alertClear.body.collaborationRequestId).toBeNull();
+
+    const requesterNotif = fetchCalls.find(
+      (c) => c.url.includes('notifications/u1') && c.method === 'POST',
+    );
+    expect(requesterNotif.body.message).toMatch(/Reason:/);
+    expect(requesterNotif.body.message).toMatch(/Factory B/);
+  });
+
+  test('declines learned risky collaboration patterns after long cross-factory fixes', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const now = Date.now();
+    const oldStart = now - 6 * 60 * 60 * 1000;
+
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      let body = null;
+      try { body = opts?.body ? JSON.parse(opts.body) : null; } catch (_) {}
+      fetchCalls.push({ url: u, method, body });
+
+      if (u.includes('cron_lock') && method === 'GET') {
+        return Promise.resolve(etagRes({ ts: now - 60000 }));
+      }
+      if (u.includes('cron_lock')) return Promise.resolve(jsonRes({ ts: now }));
+      if (u.includes('shifts.json')) {
+        const nowMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+        return Promise.resolve(jsonRes({
+          s1: {
+            name: 'Morning',
+            startMinutes: (nowMin - 60 + 1440) % 1440,
+            endMinutes: (nowMin + 60) % 1440,
+            aiCommander: true,
+            handleAssignments: false,
+            handleCollaborations: true,
+          },
+        }));
+      }
+      if (u.includes('alerts.json')) {
+        return Promise.resolve(jsonRes({
+          a1: {
+            status: 'en_cours',
+            type: 'qualite',
+            usine: 'Factory A',
+            isCritical: false,
+            collaborationRequestId: 'req1',
+            timestamp: new Date(now - 10 * 60000).toISOString(),
+          },
+          old1: {
+            status: 'validee',
+            type: 'qualite',
+            usine: 'Factory A',
+            isCritical: false,
+            elapsedTime: 190,
+            timestamp: new Date(oldStart).toISOString(),
+            resolvedAt: new Date(oldStart + 190 * 60000).toISOString(),
+          },
+          pressure1: {
+            status: 'validee',
+            usine: 'Factory B',
+            isEscalated: true,
+            elapsedTime: 100,
+            timestamp: new Date(oldStart + 60 * 60000).toISOString(),
+          },
+        }));
+      }
+      if (u.includes('users.json')) {
+        return Promise.resolve(jsonRes({
+          u1: { role: 'supervisor', usine: 'Factory A', fullName: 'Alice' },
+          u2: { role: 'supervisor', usine: 'Factory B', fullName: 'Bob' },
+        }));
+      }
+      if (u.includes('collaboration_requests.json')) {
+        return Promise.resolve(jsonRes({
+          oldReq: {
+            status: 'approved',
+            pmApproved: true,
+            pmApprovedAt: new Date(oldStart).toISOString(),
+            requesterId: 'u1',
+            requesterName: 'Alice',
+            alertId: 'old1',
+            usine: 'Factory A',
+            assistantDecision: 'accepted',
+            assistantDecisions: { u2: 'accepted' },
+            targetSupervisorIds: ['u2'],
+            targetSupervisorNames: ['Bob'],
+          },
+          req1: {
+            status: 'awaiting_pm',
+            requesterId: 'u1',
+            requesterName: 'Alice',
+            alertId: 'a1',
+            usine: 'Factory A',
+            alertType: 'qualite',
+            assistantDecision: 'accepted',
+            assistantDecisions: { u2: 'accepted' },
+            targetSupervisorIds: ['u2'],
+            targetSupervisorNames: ['Bob'],
+            requiresPMApproval: true,
+          },
+        }));
+      }
+      if (u.includes('accounts:signUp') || u.includes('identitytoolkit')) {
+        return Promise.resolve(jsonRes({ idToken: 'tok' }));
+      }
+      return Promise.resolve(jsonRes(null));
+    });
+
+    const ctx = makeCtx();
+    await worker.scheduled({}, env, ctx);
+    await ctx.flush();
+
+    const declineCall = fetchCalls.find(
+      (c) => c.url.includes('collaboration_requests/req1') && c.method === 'PATCH',
+    );
+    expect(declineCall).toBeTruthy();
+    expect(declineCall.body.status).toBe('rejected');
+    expect(declineCall.body.aiChecks.rule).toBe('learned_long_fix_overload_risk');
+    expect(declineCall.body.rejectionReason).toMatch(/learned operational patterns/);
+    expect(declineCall.body.rejectionReason).toMatch(/190 min/);
+  });
 });
 
 // ─── 8. Idempotency: duplicate write ignored ─────────────────────────────────
