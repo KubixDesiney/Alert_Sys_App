@@ -15,10 +15,9 @@ import '../../widgets/shifts/shift_card.dart';
 import '../../widgets/shifts/shift_logs_panel.dart';
 import 'shift_creation_dialog.dart';
 
-/// Top-level container for the Shifts module. Renders sub-tabs:
-///   • Schedule  — manage all shifts (animated cards)
-///   • Live      — currently running shifts with countdown + readiness
-///   • Timeline  — 24h horizontal strip with the now-marker drifting across
+/// Top-level container for the Shifts module. The screen is intentionally a
+/// single command board: live timeline, compact shift roster, then selected
+/// shift details.
 class AdminShiftsTab extends StatefulWidget {
   const AdminShiftsTab({super.key});
 
@@ -26,27 +25,28 @@ class AdminShiftsTab extends StatefulWidget {
   State<AdminShiftsTab> createState() => _AdminShiftsTabState();
 }
 
-class _AdminShiftsTabState extends State<AdminShiftsTab>
-    with SingleTickerProviderStateMixin {
-  late TabController _sub;
+class _AdminShiftsTabState extends State<AdminShiftsTab> {
   StreamSubscription<List<ShiftModel>>? _sub2;
   Timer? _ticker;
 
   List<ShiftModel> _shifts = [];
   bool _loading = true;
   ShiftModel? _logsShift;
+  String? _selectedShiftId;
+  final GlobalKey _detailsKey = GlobalKey();
+  final Map<String, bool> _confettiShown = {};
 
   final ShiftService _service = ServiceLocator.instance.shiftService;
 
   @override
   void initState() {
     super.initState();
-    _sub = TabController(length: 3, vsync: this);
     _sub2 = _service.streamShifts().listen((data) {
       if (!mounted) return;
       setState(() {
         _shifts = data;
         _loading = false;
+        _selectedShiftId = _resolveSelectedId(data);
       });
     }, onError: (_) {
       if (!mounted) return;
@@ -59,7 +59,6 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
 
   @override
   void dispose() {
-    _sub.dispose();
     _sub2?.cancel();
     _ticker?.cancel();
     super.dispose();
@@ -80,6 +79,51 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
   void _openLogs(ShiftModel s) => setState(() => _logsShift = s);
   void _closeLogs() => setState(() => _logsShift = null);
 
+  String? _resolveSelectedId(List<ShiftModel> shifts) {
+    if (shifts.isEmpty) return null;
+    if (_selectedShiftId != null &&
+        shifts.any((s) => s.id == _selectedShiftId)) {
+      return _selectedShiftId;
+    }
+    final now = DateTime.now();
+    for (final shift in shifts) {
+      if (shift.containsTime(now)) return shift.id;
+    }
+    return shifts.first.id;
+  }
+
+  ShiftModel? _selectedShift() {
+    final id = _selectedShiftId;
+    if (id == null) return null;
+    for (final shift in _shifts) {
+      if (shift.id == id) return shift;
+    }
+    return null;
+  }
+
+  void _selectShift(ShiftModel s) {
+    setState(() => _selectedShiftId = s.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _detailsKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+        alignment: 0.08,
+      );
+    });
+  }
+
+  void _showConfettiFor(ShiftModel s) {
+    if (_confettiShown[s.id] == true) return;
+    _confettiShown[s.id] = true;
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(builder: (_) => const _ConfettiOverlay());
+    overlay.insert(entry);
+    Future.delayed(const Duration(seconds: 4), entry.remove);
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
@@ -90,25 +134,18 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
           children: [
             Column(
               children: [
-                _SubTabBar(controller: _sub),
                 Expanded(
                   child: _loading
                       ? const AppLoadingIndicator()
-                      : TabBarView(
-                          controller: _sub,
-                          children: [
-                            _ScheduleView(
-                              shifts: _shifts,
-                              onTap: (s) => _openCreate(existing: s),
-                              onDelete: (s) => _confirmDelete(s),
-                              onViewLogs: _openLogs,
-                            ),
-                            _LiveView(
-                              shifts: _shifts,
-                              onViewLogs: _openLogs,
-                            ),
-                            _TimelineView(shifts: _shifts),
-                          ],
+                      : _UnifiedShiftsView(
+                          shifts: _shifts,
+                          selectedShift: _selectedShift(),
+                          detailsKey: _detailsKey,
+                          onSelect: _selectShift,
+                          onEdit: (s) => _openCreate(existing: s),
+                          onDelete: _confirmDelete,
+                          onViewLogs: _openLogs,
+                          onConfettiNeeded: _showConfettiFor,
                         ),
                 ),
               ],
@@ -137,20 +174,19 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
     final t = context.appTheme;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete shift?'),
         content: Text(
             'This will permanently remove "${s.name}". Active assignments will not be affected.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_, false),
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel')),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: t.red),
-            onPressed: () => Navigator.pop(_, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(Icons.delete, size: 16, color: Colors.white),
-            label: const Text('Delete',
-                style: TextStyle(color: Colors.white)),
+            label: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -165,85 +201,26 @@ class _AdminShiftsTabState extends State<AdminShiftsTab>
   }
 }
 
-// ────────────────────────── SUB-TAB BAR ──────────────────────────────────────
-class _SubTabBar extends StatelessWidget {
-  final TabController controller;
-  const _SubTabBar({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Container(
-      color: t.card,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: t.scaffold,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: t.border),
-        ),
-        child: TabBar(
-          controller: controller,
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicatorPadding: const EdgeInsets.all(4),
-          labelColor: Colors.white,
-          unselectedLabelColor: t.muted,
-          labelStyle: const TextStyle(
-              fontWeight: FontWeight.w800, fontSize: 13),
-          dividerColor: Colors.transparent,
-          indicator: BoxDecoration(
-            color: t.navy,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          tabs: const [
-            Tab(
-                height: 38,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.calendar_view_week, size: 14),
-                    SizedBox(width: 6),
-                    Text('Schedule'),
-                  ],
-                )),
-            Tab(
-                height: 38,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.podcasts, size: 14),
-                    SizedBox(width: 6),
-                    Text('Live'),
-                  ],
-                )),
-            Tab(
-                height: 38,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.timeline, size: 14),
-                    SizedBox(width: 6),
-                    Text('Timeline'),
-                  ],
-                )),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ────────────────────────── SCHEDULE VIEW ────────────────────────────────────
-class _ScheduleView extends StatelessWidget {
+// ───────────────────────── UNIFIED BOARD ─────────────────────────────────────
+class _UnifiedShiftsView extends StatelessWidget {
   final List<ShiftModel> shifts;
-  final void Function(ShiftModel) onTap;
+  final ShiftModel? selectedShift;
+  final GlobalKey detailsKey;
+  final void Function(ShiftModel) onSelect;
+  final void Function(ShiftModel) onEdit;
   final void Function(ShiftModel) onDelete;
   final void Function(ShiftModel) onViewLogs;
-  const _ScheduleView({
+  final void Function(ShiftModel) onConfettiNeeded;
+
+  const _UnifiedShiftsView({
     required this.shifts,
-    required this.onTap,
+    required this.selectedShift,
+    required this.detailsKey,
+    required this.onSelect,
+    required this.onEdit,
     required this.onDelete,
     required this.onViewLogs,
+    required this.onConfettiNeeded,
   });
 
   @override
@@ -256,47 +233,239 @@ class _ScheduleView extends StatelessWidget {
             'Tap the glowing + button to define your first shift. Pick a name, time range, supervisors, and AI behavior.',
       );
     }
+    final selected = selectedShift ?? shifts.first;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+      children: [
+        _TimelineView(shifts: shifts),
+        const SizedBox(height: 16),
+        _SectionHeader(
+          icon: Icons.calendar_view_week,
+          title: 'Shift roster',
+          subtitle: 'Tap a card to bring its live controls into focus.',
+          trailing: _LiveCountBadge(
+            liveCount:
+                shifts.where((s) => s.containsTime(DateTime.now())).length,
+            totalCount: shifts.length,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _CompactShiftGrid(
+          shifts: shifts,
+          selectedShiftId: selected.id,
+          onSelect: onSelect,
+          onEdit: onEdit,
+          onDelete: onDelete,
+        ),
+        const SizedBox(height: 18),
+        KeyedSubtree(
+          key: detailsKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _SectionHeader(
+                icon: Icons.podcasts,
+                title: 'Live shift detail',
+                subtitle:
+                    'Readiness, AI logs, handover, and exports in one place.',
+              ),
+              const SizedBox(height: 10),
+              _LiveShiftPanel(
+                shift: selected,
+                onConfettiNeeded: () => onConfettiNeeded(selected),
+                onViewLogs: () => onViewLogs(selected),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Row(
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: t.navyLt,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: t.navy, size: 18),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: t.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(color: t.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+class _LiveCountBadge extends StatelessWidget {
+  final int liveCount;
+  final int totalCount;
+
+  const _LiveCountBadge({required this.liveCount, required this.totalCount});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final active = liveCount > 0;
+    final color = active ? t.green : t.muted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? t.greenLt : t.scaffold,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: active ? t.green : t.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.fiber_manual_record, size: 10, color: color),
+          const SizedBox(width: 6),
+          Text(
+            '$liveCount/$totalCount live',
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactShiftGrid extends StatelessWidget {
+  final List<ShiftModel> shifts;
+  final String selectedShiftId;
+  final void Function(ShiftModel) onSelect;
+  final void Function(ShiftModel) onEdit;
+  final void Function(ShiftModel) onDelete;
+
+  const _CompactShiftGrid({
+    required this.shifts,
+    required this.selectedShiftId,
+    required this.onSelect,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final now = DateTime.now();
     return LayoutBuilder(builder: (ctx, constraints) {
-      final cross = constraints.maxWidth >= 1100
-          ? 3
-          : constraints.maxWidth >= 720
-              ? 2
-              : 1;
+      final cross = constraints.maxWidth >= 1180
+          ? 4
+          : constraints.maxWidth >= 860
+              ? 3
+              : constraints.maxWidth >= 560
+                  ? 2
+                  : 1;
       return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 96),
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cross,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          childAspectRatio: 1.65,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.95,
         ),
         itemCount: shifts.length,
         itemBuilder: (ctx, i) {
           final s = shifts[i];
-          return Stack(
-            children: [
-              ShiftCard(
-                shift: s,
-                isActiveNow: s.containsTime(now),
-                onTap: () => onTap(s),
-                onViewLogs: () => onViewLogs(s),
-              ),
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Material(
-                  color: Colors.black26,
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    icon: const Icon(Icons.delete_outline,
-                        color: Colors.white, size: 18),
-                    tooltip: 'Delete',
-                    onPressed: () => onDelete(s),
-                  ),
+          final selected = s.id == selectedShiftId;
+          return LayoutBuilder(
+            builder: (context, box) {
+              const buttonSize = 34.0;
+              const gap = 6.0;
+              const edgeInset = 10.0;
+              final cardWidth = (box.maxHeight * 1.65).clamp(0.0, box.maxWidth);
+              final settingsLeft = cardWidth - edgeInset - buttonSize * 2 - gap;
+              final deleteLeft = cardWidth - edgeInset - buttonSize;
+
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(23),
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    SizedBox(
+                      width: cardWidth,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: EdgeInsets.all(selected ? 3 : 0),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(23),
+                          border: selected
+                              ? Border.all(
+                                  color: context.appTheme.navy, width: 2)
+                              : null,
+                        ),
+                        child: ShiftCard(
+                          shift: s,
+                          isActiveNow: s.containsTime(now),
+                          onTap: () => onSelect(s),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: edgeInset,
+                      left: settingsLeft,
+                      child: _ShiftPictureIconButton(
+                        icon: Icons.settings,
+                        tooltip: 'Edit shift settings',
+                        onPressed: () => onEdit(s),
+                      ),
+                    ),
+                    Positioned(
+                      top: edgeInset,
+                      left: deleteLeft,
+                      child: _ShiftPictureIconButton(
+                        icon: Icons.delete_outline,
+                        tooltip: 'Delete shift',
+                        onPressed: () => onDelete(s),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+              );
+            },
           );
         },
       );
@@ -304,92 +473,35 @@ class _ScheduleView extends StatelessWidget {
   }
 }
 
-// ────────────────────────── LIVE VIEW ────────────────────────────────────────
-class _LiveView extends StatefulWidget {
-  final List<ShiftModel> shifts;
-  final void Function(ShiftModel) onViewLogs;
-  const _LiveView({required this.shifts, required this.onViewLogs});
+class _ShiftPictureIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
 
-  @override
-  State<_LiveView> createState() => _LiveViewState();
-}
-
-class _LiveViewState extends State<_LiveView> {
-  final Map<String, bool> _confettiShown = {};
+  const _ShiftPictureIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final t = context.appTheme;
-    final now = DateTime.now();
-    final live =
-        widget.shifts.where((s) => s.containsTime(now)).toList(growable: false);
-    final upcoming = widget.shifts
-        .where((s) => !s.containsTime(now))
-        .toList(growable: false)
-      ..sort((a, b) {
-        final m = now.hour * 60 + now.minute;
-        int distance(int start) {
-          final d = start - m;
-          return d < 0 ? d + 1440 : d;
-        }
-
-        return distance(a.startMinutes).compareTo(distance(b.startMinutes));
-      });
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-      children: [
-        if (live.isEmpty)
-          _EmptyState(
-            icon: Icons.podcasts,
-            title: 'No active shifts right now',
-            message:
-                'When a shift window opens, you\'ll see live status, countdowns, and a confetti celebration when it ends.',
-          ),
-        for (final s in live)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: _LiveShiftPanel(
-              shift: s,
-              onConfettiNeeded: () {
-                if (_confettiShown[s.id] == true) return;
-                _confettiShown[s.id] = true;
-                _showConfetti(context);
-              },
-              onViewLogs: () => widget.onViewLogs(s),
-            ),
-          ),
-        if (upcoming.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-            child: Text(
-              'Upcoming today',
-              style: TextStyle(
-                color: t.muted,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-              ),
-            ),
-          ),
-          for (final s in upcoming.take(3))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _UpcomingRow(shift: s),
-            ),
-        ],
-      ],
+    return Material(
+      color: Colors.black.withValues(alpha: 0.34),
+      shape: const CircleBorder(),
+      child: IconButton(
+        icon: Icon(icon, color: Colors.white, size: 18),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+      ),
     );
-  }
-
-  void _showConfetti(BuildContext context) {
-    final overlay = Overlay.of(context);
-    final entry = OverlayEntry(builder: (_) => const _ConfettiOverlay());
-    overlay.insert(entry);
-    Future.delayed(const Duration(seconds: 4), entry.remove);
   }
 }
 
+// ────────────────────────── SCHEDULE VIEW ────────────────────────────────────
+// ────────────────────────── LIVE VIEW ────────────────────────────────────────
 class _LiveShiftPanel extends StatefulWidget {
   final ShiftModel shift;
   final VoidCallback onConfettiNeeded;
@@ -404,23 +516,83 @@ class _LiveShiftPanel extends StatefulWidget {
   State<_LiveShiftPanel> createState() => _LiveShiftPanelState();
 }
 
-
 class _LiveShiftPanelState extends State<_LiveShiftPanel> {
   bool _requestingHandover = false;
-  bool _generatingReport = false;
+  String? _exportingFormat;
   String? _handoverSummary;
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
     final now = DateTime.now();
-    final remaining = widget.shift.minutesRemaining(now) ?? 0;
-    final progress = widget.shift.progress(now);
+    final activeNow = widget.shift.containsTime(now);
+    final remaining = activeNow
+        ? widget.shift.minutesRemaining(now) ?? 0
+        : _minutesUntilStart(now);
+    final progress = activeNow ? widget.shift.progress(now) : 0.0;
+    final timeLabel = activeNow ? 'Time remaining' : 'Starts in';
 
-    if (remaining <= 0) {
+    if (activeNow && remaining <= 0) {
       WidgetsBinding.instance
           .addPostFrameCallback((_) => widget.onConfettiNeeded());
     }
+
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.timer, color: t.navy, size: 16),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                timeLabel,
+                style: TextStyle(
+                    color: t.muted, fontSize: 11, fontWeight: FontWeight.w700),
+              ),
+            ),
+            _CountdownText(minutes: remaining, color: t.navy),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 6,
+            backgroundColor: t.scaffold,
+            valueColor: AlwaysStoppedAnimation<Color>(
+                progress > 0.85 ? t.orange : t.navy),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _ReadinessGrid(shift: widget.shift),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: _ViewLogsButton(onTap: widget.onViewLogs)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _ShiftExportMenuButton(
+                exportingFormat: _exportingFormat,
+                onExcel: () => _generateReport('excel'),
+                onPdf: () => _generateReport('pdf'),
+                onCsv: () => _generateReport('csv'),
+              ),
+            ),
+          ],
+        ),
+        if (activeNow && remaining <= 30 && remaining > 0) ...[
+          const SizedBox(height: 10),
+          _HandoverBanner(
+            minutes: remaining,
+            requesting: _requestingHandover,
+            summary: _handoverSummary,
+            onGenerate: _generateHandover,
+          ),
+        ],
+      ],
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -437,83 +609,33 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Left: Shift card (compact)
-            SizedBox(
-              width: 220,
-              height: 140,
-              child: ShiftCard(shift: widget.shift, isActiveNow: true),
-            ),
-            const SizedBox(width: 16),
-            // Right: All info stacked
-            Expanded(
-              child: Column(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final stacked = constraints.maxWidth < 680;
+            final card = SizedBox(
+              width: stacked ? double.infinity : 220,
+              height: stacked ? 170 : 140,
+              child: ShiftCard(shift: widget.shift, isActiveNow: activeNow),
+            );
+            if (stacked) {
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Time remaining
-                  Row(
-                    children: [
-                      Icon(Icons.timer, color: t.navy, size: 16),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          'Time remaining',
-                          style: TextStyle(
-                              color: t.muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      _CountdownText(minutes: remaining, color: t.navy),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Progress bar
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      minHeight: 6,
-                      backgroundColor: t.scaffold,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                          progress > 0.85 ? t.orange : t.navy),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Readiness grid
-                  _ReadinessGrid(shift: widget.shift),
-                  const SizedBox(height: 10),
-                  // Buttons row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _ViewLogsButton(onTap: widget.onViewLogs),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _ReportButton(
-                          generating: _generatingReport,
-                          onGenerate: _generateReport,
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Handover banner (compact)
-                  if (remaining <= 30 && remaining > 0) ...[
-                    const SizedBox(height: 10),
-                    _HandoverBanner(
-                      minutes: remaining,
-                      requesting: _requestingHandover,
-                      summary: _handoverSummary,
-                      onGenerate: _generateHandover,
-                    ),
-                  ],
+                  card,
+                  const SizedBox(height: 14),
+                  details,
                 ],
-              ),
-            ),
-          ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                card,
+                const SizedBox(width: 16),
+                Expanded(child: details),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -531,24 +653,48 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
     });
   }
 
-  Future<void> _generateReport() async {
-    setState(() => _generatingReport = true);
+  int _minutesUntilStart(DateTime now) {
+    final current = now.hour * 60 + now.minute;
+    var delta = widget.shift.startMinutes - current;
+    if (delta < 0) delta += 1440;
+    return delta;
+  }
+
+  Future<void> _generateReport(String format) async {
+    setState(() => _exportingFormat = format);
     try {
-      await ShiftPdfService.exportAndShare(
-        shift: widget.shift,
-        day: DateTime.now(),
-      );
+      switch (format) {
+        case 'excel':
+          await ShiftPdfService.exportExcelAndShare(
+            shift: widget.shift,
+            day: DateTime.now(),
+          );
+          break;
+        case 'csv':
+          await ShiftPdfService.exportCsvAndShare(
+            shift: widget.shift,
+            day: DateTime.now(),
+          );
+          break;
+        case 'pdf':
+        default:
+          await ShiftPdfService.exportAndShare(
+            shift: widget.shift,
+            day: DateTime.now(),
+          );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to generate report: ${UserFriendlyError.message(e)}'),
+          content: Text(
+              'Failed to generate report: ${UserFriendlyError.message(e)}'),
           backgroundColor: context.appTheme.red,
         ),
       );
     }
     if (!mounted) return;
-    setState(() => _generatingReport = false);
+    setState(() => _exportingFormat = null);
   }
 }
 
@@ -562,8 +708,8 @@ class _CountdownText extends StatelessWidget {
     final h = (minutes ~/ 60).toString().padLeft(2, '0');
     final m = (minutes % 60).toString().padLeft(2, '0');
     return Text('${h}h ${m}m',
-        style: TextStyle(
-            color: color, fontSize: 18, fontWeight: FontWeight.w900));
+        style:
+            TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900));
   }
 }
 
@@ -602,9 +748,7 @@ class _HandoverBanner extends StatelessWidget {
                 child: Text(
                   'Shift ends in $minutes min — generate AI handover?',
                   style: TextStyle(
-                      color: t.text,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700),
+                      color: t.text, fontSize: 13, fontWeight: FontWeight.w700),
                 ),
               ),
               ElevatedButton.icon(
@@ -628,8 +772,7 @@ class _HandoverBanner extends StatelessWidget {
           if (summary != null) ...[
             const SizedBox(height: 10),
             Text(summary!,
-                style:
-                    TextStyle(color: t.text, fontSize: 12, height: 1.45)),
+                style: TextStyle(color: t.text, fontSize: 12, height: 1.45)),
           ],
         ],
       ),
@@ -663,15 +806,11 @@ class _ReadinessGrid extends StatelessWidget {
             const SizedBox(width: 6),
             Text('Readiness',
                 style: TextStyle(
-                    color: t.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700)),
+                    color: t.muted, fontSize: 12, fontWeight: FontWeight.w700)),
             const Spacer(),
             Text('$readyCount / ${shift.supervisors.length} ready',
                 style: TextStyle(
-                    color: t.navy,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800)),
+                    color: t.navy, fontSize: 13, fontWeight: FontWeight.w800)),
           ],
         ),
         const SizedBox(height: 8),
@@ -733,7 +872,8 @@ class _ReadyChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: sup.ready ? t.greenLt : t.scaffold,
           border: Border.all(
-              color: sup.ready ? t.green : t.border, width: sup.ready ? 1.5 : 1),
+              color: sup.ready ? t.green : t.border,
+              width: sup.ready ? 1.5 : 1),
           borderRadius: BorderRadius.circular(99),
         ),
         child: Row(
@@ -749,7 +889,7 @@ class _ReadyChip extends StatelessWidget {
                 boxShadow: [
                   if (sup.ready)
                     BoxShadow(
-                      color: t.green.withOpacity(0.7),
+                      color: t.green.withValues(alpha: 0.7),
                       blurRadius: 6,
                       spreadRadius: 1,
                     ),
@@ -772,76 +912,6 @@ class _ReadyChip extends StatelessWidget {
   }
 }
 
-class _UpcomingRow extends StatelessWidget {
-  final ShiftModel shift;
-  const _UpcomingRow({required this.shift});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    final now = DateTime.now();
-    final m = now.hour * 60 + now.minute;
-    int delta = shift.startMinutes - m;
-    if (delta < 0) delta += 1440;
-    final hh = (delta ~/ 60);
-    final mm = (delta % 60);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: t.card,
-        border: Border.all(color: t.border),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            switch (shift.kind) {
-              ShiftKind.morning => Icons.wb_sunny,
-              ShiftKind.afternoon => Icons.wb_twilight,
-              ShiftKind.night => Icons.nights_stay,
-            },
-            color: switch (shift.kind) {
-              ShiftKind.morning => t.yellow,
-              ShiftKind.afternoon => t.orange,
-              ShiftKind.night => t.navy,
-            },
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(shift.name,
-                    style: TextStyle(
-                        color: t.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700)),
-                Text(shift.timeRangeLabel,
-                    style: TextStyle(color: t.muted, fontSize: 11)),
-              ],
-            ),
-          ),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: t.navyLt,
-              borderRadius: BorderRadius.circular(99),
-            ),
-            child: Text(
-              hh > 0 ? 'in ${hh}h ${mm}m' : 'in $mm min',
-              style: TextStyle(
-                  color: t.navy,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ────────────────────────── TIMELINE VIEW ────────────────────────────────────
 class _TimelineView extends StatelessWidget {
   final List<ShiftModel> shifts;
@@ -854,7 +924,7 @@ class _TimelineView extends StatelessWidget {
     final nowMinutes = now.hour * 60 + now.minute + now.second / 60;
 
     if (shifts.isEmpty) {
-      return _EmptyState(
+      return const _EmptyState(
         icon: Icons.timeline,
         title: 'No timeline yet',
         message:
@@ -862,66 +932,50 @@ class _TimelineView extends StatelessWidget {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: t.card,
+        border: Border.all(color: t.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: t.card,
-              border: Border.all(color: t.border),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.access_time, color: t.navy, size: 18),
-                    const SizedBox(width: 6),
-                    Text('24-hour timeline',
-                        style: TextStyle(
-                            color: t.text,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    Text(
-                      _formatNow(now),
-                      style: TextStyle(
-                          color: t.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _TimelineStrip(
-                  shifts: shifts,
-                  nowMinutes: nowMinutes,
-                  isDark: context.isDark,
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _legendDot(const Color(0xFFFCD34D), 'Morning'),
-                    const SizedBox(width: 12),
-                    _legendDot(const Color(0xFFFB923C), 'Evening'),
-                    const SizedBox(width: 12),
-                    _legendDot(const Color(0xFF6366F1), 'Night'),
-                    const SizedBox(width: 12),
-                    _legendDot(t.green, 'Now'),
-                  ],
-                ),
-              ],
-            ),
+          Row(
+            children: [
+              Icon(Icons.access_time, color: t.navy, size: 18),
+              const SizedBox(width: 6),
+              Text('24-hour timeline',
+                  style: TextStyle(
+                      color: t.text,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800)),
+              const Spacer(),
+              Text(
+                _formatNow(now),
+                style: TextStyle(
+                    color: t.muted, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
-          ...shifts.map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _UpcomingRow(shift: s),
-              )),
+          _TimelineStrip(
+            shifts: shifts,
+            nowMinutes: nowMinutes,
+            isDark: context.isDark,
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              _legendDot(const Color(0xFFFCD34D), 'Morning'),
+              _legendDot(const Color(0xFFFB923C), 'Evening'),
+              _legendDot(const Color(0xFF6366F1), 'Night'),
+              _legendDot(t.green, 'Now'),
+            ],
+          ),
         ],
       ),
     );
@@ -934,12 +988,10 @@ class _TimelineView extends StatelessWidget {
         Container(
             width: 10,
             height: 10,
-            decoration:
-                BoxDecoration(color: c, shape: BoxShape.circle)),
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
         const SizedBox(width: 6),
         Text(label,
-            style: const TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w700)),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -1004,7 +1056,7 @@ class _TimelinePainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final trackY = h - 32;
-    final trackH = 22.0;
+    const trackH = 22.0;
 
     // Track background.
     final track = Paint()
@@ -1020,11 +1072,10 @@ class _TimelinePainter extends CustomPainter {
       final x2 = (endM / 1440.0) * w;
       final paint = Paint()
         ..shader = LinearGradient(
-          colors: [c.withOpacity(0.85), c.withOpacity(1.0)],
+          colors: [c.withValues(alpha: 0.85), c.withValues(alpha: 1.0)],
         ).createShader(Rect.fromLTWH(x1, trackY, x2 - x1, trackH));
       canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(x1, trackY, x2 - x1, trackH),
+        RRect.fromRectAndRadius(Rect.fromLTWH(x1, trackY, x2 - x1, trackH),
             const Radius.circular(6)),
         paint,
       );
@@ -1042,23 +1093,22 @@ class _TimelinePainter extends CustomPainter {
 
     // Hour ticks every 3 hours.
     final tickPaint = Paint()
-      ..color = (isDark ? Colors.white : Colors.black).withOpacity(0.18);
+      ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.18);
     final textStyle = TextStyle(
-      color: (isDark ? Colors.white : Colors.black).withOpacity(0.55),
+      color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.55),
       fontSize: 10,
       fontWeight: FontWeight.w700,
     );
     for (int hr = 0; hr <= 24; hr += 3) {
       final x = (hr / 24.0) * w;
-      canvas.drawLine(Offset(x, trackY - 6),
-          Offset(x, trackY + trackH + 4), tickPaint);
+      canvas.drawLine(
+          Offset(x, trackY - 6), Offset(x, trackY + trackH + 4), tickPaint);
       final tp = TextPainter(
         text: TextSpan(
             text: '${hr.toString().padLeft(2, '0')}h', style: textStyle),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(
-          canvas, Offset((x - tp.width / 2).clamp(0.0, w - tp.width), 6));
+      tp.paint(canvas, Offset((x - tp.width / 2).clamp(0.0, w - tp.width), 6));
     }
 
     // Now marker.
@@ -1066,13 +1116,12 @@ class _TimelinePainter extends CustomPainter {
     final nowGlow = Paint()
       ..shader = RadialGradient(
         colors: [
-          const Color(0xFF22C55E).withOpacity(0.6),
+          const Color(0xFF22C55E).withValues(alpha: 0.6),
           Colors.transparent,
         ],
       ).createShader(Rect.fromCircle(
           center: Offset(nowX, trackY + trackH / 2), radius: 24));
-    canvas.drawCircle(
-        Offset(nowX, trackY + trackH / 2), 24, nowGlow);
+    canvas.drawCircle(Offset(nowX, trackY + trackH / 2), 24, nowGlow);
     final nowLine = Paint()
       ..color = const Color(0xFF22C55E)
       ..strokeWidth = 2.4;
@@ -1081,9 +1130,7 @@ class _TimelinePainter extends CustomPainter {
       Offset(nowX, trackY + trackH + 8),
       nowLine,
     );
-    canvas.drawCircle(
-        Offset(nowX, trackY + trackH / 2),
-        5,
+    canvas.drawCircle(Offset(nowX, trackY + trackH / 2), 5,
         Paint()..color = const Color(0xFF22C55E));
   }
 
@@ -1126,17 +1173,14 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 16),
             Text(title,
                 style: TextStyle(
-                    color: t.text,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800)),
+                    color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Text(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: t.muted, fontSize: 13, height: 1.5),
+                style: TextStyle(color: t.muted, fontSize: 13, height: 1.5),
               ),
             ),
           ],
@@ -1195,7 +1239,7 @@ class _PulsingFabState extends State<_PulsingFab>
                     height: 40 + ((t + i * 0.5) % 1.0) * 50,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: widget.color.withOpacity(0.4),
+                      color: widget.color.withValues(alpha: 0.4),
                     ),
                   ),
                 ),
@@ -1214,7 +1258,7 @@ class _PulsingFabState extends State<_PulsingFab>
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: widget.color.withOpacity(0.6),
+                          color: widget.color.withValues(alpha: 0.6),
                           blurRadius: 18,
                           spreadRadius: 1,
                         ),
@@ -1323,12 +1367,14 @@ class _ConfettiPainter extends CustomPainter {
       if (localT <= 0) continue;
       final y = -20 + localT * (size.height + 40);
       final x = p.x * size.width + math.sin(localT * 6) * 30;
-      final paint = Paint()..color = p.color.withOpacity(1 - localT * 0.4);
+      final paint = Paint()
+        ..color = p.color.withValues(alpha: 1 - localT * 0.4);
       canvas.save();
       canvas.translate(x, y);
       canvas.rotate(localT * p.spin * 6.28);
       canvas.drawRect(
-          Rect.fromCenter(center: Offset.zero, width: p.size, height: p.size * 0.5),
+          Rect.fromCenter(
+              center: Offset.zero, width: p.size, height: p.size * 0.5),
           paint);
       canvas.restore();
     }
@@ -1349,7 +1395,7 @@ class _ViewLogsButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onTap,
       icon: const Icon(Icons.history, size: 14),
-      label: const Text('Logs'),
+      label: const Text('AI logs'),
       style: OutlinedButton.styleFrom(
         foregroundColor: t.navy,
         side: BorderSide(color: t.navy.withValues(alpha: 0.3)),
@@ -1363,31 +1409,241 @@ class _ViewLogsButton extends StatelessWidget {
 }
 
 // ────────────────────────── REPORT BUTTON ───────────────────────────────────
-class _ReportButton extends StatelessWidget {
-  final bool generating;
-  final VoidCallback onGenerate;
-  const _ReportButton({required this.generating, required this.onGenerate});
+class _ShiftExportMenuButton extends StatelessWidget {
+  final String? exportingFormat;
+  final VoidCallback onExcel;
+  final VoidCallback onPdf;
+  final VoidCallback onCsv;
+
+  const _ShiftExportMenuButton({
+    required this.exportingFormat,
+    required this.onExcel,
+    required this.onPdf,
+    required this.onCsv,
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    return ElevatedButton.icon(
-      onPressed: generating ? null : onGenerate,
-      icon: generating
-          ? const SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.white))
-          : const Icon(Icons.file_download, size: 14, color: Colors.white),
-      label: Text(generating ? 'Generating…' : 'Export'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: t.orange,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        minimumSize: const Size(0, 32),
-        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+    final isDark = context.isDark;
+    final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
+    final borderColor =
+        isDark ? const Color(0xFF3A3A5C) : const Color(0xFFDDE1EC);
+    final busy = exportingFormat != null;
+
+    return MenuAnchor(
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(baseBg),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: borderColor),
+          ),
+        ),
+        elevation: const WidgetStatePropertyAll(4),
+        padding:
+            const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+      ),
+      menuChildren: [
+        _ShiftExportMenuItem(
+          icon: _excelIcon(),
+          label: 'Excel',
+          hoverColor: const Color(0xFF1D6F42),
+          onTap: busy ? null : onExcel,
+          baseBg: baseBg,
+          baseText: baseText,
+        ),
+        _ShiftExportMenuItem(
+          icon: _pdfIcon(),
+          label: 'PDF',
+          hoverColor: const Color(0xFFEC1C24),
+          onTap: busy ? null : onPdf,
+          baseBg: baseBg,
+          baseText: baseText,
+        ),
+        _ShiftExportMenuItem(
+          icon: Icon(Icons.table_chart_outlined, size: 16, color: baseText),
+          label: 'CSV',
+          hoverColor: const Color(0xFF0072C6),
+          onTap: busy ? null : onCsv,
+          baseBg: baseBg,
+          baseText: baseText,
+        ),
+      ],
+      builder: (context, controller, _) => OutlinedButton.icon(
+        onPressed: busy
+            ? null
+            : () => controller.isOpen ? controller.close() : controller.open(),
+        icon: busy
+            ? SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(strokeWidth: 2, color: t.navy),
+              )
+            : Icon(Icons.download_outlined, size: 15, color: t.navy),
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              busy ? 'Exporting ${exportingFormat!.toUpperCase()}' : 'Export',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: t.navy,
+              ),
+            ),
+            if (!busy) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down, size: 16, color: t.navy),
+            ],
+          ],
+        ),
+        style: OutlinedButton.styleFrom(
+          backgroundColor: baseBg,
+          side: BorderSide(color: borderColor),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+          minimumSize: const Size(0, 32),
+        ),
+      ),
+    );
+  }
+
+  Widget _pdfIcon() => Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 18,
+            height: 20,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEC1C24),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(3),
+                bottomLeft: Radius.circular(3),
+                bottomRight: Radius.circular(3),
+                topRight: Radius.circular(7),
+              ),
+            ),
+          ),
+          const Positioned(
+            top: 0,
+            right: 0,
+            child: SizedBox(
+              width: 7,
+              height: 7,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color(0xFFB71C1C),
+                  borderRadius: BorderRadius.only(
+                    topRight: Radius.circular(3),
+                    bottomLeft: Radius.circular(3),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const Text(
+            'PDF',
+            style: TextStyle(
+              fontSize: 5,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      );
+
+  Widget _excelIcon() => Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 18,
+            height: 20,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1D6F42),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          const Text(
+            'X',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      );
+}
+
+class _ShiftExportMenuItem extends StatefulWidget {
+  final Widget icon;
+  final String label;
+  final Color hoverColor;
+  final VoidCallback? onTap;
+  final Color baseBg;
+  final Color baseText;
+
+  const _ShiftExportMenuItem({
+    required this.icon,
+    required this.label,
+    required this.hoverColor,
+    required this.onTap,
+    required this.baseBg,
+    required this.baseText,
+  });
+
+  @override
+  State<_ShiftExportMenuItem> createState() => _ShiftExportMenuItemState();
+}
+
+class _ShiftExportMenuItemState extends State<_ShiftExportMenuItem> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) {
+        if (enabled) setState(() => _hover = true);
+      },
+      onExit: (_) {
+        if (enabled) setState(() => _hover = false);
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: _hover
+                ? widget.hoverColor.withValues(alpha: 0.12)
+                : widget.baseBg,
+            border: Border(
+              left: BorderSide(
+                color: _hover ? widget.hoverColor : Colors.transparent,
+                width: 3,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              widget.icon,
+              const SizedBox(width: 10),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _hover ? widget.hoverColor : widget.baseText,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
