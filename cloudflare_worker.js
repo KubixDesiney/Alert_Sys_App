@@ -221,7 +221,7 @@ function buildSupStats(alertsMap = {}) {
   return stats;
 }
 
-function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now) {
+function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now, { isCommander = false } = {}) {
   let score = 0;
   const reasons = [];
   const supFactory = aiSanitizeFactoryId(sup?.usine || sup?.factoryId || '');
@@ -233,7 +233,9 @@ function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, 
   if (alertFactory && supFactory && alertFactory === supFactory) {
     score += 30;
     reasons.push('Same factory (+30)');
-  } else {
+  } else if (!isCommander) {
+    // Under AI Shift Commander the cross-factory penalty is waived so that
+    // experienced shift members from other factories can compete fairly.
     score -= 25;
     reasons.push('Different factory (−25)');
   }
@@ -1102,86 +1104,117 @@ function aiResolveFactory(obj) {
 
 async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env, token, allCandidates = []) {
   const alertUrl = `${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`;
-  const getRes = await fetch(alertUrl, { headers: { 'X-Firebase-ETag': 'true' } });
-  if (!getRes.ok) return false;
-  const etag = getRes.headers.get('ETag');
-  const current = await getRes.json();
-  if (!current || current.status !== 'disponible' || current.superviseurId) return false;
-  const nowIso = new Date().toISOString();
-  const putRes = await fetch(alertUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'if-match': etag },
-    body: JSON.stringify({
-      ...current,
-      status: 'en_cours',
-      superviseurId: supervisor.uid,
-      superviseurName: supervisor.name,
-      takenAtTimestamp: nowIso,
-      aiAssigned: true,
-      aiAssignmentReason: reasonSummary,
-      aiConfidence: confidence,
-      aiAssignedAt: nowIso,
-      push_sent: true,
-    }),
-  });
-  if (putRes.status === 412 || !putRes.ok) return false;
-  const cooldownUntil = new Date(Date.now() + AI_COOLDOWN_MS).toISOString();
-  await Promise.allSettled([
-    fetch(`${env.FB_DB_URL}users/${supervisor.uid}/aiCooldownUntil.json?auth=${token}`, {
+  // Deterministic idempotency key — stable for a given alert+supervisor within the same minute.
+  const actionId = `worker_${alertId}_${Math.floor(Date.now() / 60000)}`;
+
+  // Skip if this exact action was already persisted this minute (duplicate cron tick guard).
+  try {
+    const existingRes = await fetch(`${env.FB_DB_URL}ai_decisions/${alertId}/actionId.json?auth=${token}`);
+    if (existingRes.ok) {
+      const existingId = await existingRes.json();
+      if (existingId === actionId) {
+        console.log(`[AI-ASSIGN] Idempotency skip: ${actionId} already recorded`);
+        return false;
+      }
+    }
+  } catch (_) { /* non-fatal — proceed */ }
+
+  // Retry loop: attempt the ETag-guarded PUT up to twice.
+  // On a 412 (concurrent write) we re-fetch a fresh ETag and try once more.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const getRes = await fetch(alertUrl, { headers: { 'X-Firebase-ETag': 'true' } });
+    if (!getRes.ok) return false;
+    const etag = getRes.headers.get('ETag');
+    const current = await getRes.json();
+    if (!current || current.status !== 'disponible' || current.superviseurId) return false;
+
+    const nowIso = new Date().toISOString();
+    const putRes = await fetch(alertUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cooldownUntil),
-    }),
-    fetch(`${env.FB_DB_URL}alerts/${alertId}/aiHistory.json?auth=${token}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'if-match': etag },
       body: JSON.stringify({
-        event: 'assigned_worker',
-        supervisorId: supervisor.uid,
-        supervisorName: supervisor.name,
-        reason: reasonSummary,
-        confidence,
-        timestamp: nowIso,
+        ...current,
+        status: 'en_cours',
+        superviseurId: supervisor.uid,
+        superviseurName: supervisor.name,
+        takenAtTimestamp: nowIso,
+        aiAssigned: true,
+        aiAssignmentReason: reasonSummary,
+        aiConfidence: confidence,
+        aiAssignedAt: nowIso,
+        push_sent: true,
       }),
-    }),
-    fetch(`${env.FB_DB_URL}ai_decisions/${alertId}.json?auth=${token}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        alertId,
-        assignedTo: supervisor.uid,
-        assignedToName: supervisor.name,
-        confidence,
-        reasonSummary,
-        breakdown: supervisor.reasons || [],
-        decisionMode: 'worker_auto',
-        timestamp: nowIso,
-        // Full candidate list so the app can show "why not others".
-        consideredCandidates: allCandidates.map((c) => ({
-          supervisorId: c.uid,
-          name: c.name,
-          score: c.score,
-          reasons: c.reasons || [],
-          skipReason: c.skipReason ?? null,
-        })),
+    });
+
+    if (putRes.status === 412) {
+      console.log(`[AI-ASSIGN] ETag mismatch attempt ${attempt} for alert ${alertId}`);
+      if (attempt < 2) continue; // re-fetch and retry once
+      return false;
+    }
+    if (!putRes.ok) return false;
+
+    // Assignment succeeded — persist side-effects fire-and-forget.
+    const cooldownUntil = new Date(Date.now() + AI_COOLDOWN_MS).toISOString();
+    await Promise.allSettled([
+      fetch(`${env.FB_DB_URL}users/${supervisor.uid}/aiCooldownUntil.json?auth=${token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cooldownUntil),
       }),
-    }),
-  ]);
-  if (supervisor.fcmToken) {
-    await sendFcm(
-      supervisor.fcmToken,
-      'AI Assignment',
-      `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`,
-      {
-        type: 'ai_assigned',
-        alertId: String(alertId),
-        recipientId: String(supervisor.uid),
-        reason: reasonSummary,
-      },
-      env,
-    );
+      fetch(`${env.FB_DB_URL}alerts/${alertId}/aiHistory.json?auth=${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'assigned_worker',
+          supervisorId: supervisor.uid,
+          supervisorName: supervisor.name,
+          reason: reasonSummary,
+          confidence,
+          actionId,
+          timestamp: nowIso,
+        }),
+      }),
+      fetch(`${env.FB_DB_URL}ai_decisions/${alertId}.json?auth=${token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          alertId,
+          assignedTo: supervisor.uid,
+          assignedToName: supervisor.name,
+          confidence,
+          reasonSummary,
+          breakdown: supervisor.reasons || [],
+          decisionMode: 'worker_auto',
+          actionId,
+          timestamp: nowIso,
+          // Full candidate list so the app can show "why not others".
+          consideredCandidates: allCandidates.map((c) => ({
+            supervisorId: c.uid,
+            name: c.name,
+            score: c.score,
+            reasons: c.reasons || [],
+            skipReason: c.skipReason ?? null,
+          })),
+        }),
+      }),
+    ]);
+    if (supervisor.fcmToken) {
+      await sendFcm(
+        supervisor.fcmToken,
+        'AI Assignment',
+        `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`,
+        {
+          type: 'ai_assigned',
+          alertId: String(alertId),
+          recipientId: String(supervisor.uid),
+          reason: reasonSummary,
+        },
+        env,
+      );
+    }
+    return true;
   }
-  return true;
+  return false;
 }
 
 async function runAIAssignments(env, ctx) {
@@ -1273,17 +1306,17 @@ async function runAIAssignments(env, ctx) {
       const cooldown = Date.parse(String(u.aiCooldownUntil || ''));
       if (!isNaN(cooldown) && cooldown > now) continue;
       const userFactory = aiResolveFactory(u);
-      // Under AI Commander, allow cross-factory candidates that are part of
-      // the shift roster (so the worker can do cross-factory transfers
-      // without PM approval). Otherwise, restrict to same-factory.
-      const sameFactory = userFactory && userFactory === factoryId;
-      const isShiftMember = aiCommander && shiftSupervisorIds.has(uid);
-      if (!sameFactory && !isShiftMember) continue;
-      // Honor max-per-shift cap when AI Commander is active.
-      if (aiCommander && shiftMaxSupervisors != null && shiftSupervisorIds.size > 0 && !shiftSupervisorIds.has(uid)) {
-        continue;
+
+      if (aiCommander) {
+        // Under AI Commander, ONLY assign supervisors in this shift's roster.
+        // Cross-factory transfers are allowed but the person must be a shift member.
+        if (!shiftSupervisorIds.has(uid)) continue;
+      } else {
+        // Normal mode: same factory only.
+        if (!userFactory || userFactory !== factoryId) continue;
       }
-      candidates.push({ ...u, uid, _shiftMember: isShiftMember });
+
+      candidates.push({ ...u, uid });
     }
     if (candidates.length === 0) continue;
     const recentCounts = {};
@@ -1301,29 +1334,31 @@ async function runAIAssignments(env, ctx) {
         feedbackSummary,
         recent,
         now,
+        { isCommander: aiCommander },
       );
       return { uid: u.uid, name: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(), fcmToken: u.fcmToken, score, reasons };
     });
-    if (shiftRandomize) {
-      // Fisher–Yates shuffle so the AI Commander picks a random eligible
-      // supervisor instead of always the highest-scoring one.
-      for (let k = scored.length - 1; k > 0; k--) {
-        const j = Math.floor(Math.random() * (k + 1));
-        const tmp = scored[k];
-        scored[k] = scored[j];
-        scored[j] = tmp;
-      }
-    } else {
-      scored.sort((a, b) => b.score - a.score);
-    }
-    const best = scored[0];
+
+    // Step 1: sort by score so the confidence calculation reflects the true best candidates.
+    scored.sort((a, b) => b.score - a.score);
+
+    // Step 2: check confidence floor against the sorted pool BEFORE any shuffle.
+    // This ensures a randomly-ordered low-score pick can never falsely block a valid pool.
     const topSum = scored.slice(0, 3).reduce((s, c) => s + c.score, 0);
-    const confidence = topSum > 0 ? Math.min(best.score / topSum, 1.0) : 1.0;
+    const confidence = topSum > 0 ? Math.min(scored[0].score / topSum, 1.0) : 1.0;
     if (aiCommander && shiftConfidenceFloor > 0 && confidence < shiftConfidenceFloor) {
-      // Don't act when AI Commander confidence is below the configured floor.
       console.log(`[SHIFT-AI] Skipping: confidence ${confidence.toFixed(2)} < floor ${shiftConfidenceFloor.toFixed(2)}`);
       continue;
     }
+
+    // Step 3: optionally shuffle so the AI Commander picks randomly from the confident pool.
+    if (shiftRandomize) {
+      for (let k = scored.length - 1; k > 0; k--) {
+        const j = Math.floor(Math.random() * (k + 1));
+        const tmp = scored[k]; scored[k] = scored[j]; scored[j] = tmp;
+      }
+    }
+    const best = scored[0];
     let reasonSummary = best.reasons.join(' • ');
     if (aiCommander) {
       reasonSummary = `[Shift "${activeShift.name || activeShift.id}"] ` + reasonSummary;
@@ -1331,6 +1366,7 @@ async function runAIAssignments(env, ctx) {
     const ok = await aiAssignAlert(alert.id, best, reasonSummary, confidence, env, token, scored);
     if (ok) { busy.add(best.uid); assignedCount++; }
   }
+  return assignedCount;
 }
 
 // ============ Shift collaboration auto-approve ============
@@ -1355,14 +1391,20 @@ async function processShiftCollaborations(env, ctx) {
     if (req.status && req.status !== 'pending' && req.status !== 'awaiting_pm') continue;
     if (req.pmApproved === true || req.pmApproved === false) continue;
 
-    // All assistants must have accepted before AI takes action.
+    // Require a minimum fraction of assistants to have accepted.
+    // Using a fraction (vs strict "every") lets the confidence floor act as the threshold.
     const assistantDecisions = req.assistantDecisions
       ? Object.values(req.assistantDecisions)
       : [];
-    const accepted = assistantDecisions.every(
+    if (assistantDecisions.length === 0) continue;
+    const acceptedCount = assistantDecisions.filter(
       (d) => d && (d === 'accepted' || d.status === 'accepted'),
-    );
-    if (!accepted || assistantDecisions.length === 0) continue;
+    ).length;
+    const collabConfidence = acceptedCount / assistantDecisions.length;
+    if (collabConfidence < minConfidence) {
+      console.log(`[SHIFT-COLLAB] Skipping ${reqId}: confidence ${collabConfidence.toFixed(2)} < floor ${minConfidence.toFixed(2)}`);
+      continue;
+    }
 
     const nowIso = new Date().toISOString();
     const patch = {
@@ -1404,6 +1446,7 @@ async function processShiftCollaborations(env, ctx) {
       }
     }
   }
+  return processed;
 }
 
 // ============ Workers AI shift handover ============
@@ -1460,14 +1503,15 @@ async function generateShiftHandoverSummary(env, ctx, shift) {
   return { summary, resolved, pending, critical };
 }
 
-// Detects shifts that are within ~3 minutes of ending and have AI Commander
-// enabled. For each such shift we generate a handover summary once and fan
-// it out to the supervisors. Idempotent via lastHandoverAt timestamp.
+// Detects shifts within ~10 minutes of ending with AI Commander enabled and
+// generates a handover summary exactly once (idempotent: skips if one was
+// already produced within the last 15 minutes).
 async function processShiftEnding(env, ctx) {
   const shiftsMap = ctx?.shiftsMap;
-  if (!shiftsMap) return;
+  if (!shiftsMap) return 0;
   const now = new Date();
   const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+  let handoverCount = 0;
   for (const [id, shift] of Object.entries(shiftsMap || {})) {
     if (!shift || shift.aiCommander !== true) continue;
     if (!_shiftContainsTime(shift, nowMin)) continue;
@@ -1476,10 +1520,10 @@ async function processShiftEnding(env, ctx) {
     const endAbs = e >= s ? e : 1440 + e;
     const nowAbs = nowMin >= s ? nowMin : 1440 + nowMin;
     const minsToEnd = endAbs - nowAbs;
-    if (minsToEnd > 3 || minsToEnd < 0) continue;
-    // Skip if a handover was generated within the last 30 minutes.
+    if (minsToEnd > 10 || minsToEnd < 0) continue;
+    // Skip if a handover was already generated within the last 15 minutes.
     const lastIso = shift.lastHandoverAt;
-    if (lastIso && Date.now() - Date.parse(lastIso) < 30 * 60 * 1000) continue;
+    if (lastIso && Date.now() - Date.parse(lastIso) < 15 * 60 * 1000) continue;
     const result = await generateShiftHandoverSummary(env, ctx, { id, ...shift });
     const nowIso = new Date().toISOString();
     await fetch(`${env.FB_DB_URL}shifts/${id}.json?auth=${ctx.token}`, {
@@ -1508,7 +1552,9 @@ async function processShiftEnding(env, ctx) {
         }),
       });
     }
+    handoverCount++;
   }
+  return handoverCount;
 }
 
 async function handleShiftAiAction(request, env) {
@@ -1712,23 +1758,99 @@ function handleConfigRequest() {
   });
 }
 
+// ============ Health monitoring helper ============
+async function _writeCronHealth(token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors }) {
+  if (!token || !env?.FB_DB_URL) return;
+  try {
+    await fetch(`${env.FB_DB_URL}workers/health/lastRun.json?auth=${token}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        assignmentsMade,
+        collaborationsApproved,
+        handoversGenerated,
+        errors,
+        durationMs: Date.now() - runStart,
+      }),
+    });
+  } catch (e) {
+    console.error('[CRON] Health write failed: ' + e.message);
+  }
+}
+
 // ============ Main export ============
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(
       (async () => {
+        const runStart = Date.now();
+        const healthErrors = [];
+        let assignmentsMade = 0;
+        let collaborationsApproved = 0;
+        let handoversGenerated = 0;
+        let cronToken;
+        let lockUrl;
+
+        // ── Step 1: acquire cron lock to prevent overlapping executions ─────────
+        // Uses ETag optimistic locking on a Firebase node. If the last lock
+        // timestamp is < 55 s old, another execution is still in flight — skip.
+        try {
+          cronToken = await getFirebaseToken(env);
+          lockUrl = `${env.FB_DB_URL}cron_lock/latest.json?auth=${cronToken}`;
+          const lockGet = await fetch(lockUrl, { headers: { 'X-Firebase-ETag': 'true' } });
+          const lockEtag = lockGet.ok ? lockGet.headers.get('ETag') : null;
+          const lockData = lockGet.ok ? (await lockGet.json()) : null;
+          if (lockData && typeof lockData.ts === 'number' && Date.now() - lockData.ts < 55000) {
+            console.log('[CRON] Skipping: another execution in flight (' + (Date.now() - lockData.ts) + 'ms ago)');
+            return;
+          }
+          const lockPut = await fetch(lockUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'if-match': lockEtag ?? '*' },
+            body: JSON.stringify({ ts: Date.now() }),
+          });
+          if (lockPut.status === 412) {
+            console.log('[CRON] Skipping: concurrent execution acquired lock');
+            return;
+          }
+        } catch (e) {
+          console.warn('[CRON] Lock acquisition failed, proceeding anyway: ' + e.message);
+          healthErrors.push('lock: ' + e.message);
+        }
+
+        // ── Step 2: load shared data and run all cron tasks ──────────────────────
         let coreCtx;
         try {
           coreCtx = await loadCoreData(env);
         } catch (e) {
           console.error('[CRON] Failed to load core data: ' + e.message);
+          healthErrors.push('loadCoreData: ' + e.message);
+          await _writeCronHealth(cronToken, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors });
+          if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
           return;
         }
-        await processAlerts(env, coreCtx);
-        await checkEscalations(env, coreCtx);
-        await runAIAssignments(env, coreCtx);
-        await processShiftCollaborations(env, coreCtx);
-        await processShiftEnding(env, coreCtx);
+
+        try { await processAlerts(env, coreCtx); }
+        catch (e) { console.error('[CRON] processAlerts: ' + e.message); healthErrors.push('processAlerts: ' + e.message); }
+
+        try { await checkEscalations(env, coreCtx); }
+        catch (e) { console.error('[CRON] checkEscalations: ' + e.message); healthErrors.push('checkEscalations: ' + e.message); }
+
+        try { assignmentsMade = (await runAIAssignments(env, coreCtx)) ?? 0; }
+        catch (e) { console.error('[CRON] runAIAssignments: ' + e.message); healthErrors.push('runAIAssignments: ' + e.message); }
+
+        try { collaborationsApproved = (await processShiftCollaborations(env, coreCtx)) ?? 0; }
+        catch (e) { console.error('[CRON] processShiftCollaborations: ' + e.message); healthErrors.push('processShiftCollaborations: ' + e.message); }
+
+        try { handoversGenerated = (await processShiftEnding(env, coreCtx)) ?? 0; }
+        catch (e) { console.error('[CRON] processShiftEnding: ' + e.message); healthErrors.push('processShiftEnding: ' + e.message); }
+
+        // ── Step 3: write health pulse ────────────────────────────────────────────
+        await _writeCronHealth(coreCtx.token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors });
+
+        // ── Step 4: release lock ──────────────────────────────────────────────────
+        if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
       })(),
     );
   },
@@ -1801,5 +1923,6 @@ export {
   _typeName,
   pickActiveShift,
   _shiftContainsTime,
+  _writeCronHealth,
 };
 
