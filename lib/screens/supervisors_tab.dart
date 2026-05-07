@@ -21,7 +21,6 @@ const _border = adminBorder;
 const _muted = adminMuted;
 const _text = adminText;
 const _green = adminGreen;
-const _greenLt = adminGreenLt;
 const _orange = adminOrange;
 const _blue = adminBlue;
 
@@ -151,6 +150,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
             ),
             _AssignmentsSubTab(
               supervisors: widget.supervisors,
+              onRefresh: widget.onRefresh,
             ),
           ],
         ),
@@ -405,62 +405,63 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Supervisor Performance',
+        Text('Supervisor Performance',
             style: TextStyle(
-                fontSize: 19, fontWeight: FontWeight.w800, color: _text)),
+                fontSize: 19, fontWeight: FontWeight.w800, color: t.text)),
         const SizedBox(height: 2),
-        const Text('Analyse alert validations per supervisor',
-            style: TextStyle(fontSize: 13, color: _muted)),
+        Text('Analyse alert validations per supervisor',
+            style: TextStyle(fontSize: 13, color: t.muted)),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-              color: context.appTheme.card,
-              border: Border.all(color: context.appTheme.border),
+              color: t.card,
+              border: Border.all(color: t.border),
               borderRadius: BorderRadius.circular(12)),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Select a supervisor',
+            Text('Select a supervisor',
                 style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: _text)),
+                    fontSize: 13, fontWeight: FontWeight.w600, color: t.text)),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                  color: context.appTheme.scaffold,
-                  border: Border.all(color: context.appTheme.border),
+                  color: t.scaffold,
+                  border: Border.all(color: t.border),
                   borderRadius: BorderRadius.circular(9)),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<UserModel>(
                   isExpanded: true,
                   value: _selected,
-                  hint: const Text('Choose a supervisor…',
-                      style: TextStyle(color: _muted, fontSize: 14)),
-                  dropdownColor: _white,
+                  hint: Text('Choose a supervisor…',
+                      style: TextStyle(color: t.muted, fontSize: 14)),
+                  dropdownColor: t.card,
                   items: widget.supervisors
                       .map((s) => DropdownMenuItem(
                             value: s,
                             child: Row(children: [
-                              const Icon(Icons.person_outline,
-                                  size: 16, color: _navy),
+                              Icon(Icons.person_outline,
+                                  size: 16, color: t.navy),
                               const SizedBox(width: 8),
                               Text(s.fullName,
-                                  style: const TextStyle(
-                                      fontSize: 14, color: _text)),
+                                  style: TextStyle(
+                                      fontSize: 14, color: t.text)),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 2),
                                 decoration: BoxDecoration(
-                                    color: _navyLt,
+                                    color: t.navyLt,
                                     borderRadius: BorderRadius.circular(99)),
                                 child: Text(s.usine,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 11,
-                                        color: _navy,
+                                        color: t.navy,
                                         fontWeight: FontWeight.w600)),
                               ),
                             ]),
@@ -481,20 +482,19 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               Container(
                 width: 64,
                 height: 64,
-                decoration: const BoxDecoration(
-                    color: Color(0xFFF1F5F9), shape: BoxShape.circle),
-                child: const Icon(Icons.person_search,
-                    size: 32, color: _muted),
+                decoration: BoxDecoration(
+                    color: t.scaffold, shape: BoxShape.circle),
+                child: Icon(Icons.person_search, size: 32, color: t.muted),
               ),
               const SizedBox(height: 14),
-              const Text('Choose a supervisor',
+              Text('Choose a supervisor',
                   style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: _muted)),
+                      color: t.muted)),
               const SizedBox(height: 4),
-              const Text('Select a supervisor above to see their statistics',
-                  style: TextStyle(fontSize: 12, color: _muted)),
+              Text('Select a supervisor above to see their statistics',
+                  style: TextStyle(fontSize: 12, color: t.muted)),
             ]),
           ),
         if (_selected != null) ...[
@@ -504,8 +504,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               child: Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                    color: context.appTheme.card,
-                    border: Border.all(color: context.appTheme.border),
+                    color: t.card,
+                    border: Border.all(color: t.border),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
                       BoxShadow(
@@ -516,29 +516,29 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Fixed Alerts',
-                          style: TextStyle(fontSize: 12, color: _muted)),
+                      Text('Fixed Alerts',
+                          style: TextStyle(fontSize: 12, color: t.muted)),
                       const SizedBox(height: 6),
                       Row(children: [
                         Text('${_solved.length}',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 40,
                                 fontWeight: FontWeight.w800,
-                                color: _navy,
+                                color: t.navy,
                                 height: 1)),
                         const Spacer(),
                         Container(
                           width: 48,
                           height: 48,
-                          decoration: const BoxDecoration(
-                              color: Color(0xFFEFF6FF), shape: BoxShape.circle),
-                          child: const Icon(Icons.check_circle_outline,
-                              color: _blue, size: 24),
+                          decoration: BoxDecoration(
+                              color: t.blueLt, shape: BoxShape.circle),
+                          child: Icon(Icons.check_circle_outline,
+                              color: t.blue, size: 24),
                         ),
                       ]),
-                      const Divider(height: 20, color: _border),
-                      const Text('Distribution by Factory:',
-                          style: TextStyle(fontSize: 11, color: _muted)),
+                      Divider(height: 20, color: t.border),
+                      Text('Distribution by Factory:',
+                          style: TextStyle(fontSize: 11, color: t.muted)),
                       const SizedBox(height: 8),
                       Wrap(
                           spacing: 8,
@@ -549,32 +549,32 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                                     padding:
                                         const EdgeInsets.fromLTRB(10, 7, 14, 7),
                                     decoration: BoxDecoration(
-                                        color: _navyLt,
+                                        color: t.navyLt,
                                         border: Border.all(
-                                            color: const Color(0xFFBFDBFE)),
+                                            color: t.navy.withOpacity(0.3)),
                                         borderRadius: BorderRadius.circular(8)),
                                     child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Icon(Icons.bar_chart,
-                                              size: 14, color: _navy),
+                                          Icon(Icons.bar_chart,
+                                              size: 14, color: t.navy),
                                           const SizedBox(width: 6),
                                           Column(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
                                               children: [
                                                 Text(e.key,
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                         fontSize: 11,
-                                                        color: _navy,
+                                                        color: t.navy,
                                                         fontWeight:
                                                             FontWeight.w600)),
                                                 Text('${e.value}',
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                         fontSize: 16,
                                                         fontWeight:
                                                             FontWeight.w800,
-                                                        color: _navy)),
+                                                        color: t.navy)),
                                               ]),
                                         ]),
                                   ))
@@ -587,8 +587,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               child: Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                    color: context.appTheme.card,
-                    border: Border.all(color: context.appTheme.border),
+                    color: t.card,
+                    border: Border.all(color: t.border),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
                       BoxShadow(
@@ -599,25 +599,24 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Average Time',
-                          style: TextStyle(fontSize: 12, color: _muted)),
+                      Text('Average Time',
+                          style: TextStyle(fontSize: 12, color: t.muted)),
                       const SizedBox(height: 6),
                       Row(children: [
                         Expanded(
                           child: Text(_avgMin == null ? '—' : _fmtMin(_avgMin!),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w800,
-                                  color: _green,
+                                  color: t.green,
                                   height: 1)),
                         ),
                         Container(
                           width: 48,
                           height: 48,
-                          decoration: const BoxDecoration(
-                              color: Color(0xFFDCFCE7), shape: BoxShape.circle),
-                          child: const Icon(Icons.timer,
-                              color: _green, size: 24),
+                          decoration: BoxDecoration(
+                              color: t.greenLt, shape: BoxShape.circle),
+                          child: Icon(Icons.timer, color: t.green, size: 24),
                         ),
                       ]),
                     ]),
@@ -631,9 +630,9 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             'maintenance',
             'defaut_produit',
             'manque_ressource'
-          ].map((t) {
-            final ts = _typeStats()[t]!;
-            final clr = _typeColor(t);
+          ].map((tp) {
+            final ts = _typeStats()[tp]!;
+            final clr = _typeColor(tp);
             final tot = ts.validated + ts.notValidated;
             final pct = tot == 0 ? 0 : (ts.validated / tot * 100).round();
             return Expanded(
@@ -642,7 +641,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                    color: context.appTheme.card,
+                    color: t.card,
                     border: Border.all(color: clr.withValues(alpha: .25)),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: const [
@@ -656,7 +655,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                     children: [
                       Row(children: [
                         Expanded(
-                            child: Text(_typeLabel(t),
+                            child: Text(_typeLabel(tp),
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -690,7 +689,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                           color: _orange),
                       const SizedBox(height: 6),
                       Text('$pct% validated',
-                          style: const TextStyle(fontSize: 10, color: _muted)),
+                          style: TextStyle(fontSize: 10, color: t.muted)),
                     ]),
               ),
             ));
@@ -699,8 +698,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-                color: context.appTheme.card,
-                border: Border.all(color: context.appTheme.border),
+                color: t.card,
+                border: Border.all(color: t.border),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: const [
                   BoxShadow(
@@ -711,10 +710,9 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                const Icon(Icons.calendar_today,
-                    size: 15, color: _navy),
+                Icon(Icons.calendar_today, size: 15, color: t.navy),
                 const SizedBox(width: 8),
-                const Expanded(
+                Expanded(
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -722,26 +720,30 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                           style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: _text)),
+                              color: t.text)),
                       Text('Number of alerts validated per day',
-                          style: TextStyle(fontSize: 11, color: _muted)),
+                          style: TextStyle(fontSize: 11, color: t.muted)),
                     ])),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                      color: context.appTheme.scaffold,
-                      border: Border.all(color: context.appTheme.border),
+                      color: t.scaffold,
+                      border: Border.all(color: t.border),
                       borderRadius: BorderRadius.circular(8)),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       value: _chartRange,
-                      style: const TextStyle(fontSize: 12, color: _text),
-                      dropdownColor: _white,
-                      items: const [
+                      style: TextStyle(fontSize: 12, color: t.text),
+                      dropdownColor: t.card,
+                      items: [
                         DropdownMenuItem(
-                            value: '7days', child: Text('Last 7 days')),
+                            value: '7days',
+                            child: Text('Last 7 days',
+                                style: TextStyle(color: t.text))),
                         DropdownMenuItem(
-                            value: '30days', child: Text('Last 30 days')),
+                            value: '30days',
+                            child: Text('Last 30 days',
+                                style: TextStyle(color: t.text))),
                       ],
                       onChanged: (v) => setState(() => _chartRange = v!),
                     ),
@@ -755,33 +757,33 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               ),
               const SizedBox(height: 12),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Container(width: 28, height: 2, color: _navy),
+                Container(width: 28, height: 2, color: t.navy),
                 const SizedBox(width: 6),
-                const Icon(Icons.circle, size: 7, color: _navy),
+                Icon(Icons.circle, size: 7, color: t.navy),
                 const SizedBox(width: 6),
-                const Text('Validations',
-                    style: TextStyle(fontSize: 11, color: _muted)),
+                Text('Validations',
+                    style: TextStyle(fontSize: 11, color: t.muted)),
               ]),
             ]),
           ),
           const SizedBox(height: 20),
           Row(children: [
-            const Icon(Icons.check_circle_outline, size: 16, color: _green),
+            Icon(Icons.check_circle_outline, size: 16, color: t.green),
             const SizedBox(width: 6),
             Text('Validated Alerts (${_solved.length})',
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: _text)),
+                style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: t.text)),
           ]),
           const SizedBox(height: 2),
           Text('Detailed list of alerts validated by ${_selected!.fullName}',
-              style: const TextStyle(fontSize: 12, color: _muted)),
+              style: TextStyle(fontSize: 12, color: t.muted)),
           const SizedBox(height: 12),
           if (_solved.isEmpty)
             Container(
               padding: const EdgeInsets.symmetric(vertical: 30),
               alignment: Alignment.center,
-              child: const Text('No validated alerts yet',
-                  style: TextStyle(fontSize: 14, color: _muted)),
+              child: Text('No validated alerts yet',
+                  style: TextStyle(fontSize: 14, color: t.muted)),
             )
           else
             ..._solved.map((a) => _ValidatedAlertRow(alert: a)),
@@ -819,19 +821,20 @@ class _ValidatedAlertRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.appTheme;
     final clr = _typeColor(alert.type);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-          color: context.appTheme.card,
-          border: Border.all(color: context.appTheme.border),
+          color: t.card,
+          border: Border.all(color: t.border),
           borderRadius: BorderRadius.circular(10)),
       child: Row(children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
-              color: clr.withOpacity(.1),
+              color: clr.withValues(alpha: .1),
               borderRadius: BorderRadius.circular(6)),
           child: Text(_typeLabel(alert.type),
               style: TextStyle(
@@ -841,14 +844,14 @@ class _ValidatedAlertRow extends StatelessWidget {
         Expanded(
             child: Text(
                 '${alert.usine} — C${alert.convoyeur} — P${alert.poste}',
-                style: const TextStyle(fontSize: 12, color: _text))),
+                style: TextStyle(fontSize: 12, color: t.text))),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
-              color: _greenLt, borderRadius: BorderRadius.circular(99)),
+              color: t.greenLt, borderRadius: BorderRadius.circular(99)),
           child: Text('Validated',
-              style: const TextStyle(
-                  fontSize: 10, fontWeight: FontWeight.w700, color: _green)),
+              style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700, color: t.green)),
         ),
       ]),
     );
@@ -1002,7 +1005,8 @@ class _LineChartPainter extends CustomPainter {
 
 class _AssignmentsSubTab extends StatefulWidget {
   final List<UserModel> supervisors;
-  const _AssignmentsSubTab({required this.supervisors});
+  final Future<void> Function()? onRefresh;
+  const _AssignmentsSubTab({required this.supervisors, this.onRefresh});
 
   @override
   State<_AssignmentsSubTab> createState() => _AssignmentsSubTabState();
@@ -1011,16 +1015,14 @@ class _AssignmentsSubTab extends StatefulWidget {
 class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
   List<Factory> _factories = [];
   bool _loading = true;
+  StreamSubscription<List<Factory>>? _factoriesSub;
 
   @override
   void initState() {
     super.initState();
-    _loadFactories();
-  }
-
-  Future<void> _loadFactories() async {
-    final hierarchyService = ServiceLocator.instance.hierarchyService;
-    hierarchyService.getFactories().listen((factories) {
+    _factoriesSub = ServiceLocator.instance.hierarchyService
+        .getFactories()
+        .listen((factories) {
       if (mounted) {
         setState(() {
           _factories = factories;
@@ -1028,6 +1030,12 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
         });
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _factoriesSub?.cancel();
+    super.dispose();
   }
 
   Map<String, List<UserModel>> _groupByFactory() {
@@ -1039,142 +1047,302 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
     return map;
   }
 
-  String? _getLocationForFactory(String factoryName) {
-    for (var factory in _factories) {
-      if (factory.name == factoryName) return factory.location;
+  List<UserModel> _unassigned() {
+    final names = _factories.map((f) => f.name).toSet();
+    return widget.supervisors
+        .where((s) => s.usine.isEmpty || !names.contains(s.usine))
+        .toList();
+  }
+
+  String? _locationFor(String factoryName) {
+    for (var f in _factories) {
+      if (f.name == factoryName) return f.location;
     }
     return null;
   }
 
+  Future<void> _reassign(UserModel sup, String newFactory) async {
+    if (sup.usine == newFactory) return;
+    try {
+      await AuthService().updateSupervisorProfile(
+        userId: sup.id,
+        firstName: sup.firstName,
+        lastName: sup.lastName,
+        email: sup.email,
+        phone: sup.phone,
+        usine: newFactory,
+      );
+      if (!mounted) return;
+      final t = context.appTheme;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(newFactory.isEmpty
+            ? '${sup.fullName} unassigned'
+            : '${sup.fullName} moved to $newFactory'),
+        backgroundColor: t.green,
+      ));
+      widget.onRefresh?.call();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Failed: ${UserFriendlyError.message(e)}'),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const AppLoadingIndicator();
-    }
+    if (_loading) return const AppLoadingIndicator();
 
+    final t = context.appTheme;
     final grouped = _groupByFactory();
+    final unassigned = _unassigned();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Supervisor Assignments',
+        Text('Supervisor Assignments',
             style: TextStyle(
-                fontSize: 19, fontWeight: FontWeight.w800, color: _text)),
+                fontSize: 19, fontWeight: FontWeight.w800, color: t.text)),
         const SizedBox(height: 2),
-        const Text('Assign supervisors to plants for alert monitoring',
-            style: TextStyle(fontSize: 13, color: _muted)),
+        Text('Drag supervisors between plants · tap × to unassign',
+            style: TextStyle(fontSize: 13, color: t.muted)),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-              color: context.appTheme.card,
-              border: Border.all(color: context.appTheme.border),
+              color: t.card,
+              border: Border.all(color: t.border),
               borderRadius: BorderRadius.circular(14),
               boxShadow: const [
                 BoxShadow(
-                    color: Color(0x06000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 2))
+                    color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
               ]),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              const Icon(Icons.bar_chart, size: 16, color: _navy),
+              Icon(Icons.bar_chart, size: 16, color: t.navy),
               const SizedBox(width: 8),
-              const Text('Assignments by Plant',
+              Text('Assignments by Plant',
                   style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w700, color: _text)),
+                      fontSize: 14, fontWeight: FontWeight.w700, color: t.text)),
             ]),
             const SizedBox(height: 4),
-            const Text('See supervisors assigned to each plant',
-                style: TextStyle(fontSize: 12, color: _muted)),
+            Text('Drag a supervisor to a different plant to reassign',
+                style: TextStyle(fontSize: 12, color: t.muted)),
             const SizedBox(height: 16),
-            ...grouped.entries.map((e) {
-              final factoryName = e.key;
-              final sups = e.value;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                    color: context.appTheme.scaffold,
-                    border: Border.all(color: context.appTheme.border),
-                    borderRadius: BorderRadius.circular(10)),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                              Text(factoryName,
-                                  style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: _text)),
-                              const SizedBox(height: 2),
-                              Text(_getLocationForFactory(factoryName) ?? '',
-                                  style: const TextStyle(
-                                      fontSize: 12, color: _muted)),
-                            ])),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 5),
-                          decoration: BoxDecoration(
-                              color: sups.isEmpty
-                                  ? const Color(0xFFF1F5F9)
-                                  : _navyLt,
-                              borderRadius: BorderRadius.circular(99)),
-                          child: Text(
-                              sups.isEmpty
-                                  ? '0 supervisors'
-                                  : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: sups.isEmpty ? _muted : _navy)),
-                        ),
-                      ]),
-                      const SizedBox(height: 10),
-                      if (sups.isEmpty)
-                        const Text('No supervisor assigned',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: _muted,
-                                fontStyle: FontStyle.italic))
-                      else
-                        Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children:
-                                sups.map((s) => _SupChip(sup: s)).toList()),
-                    ]),
-              );
-            }),
+            ...grouped.entries.map((e) => _buildFactoryCard(t, e.key, e.value)),
+            if (unassigned.isNotEmpty) _buildUnassignedCard(t, unassigned),
           ]),
         ),
       ]),
+    );
+  }
+
+  Widget _buildFactoryCard(AppTheme t, String factoryName, List<UserModel> sups) {
+    final location = _locationFor(factoryName);
+    return DragTarget<UserModel>(
+      onWillAcceptWithDetails: (d) => d.data.usine != factoryName,
+      onAcceptWithDetails: (d) => _reassign(d.data, factoryName),
+      builder: (context, candidates, _) {
+        final hovering = candidates.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+              color: hovering ? t.navy.withValues(alpha: .08) : t.scaffold,
+              border: Border.all(
+                  color: hovering ? t.navy : t.border,
+                  width: hovering ? 2 : 1),
+              borderRadius: BorderRadius.circular(10)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                Text(factoryName,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: t.text)),
+                if (location != null && location.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(location, style: TextStyle(fontSize: 12, color: t.muted)),
+                ],
+              ])),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                    color: sups.isEmpty ? t.scaffold : t.navyLt,
+                    borderRadius: BorderRadius.circular(99)),
+                child: Text(
+                    sups.isEmpty
+                        ? '0 supervisors'
+                        : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: sups.isEmpty ? t.muted : t.navy)),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            if (sups.isEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                    border: Border.all(
+                        color: hovering
+                            ? t.navy.withValues(alpha: .4)
+                            : t.border),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Center(
+                  child: Text(
+                      hovering ? 'Drop here to assign' : 'No supervisor assigned',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: hovering ? t.navy : t.muted,
+                          fontStyle:
+                              hovering ? FontStyle.normal : FontStyle.italic)),
+                ),
+              )
+            else
+              Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: sups
+                      .map((s) => _SupChip(
+                          sup: s, onRemove: () => _reassign(s, '')))
+                      .toList()),
+          ]),
+        );
+      },
+    );
+  }
+
+  Widget _buildUnassignedCard(AppTheme t, List<UserModel> sups) {
+    return DragTarget<UserModel>(
+      onWillAcceptWithDetails: (d) => d.data.usine.isNotEmpty,
+      onAcceptWithDetails: (d) => _reassign(d.data, ''),
+      builder: (context, candidates, _) {
+        final hovering = candidates.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+              color: hovering
+                  ? t.orange.withValues(alpha: .08)
+                  : t.orangeLt.withValues(alpha: .5),
+              border: Border.all(
+                  color: hovering
+                      ? t.orange
+                      : t.orange.withValues(alpha: .35),
+                  width: hovering ? 2 : 1),
+              borderRadius: BorderRadius.circular(10)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                Text('Unassigned',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: t.orange)),
+                const SizedBox(height: 2),
+                Text('Not assigned to any plant',
+                    style: TextStyle(fontSize: 12, color: t.muted)),
+              ])),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                    color: t.orangeLt, borderRadius: BorderRadius.circular(99)),
+                child: Text(
+                    '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: t.orange)),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: sups.map((s) => _SupChip(sup: s)).toList()),
+          ]),
+        );
+      },
     );
   }
 }
 
 class _SupChip extends StatelessWidget {
   final UserModel sup;
-  const _SupChip({required this.sup});
+  final VoidCallback? onRemove;
+  const _SupChip({required this.sup, this.onRemove});
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-            color: _navy, borderRadius: BorderRadius.circular(20)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.person_outline, size: 13, color: _white),
-          const SizedBox(width: 6),
-          Text(sup.fullName,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: _white)),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final chip = Container(
+      padding: EdgeInsets.only(
+          left: 10, right: onRemove != null ? 6 : 12, top: 6, bottom: 6),
+      decoration:
+          BoxDecoration(color: t.navyLt, borderRadius: BorderRadius.circular(20)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.person_outline, size: 13, color: t.navy),
+        const SizedBox(width: 6),
+        Text(sup.fullName,
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600, color: t.navy)),
+        if (onRemove != null) ...[
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                  color: t.navy.withValues(alpha: .15),
+                  shape: BoxShape.circle),
+              child: Icon(Icons.close, size: 11, color: t.navy),
+            ),
+          ),
+        ],
+      ]),
+    );
+
+    return Draggable<UserModel>(
+      data: sup,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+              color: t.navy,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                    color: t.navy.withValues(alpha: .35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3))
+              ]),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.person_outline, size: 13, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(sup.fullName,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white)),
+          ]),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.3, child: chip),
+      child: chip,
+    );
+  }
 }
 
 Widget _emptySups() => Center(
