@@ -206,7 +206,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         maxSupervisors: _maxSupervisors,
         aiCommander: _aiCommander,
         aiModel: _aiModel,
-        aiConfidence: 0,
+        aiConfidence: 0.65,
         handleAssignments: _handleAssignments,
         handleCollaborations: _handleCollaborations,
         handleCrossFactoryTransfer: _handleCrossFactoryTransfer,
@@ -233,6 +233,11 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   void _setFullControl(bool value) {
     setState(() {
       _fullControl = value;
+      if (value) {
+        _handleAssignments = true;
+        _handleCollaborations = true;
+        _handleCrossFactoryTransfer = true;
+      }
     });
   }
 
@@ -725,7 +730,7 @@ class _AiToggleCard extends StatelessWidget {
               Switch.adaptive(
                 value: enabled,
                 onChanged: onChanged,
-                activeThumbColor: const Color(0xFF60A5FA),
+                activeColor: const Color(0xFF60A5FA),
               ),
             ],
           ),
@@ -744,7 +749,7 @@ class _AiToggleCard extends StatelessWidget {
                           letterSpacing: 0.4)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
-                    initialValue: model,
+                    value: model,
                     items: const [
                       DropdownMenuItem(
                         value: 'llama-3.2-3b',
@@ -880,7 +885,7 @@ class _CommanderTaskTile extends StatelessWidget {
             Switch.adaptive(
               value: value,
               onChanged: enabled ? onChanged : null,
-              activeThumbColor: const Color(0xFF16A34A),
+              activeColor: const Color(0xFF16A34A),
             ),
           ],
         ),
@@ -940,7 +945,7 @@ class _RandomizeToggleCard extends StatelessWidget {
           Switch.adaptive(
             value: enabled,
             onChanged: onChanged,
-            activeThumbColor: t.navy,
+            activeColor: t.navy,
           ),
         ],
       ),
