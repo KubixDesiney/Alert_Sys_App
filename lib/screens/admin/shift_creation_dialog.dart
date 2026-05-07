@@ -39,7 +39,10 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   bool _aiCommander = false;
   bool _randomize = false;
   String _aiModel = 'llama-3.2-3b';
-  double _aiConfidence = 0.65;
+  bool _handleAssignments = true;
+  bool _handleCollaborations = false;
+  bool _handleCrossFactoryTransfer = false;
+  bool _fullControl = false;
 
   String _searchQuery = '';
   final Set<String> _selectedIds = <String>{};
@@ -63,15 +66,17 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
     if (widget.existing != null) {
       final s = widget.existing!;
       _nameCtrl.text = s.name;
-      _start = TimeOfDay(
-          hour: s.startMinutes ~/ 60, minute: s.startMinutes % 60);
-      _end =
-          TimeOfDay(hour: s.endMinutes ~/ 60, minute: s.endMinutes % 60);
+      _start =
+          TimeOfDay(hour: s.startMinutes ~/ 60, minute: s.startMinutes % 60);
+      _end = TimeOfDay(hour: s.endMinutes ~/ 60, minute: s.endMinutes % 60);
       _maxSupervisors = s.maxSupervisors;
       _aiCommander = s.aiCommander;
       _randomize = s.randomize;
       _aiModel = s.aiModel;
-      _aiConfidence = s.aiConfidence;
+      _handleAssignments = s.handleAssignments;
+      _handleCollaborations = s.handleCollaborations;
+      _handleCrossFactoryTransfer = s.handleCrossFactoryTransfer;
+      _fullControl = s.fullControl;
       _selectedIds.addAll(s.supervisors.map((e) => e.id));
     }
 
@@ -155,8 +160,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         context: context,
         initialTime: _start,
         builder: (c, child) => MediaQuery(
-              data: MediaQuery.of(c)
-                  .copyWith(alwaysUse24HourFormat: true),
+              data: MediaQuery.of(c).copyWith(alwaysUse24HourFormat: true),
               child: child!,
             ));
     if (picked != null) setState(() => _start = picked);
@@ -167,8 +171,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         context: context,
         initialTime: _end,
         builder: (c, child) => MediaQuery(
-              data: MediaQuery.of(c)
-                  .copyWith(alwaysUse24HourFormat: true),
+              data: MediaQuery.of(c).copyWith(alwaysUse24HourFormat: true),
               child: child!,
             ));
     if (picked != null) setState(() => _end = picked);
@@ -203,7 +206,11 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         maxSupervisors: _maxSupervisors,
         aiCommander: _aiCommander,
         aiModel: _aiModel,
-        aiConfidence: _aiConfidence,
+        aiConfidence: 0,
+        handleAssignments: _handleAssignments,
+        handleCollaborations: _handleCollaborations,
+        handleCrossFactoryTransfer: _handleCrossFactoryTransfer,
+        fullControl: _fullControl,
         randomize: _randomize,
         createdAt: widget.existing?.createdAt ?? DateTime.now(),
       );
@@ -223,6 +230,41 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
     }
   }
 
+  void _setFullControl(bool value) {
+    setState(() {
+      _fullControl = value;
+      if (value) {
+        _handleAssignments = true;
+        _handleCollaborations = true;
+        _handleCrossFactoryTransfer = true;
+      }
+    });
+  }
+
+  void _setHandleAssignments(bool value) {
+    setState(() {
+      _handleAssignments = value;
+      if (!value) {
+        _handleCollaborations = false;
+        _handleCrossFactoryTransfer = false;
+      }
+    });
+  }
+
+  void _setHandleCollaborations(bool value) {
+    setState(() {
+      _handleCollaborations = value;
+      if (value) _handleAssignments = true;
+    });
+  }
+
+  void _setHandleCrossFactoryTransfer(bool value) {
+    setState(() {
+      _handleCrossFactoryTransfer = value;
+      if (value) _handleAssignments = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
@@ -232,8 +274,8 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
     return AnimatedBuilder(
       animation: _entryCtrl,
       builder: (ctx, child) {
-        final anim = CurvedAnimation(
-            parent: _entryCtrl, curve: Curves.easeOutCubic);
+        final anim =
+            CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOutCubic);
         return Opacity(
           opacity: anim.value,
           child: Transform.scale(
@@ -247,8 +289,8 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight),
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12)
-                .copyWith(bottom: 12),
+            margin:
+                const EdgeInsets.symmetric(horizontal: 12).copyWith(bottom: 12),
             decoration: BoxDecoration(
               color: t.card,
               borderRadius: BorderRadius.circular(24),
@@ -309,20 +351,26 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                           value: _maxSupervisors,
                           min: 1,
                           max: 12,
-                          onChanged: (v) =>
-                              setState(() => _maxSupervisors = v),
+                          onChanged: (v) => setState(() => _maxSupervisors = v),
                         ),
                         const SizedBox(height: 18),
                         _AiToggleCard(
                           enabled: _aiCommander,
-                          onChanged: (v) =>
-                              setState(() => _aiCommander = v),
+                          onChanged: (v) => setState(() => _aiCommander = v),
                           model: _aiModel,
                           onModelChanged: (v) =>
                               setState(() => _aiModel = v ?? _aiModel),
-                          confidence: _aiConfidence,
-                          onConfidenceChanged: (v) =>
-                              setState(() => _aiConfidence = v),
+                          handleAssignments: _handleAssignments,
+                          onHandleAssignmentsChanged: _setHandleAssignments,
+                          handleCollaborations: _handleCollaborations,
+                          onHandleCollaborationsChanged:
+                              _setHandleCollaborations,
+                          handleCrossFactoryTransfer:
+                              _handleCrossFactoryTransfer,
+                          onHandleCrossFactoryTransferChanged:
+                              _setHandleCrossFactoryTransfer,
+                          fullControl: _fullControl,
+                          onFullControlChanged: _setFullControl,
                         ),
                         const SizedBox(height: 14),
                         _RandomizeToggleCard(
@@ -366,8 +414,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                             }
                             final conflict = _conflictingShiftFor(uid);
                             if (conflict != null) {
-                              final user =
-                                  _all.firstWhere((u) => u.id == uid);
+                              final user = _all.firstWhere((u) => u.id == uid);
                               _showDoubleAssignmentRejection(
                                 user: user,
                                 conflict: conflict,
@@ -388,8 +435,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                             ),
                             child: Text(
                               _error!,
-                              style:
-                                  TextStyle(color: t.red, fontSize: 13),
+                              style: TextStyle(color: t.red, fontSize: 13),
                             ),
                           ),
                         ],
@@ -506,14 +552,11 @@ class _TimeChip extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: TextStyle(color: t.muted, fontSize: 11)),
+                Text(label, style: TextStyle(color: t.muted, fontSize: 11)),
                 Text(
                   '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
-                      color: t.text,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700),
+                      color: t.text, fontSize: 18, fontWeight: FontWeight.w700),
                 ),
               ],
             ),
@@ -569,8 +612,7 @@ class _NumericStepper extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.remove_circle_outline),
-            onPressed:
-                value > min ? () => onChanged(value - 1) : null,
+            onPressed: value > min ? () => onChanged(value - 1) : null,
           ),
           Container(
             width: 36,
@@ -586,8 +628,7 @@ class _NumericStepper extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
-            onPressed:
-                value < max ? () => onChanged(value + 1) : null,
+            onPressed: value < max ? () => onChanged(value + 1) : null,
           ),
         ],
       ),
@@ -600,16 +641,28 @@ class _AiToggleCard extends StatelessWidget {
   final ValueChanged<bool> onChanged;
   final String model;
   final ValueChanged<String?> onModelChanged;
-  final double confidence;
-  final ValueChanged<double> onConfidenceChanged;
+  final bool handleAssignments;
+  final ValueChanged<bool> onHandleAssignmentsChanged;
+  final bool handleCollaborations;
+  final ValueChanged<bool> onHandleCollaborationsChanged;
+  final bool handleCrossFactoryTransfer;
+  final ValueChanged<bool> onHandleCrossFactoryTransferChanged;
+  final bool fullControl;
+  final ValueChanged<bool> onFullControlChanged;
 
   const _AiToggleCard({
     required this.enabled,
     required this.onChanged,
     required this.model,
     required this.onModelChanged,
-    required this.confidence,
-    required this.onConfidenceChanged,
+    required this.handleAssignments,
+    required this.onHandleAssignmentsChanged,
+    required this.handleCollaborations,
+    required this.onHandleCollaborationsChanged,
+    required this.handleCrossFactoryTransfer,
+    required this.onHandleCrossFactoryTransferChanged,
+    required this.fullControl,
+    required this.onFullControlChanged,
   });
 
   @override
@@ -668,8 +721,8 @@ class _AiToggleCard extends StatelessWidget {
                       'Let AI manage this shift: accept collaborations, '
                       'assign supervisors to alerts, handle cross-factory '
                       'transfers automatically.',
-                      style: TextStyle(
-                          color: t.muted, fontSize: 11, height: 1.35),
+                      style:
+                          TextStyle(color: t.muted, fontSize: 11, height: 1.35),
                     ),
                   ],
                 ),
@@ -677,7 +730,7 @@ class _AiToggleCard extends StatelessWidget {
               Switch.adaptive(
                 value: enabled,
                 onChanged: onChanged,
-                activeColor: const Color(0xFF60A5FA),
+                activeThumbColor: const Color(0xFF60A5FA),
               ),
             ],
           ),
@@ -696,7 +749,7 @@ class _AiToggleCard extends StatelessWidget {
                           letterSpacing: 0.4)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
-                    value: model,
+                    initialValue: model,
                     items: const [
                       DropdownMenuItem(
                         value: 'llama-3.2-3b',
@@ -709,37 +762,47 @@ class _AiToggleCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Icon(Icons.tune, color: t.muted, size: 16),
-                      const SizedBox(width: 6),
-                      Text('Confidence threshold',
-                          style: TextStyle(
-                              color: t.text,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700)),
-                      const Spacer(),
-                      Text('${(confidence * 100).toStringAsFixed(0)}%',
-                          style: TextStyle(
-                              color: t.navy,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800)),
-                    ],
-                  ),
-                  Slider(
-                    value: confidence,
-                    onChanged: onConfidenceChanged,
-                    min: 0.4,
-                    max: 0.95,
-                    divisions: 11,
-                    label: '${(confidence * 100).toStringAsFixed(0)}%',
-                  ),
                   Text(
-                    'The AI will take over Production Manager duties during '
-                    'this shift, only acting when confidence is at or above '
-                    'this threshold.',
-                    style: TextStyle(
-                        color: t.muted, fontSize: 11, height: 1.35),
+                    'Choose exactly what the commander is allowed to handle '
+                    'during this shift.',
+                    style:
+                        TextStyle(color: t.muted, fontSize: 11, height: 1.35),
+                  ),
+                  const SizedBox(height: 10),
+                  _CommanderTaskTile(
+                    label: 'Handle Assignments',
+                    subtitle: 'Auto-assign supervisors to alerts.',
+                    value: handleAssignments || fullControl,
+                    enabled: !fullControl,
+                    onChanged: onHandleAssignmentsChanged,
+                  ),
+                  const SizedBox(height: 8),
+                  _CommanderTaskTile(
+                    label: 'Handle Collaborations',
+                    subtitle:
+                        'Approve collaboration requests after assistant approvals.',
+                    value: handleCollaborations || fullControl,
+                    enabled: !fullControl,
+                    onChanged: onHandleCollaborationsChanged,
+                  ),
+                  const SizedBox(height: 8),
+                  _CommanderTaskTile(
+                    label: 'Handle Cross-factory Transfer',
+                    subtitle:
+                        'Allow rostered supervisors to cover alerts across factories.',
+                    value: handleCrossFactoryTransfer || fullControl,
+                    enabled: !fullControl,
+                    onChanged: onHandleCrossFactoryTransferChanged,
+                  ),
+                  const SizedBox(height: 8),
+                  _CommanderTaskTile(
+                    label: 'Full control',
+                    subtitle:
+                        'Commander manages assignments, collaborations, and transfers.',
+                    value: fullControl,
+                    enabled: true,
+                    forceActiveStyle: fullControl,
+                    onChanged: onFullControlChanged,
                   ),
                 ],
               ),
@@ -749,6 +812,83 @@ class _AiToggleCard extends StatelessWidget {
             duration: const Duration(milliseconds: 280),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CommanderTaskTile extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final bool value;
+  final bool enabled;
+  final bool forceActiveStyle;
+  final ValueChanged<bool> onChanged;
+
+  const _CommanderTaskTile({
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+    this.forceActiveStyle = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final active = value || forceActiveStyle;
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: enabled ? 1 : 0.68,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? const Color(0x1416A34A) : t.scaffold,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: active ? const Color(0xFF16A34A) : t.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              active ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: active ? const Color(0xFF16A34A) : t.muted,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: t.text,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: t.muted,
+                      fontSize: 10.5,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch.adaptive(
+              value: value,
+              onChanged: enabled ? onChanged : null,
+              activeThumbColor: const Color(0xFF16A34A),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -805,7 +945,7 @@ class _RandomizeToggleCard extends StatelessWidget {
           Switch.adaptive(
             value: enabled,
             onChanged: onChanged,
-            activeColor: t.navy,
+            activeThumbColor: t.navy,
           ),
         ],
       ),
@@ -861,8 +1001,7 @@ class _SupervisorList extends StatelessWidget {
       child: Column(
         children: [
           for (int i = 0; i < filtered.length; i++) ...[
-            if (i > 0)
-              Divider(height: 1, color: t.border.withOpacity(0.6)),
+            if (i > 0) Divider(height: 1, color: t.border.withOpacity(0.6)),
             _SupervisorTile(
               user: filtered[i],
               selected: selected.contains(filtered[i].id),
@@ -940,8 +1079,8 @@ class _SupervisorTile extends StatelessWidget {
               decoration: BoxDecoration(
                 color: selected ? t.green : t.scaffold,
                 shape: BoxShape.circle,
-                border: Border.all(
-                    color: selected ? t.green : t.border, width: 2),
+                border:
+                    Border.all(color: selected ? t.green : t.border, width: 2),
               ),
               child: selected
                   ? const Icon(Icons.check, size: 16, color: Colors.white)
@@ -985,9 +1124,7 @@ class _Footer extends StatelessWidget {
             ),
             child: Text('$count / $max selected',
                 style: TextStyle(
-                    color: t.navy,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800)),
+                    color: t.navy, fontSize: 11, fontWeight: FontWeight.w800)),
           ),
           const Spacer(),
           TextButton(onPressed: onCancel, child: const Text('Cancel')),
@@ -1005,8 +1142,7 @@ class _Footer extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: t.navy,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),

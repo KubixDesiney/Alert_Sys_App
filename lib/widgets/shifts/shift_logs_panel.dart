@@ -55,10 +55,8 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
       _logs = [];
       _loading = true;
     });
-    _sub = FirebaseDatabase.instance
-        .ref('shift_ai_logs/$shiftId')
-        .onValue
-        .listen(
+    _sub =
+        FirebaseDatabase.instance.ref('shift_ai_logs/$shiftId').onValue.listen(
       (event) {
         final raw = event.snapshot.value;
         final list = <ShiftLogEntry>[];
@@ -73,9 +71,16 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
           }
         }
         list.sort((a, b) => b.at.compareTo(a.at));
-        if (mounted) setState(() { _logs = list; _loading = false; });
+        if (mounted) {
+          setState(() {
+            _logs = list;
+            _loading = false;
+          });
+        }
       },
-      onError: (_) { if (mounted) setState(() => _loading = false); },
+      onError: (_) {
+        if (mounted) setState(() => _loading = false);
+      },
     );
   }
 
@@ -86,8 +91,10 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
     if (old.hostSize != widget.hostSize) {
       setState(() {
         _position = Offset(
-          _position.dx.clamp(0.0, (widget.hostSize.width - _w).clamp(0, double.infinity)),
-          _position.dy.clamp(0.0, (widget.hostSize.height - _h).clamp(0, double.infinity)),
+          _position.dx.clamp(
+              0.0, (widget.hostSize.width - _w).clamp(0, double.infinity)),
+          _position.dy.clamp(
+              0.0, (widget.hostSize.height - _h).clamp(0, double.infinity)),
         );
       });
     }
@@ -102,8 +109,10 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
   void _handleDrag(DragUpdateDetails d) {
     setState(() {
       _position = Offset(
-        (_position.dx + d.delta.dx).clamp(0.0, (widget.hostSize.width - _w).clamp(0.0, double.infinity)),
-        (_position.dy + d.delta.dy).clamp(0.0, (widget.hostSize.height - _h).clamp(0.0, double.infinity)),
+        (_position.dx + d.delta.dx).clamp(
+            0.0, (widget.hostSize.width - _w).clamp(0.0, double.infinity)),
+        (_position.dy + d.delta.dy).clamp(
+            0.0, (widget.hostSize.height - _h).clamp(0.0, double.infinity)),
       );
     });
   }
@@ -127,7 +136,8 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
             border: Border.all(color: t.border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: context.isDark ? 0.5 : 0.12),
+                color:
+                    Colors.black.withValues(alpha: context.isDark ? 0.5 : 0.12),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -171,7 +181,8 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
                   color: Colors.white.withValues(alpha: 0.20),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.auto_awesome, size: 16, color: Colors.white),
+                child: const Icon(Icons.auto_awesome,
+                    size: 16, color: Colors.white),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -188,17 +199,21 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
                     ),
                     Text(
                       widget.shift.name,
-                      style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.8)),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.8)),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.drag_indicator, size: 16, color: Colors.white.withValues(alpha: 0.7)),
+              Icon(Icons.drag_indicator,
+                  size: 16, color: Colors.white.withValues(alpha: 0.7)),
               const SizedBox(width: 2),
               IconButton(
                 tooltip: 'Close',
                 onPressed: widget.onClose,
-                icon: Icon(Icons.close, size: 18, color: Colors.white.withValues(alpha: 0.9)),
+                icon: Icon(Icons.close,
+                    size: 18, color: Colors.white.withValues(alpha: 0.9)),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
@@ -251,9 +266,9 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
 
   Widget _buildFooter(AppTheme t) {
     final assigned = _logs.where((l) => l.kind == 'assigned').length;
-    final skipped  = _logs.where((l) => l.kind == 'skipped').length;
+    final skipped = _logs.where((l) => l.kind == 'skipped').length;
     final handover = _logs.where((l) => l.kind == 'handover').length;
-    final other    = _logs.length - assigned - skipped - handover;
+    final other = _logs.length - assigned - skipped - handover;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -267,11 +282,13 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
       ),
       child: Row(
         children: [
-          _statChip(t, Icons.check_circle_outline, t.green, '$assigned', 'Assigned'),
+          _statChip(
+              t, Icons.check_circle_outline, t.green, '$assigned', 'Assigned'),
           const SizedBox(width: 5),
           _statChip(t, Icons.skip_next, t.muted, '$skipped', 'Skipped'),
           const SizedBox(width: 5),
-          _statChip(t, Icons.swap_horiz, const Color(0xFF60A5FA), '$handover', 'Handover'),
+          _statChip(t, Icons.swap_horiz, const Color(0xFF60A5FA), '$handover',
+              'Handover'),
           if (other > 0) ...[
             const SizedBox(width: 5),
             _statChip(t, Icons.bolt, t.orange, '$other', 'Other'),
@@ -292,7 +309,8 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
     );
   }
 
-  Widget _statChip(AppTheme t, IconData icon, Color color, String count, String label) {
+  Widget _statChip(
+      AppTheme t, IconData icon, Color color, String count, String label) {
     return Tooltip(
       message: label,
       child: Container(
@@ -371,13 +389,14 @@ class _ShiftLogTile extends StatelessWidget {
                 const SizedBox(width: 6),
                 // actionID chip
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                   decoration: BoxDecoration(
                     color: t.navyLt,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    '#$shortId',
+                    'ID $shortId',
                     style: TextStyle(
                       fontSize: 9,
                       color: t.navy,
@@ -389,7 +408,8 @@ class _ShiftLogTile extends StatelessWidget {
                 const Spacer(),
                 Text(
                   time,
-                  style: TextStyle(fontSize: 10, color: t.muted, fontFamily: 'monospace'),
+                  style: TextStyle(
+                      fontSize: 10, color: t.muted, fontFamily: 'monospace'),
                 ),
               ],
             ),
@@ -403,7 +423,8 @@ class _ShiftLogTile extends StatelessWidget {
                 if (entry.alertLabel != null)
                   Row(
                     children: [
-                      Icon(Icons.warning_amber_outlined, size: 12, color: t.orange),
+                      Icon(Icons.warning_amber_outlined,
+                          size: 12, color: t.orange),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -448,13 +469,24 @@ class _ShiftLogTile extends StatelessWidget {
                     children: [
                       Icon(Icons.factory_outlined, size: 11, color: t.muted),
                       const SizedBox(width: 4),
-                      Text(entry.factory!, style: TextStyle(fontSize: 10, color: t.muted)),
+                      Text(entry.factory!,
+                          style: TextStyle(fontSize: 10, color: t.muted)),
                     ],
                   ),
                 ],
                 if (entry.reason.isNotEmpty) ...[
                   if (entry.alertLabel != null || entry.supervisorName != null)
                     const SizedBox(height: 5),
+                  SelectableText(
+                    'Action ID: ${entry.id}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: t.navy,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     entry.reason,
                     style: TextStyle(fontSize: 11, color: t.muted),
@@ -471,33 +503,33 @@ class _ShiftLogTile extends StatelessWidget {
   }
 
   Color _kindColor(String kind, AppTheme t) => switch (kind) {
-        'assigned'  => t.green,
-        'skipped'   => t.muted,
-        'handover'  => const Color(0xFF60A5FA),
-        'created'   => t.navy,
-        'updated'   => t.blue,
-        'evaluate'  => t.orange,
-        _           => t.muted,
+        'assigned' => t.green,
+        'skipped' => t.muted,
+        'handover' => const Color(0xFF60A5FA),
+        'created' => t.navy,
+        'updated' => t.blue,
+        'evaluate' => t.orange,
+        _ => t.muted,
       };
 
   IconData _kindIcon(String kind) => switch (kind) {
-        'assigned'  => Icons.check_circle,
-        'skipped'   => Icons.skip_next,
-        'handover'  => Icons.swap_horiz,
-        'created'   => Icons.add_circle_outline,
-        'updated'   => Icons.edit_outlined,
-        'evaluate'  => Icons.psychology_outlined,
-        _           => Icons.bolt,
+        'assigned' => Icons.check_circle,
+        'skipped' => Icons.skip_next,
+        'handover' => Icons.swap_horiz,
+        'created' => Icons.add_circle_outline,
+        'updated' => Icons.edit_outlined,
+        'evaluate' => Icons.psychology_outlined,
+        _ => Icons.bolt,
       };
 
   String _kindLabel(String kind) => switch (kind) {
-        'assigned'  => 'ASSIGNED',
-        'skipped'   => 'SKIPPED',
-        'handover'  => 'HANDOVER',
-        'created'   => 'SHIFT CREATED',
-        'updated'   => 'SHIFT UPDATED',
-        'evaluate'  => 'EVALUATE',
-        _           => kind.toUpperCase(),
+        'assigned' => 'ASSIGNED',
+        'skipped' => 'SKIPPED',
+        'handover' => 'HANDOVER',
+        'created' => 'SHIFT CREATED',
+        'updated' => 'SHIFT UPDATED',
+        'evaluate' => 'EVALUATE',
+        _ => kind.toUpperCase(),
       };
 }
 
@@ -524,7 +556,8 @@ class _ConfidenceChip extends StatelessWidget {
       ),
       child: Text(
         '$pct%',
-        style: TextStyle(fontSize: 9, color: color, fontWeight: FontWeight.w800),
+        style:
+            TextStyle(fontSize: 9, color: color, fontWeight: FontWeight.w800),
       ),
     );
   }
