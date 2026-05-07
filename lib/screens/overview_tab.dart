@@ -406,8 +406,10 @@ class _OverviewTabState extends State<AdminOverviewTab> {
 
   MorningBriefing? _briefing;
   PredictiveModel? _predictions;
+  PredictiveAccuracy? _accuracy;
   StreamSubscription<MorningBriefing?>? _briefSub;
   StreamSubscription<PredictiveModel?>? _predSub;
+  StreamSubscription<PredictiveAccuracy?>? _accSub;
   bool _briefingWarmed = false;
   bool _predictionsWarmed = false;
 
@@ -430,6 +432,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   void dispose() {
     _briefSub?.cancel();
     _predSub?.cancel();
+    _accSub?.cancel();
     super.dispose();
   }
 
@@ -524,6 +527,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     });
     _predSub = PredictiveIntelService.instance.predictionsStream().listen((p) {
       if (mounted) setState(() => _predictions = p);
+    });
+    _accSub = PredictiveIntelService.instance.accuracyStream().listen((a) {
+      if (mounted) setState(() => _accuracy = a);
     });
   }
 
@@ -1084,6 +1090,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       final predictiveRow = LayoutBuilder(builder: (pctx, pc) {
         final stack = pc.maxWidth < 720;
         final failure = PredictiveFailureCard(
+          accuracy: _accuracy,
           model: scopedPreds,
           describeType: (type) => adminTypeLabel(context, type),
         );

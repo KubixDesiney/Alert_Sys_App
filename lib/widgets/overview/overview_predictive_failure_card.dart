@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../services/predictive_intel_stream_service.dart';
 import '../../services/predictive_models.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
@@ -9,9 +10,11 @@ import '../../utils/alert_meta.dart';
 class PredictiveFailureCard extends StatefulWidget {
   final PredictiveModel? model;
   final String Function(String) describeType;
+  final PredictiveAccuracy? accuracy;
   const PredictiveFailureCard({
     required this.model,
     required this.describeType,
+    this.accuracy,
   });
 
   @override
@@ -157,6 +160,34 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                     ],
                   ),
                 ),
+                if (widget.accuracy != null &&
+                    widget.accuracy!.totalSnapshots > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Tooltip(
+                      message:
+                          'Based on the last ${widget.accuracy!.totalSnapshots} validated predictions.',
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: theme.purple.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                              color: theme.purple.withValues(alpha: 0.36)),
+                        ),
+                        child: Text(
+                          'Accuracy: ${(widget.accuracy!.averageAccuracy * 100).round()}%',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: theme.purple,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (widget.model != null)
                   Container(
                     padding:
