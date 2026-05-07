@@ -105,6 +105,10 @@ class AlertStreamService {
     _lastProcessed.clear();
   }
 
+  void dispose() {
+    reset();
+  }
+
   void _start({
     required Stream<List<AlertModel>> source,
     required void Function(List<AlertModel> alerts) onAlerts,
