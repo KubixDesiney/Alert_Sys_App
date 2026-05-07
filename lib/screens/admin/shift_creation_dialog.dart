@@ -677,7 +677,7 @@ class _AiToggleCard extends StatelessWidget {
               Switch.adaptive(
                 value: enabled,
                 onChanged: onChanged,
-                activeThumbColor: const Color(0xFF60A5FA),
+                activeColor: const Color(0xFF60A5FA),
               ),
             ],
           ),
@@ -696,7 +696,7 @@ class _AiToggleCard extends StatelessWidget {
                           letterSpacing: 0.4)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
-                    initialValue: model,
+                    value: model,
                     items: const [
                       DropdownMenuItem(
                         value: 'llama-3.2-3b',
@@ -805,7 +805,7 @@ class _RandomizeToggleCard extends StatelessWidget {
           Switch.adaptive(
             value: enabled,
             onChanged: onChanged,
-            activeThumbColor: t.navy,
+            activeColor: t.navy,
           ),
         ],
       ),
