@@ -33,20 +33,22 @@ class PredictiveIntelStreamService {
       PredictiveIntelStreamService._();
 
   final FirebaseDatabase _db;
-  StreamSubscription<DatabaseEvent>? _briefingSub;
+  // Per-factory subscriptions and controllers (null key = global).
+  final Map<String?, StreamSubscription<DatabaseEvent>> _briefingSubs = {};
+  final Map<String?, StreamController<MorningBriefing?>> _briefingControllers = {};
+  final Map<String?, MorningBriefing?> _lastBriefings = {};
   StreamSubscription<DatabaseEvent>? _predictionsSub;
   StreamSubscription<DatabaseEvent>? _accuracySub;
-  final _briefingController = StreamController<MorningBriefing?>.broadcast();
   final _predictionsController = StreamController<PredictiveModel?>.broadcast();
   final _accuracyController =
       StreamController<PredictiveAccuracy?>.broadcast();
-  MorningBriefing? _lastBriefing;
   PredictiveModel? _lastPredictions;
   PredictiveAccuracy? _lastAccuracy;
 
-  Stream<MorningBriefing?> briefingStream() {
-    _ensureBriefingSubscription();
-    return _briefingController.stream;
+  Stream<MorningBriefing?> briefingStream({String? factory}) {
+    final key = (factory == null || factory.isEmpty || factory == 'all') ? null : factory;
+    _ensureBriefingSubscription(key);
+    return _briefingControllers[key]!.stream;
   }
 
   Stream<PredictiveModel?> predictionsStream() {
@@ -61,16 +63,24 @@ class PredictiveIntelStreamService {
 
   PredictiveAccuracy? get lastAccuracy => _lastAccuracy;
 
-  void _ensureBriefingSubscription() {
-    _briefingSub ??= _db.ref('ai_briefing/latest').onValue.listen((event) {
+  static String _briefingDbPath(String? key) {
+    if (key == null) return 'ai_briefing/latest';
+    final slug = key.toLowerCase().replaceAll(RegExp(r'\s+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    return 'ai_briefing/factory/$slug/latest';
+  }
+
+  void _ensureBriefingSubscription(String? key) {
+    if (_briefingSubs.containsKey(key)) return;
+    final ctrl = StreamController<MorningBriefing?>.broadcast();
+    _briefingControllers[key] = ctrl;
+    _briefingSubs[key] = _db.ref(_briefingDbPath(key)).onValue.listen((event) {
       final value = event.snapshot.value;
+      MorningBriefing? briefing;
       if (value is Map) {
-        _lastBriefing =
-            MorningBriefing.fromMap(Map<String, dynamic>.from(value));
-      } else {
-        _lastBriefing = null;
+        briefing = MorningBriefing.fromMap(Map<String, dynamic>.from(value));
       }
-      _briefingController.add(_lastBriefing);
+      _lastBriefings[key] = briefing;
+      ctrl.add(briefing);
     });
   }
 
@@ -103,10 +113,17 @@ class PredictiveIntelStreamService {
   }
 
   void dispose() {
-    _briefingSub?.cancel();
+    for (final sub in _briefingSubs.values) {
+      sub.cancel();
+    }
+    for (final ctrl in _briefingControllers.values) {
+      ctrl.close();
+    }
+    _briefingSubs.clear();
+    _briefingControllers.clear();
+    _lastBriefings.clear();
     _predictionsSub?.cancel();
     _accuracySub?.cancel();
-    _briefingController.close();
     _predictionsController.close();
     _accuracyController.close();
   }

@@ -891,6 +891,125 @@ Completed extraction of AI assignment subsystem into pure, testable modules with
 
 ---
 
+## AD. Phase 3: Predictive Model Validation & Reinforcement Learning Integration (May 2026)
+
+Implemented comprehensive predictive model validation system that measures forecast accuracy by cross-referencing historical predictions against actual alerts, plus reinforcement learning adjustment layer for dynamic score refinement.
+
+**Architecture Overview:**
+
+The system operates in three layers:
+
+1. **History Snapshot Layer** (cloudflare_worker.js: handlePredictions)
+   - When predictions are computed, a timestamped immutable copy is written to `ai_predictions/history/{key}.json` before the latest write.
+   - Key format: `_historyKey(iso)` escapes Firebase-unsafe characters by replacing `:` and `.` with `-` (e.g., `2026-05-07T14:00:00.000Z` → `2026-05-07T14-00-00-000Z`).
+   - Snapshot includes: generatedAt, predictions[], validated (false initially).
+   - Fire-and-forget write ensures history is immutable regardless of latest-write latency.
+
+2. **Validation Engine** (cloudflare_worker.js: validatePredictions)
+   - Runs as part of scheduled() cron handler (after processShiftEnding).
+   - Processes snapshots aged ≥MIN_VALIDATION_AGE_HOURS (24h), capped at MAX_VALIDATION_PER_RUN (10 per cron).
+   - Skips already-validated entries (validated: true).
+   - For each eligible snapshot:
+     - Fetches all alerts and indexes by timestamp for O(1) lookup.
+     - For each prediction in snapshot, matches alerts if:
+       - Alert timestamp within prediction.etaHours window (after generatedAt).
+       - Same factory (case-insensitive), convoyeur, poste, type.
+     - Computes accuracy = truePositives / totalPredicted (0.0–1.0).
+     - Writes validation object to snapshot with totalPredicted, truePositives, accuracy (4 decimals), validatedAt.
+   - Aggregates macro-average across all validated snapshots.
+   - Writes performance aggregate to `ai_predictions/performance/latest.json` (totalSnapshots, averageAccuracy, lastValidatedUtc).
+   - Returns processed count for HTTP response and logging.
+
+3. **Reinforcement Adjustment Layer** (cloudflare_worker.js: scoreSupervisor)
+   - Reads reinforcement adjustments from `ai_feedback/adjustments.json` (keyed by supervisorId).
+   - Applies ±15% clamped adjustment to raw score before final return.
+   - Calculation: maxAdj = score * 0.15; clamped = clamp(adjustment, -maxAdj, +maxAdj).
+   - Only applies adjustment if |clamped| ≥ 0.01 (avoids noise).
+   - Appends reason string if adjustment was applied (e.g., "Reinforcement adjustment (+5)").
+   - Maintains 100% backward compatibility: missing adjustments default to 0 (no change).
+
+**Flutter Integration:**
+
+1. **PredictiveAccuracy Model** (lib/services/predictive_intel_stream_service.dart)
+   - DTO: totalSnapshots (int), averageAccuracy (0.0–1.0), lastValidatedUtc (string?).
+   - Factory method fromMap() deserializes Firebase data safely.
+
+2. **Stream Service** (lib/services/predictive_intel_stream_service.dart)
+   - Added _accuracySub, _accuracyController, _lastAccuracy fields.
+   - _ensureAccuracySubscription() subscribes to `ai_predictions/performance/latest`.
+   - accuracyStream() getter returns broadcast stream.
+   - lastAccuracy getter for snapshot access (used by widgets).
+   - dispose() cancels subscription and closes controller.
+
+3. **Facade & Export** (lib/services/predictive_intel_service.dart)
+   - Re-exports PredictiveAccuracy for public API.
+   - accuracyStream() facade method delegates to streams service.
+
+4. **UI Integration** (lib/widgets/overview/overview_predictive_failure_card.dart)
+   - PredictiveFailureCard accepts optional accuracy parameter.
+   - Renders accuracy badge before LIVE badge when accuracy != null && totalSnapshots > 0.
+   - Badge displays: "Accuracy: X%" with purple background and tooltip.
+   - Tooltip text: "Based on the last N validated predictions."
+
+5. **Screen Binding** (lib/screens/overview_tab.dart)
+   - _bindPredictiveStreams() subscribes to accuracy stream and updates _accuracy field.
+   - dispose() cancels _accSub.
+   - Passes accuracy to PredictiveFailureCard widget.
+
+**Firebase Persistence:**
+
+- `/ai_predictions/history/{key}.json`: immutable prediction snapshots with validation metadata.
+- `/ai_predictions/performance/latest.json`: rolling macro-average accuracy and snapshot count.
+- `/ai_feedback/adjustments.json`: supervisor-keyed reinforcement adjustments (±15% clamp).
+- database.rules.json: read-protected (admin access), no client writes.
+
+**Test Coverage:**
+
+Worker test suite (worker_test/validation.test.js) includes 6 new test cases:
+1. Matching alerts yield TP > 0 and accuracy > 0.
+2. No matching alerts yield TP = 0 and accuracy = 0.
+3. Already-validated snapshots are skipped.
+4. Snapshots younger than 24h are not processed.
+5. /validate-predictions HTTP endpoint returns 200 + processed count.
+6. _historyKey escapes colons and dots in ISO timestamps.
+
+All 117 tests passing (111 prior + 6 new).
+
+**HTTP Endpoints:**
+
+- `POST /validate-predictions`: Triggers validation run immediately. Returns `{ ok: true, processed: N }`.
+- Called via WorkerTriggerQueue for explicit runs; also embedded in scheduled() cron.
+
+**Design Decisions:**
+
+1. **Idempotent validation:** validated flag prevents reprocessing same snapshot.
+2. **Immutable history:** fire-and-forget snapshot write before latest write ensures no data loss on worker crash.
+3. **Macro-average aggregation:** fairness across all snapshots regardless of individual sizes.
+4. **Lazy accuracy reads:** accuracy badge only renders when data available (no placeholder flickering).
+5. **Symmetric clamping:** ±15% adjustment ensures bidirectional feedback (positive reinforcement, negative correction).
+6. **Path safety:** ISO timestamp escaping handled automatically by _historyKey; no manual escaping in Firebase rules.
+
+**Operational Sequences:**
+
+Sequence 1: Prediction snapshot and validation
+1. Alert stream triggers predictive computation in worker.
+2. handlePredictions() writes timestamped snapshot to ai_predictions/history/{key}.json with validated: false.
+3. handlePredictions() writes latest to ai_predictions/latest.json.
+4. Next cron run: validatePredictions() finds eligible snapshot (≥24h old).
+5. Matches predictions against alerts within etaHours window.
+6. Writes validation object with accuracy.
+7. Aggregates macro-average to performance/latest.json.
+8. Flutter accuracy stream updates UI badge.
+
+Sequence 2: Reinforcement adjustment application
+1. Worker loads adjustments from ai_feedback/adjustments.json (keyed by supervisorId).
+2. During AI assignment scoring, scoreSupervisor() applies clamped adjustment.
+3. Final score = base score + adjustment (if |adjustment| ≥ 0.01).
+4. Reason appended to decision log for traceability.
+5. No adjustment present → defaults to 0 (no change from prior behavior).
+
+---
+
 ## Quick File-to-Responsibility Index
 
 - lib/main.dart: bootstrap, providers, role routing.
