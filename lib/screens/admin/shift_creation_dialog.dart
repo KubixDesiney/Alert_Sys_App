@@ -233,11 +233,6 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   void _setFullControl(bool value) {
     setState(() {
       _fullControl = value;
-      if (value) {
-        _handleAssignments = true;
-        _handleCollaborations = true;
-        _handleCrossFactoryTransfer = true;
-      }
     });
   }
 

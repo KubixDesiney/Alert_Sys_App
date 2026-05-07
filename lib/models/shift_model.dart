@@ -179,6 +179,10 @@ class ShiftModel {
       '${formatMinutes(startMinutes)} – ${formatMinutes(endMinutes)}';
 
   factory ShiftModel.fromMap(String id, Map<String, dynamic> m) {
+    final hasCommanderTaskConfig = m.containsKey('handleAssignments') ||
+        m.containsKey('handleCollaborations') ||
+        m.containsKey('handleCrossFactoryTransfer') ||
+        m.containsKey('fullControl');
     final supsRaw = m['supervisors'];
     final sups = <AssignedSupervisor>[];
     if (supsRaw is Map) {
@@ -207,10 +211,12 @@ class ShiftModel {
       aiCommander: m['aiCommander'] == true,
       aiModel: (m['aiModel'] ?? 'llama-3.2-3b').toString(),
       aiConfidence: _coerceDouble(m['aiConfidence'], 0.65),
-      handleAssignments:
-          m['fullControl'] == true || m['handleAssignments'] == true,
-      handleCollaborations:
-          m['fullControl'] == true || m['handleCollaborations'] == true,
+      handleAssignments: m['fullControl'] == true ||
+          m['handleAssignments'] == true ||
+          (!hasCommanderTaskConfig && m['aiCommander'] == true),
+      handleCollaborations: m['fullControl'] == true ||
+          m['handleCollaborations'] == true ||
+          (!hasCommanderTaskConfig && m['aiCommander'] == true),
       handleCrossFactoryTransfer:
           m['fullControl'] == true || m['handleCrossFactoryTransfer'] == true,
       fullControl: m['fullControl'] == true,
