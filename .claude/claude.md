@@ -825,6 +825,72 @@ _DoubleAssignmentDialog (in shift_creation_dialog.dart):
 
 ---
 
+## AC. Phase 6 Continuation: Modular AI Architecture & Build Stability (May 2026)
+
+Completed extraction of AI assignment subsystem into pure, testable modules with comprehensive test coverage and resolved all Flutter SDK version pinning conflicts for stable CI/CD deployments.
+
+**Modules Extracted:**
+
+1. **AIScoringEngine** (lib/services/ai/ai_scoring_engine.dart)
+   - Pure function scoring logic: 7 scoring factors, 4 disqualifier checks.
+   - No Firebase, singletons, or time mutation — fully testable with explicit `now` parameter.
+   - Scoring factors: same factory (+30/-25), type experience, resolution speed, workstation/conveyor familiarity, load balancing, critical history, feedback adjustment.
+   - Clamps score to 0-1000 range.
+   - Test coverage: 16 test cases covering all paths (test/services/ai_scoring_engine_test.dart).
+
+2. **AIStateManager** (lib/services/ai/ai_state_manager.dart)
+   - In-memory bookkeeping for transient state: in-flight set, skipped alerts map, supervisor cooldown map, processed history set.
+   - No Firebase — fully unit-testable with optional `now` parameter for deterministic tests.
+   - Methods: isInFlight/markInFlight/clearInFlight, isSkipped/markSkipped/clearExpiredSkipped, cooldownStart/recordCooldown, isHistoryProcessed/markHistoryProcessed.
+   - clearAll() for logout/test reset.
+
+3. **AIDecisionRepository** (lib/services/ai/ai_decision_repository.dart)
+   - Firebase persistence abstraction: owns ai_feedback/events and ai_feedback/summary/{supervisorId} writes.
+   - FeedbackSummary DTO: calculates rankAdjustment (±20 clamp) from accepted/rejected/aborted/resolved counts.
+   - Permission-denied handling: flips isAvailable flag on rules denial, short-circuits subsequent calls.
+   - Constructor accepts optional FirebaseDatabase for testing.
+
+4. **ConnectivityService** (lib/services/connectivity_service.dart)
+   - App-wide connectivity signal via ChangeNotifier (Provider-integrated).
+   - Exposes isOnline/isOffline getters, broadcast stream, init() method.
+   - Properly disposes subscription and StreamController in dispose().
+   - No singleton — injected via Provider for clean testability.
+
+**Dependency & Build Fixes:**
+
+- **intl version pinning:** Removed explicit intl dependency from pubspec.yaml. Intl is now provided transitively by flutter_localizations. This eliminates version conflicts across Flutter SDK versions and works in both local and CI environments.
+- **pdf/vector_math conflict:** Downgraded pdf to ^3.11.3 (compatible with Flutter SDK's pinned vector_math 2.1.4).
+- **Flutter API compatibility:** Fixed deprecated Switch.adaptive `activeThumbColor` → `activeColor`, DropdownButtonFormField `initialValue` → `value`.
+- **Unused imports cleanup:** Removed unused imports from lib/widgets/admin/header.dart.
+
+**StreamSubscription Disposal Audit:**
+
+- ConnectivityService: ✅ Disposes subscription and StreamController.
+- AIAssignmentService: ✅ Disposes all 4 subscriptions.
+- BackgroundSyncService: ✅ Disposes subscription and timer.
+- AlertStreamService: ✅ Added dispose() method.
+- DashboardScreen._HeaderState: ✅ Disposes notifications and PM subscriptions.
+- FcmService/PushNotificationService: FirebaseMessaging listeners are app-level.
+
+**Painter RepaintBoundary Wrapping:**
+
+- shift_backgrounds.dart: CustomPaint wrapped in RepaintBoundary.
+- ai_morning_briefing_hero.dart: CustomPaint wrapped in RepaintBoundary.
+
+**Test Infrastructure:**
+
+- Created comprehensive AIScoringEngine test suite: 16 test cases covering disqualifiers, scoring factors, edge cases.
+- All tests passing: `flutter test test/services/ai_scoring_engine_test.dart`.
+
+**Build & Deployment Status:**
+
+- ✅ `flutter pub get` succeeds (all Flutter SDK versions).
+- ✅ `flutter build web --release` succeeds.
+- ✅ All tests passing.
+- ✅ Ready for CI/GitHub Actions deployment.
+
+---
+
 ## Quick File-to-Responsibility Index
 
 - lib/main.dart: bootstrap, providers, role routing.
