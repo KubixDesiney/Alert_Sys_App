@@ -17,6 +17,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alert_model.dart';
 import '../models/user_model.dart';
 import '../utils/factory_id.dart';
+import 'ai/ai_decision_repository.dart';
+import 'ai/ai_scoring_engine.dart';
+import 'ai/ai_state_manager.dart';
 
 enum AILogStatus { success, skipped, recommended, rejected, aborted }
 
@@ -89,8 +92,19 @@ class AILogEntry {
 }
 
 class AIAssignmentService extends ChangeNotifier {
-  AIAssignmentService._();
-  static final AIAssignmentService instance = AIAssignmentService._();
+  /// Construct with optional injected dependencies. Defaults to the live
+  /// Firebase singleton for backward compatibility with the existing
+  /// [instance] callers; tests pass a fake [FirebaseDatabase].
+  AIAssignmentService({
+    FirebaseDatabase? database,
+    AIDecisionRepository? decisionRepository,
+  })  : _db = (database ?? FirebaseDatabase.instance).ref(),
+        _decisionRepo =
+            decisionRepository ?? AIDecisionRepository(database: database);
+
+  /// Legacy singleton entry point. New code should obtain the service via
+  /// Provider / DI; this stays so the in-flight migration is incremental.
+  static final AIAssignmentService instance = AIAssignmentService();
 
   static const String _prefKey = 'ai_assignment_enabled';
   static const String _prefFactoryKeyPrefix = 'ai_assignment_enabled_factory_';
@@ -99,7 +113,7 @@ class AIAssignmentService extends ChangeNotifier {
   static const Duration _defaultSkippedTtl = Duration(minutes: 20);
   static const int _maxLogs = 100;
 
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final DatabaseReference _db;
 
   bool _enabled = false;
   bool _initialized = false;
@@ -107,17 +121,19 @@ class AIAssignmentService extends ChangeNotifier {
   bool _remoteSettingsAvailable = true;
   bool _feedbackAvailable = true;
   bool _decisionStoreAvailable = true;
-  Duration _skippedAlertTtl = _defaultSkippedTtl;
+  // Backed by AIStateManager so the skip TTL stays in sync with whoever
+  // actually applies it. Kept as a member-style getter/setter to minimize
+  // churn at existing read/write sites.
+  Duration get _skippedAlertTtl => _state.skippedAlertTtl;
+  set _skippedAlertTtl(Duration value) => _state.skippedAlertTtl = value;
 
   final List<AILogEntry> _logs = [];
-  final Set<String> _processedHistoryIds = {};
-  final Set<String> _inFlight = {};
+  final AIStateManager _state = AIStateManager();
+  final AIDecisionRepository _decisionRepo;
   StreamSubscription<DatabaseEvent>? _alertsAddedSubscription;
   StreamSubscription<DatabaseEvent>? _alertsChangedSubscription;
-  final Map<String, DateTime> _skippedAlertIds = {};
-  final Map<String, DateTime> _supervisorCooldown = {};
   final Set<String> _capturedResolvedFeedback = {};
-  final Map<String, _FeedbackSummary> _feedbackSummary = {};
+  Map<String, FeedbackSummary> _feedbackSummary = {};
   final Map<String, bool> _factoryEnabledCache = {};
   StreamSubscription<DatabaseEvent>? _masterSubscription;
   StreamSubscription<DatabaseEvent>? _settingsSubscription;
@@ -433,7 +449,7 @@ class AIAssignmentService extends ChangeNotifier {
         await Future.delayed(_throttleInterval - elapsed);
       }
     }
-    _inFlight.add(alert.id);
+    _state.markInFlight(alert.id);
 
     try {
       // Re-check fresh state to avoid racing manual claim.
@@ -455,7 +471,7 @@ class AIAssignmentService extends ChangeNotifier {
         ..sort((a, b) => b.score.compareTo(a.score));
 
       if (eligible.isEmpty) {
-        _markAlertSkipped(alert.id);
+        _state.markSkipped(alert.id);
         _addLog(AILogEntry(
           id: _genId(),
           alertId: alert.id,
@@ -490,18 +506,18 @@ class AIAssignmentService extends ChangeNotifier {
           confidence: confidence,
           all: candidates,
         );
-        _markAlertSkipped(alert.id);
+        _state.markSkipped(alert.id);
         return;
       }
 
       await _assignToSupervisor(alert, best, confidence, candidates);
-      _supervisorCooldown[best.supervisor.id] = DateTime.now();
+      _state.recordCooldown(best.supervisor.id);
       _lastAssignmentTime = DateTime.now();
     } catch (e, st) {
       debugPrint('AI assign error for ${alert.id}: $e\n$st');
       _addLog(_skipLog(alert, 'Internal error: $e'));
     } finally {
-      _inFlight.remove(alert.id);
+      _state.clearInFlight(alert.id);
     }
   }
 
@@ -657,7 +673,7 @@ class AIAssignmentService extends ChangeNotifier {
     }
 
     // Don't re-pick this alert automatically (operator already intervened).
-    _markAlertSkipped(log.alertId);
+    _state.markSkipped(log.alertId);
     _logs[idx] = log.copyWith(status: AILogStatus.aborted);
     await _recordFeedback(
       eventType: 'aborted_assignment',
@@ -684,7 +700,7 @@ class AIAssignmentService extends ChangeNotifier {
       );
       notifyListeners();
     }
-    _markAlertSkipped(alertId);
+    _state.markSkipped(alertId);
 
     try {
       await _db.child('alerts/$alertId/aiHistory').push().set({
@@ -871,7 +887,7 @@ class AIAssignmentService extends ChangeNotifier {
         _logs[idx] = _logs[idx].copyWith(status: AILogStatus.success);
       }
 
-      _supervisorCooldown[recommendedId] = now;
+      _state.recordCooldown(recommendedId, at: now);
       notifyListeners();
       return true;
     } catch (e) {
@@ -956,7 +972,7 @@ class AIAssignmentService extends ChangeNotifier {
         );
       }
 
-      _markAlertSkipped(alertId);
+      _state.markSkipped(alertId);
       await _recordFeedback(
         eventType: 'rejected_assignment',
         alertId: alertId,
@@ -984,179 +1000,26 @@ class AIAssignmentService extends ChangeNotifier {
     return supervisors.map((s) => _evaluateOne(alert, s, allAlerts)).toList();
   }
 
+  /// Thin delegate to [AIScoringEngine]. Live state (cooldowns, feedback)
+  /// is read here and passed in as inputs so the engine itself stays pure.
   AICandidate _evaluateOne(
       AlertModel alert, _SupRecord rec, List<AlertModel> allAlerts) {
-    final sup = rec.user;
-
-    // ── Disqualifiers ─────────────────────────────────────────────────────
-    if (rec.aiOptOut) {
-      return AICandidate(
-        supervisor: sup,
-        score: 0,
-        reasons: const [],
-        skipReason: 'Opted out of AI auto-assignment',
-      );
-    }
-    if (sup.status != 'active') {
-      return AICandidate(
-        supervisor: sup,
-        score: 0,
-        reasons: const [],
-        skipReason: 'Not currently active',
-      );
-    }
-    final hasInProgress = allAlerts.any((a) =>
-        a.status == 'en_cours' &&
-        (a.superviseurId == sup.id || a.assistantId == sup.id));
-    if (hasInProgress) {
-      return AICandidate(
-        supervisor: sup,
-        score: 0,
-        reasons: const [],
-        skipReason: 'Already has an active alert',
-      );
-    }
-    if (!alert.isCritical) {
-      final cd = _supervisorCooldown[sup.id];
-      if (cd != null && DateTime.now().difference(cd) < _cooldownDuration) {
-        final remaining = _cooldownDuration - DateTime.now().difference(cd);
-        return AICandidate(
-          supervisor: sup,
-          score: 0,
-          reasons: const [],
-          skipReason:
-              'In cooldown (${remaining.inMinutes}m ${remaining.inSeconds % 60}s remaining)',
-        );
-      }
-    }
-
-    // ── Scoring ───────────────────────────────────────────────────────────
-    double score = 0;
-    final reasons = <String>[];
-
-    // Same factory → big bonus, different factory → strong penalty
-    if (sup.usine == alert.usine) {
-      score += 30;
-      reasons.add('Same factory (+30)');
-    } else {
-      score -= 25;
-      reasons.add('Different factory (−25)');
-    }
-
-    // Type experience: count of resolved alerts of this type
-    final typeResolved = allAlerts
-        .where((a) =>
-            a.type == alert.type &&
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
-        .length;
-    if (typeResolved > 0) {
-      final bonus = (typeResolved * 4).clamp(0, 40).toDouble();
-      score += bonus;
-      reasons.add(
-          '$typeResolved past ${alert.type} alert${typeResolved > 1 ? 's' : ''} resolved (+${bonus.toStringAsFixed(0)})');
-    } else {
-      reasons.add('No prior ${alert.type} experience (0)');
-    }
-
-    // Best avg resolution time for this type
-    final supTypeAlerts = allAlerts
-        .where((a) =>
-            a.type == alert.type &&
-            a.status == 'validee' &&
-            a.elapsedTime != null &&
-            a.superviseurId == sup.id)
-        .toList();
-    if (supTypeAlerts.isNotEmpty) {
-      final avg = supTypeAlerts.fold<int>(0, (s, a) => s + a.elapsedTime!) /
-          supTypeAlerts.length;
-      // Faster is better; bonus capped at 25.
-      final speedBonus = (60 - avg).clamp(0, 25).toDouble();
-      score += speedBonus;
-      reasons.add(
-          'Avg resolution ${avg.toStringAsFixed(0)}min for ${alert.type} (+${speedBonus.toStringAsFixed(0)})');
-    }
-
-    // Workstation familiarity
-    final stationResolved = allAlerts
-        .where((a) =>
-            a.usine == alert.usine &&
-            a.convoyeur == alert.convoyeur &&
-            a.poste == alert.poste &&
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
-        .length;
-    if (stationResolved > 0) {
-      final bonus = (stationResolved * 6).clamp(0, 30).toDouble();
-      score += bonus;
-      reasons.add(
-          '$stationResolved fix${stationResolved > 1 ? 'es' : ''} at this workstation (+${bonus.toStringAsFixed(0)})');
-    }
-
-    // Conveyor familiarity (lighter weight)
-    final conveyorResolved = allAlerts
-        .where((a) =>
-            a.usine == alert.usine &&
-            a.convoyeur == alert.convoyeur &&
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
-        .length;
-    if (conveyorResolved > 0) {
-      final bonus = (conveyorResolved * 1.5).clamp(0, 15).toDouble();
-      score += bonus;
-      reasons.add(
-          '${conveyorResolved} fix${conveyorResolved > 1 ? 'es' : ''} on Line ${alert.convoyeur} (+${bonus.toStringAsFixed(0)})');
-    }
-
-    // Recent load balancing — penalize anyone who already received an AI
-    // assignment within the last 10 minutes.
-    final recentAssignments = allAlerts
-        .where((a) =>
-            a.superviseurId == sup.id &&
-            a.takenAtTimestamp != null &&
-            DateTime.now().difference(a.takenAtTimestamp!) <
-                const Duration(minutes: 10))
-        .length;
-    if (!alert.isCritical && recentAssignments > 0) {
-      final penalty = (recentAssignments * 8).toDouble();
-      score -= penalty;
-      reasons.add(
-          'Recent load: $recentAssignments assignment${recentAssignments > 1 ? 's' : ''} in 10min (−${penalty.toStringAsFixed(0)})');
-    }
-
-    // Critical alerts: prefer supervisors with critical-resolution history
-    if (alert.isCritical) {
-      final criticalResolved = allAlerts
-          .where((a) =>
-              a.isCritical == true &&
-              a.status == 'validee' &&
-              a.superviseurId == sup.id)
-          .length;
-      if (criticalResolved > 0) {
-        final bonus = (criticalResolved * 5).clamp(0, 20).toDouble();
-        score += bonus;
-        reasons.add(
-            'Resolved $criticalResolved critical alert${criticalResolved > 1 ? 's' : ''} (+${bonus.toStringAsFixed(0)})');
-      }
-    }
-
-    final fb = _feedbackSummary[sup.id];
-    if (fb != null) {
-      final bonus = fb.rankAdjustment;
-      if (bonus != 0) {
-        score += bonus;
-        reasons.add(
-            'Feedback adjustment (${bonus >= 0 ? '+' : ''}${bonus.toStringAsFixed(0)})');
-      }
-    }
-
-    return AICandidate(
-      supervisor: sup,
-      score: score.clamp(0, 1000),
-      reasons: reasons,
-      skipReason: null,
+    return _scoringEngine.evaluate(
+      alert: alert,
+      candidate: AIScoringInputs(
+        supervisor: rec.user,
+        aiOptOut: rec.aiOptOut,
+        cooldownStart: _state.cooldownStart(rec.user.id),
+        feedbackRankAdjustment:
+            _feedbackSummary[rec.user.id]?.rankAdjustment ?? 0,
+      ),
+      allAlerts: allAlerts,
+      now: DateTime.now(),
     );
   }
+
+  static const AIScoringEngine _scoringEngine =
+      AIScoringEngine(cooldownDuration: _cooldownDuration);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -1228,31 +1091,6 @@ class AIAssignmentService extends ChangeNotifier {
     }
 
     return ids;
-  }
-
-  bool _isSkipped({required String alertId}) {
-    final until = _skippedAlertIds[alertId];
-    if (until == null) return false;
-    if (DateTime.now().isAfter(until)) {
-      _skippedAlertIds.remove(alertId);
-      return false;
-    }
-    return true;
-  }
-
-  void _markAlertSkipped(String alertId) {
-    _skippedAlertIds[alertId] = DateTime.now().add(_skippedAlertTtl);
-  }
-
-  void _clearExpiredSkipped() {
-    final now = DateTime.now();
-    final expired = _skippedAlertIds.entries
-        .where((e) => now.isAfter(e.value))
-        .map((e) => e.key)
-        .toList();
-    for (final id in expired) {
-      _skippedAlertIds.remove(id);
-    }
   }
 
   Future<void> _recordCrossFactoryRecommendation({
@@ -1377,53 +1215,14 @@ class AIAssignmentService extends ChangeNotifier {
     Map<String, dynamic>? details,
   }) async {
     if (!_feedbackAvailable) return;
-    final now = DateTime.now();
-    final event = {
-      'eventType': eventType,
-      'alertId': alertId,
-      'supervisorId': supervisorId,
-      'supervisorName': supervisorName,
-      'timestamp': now.toIso8601String(),
-      'details': details ?? <String, dynamic>{},
-    };
-    try {
-      await _db.child('ai_feedback/events').push().set(event);
-
-      if (supervisorId != null && supervisorId.isNotEmpty) {
-        final summaryRef = _db.child('ai_feedback/summary/$supervisorId');
-        final summarySnap = await summaryRef.get();
-        final summary = summarySnap.exists
-            ? Map<String, dynamic>.from(summarySnap.value as Map)
-            : <String, dynamic>{};
-
-        int current(String k) => (summary[k] as num?)?.toInt() ?? 0;
-        final updates = <String, dynamic>{
-          'supervisorId': supervisorId,
-          'supervisorName': supervisorName,
-          'updatedAt': now.toIso8601String(),
-        };
-        switch (eventType) {
-          case 'accepted_assignment':
-            updates['acceptedAssignments'] = current('acceptedAssignments') + 1;
-            break;
-          case 'rejected_assignment':
-            updates['rejectedAssignments'] = current('rejectedAssignments') + 1;
-            break;
-          case 'aborted_assignment':
-            updates['abortedAssignments'] = current('abortedAssignments') + 1;
-            break;
-          case 'resolved_outcome':
-            updates['resolvedOutcomes'] = current('resolvedOutcomes') + 1;
-            break;
-        }
-        await summaryRef.update(updates);
-      }
-    } catch (e) {
-      if (_isPermissionDenied(e)) {
-        debugPrint('AI feedback write permission denied at ai_feedback/events');
-        _feedbackAvailable = false;
-      }
-    }
+    await _decisionRepo.recordFeedbackEvent(
+      eventType: eventType,
+      alertId: alertId,
+      supervisorId: supervisorId,
+      supervisorName: supervisorName,
+      details: details,
+    );
+    if (!_decisionRepo.isAvailable) _feedbackAvailable = false;
   }
 
   Future<void> _captureResolvedOutcomes(List<AlertModel> alerts) async {
@@ -1466,31 +1265,11 @@ class AIAssignmentService extends ChangeNotifier {
 
   Future<void> _refreshFeedbackSummary() async {
     if (!_feedbackAvailable) {
-      _feedbackSummary.clear();
+      _feedbackSummary = {};
       return;
     }
-    try {
-      final snap = await _db.child('ai_feedback/summary').get();
-      if (!snap.exists) {
-        _feedbackSummary.clear();
-        return;
-      }
-      final map = Map<String, dynamic>.from(snap.value as Map);
-      _feedbackSummary
-        ..clear()
-        ..addEntries(map.entries.map((e) {
-          return MapEntry(
-            e.key,
-            _FeedbackSummary.fromMap(Map<String, dynamic>.from(e.value as Map)),
-          );
-        }));
-    } catch (e) {
-      if (_isPermissionDenied(e)) {
-        debugPrint('AI feedback read permission denied at ai_feedback/summary');
-        _feedbackAvailable = false;
-        _feedbackSummary.clear();
-      }
-    }
+    _feedbackSummary = await _decisionRepo.loadFeedbackSummary();
+    if (!_decisionRepo.isAvailable) _feedbackAvailable = false;
   }
 
   bool _isPermissionDenied(Object error) {
@@ -1502,7 +1281,7 @@ class AIAssignmentService extends ChangeNotifier {
 
   void _addLog(AILogEntry entry) {
     _logs.add(entry);
-    _processedHistoryIds.add(entry.id);
+    _state.markHistoryProcessed(entry.id);
     if (_logs.length > _maxLogs) {
       _logs.removeRange(0, _logs.length - _maxLogs);
     }
@@ -1669,8 +1448,8 @@ class AIAssignmentService extends ChangeNotifier {
         // Use actionId from history for idempotency - prevents duplicate processing
         final actionId = histVal['actionId']?.toString() ?? '${alertId}_$histKey';
         
-        if (_processedHistoryIds.contains(actionId)) continue;
-        _processedHistoryIds.add(actionId);
+        if (_state.isHistoryProcessed(actionId)) continue;
+        _state.markHistoryProcessed(actionId);
 
         final timestamp = _parseTimestamp(histVal['timestamp']);
         if (timestamp == null) continue;
@@ -1762,33 +1541,3 @@ class _SupRecord {
   _SupRecord({required this.user, required this.aiOptOut});
 }
 
-class _FeedbackSummary {
-  final int acceptedAssignments;
-  final int rejectedAssignments;
-  final int abortedAssignments;
-  final int resolvedOutcomes;
-
-  _FeedbackSummary({
-    required this.acceptedAssignments,
-    required this.rejectedAssignments,
-    required this.abortedAssignments,
-    required this.resolvedOutcomes,
-  });
-
-  factory _FeedbackSummary.fromMap(Map<String, dynamic> map) {
-    return _FeedbackSummary(
-      acceptedAssignments: (map['acceptedAssignments'] as num?)?.toInt() ?? 0,
-      rejectedAssignments: (map['rejectedAssignments'] as num?)?.toInt() ?? 0,
-      abortedAssignments: (map['abortedAssignments'] as num?)?.toInt() ?? 0,
-      resolvedOutcomes: (map['resolvedOutcomes'] as num?)?.toInt() ?? 0,
-    );
-  }
-
-  double get rankAdjustment {
-    final value = (acceptedAssignments * 2.0) +
-        (resolvedOutcomes * 3.0) -
-        (rejectedAssignments * 2.0) -
-        (abortedAssignments * 1.5);
-    return value.clamp(-20.0, 20.0);
-  }
-}
