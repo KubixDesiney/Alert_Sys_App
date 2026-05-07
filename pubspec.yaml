@@ -62,6 +62,7 @@ dependencies:
 
   # UI helpers
   google_fonts: ^6.3.0
+  intl: ^0.20.2
   provider: ^6.1.2
   tflite_flutter: ^0.12.1
   qr_flutter: ^4.1.0

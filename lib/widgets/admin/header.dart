@@ -1,11 +1,5 @@
-import 'dart:async';
-
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
-import '../../services/app_logger.dart';
-import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../dashboard_common.dart';
 
@@ -26,8 +20,6 @@ class AdminDashboardHeader extends StatefulWidget {
 }
 
 class _AdminDashboardHeaderState extends State<AdminDashboardHeader> {
-  final AppLogger _logger = ServiceLocator.instance.logger;
-
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
