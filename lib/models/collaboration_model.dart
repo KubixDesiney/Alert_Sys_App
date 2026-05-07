@@ -17,6 +17,9 @@ class CollaborationRequest {
   final DateTime? approvedAt;
   final String? rejectedBy;
   final DateTime? rejectedAt;
+  final String? rejectionReason;
+  final String? aiDecision;
+  final String? aiReason;
   final bool requiresPMApproval;
   final bool pmApproved;
   final bool cancelsOriginalAlert;
@@ -25,6 +28,7 @@ class CollaborationRequest {
   final int? poste;
   final String? alertType;
   final String? alertDescription;
+
   /// Per-supervisor decision map: uid → 'pending' | 'accepted' | 'refused'
   final Map<String, String> assistantDecisions;
 
@@ -46,6 +50,9 @@ class CollaborationRequest {
     this.approvedAt,
     this.rejectedBy,
     this.rejectedAt,
+    this.rejectionReason,
+    this.aiDecision,
+    this.aiReason,
     this.requiresPMApproval = true,
     this.pmApproved = false,
     this.cancelsOriginalAlert = false,
@@ -64,7 +71,8 @@ class CollaborationRequest {
       requesterId: map['requesterId'] ?? '',
       requesterName: map['requesterName'] ?? '',
       targetSupervisorIds: List<String>.from(map['targetSupervisorIds'] ?? []),
-      targetSupervisorNames: List<String>.from(map['targetSupervisorNames'] ?? []),
+      targetSupervisorNames:
+          List<String>.from(map['targetSupervisorNames'] ?? []),
       message: map['message'] ?? '',
       status: map['status'] ?? 'pending',
       assistantDecision: map['assistantDecision'] ?? 'pending',
@@ -73,11 +81,17 @@ class CollaborationRequest {
       assistantRespondedAt: map['assistantRespondedAt'] != null
           ? DateTime.parse(map['assistantRespondedAt'])
           : null,
-      timestamp: DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
+      timestamp:
+          DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
       approvedBy: map['approvedBy'],
-      approvedAt: map['approvedAt'] != null ? DateTime.parse(map['approvedAt']) : null,
+      approvedAt:
+          map['approvedAt'] != null ? DateTime.parse(map['approvedAt']) : null,
       rejectedBy: map['rejectedBy'],
-      rejectedAt: map['rejectedAt'] != null ? DateTime.parse(map['rejectedAt']) : null,
+      rejectedAt:
+          map['rejectedAt'] != null ? DateTime.parse(map['rejectedAt']) : null,
+      rejectionReason: map['rejectionReason'],
+      aiDecision: map['aiDecision'],
+      aiReason: map['aiReason'],
       requiresPMApproval: map['requiresPMApproval'] ?? true,
       pmApproved: map['pmApproved'] ?? false,
       cancelsOriginalAlert: map['cancelsOriginalAlert'] ?? false,
@@ -87,9 +101,8 @@ class CollaborationRequest {
       alertType: map['alertType'],
       alertDescription: map['alertDescription'],
       assistantDecisions: map['assistantDecisions'] != null
-          ? Map<String, String>.from(
-              (map['assistantDecisions'] as Map).map(
-                  (k, v) => MapEntry(k.toString(), v.toString())))
+          ? Map<String, String>.from((map['assistantDecisions'] as Map)
+              .map((k, v) => MapEntry(k.toString(), v.toString())))
           : {},
     );
   }
@@ -112,6 +125,9 @@ class CollaborationRequest {
       'approvedAt': approvedAt?.toIso8601String(),
       'rejectedBy': rejectedBy,
       'rejectedAt': rejectedAt?.toIso8601String(),
+      'rejectionReason': rejectionReason,
+      'aiDecision': aiDecision,
+      'aiReason': aiReason,
       'requiresPMApproval': requiresPMApproval,
       'pmApproved': pmApproved,
       'cancelsOriginalAlert': cancelsOriginalAlert,
@@ -134,7 +150,8 @@ class EscalationSettings {
     final thresholds = <String, EscalationThreshold>{};
     map.forEach((key, value) {
       if (value is Map) {
-        thresholds[key] = EscalationThreshold.fromMap(Map<String, dynamic>.from(value));
+        thresholds[key] =
+            EscalationThreshold.fromMap(Map<String, dynamic>.from(value));
       }
     });
     return EscalationSettings(thresholds: thresholds);

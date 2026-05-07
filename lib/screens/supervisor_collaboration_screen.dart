@@ -233,8 +233,9 @@ class _SentCardState extends State<_SentCard> {
     if (confirmed != true || !mounted) return;
     setState(() => _cancelling = true);
     try {
-      await ServiceLocator.instance.collaborationService.cancelCollaborationRequest(
-          widget.request.id, widget.request.alertId);
+      await ServiceLocator.instance.collaborationService
+          .cancelCollaborationRequest(
+              widget.request.id, widget.request.alertId);
     } finally {
       if (mounted) setState(() => _cancelling = false);
     }
@@ -255,6 +256,25 @@ class _SentCardState extends State<_SentCard> {
         r.targetSupervisorIds.any(
           (id) => (r.assistantDecisions[id] ?? 'pending') == 'refused',
         );
+    final rejectionReason = (r.rejectionReason?.trim().isNotEmpty ?? false)
+        ? r.rejectionReason!.trim()
+        : ((r.aiReason?.trim().isNotEmpty ?? false)
+            ? r.aiReason!.trim()
+            : null);
+    final approvalReason =
+        (r.aiReason?.trim().isNotEmpty ?? false) ? r.aiReason!.trim() : null;
+    final pmApprovalSubtitle = r.pmApproved
+        ? (approvalReason ?? 'Approved by Production Manager')
+        : r.status == 'rejected'
+            ? (rejectionReason ??
+                (r.assistantDecision == 'refused'
+                    ? 'All assistants declined'
+                    : 'Declined by Production Manager'))
+            : r.assistantDecision == 'accepted'
+                ? (allAccepted
+                    ? 'All assistants accepted - awaiting PM'
+                    : 'Some assistants declined - awaiting PM')
+                : 'Waiting for assistants to respond';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -350,7 +370,32 @@ class _SentCardState extends State<_SentCard> {
             isLast: true,
           ),
 
-          if (!r.pmApproved && r.assistantDecision != 'accepted' && r.status != 'rejected') ...[
+          if (r.status == 'rejected' && rejectionReason != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _red.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _red.withOpacity(0.25)),
+              ),
+              child:
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.psychology_alt, color: _red, size: 15),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    pmApprovalSubtitle,
+                    style: const TextStyle(fontSize: 11, color: _red),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+
+          if (!r.pmApproved &&
+              r.assistantDecision != 'accepted' &&
+              r.status != 'rejected') ...[
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(10),
@@ -422,7 +467,8 @@ class _ReceivedCardState extends State<_ReceivedCard> {
     setState(() => _loading = true);
     final user = FirebaseAuth.instance.currentUser!;
     try {
-      await ServiceLocator.instance.collaborationService.respondToCollaborationRequest(
+      await ServiceLocator.instance.collaborationService
+          .respondToCollaborationRequest(
         requestId: widget.request.id,
         responderId: user.uid,
         responderName: user.email?.split('@').first ?? 'Supervisor',
@@ -438,11 +484,10 @@ class _ReceivedCardState extends State<_ReceivedCard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(UserFriendlyError.message(e)),
-              backgroundColor: _red,
-            ));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(UserFriendlyError.message(e)),
+          backgroundColor: _red,
+        ));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -795,6 +840,7 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (r.pmApproved) return _badge('Approved', _green);
+    if (r.aiDecision == 'declined') return _badge('AI Declined', _red);
     if (r.status == 'rejected' || r.assistantDecision == 'refused')
       return _badge('Declined', _red);
     if (r.assistantDecision == 'accepted')
@@ -1204,8 +1250,8 @@ class _RequestCollaborationDialogState
       ));
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(UserFriendlyError.message(e)), backgroundColor: _red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(UserFriendlyError.message(e)), backgroundColor: _red));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
