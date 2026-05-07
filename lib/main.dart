@@ -21,7 +21,10 @@ import 'services/worker_trigger_queue.dart';
 import 'services/background_sync_service.dart';
 import 'services/app_lifecycle_observer.dart';
 import 'theme.dart';
+import 'l10n/generated/app_localizations.dart';
+import 'services/connectivity_service.dart';
 import 'widgets/common/app_loading_indicator.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -129,6 +132,12 @@ class AlertSysApp extends StatelessWidget {
           return p;
         }),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) {
+          final c = ConnectivityService();
+          // Fire-and-forget; the service swallows its own errors.
+          c.init();
+          return c;
+        }),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(
@@ -138,6 +147,13 @@ class AlertSysApp extends StatelessWidget {
           theme: buildLightTheme(),
           darkTheme: buildDarkTheme(),
           navigatorKey: FcmService.navigatorKey,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
           home: const AuthGate(),
         ),
       ),

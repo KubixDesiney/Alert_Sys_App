@@ -23,6 +23,7 @@ import '../widgets/common/app_loading_indicator.dart';
 import '../widgets/dashboard/dashboard_badges.dart';
 import '../widgets/dashboard/dashboard_bottom_nav.dart';
 import '../widgets/dashboard/elapsed_timer.dart';
+import '../l10n/generated/app_localizations.dart';
 import 'supervisor_collaboration_screen.dart'; // new
 import 'supervisor_collaboration_screen.dart' as collab;
 import '../models/collaboration_model.dart';
@@ -217,9 +218,9 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                     children: [
                       const Icon(Icons.dashboard, color: _navy, size: 20),
                       const SizedBox(width: 8),
-                      const Text(
-                        'Dashboard',
-                        style: TextStyle(
+                      Text(
+                        AppLocalizations.of(context).dashboardHeaderTitle,
+                        style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: _navy),
