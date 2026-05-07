@@ -89,14 +89,26 @@ class AuthService {
     required String lastName,
     required String phone,
     required String usine,
+    String? email,
   }) async {
-    await _db.child('users/$userId').update({
+    final updates = {
       'firstName': firstName,
       'lastName': lastName,
       'fullName': '$firstName $lastName',
       'phone': phone,
       'usine': usine,
-    });
+    };
+    if (email != null && email.isNotEmpty) {
+      updates['email'] = email;
+    }
+    await _db.child('users/$userId').update(updates);
+    if (email != null && email.isNotEmpty) {
+      try {
+        await _auth.currentUser?.verifyBeforeUpdateEmail(email);
+      } catch (e) {
+        debugPrint('Failed to update email: $e');
+      }
+    }
   }
 
   Future<void> sendPasswordResetEmail(String email) async {

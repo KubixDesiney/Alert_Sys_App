@@ -844,6 +844,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final last = TextEditingController();
     final email = TextEditingController();
     final pass = TextEditingController();
+    final confirmPass = TextEditingController();
     final phone = TextEditingController();
     String usine = '';
     DateTime hired = DateTime.now();
@@ -921,6 +922,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     keyboard: TextInputType.emailAddress),
                 _sheetField('Password', pass, 'Min 6 characters',
                     obscure: true),
+                _sheetField('Confirm Password', confirmPass, 'Repeat password',
+                    obscure: true),
                 _sheetLabel('Assigned Plant'),
                 Container(
                   margin: const EdgeInsets.only(bottom: 14),
@@ -991,9 +994,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       onPressed: loading
                           ? null
                           : () async {
-                              if ([first, last, email, pass]
+                              if ([first, last, email, pass, confirmPass]
                                   .any((c) => c.text.trim().isEmpty)) {
                                 setS(() => error = 'All fields are required.');
+                                return;
+                              }
+                              if (pass.text != confirmPass.text) {
+                                setS(() => error = 'Passwords do not match.');
+                                return;
+                              }
+                              if (pass.text.length < 6) {
+                                setS(() => error = 'Password must be at least 6 characters.');
                                 return;
                               }
                               if (usine.isEmpty) {

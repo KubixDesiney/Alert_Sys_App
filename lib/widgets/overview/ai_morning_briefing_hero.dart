@@ -104,7 +104,7 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
         : const EdgeInsets.fromLTRB(20, 18, 18, 20);
     final titleSize = compact ? 16.5 : 22.0;
     final summarySize = compact ? 12.0 : 13.5;
-    final summaryMaxLines = compact ? 2 : 6;
+    final summaryMaxLines = compact ? 5 : 6;
     final spacingTitle = compact ? 6.0 : 14.0;
     final spacingAfterSummary = compact ? 8.0 : 14.0;
     final spacingAfterChips = compact ? 8.0 : 12.0;

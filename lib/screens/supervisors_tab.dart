@@ -1209,10 +1209,148 @@ class _SupervisorCard extends StatefulWidget {
 
 class _SupervisorCardState extends State<_SupervisorCard> {
   bool _expanded = false;
+
+  Future<void> _showDeleteConfirmDialog(BuildContext context) async {
+    final sup = widget.supervisor;
+    return showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: context.appTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: _red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.warning_outlined, color: _red, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Delete Supervisor',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: _navy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      sup.fullName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _red,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                border: Border.all(color: _red.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, color: _red, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This action cannot be undone. All associated data will be permanently removed.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _red.withValues(alpha: 0.8),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            RichText(
+              text: TextSpan(
+                style: const TextStyle(fontSize: 13, color: _text, height: 1.6),
+                children: [
+                  const TextSpan(
+                    text: 'You are about to delete: ',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  TextSpan(
+                    text: sup.fullName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _navy,
+                    ),
+                  ),
+                  const TextSpan(text: ' from '),
+                  TextSpan(
+                    text: sup.usine,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _navy,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: _muted, fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(dialogCtx);
+              widget.onDelete();
+            },
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text(
+              'Delete Permanently',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _red,
+              foregroundColor: _white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showModifyDialog(BuildContext context) async {
     final sup = widget.supervisor;
     final firstCtrl = TextEditingController(text: sup.firstName);
     final lastCtrl = TextEditingController(text: sup.lastName);
+    final emailCtrl = TextEditingController(text: sup.email);
     final phoneCtrl = TextEditingController(text: sup.phone);
     final usineChoices = <String>{
       sup.usine,
@@ -1252,6 +1390,17 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                         controller: lastCtrl,
                         decoration: const InputDecoration(
                           hintText: 'Last name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SheetLabel('Email'),
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          hintText: 'Email address',
                           border: OutlineInputBorder(),
                           isDense: true,
                         ),
@@ -1301,12 +1450,18 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                       : () async {
                           final first = firstCtrl.text.trim();
                           final last = lastCtrl.text.trim();
+                          final email = emailCtrl.text.trim();
                           final phone = phoneCtrl.text.trim();
-                          if (first.isEmpty || last.isEmpty) {
+                          if (first.isEmpty || last.isEmpty || email.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content:
-                                      Text('First and last name are required')),
+                                  content: Text('First name, last name, and email are required')),
+                            );
+                            return;
+                          }
+                          if (!email.contains('@')) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter a valid email')),
                             );
                             return;
                           }
@@ -1316,6 +1471,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                               userId: sup.id,
                               firstName: first,
                               lastName: last,
+                              email: email,
                               phone: phone,
                               usine: selectedUsine,
                             );
@@ -1354,6 +1510,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
 
     firstCtrl.dispose();
     lastCtrl.dispose();
+    emailCtrl.dispose();
     phoneCtrl.dispose();
   }
 
@@ -1490,8 +1647,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                 tooltip: 'Modify Supervisor',
               ),
               IconButton(
-                onPressed: widget.onDelete,
+                onPressed: () => _showDeleteConfirmDialog(context),
                 icon: const Icon(Icons.delete_outline, color: _red, size: 20),
+                tooltip: 'Delete Supervisor',
               ),
             ]),
           ]),

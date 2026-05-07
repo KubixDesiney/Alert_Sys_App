@@ -1010,6 +1010,134 @@ Sequence 2: Reinforcement adjustment application
 
 ---
 
+## AE. Briefing Personalization and Predictive Insights (May 2026)
+
+Implemented comprehensive personalization of morning briefings with three integrated features: factory scope selection, validated predictive accuracy injection, and supervisor reinforcement ranking.
+
+**Factory-Scoped Briefing:**
+
+The briefing system now supports per-factory data aggregation alongside global briefings.
+
+Worker side (cloudflare_worker.js):
+- `_briefingFactorySlug(factory)`: Sanitizes factory name to Firebase-safe path segment by converting to lowercase, replacing spaces with underscores, and removing special characters (e.g., "Quality Line 1" → "quality_line_1").
+- `handleBriefing()`: Accepts optional `?factory` query parameter. If present, worker aggregates statistics scoped to only that factory's alerts.
+  - Fetches validated accuracy from `ai_predictions/performance/latest.json`.
+  - Fetches latest predictions from `ai_predictions/latest.json` and filters predictions by factory.
+  - Selects top prediction by confidence score (highest first, factory-scoped).
+  - Calls `_topSupervisorWeek(alertsMap, usersMap, factory)` to rank supervisors.
+  - Writes briefing to factory-scoped Firebase path: `ai_briefing/factory/{slug}/latest.json`.
+- Null or "all" factory parameter → writes to global path: `ai_briefing/latest.json`.
+
+**Predictive Accuracy Injection:**
+
+Each briefing includes validated model accuracy metrics and top predicted failure details.
+
+Worker integration (cloudflare_worker.js):
+- `_topSupervisorWeek(alertsMap, usersMap, factoryFilter)`: Ranks supervisors by resolved alert count in past 7 days.
+  - Filters alerts by factory if factoryFilter provided.
+  - Computes resolved count per supervisor.
+  - Extracts topType: most common alert type resolved by that supervisor.
+  - Calculates avgMin: average resolution time in minutes.
+  - Returns: { name: firstName + lastName (or UID fallback), count: totalResolved, topType: typeString, avgMin: minutes }.
+- Injected into Llama prompt as three distinct context lines:
+  - Factory line (if factory-scoped): "Factory scope: {factory name}."
+  - Accuracy line: "Validated model accuracy: {accuracyPct}% based on {totalSnapshots} predictions."
+  - Prediction line: "Alert prediction: expecting {topType} issue on {topConvoyeur} Line {topPoste}, confidence {confidenceScore}%."
+  - Supervisor line: "Top performer: {supervisorName} resolved {count} alerts last week, fastest for {topType} issues."
+
+Flutter side (lib/services/predictive_models.dart):
+- MorningBriefing model extended with new fields:
+  - `factoryScope`: null for global, string for factory name.
+  - `accuracyPct`: 0-100 integer, validated model accuracy.
+  - `predictiveType`, `predictiveConvoyeur`, `predictiveConfidence`: Top predicted failure details.
+  - `topSupervisorName`, `topSupervisorCount`, `topSupervisorType`: Supervisor ranking.
+- fromMap() deserializes all fields, with safe defaults for missing data (null checks).
+
+**Per-Factory Caching and Streaming:**
+
+HTTP and stream services refactored for per-factory state management.
+
+PredictiveRepository (lib/services/predictive_repository.dart):
+- `_briefingCache`, `_briefingCachedAt`: Changed from single values to `Map<String?, ...>` for per-factory caching.
+- `_briefingPath(String? factory)`: Returns correct Firebase path (null/'all' → 'ai_briefing/latest', string → 'ai_briefing/factory/{slug}/latest').
+- `getBriefing({bool force, String? factory})`: Caches per factory key. URL-encodes factory query parameter for HTTP transport.
+- `briefingStream({String? factory})`: Reads from factory-specific path via _briefingPath.
+
+PredictiveIntelStreamService (lib/services/predictive_intel_stream_service.dart):
+- Refactored single briefing subscription to multi-subscription map:
+  - `_briefingSubs`: Map<String?, StreamSubscription> for active subscriptions.
+  - `_briefingControllers`: Map<String?, StreamController> for broadcast streams.
+  - `_lastBriefings`: Map<String?, MorningBriefing?> for snapshot access.
+- `_ensureBriefingSubscription(String? key)`: Lazily creates subscription for each unique factory key on first call. Idempotent: subsequent calls return existing subscription.
+- `dispose()`: Cancels all subscriptions and closes all controllers, ensuring no resource leaks on logout or screen disposal.
+- `briefingStream({String? factory})`: Accepts factory parameter, delegates to per-factory subscription map.
+
+PredictiveIntelService (lib/services/predictive_intel_service.dart):
+- Thin facade that propagates factory parameter through to repository and stream service.
+- `briefingStream({String? factory})` and `fetchBriefing({bool force, String? factory})` pass factory through unchanged.
+
+**UI Integration:**
+
+Overview tab (lib/screens/overview_tab.dart):
+- `_briefingFactory` getter: Returns null if selectedUsine == 'all' (global briefing), else returns selectedUsine (factory-scoped).
+- `_bindPredictiveStreams()`: Passes factory to briefingStream() call.
+- `_warmPredictiveCaches()`: Passes factory to fetchBriefing() on app startup.
+- `_refreshBriefing()`: Passes factory to fetchBriefing(force: true) on user refresh.
+- `_rebindBriefingStream()`: New method that cancels old subscription, clears state, and resubscribes with new factory when user switches factory selection.
+- `didUpdateWidget()`: Calls _rebindBriefingStream() when selectedUsine changes.
+
+AI Morning Briefing Hero widget (lib/widgets/overview/ai_morning_briefing_hero.dart):
+- `_briefChip()` method extended: Accepts optional `Color? color` parameter for custom tinting.
+  - Uses tinted colors: 0.15 alpha for background, 0.28 for border.
+- New chips displayed in Wrap (order: factory, accuracy, prediction, supervisor):
+  - **Factory scope badge** (green): Shows only when factoryScope != null. Displays factory name.
+  - **Accuracy chip** (purple): Shows "Accuracy: X%" when accuracyPct available. Includes tooltip: "Based on N validated predictions."
+  - **Predictive insight chip** (amber): Shows "{type} on {convoyeur} Line {poste}" with confidence score. Tooltip: "Expected alert type and location."
+  - **Top supervisor chip** (blue): Shows "{name} — {count} resolved" highlighting top performer's achievement. Tooltip: "{name} specialized in {topType}."
+- Adjusted summaryMaxLines: Increased compact mode from 2 to 5 lines to accommodate full briefing paragraph.
+
+**Firebase Paths:**
+
+- `/ai_briefing/latest.json`: Global briefing (no factory filter).
+- `/ai_briefing/factory/{slug}/latest.json`: Factory-scoped briefing where {slug} = _briefingFactorySlug(factoryName).
+- `/ai_predictions/latest.json`: Latest predictions (source for top-prediction selection).
+- `/ai_predictions/performance/latest.json`: Validated accuracy metrics (totalSnapshots, averageAccuracy, lastValidatedUtc).
+
+**Data Flow:**
+
+Sequence: Morning briefing with factory personalization
+1. PM or supervisor opens Overview tab and selects a factory (or views global if "all").
+2. AlertProvider notifies OverviewTab of factory selection change via didUpdateWidget.
+3. OverviewTab._rebindBriefingStream() cancels old subscription and resubscribes with new factory parameter.
+4. PredictiveRepository.getBriefing(factory: "production_line_2") makes HTTP request: GET /briefing?factory=production_line_2.
+5. Worker handleBriefing() receives factory param, scopes alert aggregation:
+   - Computes stats only for alerts where usine == "Production Line 2".
+   - Fetches validated accuracy from ai_predictions/performance/latest.json.
+   - Fetches predictions, filters by factory, selects top by confidence.
+   - Calls _topSupervisorWeek with factoryFilter="Production Line 2", returns top supervisor from that factory's resolved alerts.
+   - Injects all three contexts (factory line, accuracy line, prediction line, supervisor line) into Llama prompt.
+   - Generates briefing with Llama and writes to ai_briefing/factory/production_line_2/latest.json.
+6. PredictiveIntelStreamService._ensureBriefingSubscription("production_line_2") sets up stream from that path.
+7. MorningBriefing fromMap() deserializes: factoryScope, accuracyPct, predictiveType/Convoyeur/Confidence, topSupervisorName/Count/Type.
+8. AiMorningBriefingHero renders:
+   - Factory scope badge (green, "Production Line 2").
+   - Accuracy chip (purple, "Accuracy: 72%").
+   - Predictive insight chip (amber, "Quality on Conveyor A Line 3").
+   - Top supervisor chip (blue, "Ahmed — 8 resolved").
+   - Full briefing paragraph below.
+
+**Design Decisions:**
+
+1. **Per-factory subscription maps:** Avoids unnecessary re-subscriptions when factory changes; lazy initialization on first access.
+2. **Factory slug escaping:** Deterministic transformation ensures path consistency across worker and Flutter services.
+3. **Three-line context injection:** Structured prompt context for Llama allows natural weaving of insights without prompt engineering fragility.
+4. **Accuracy from validated snapshots:** Uses aggregated macro-average from validation engine, not raw worker-computed confidence.
+5. **Top supervisor per factory:** Rankings isolated to factory scope ensures relevance (best performer in that plant, not globally).
+6. **Name resolution fallback:** Supervisor name = firstName + lastName with UID fallback, matching scoreSupervisor pattern for consistency.
+7. **Chip color coding:** Green (scope/availability), purple (model quality), amber (predictive alert), blue (team strength) reinforce semantic meaning.
+
+---
+
 ## Quick File-to-Responsibility Index
 
 - lib/main.dart: bootstrap, providers, role routing.

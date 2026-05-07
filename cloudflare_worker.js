@@ -196,7 +196,8 @@ function _topSupervisorWeek(alertsMap = {}, usersMap = {}, factoryFilter = null)
     if (!uid) continue;
     if (!counts[uid]) {
       const user = usersMap[uid] || {};
-      counts[uid] = { name: String(user.name || uid), count: 0, totalTime: 0, byType: {} };
+      const fullName = user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || uid;
+      counts[uid] = { name: fullName, count: 0, totalTime: 0, byType: {} };
     }
     counts[uid].count++;
     const type = String(alert?.type || '');
