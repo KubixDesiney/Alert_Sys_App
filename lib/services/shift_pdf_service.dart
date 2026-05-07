@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:csv/csv.dart';
+import 'package:excel/excel.dart' as excel;
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
@@ -15,7 +18,8 @@ import 'pdf/pdf_common.dart';
 /// Single timeline action that occurred during a shift window.
 class ShiftAction {
   final DateTime at;
-  final String kind; // created, claimed, resolved, ai_assigned, escalated, handover
+  final String
+      kind; // created, claimed, resolved, ai_assigned, escalated, handover
   final String alertLabel;
   final String alertType;
   final String factory;
@@ -71,6 +75,129 @@ class ShiftPdfService {
   // ──────────────────────────────────────────────────────────────────────
   // DATA LOADING
   // ──────────────────────────────────────────────────────────────────────
+
+  static Future<void> exportCsvAndShare({
+    required ShiftModel shift,
+    required DateTime day,
+  }) async {
+    final window = _windowFor(shift, day);
+    final actions = await _loadActions(shift, window);
+    final rows =
+        _spreadsheetRows(shift: shift, window: window, actions: actions);
+    final csv = const ListToCsvConverter().convert(rows);
+    final filename =
+        'alertsys_shift_${_slug(shift.name)}_${_fmtDateFile(day)}.csv';
+    await _downloadOrShare(
+      bytes: utf8.encode(csv),
+      filename: filename,
+      mimeType: 'text/csv',
+      shareText: 'AlertSys shift CSV - ${shift.name}',
+    );
+  }
+
+  static Future<void> exportExcelAndShare({
+    required ShiftModel shift,
+    required DateTime day,
+  }) async {
+    final window = _windowFor(shift, day);
+    final actions = await _loadActions(shift, window);
+    final workbook = excel.Excel.createExcel();
+    final sheet = workbook['Shift Report'];
+
+    for (final row in _spreadsheetRows(
+      shift: shift,
+      window: window,
+      actions: actions,
+    )) {
+      sheet.appendRow(
+          row.map((value) => excel.TextCellValue('$value')).toList());
+    }
+
+    final bytes = workbook.encode();
+    if (bytes == null) return;
+    final filename =
+        'alertsys_shift_${_slug(shift.name)}_${_fmtDateFile(day)}.xlsx';
+    await _downloadOrShare(
+      bytes: bytes,
+      filename: filename,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      shareText: 'AlertSys shift Excel - ${shift.name}',
+    );
+  }
+
+  static Future<void> _downloadOrShare({
+    required List<int> bytes,
+    required String filename,
+    required String mimeType,
+    required String shareText,
+  }) async {
+    if (kIsWeb) {
+      final blob = html.Blob([bytes], mimeType);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      html.AnchorElement(href: url)
+        ..setAttribute('download', filename)
+        ..click();
+      html.Url.revokeObjectUrl(url);
+      return;
+    }
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/$filename');
+    await file.writeAsBytes(bytes, flush: true);
+    await Share.shareXFiles([XFile(file.path)], text: shareText);
+  }
+
+  static List<List<dynamic>> _spreadsheetRows({
+    required ShiftModel shift,
+    required ({DateTime start, DateTime end}) window,
+    required List<ShiftAction> actions,
+  }) {
+    final ready = shift.supervisors.where((s) => s.ready).length;
+    final rows = <List<dynamic>>[
+      ['AlertSys Shift Report'],
+      ['Shift', shift.name],
+      [
+        'Window',
+        '${_fmtDateTime(window.start)} -> ${_fmtDateTime(window.end)}'
+      ],
+      ['Kind', _kindLabel(shift.kind)],
+      ['AI Commander', shift.aiCommander ? 'Enabled' : 'Disabled'],
+      ['Readiness', '$ready/${shift.supervisors.length} ready'],
+      ['Actions', actions.length],
+      [],
+      [
+        'Time',
+        'Action',
+        'Alert',
+        'Type',
+        'Factory',
+        'Actor',
+        'AI Confidence',
+        'Detail',
+      ],
+    ];
+
+    if (actions.isEmpty) {
+      rows.add(['-', 'No actions recorded', '-', '-', '-', '-', '-', '-']);
+      return rows;
+    }
+
+    for (final action in actions) {
+      rows.add([
+        _fmtDateTime(action.at),
+        _kindLabelText(action.kind),
+        action.alertLabel,
+        action.alertType,
+        action.factory,
+        action.actor,
+        action.aiConfidence == null
+            ? ''
+            : '${(action.aiConfidence! * 100).round()}%',
+        action.detail,
+      ]);
+    }
+    return rows;
+  }
 
   static ({DateTime start, DateTime end}) _windowFor(
       ShiftModel shift, DateTime day) {
@@ -179,8 +306,8 @@ class ShiftPdfService {
 
     if (shift.lastHandoverAt != null &&
         !shift.lastHandoverAt!.isBefore(window.start) &&
-        shift.lastHandoverAt!.isBefore(
-            window.end.add(const Duration(minutes: 30)))) {
+        shift.lastHandoverAt!
+            .isBefore(window.end.add(const Duration(minutes: 30)))) {
       actions.add(ShiftAction(
         at: shift.lastHandoverAt!,
         kind: 'handover',
@@ -256,7 +383,8 @@ class ShiftPdfService {
             pw.SizedBox(height: 14),
           ],
           if (bySupervisor.isNotEmpty) ...[
-            _sectionHeader('Top supervisors (resolutions)', bySupervisor.length),
+            _sectionHeader(
+                'Top supervisors (resolutions)', bySupervisor.length),
             pw.SizedBox(height: 6),
             _barBreakdown(bySupervisor, PdfPalette.green),
             pw.SizedBox(height: 14),
@@ -420,6 +548,13 @@ class ShiftPdfService {
   // ── Shift meta ───────────────────────────────────────────────────────
   static pw.Widget _shiftMetaCard(ShiftModel shift) {
     final supervisors = shift.supervisors.map((s) => s.name).join(', ');
+    final commanderTasks = shift.fullControl
+        ? 'Full control'
+        : [
+            if (shift.handleAssignments) 'Assignments',
+            if (shift.handleCollaborations) 'Collaborations',
+            if (shift.handleCrossFactoryTransfer) 'Cross-factory transfer',
+          ].join(', ');
     return pw.Container(
       padding: const pw.EdgeInsets.all(14),
       decoration: pw.BoxDecoration(
@@ -434,8 +569,8 @@ class ShiftPdfService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 _metaRow('Shift kind', _kindLabel(shift.kind)),
-                _metaRow(
-                    'Capacity', '${shift.supervisors.length}/${shift.maxSupervisors}'),
+                _metaRow('Capacity',
+                    '${shift.supervisors.length}/${shift.maxSupervisors}'),
                 _metaRow('Randomized', shift.randomize ? 'Yes' : 'No'),
               ],
             ),
@@ -445,11 +580,13 @@ class ShiftPdfService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                _metaRow('AI Commander',
-                    shift.aiCommander ? 'Enabled' : 'Disabled'),
+                _metaRow(
+                    'AI Commander', shift.aiCommander ? 'Enabled' : 'Disabled'),
                 _metaRow('AI model', shift.aiModel),
-                _metaRow('Confidence floor',
-                    '${(shift.aiConfidence * 100).round()}%'),
+                _metaRow(
+                  'Tasks checklist',
+                  commanderTasks.isEmpty ? 'None selected' : commanderTasks,
+                ),
               ],
             ),
           ),
@@ -544,13 +681,13 @@ class ShiftPdfService {
                         color: PdfColor.fromHex('#EEF2F7'),
                         child: pw.Row(children: [
                           pw.Expanded(
-                            flex:
-                                (e.value / maxVal * 1000).round().clamp(1, 1000),
+                            flex: (e.value / maxVal * 1000)
+                                .round()
+                                .clamp(1, 1000),
                             child: pw.Container(height: 12, color: color),
                           ),
                           pw.Expanded(
-                            flex: (1000 -
-                                    (e.value / maxVal * 1000).round())
+                            flex: (1000 - (e.value / maxVal * 1000).round())
                                 .clamp(0, 999),
                             child: pw.SizedBox(),
                           ),
@@ -588,8 +725,8 @@ class ShiftPdfService {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                    horizontal: 6, vertical: 3),
+                padding:
+                    const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 color: PdfPalette.aiPink,
                 child: pw.Text('AI',
                     style: pw.TextStyle(
@@ -625,7 +762,8 @@ class ShiftPdfService {
               pw.Expanded(
                 child: pw.Text(
                   _safe(ais[i].detail),
-                  style: const pw.TextStyle(fontSize: 9, color: PdfPalette.text),
+                  style:
+                      const pw.TextStyle(fontSize: 9, color: PdfPalette.text),
                 ),
               ),
               pw.SizedBox(width: 6),
@@ -644,8 +782,8 @@ class ShiftPdfService {
               if (ais[i].aiConfidence != null) ...[
                 pw.SizedBox(width: 6),
                 pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(
-                      horizontal: 5, vertical: 2),
+                  padding:
+                      const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                   color: _withAlpha(PdfPalette.purple, 0.14),
                   child: pw.Text(
                     '${(ais[i].aiConfidence! * 100).round()}%',
@@ -702,7 +840,7 @@ class ShiftPdfService {
         alignment: pw.Alignment.center,
         color: PdfPalette.cardBg,
         child: pw.Text('No actions recorded during this shift.',
-            style: pw.TextStyle(fontSize: 11, color: PdfPalette.muted)),
+            style: const pw.TextStyle(fontSize: 11, color: PdfPalette.muted)),
       );
     }
     final rows = <pw.Widget>[];
@@ -710,8 +848,7 @@ class ShiftPdfService {
       final a = actions[i];
       final color = _kindColor(a.kind);
       final bg = i.isOdd ? PdfPalette.stripe : PdfColors.white;
-      pw.Widget cell(String text, int flex,
-              {PdfColor? c, bool mono = false}) =>
+      pw.Widget cell(String text, int flex, {PdfColor? c, bool mono = false}) =>
           pw.Expanded(
             flex: flex,
             child: pw.Padding(
@@ -739,8 +876,8 @@ class ShiftPdfService {
               child: pw.Padding(
                 padding: const pw.EdgeInsets.symmetric(horizontal: 4),
                 child: pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(
-                      horizontal: 5, vertical: 2),
+                  padding:
+                      const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                   color: _withAlpha(color, 0.14),
                   child: pw.Text(
                     _kindLabelText(a.kind).toUpperCase(),
@@ -778,7 +915,8 @@ class ShiftPdfService {
         children: [
           pw.Row(children: [
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              padding:
+                  const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               color: PdfPalette.purple,
               child: pw.Text('AI HANDOVER',
                   style: pw.TextStyle(
@@ -793,13 +931,13 @@ class ShiftPdfService {
               shift.lastHandoverAt == null
                   ? ''
                   : 'Generated ${_fmtDateTime(shift.lastHandoverAt!)}',
-              style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+              style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
             ),
           ]),
           pw.SizedBox(height: 8),
           pw.Text(
             _safe(shift.lastHandoverSummary ?? ''),
-            style: pw.TextStyle(
+            style: const pw.TextStyle(
               fontSize: 10,
               color: PdfPalette.text,
               lineSpacing: 3,
@@ -857,7 +995,7 @@ class ShiftPdfService {
         pw.Spacer(),
         pw.Text(
           '${_fmtDateTime(window.start)}  ->  ${_fmtDateTime(window.end)}',
-          style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+          style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
         ),
       ]),
     );
@@ -870,10 +1008,10 @@ class ShiftPdfService {
       color: PdfPalette.cardBg,
       child: pw.Row(children: [
         pw.Text('Page ${ctx.pageNumber}',
-            style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
         pw.Spacer(),
         pw.Text('Generated on ${_fmtDateTime(DateTime.now())}',
-            style: pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
       ]),
     );
   }

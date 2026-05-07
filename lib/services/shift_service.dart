@@ -76,6 +76,10 @@ class ShiftService {
       aiCommander: s.aiCommander,
       aiModel: s.aiModel,
       aiConfidence: s.aiConfidence,
+      handleAssignments: s.handleAssignments,
+      handleCollaborations: s.handleCollaborations,
+      handleCrossFactoryTransfer: s.handleCrossFactoryTransfer,
+      fullControl: s.fullControl,
       randomize: s.randomize,
       createdAt: DateTime.now(),
       isSeeded: s.isSeeded,
@@ -99,9 +103,7 @@ class ShiftService {
     required String supervisorId,
     required bool ready,
   }) async {
-    await _root
-        .child('$shiftId/supervisors/$supervisorId/ready')
-        .set(ready);
+    await _root.child('$shiftId/supervisors/$supervisorId/ready').set(ready);
   }
 
   /// Pick up to [maxSupervisors] from [pool], preferring evenly across factories.
@@ -135,7 +137,8 @@ class ShiftService {
       byFactory.putIfAbsent(u.usine, () => []).add(u);
     }
     final picked = <UserModel>[];
-    while (picked.length < maxSupervisors && byFactory.values.any((l) => l.isNotEmpty)) {
+    while (picked.length < maxSupervisors &&
+        byFactory.values.any((l) => l.isNotEmpty)) {
       for (final entry in byFactory.entries) {
         if (picked.length >= maxSupervisors) break;
         if (entry.value.isNotEmpty) picked.add(entry.value.removeAt(0));
@@ -210,7 +213,8 @@ class ShiftService {
 
   /// Manually request the worker to perform an AI shift action. The worker
   /// also polls cron, so this is best-effort — a failure is silently logged.
-  Future<bool> triggerShiftAiAction(ShiftModel s, {String action = 'evaluate'}) async {
+  Future<bool> triggerShiftAiAction(ShiftModel s,
+      {String action = 'evaluate'}) async {
     final result = await _triggerWorker(s, action: action);
     // Persist an entry so the logs panel reflects this trigger immediately.
     logCommanderAction(
@@ -232,6 +236,10 @@ class ShiftService {
               'action': action,
               'aiCommander': s.aiCommander,
               'aiConfidence': s.aiConfidence,
+              'handleAssignments': s.handleAssignments,
+              'handleCollaborations': s.handleCollaborations,
+              'handleCrossFactoryTransfer': s.handleCrossFactoryTransfer,
+              'fullControl': s.fullControl,
               'aiModel': s.aiModel,
               'name': s.name,
             }),

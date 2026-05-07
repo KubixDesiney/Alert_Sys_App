@@ -78,8 +78,14 @@ class ShiftModel {
   /// Llama 3.2 (Workers AI binding) is currently the only supported model.
   final String aiModel;
 
-  /// Confidence threshold the AI must clear before acting autonomously.
+  /// Legacy confidence threshold kept for backward compatibility.
   final double aiConfidence;
+
+  /// Fine-grained commander task controls.
+  final bool handleAssignments;
+  final bool handleCollaborations;
+  final bool handleCrossFactoryTransfer;
+  final bool fullControl;
 
   /// When true, supervisors are randomly drawn from the active pool.
   final bool randomize;
@@ -104,6 +110,10 @@ class ShiftModel {
     required this.aiCommander,
     required this.aiModel,
     required this.aiConfidence,
+    required this.handleAssignments,
+    required this.handleCollaborations,
+    required this.handleCrossFactoryTransfer,
+    required this.fullControl,
     required this.randomize,
     required this.createdAt,
     this.lastHandoverSummary,
@@ -142,7 +152,8 @@ class ShiftModel {
     if (endMinutes >= startMinutes) {
       elapsed = m - startMinutes;
     } else {
-      elapsed = m >= startMinutes ? m - startMinutes : (1440 - startMinutes) + m;
+      elapsed =
+          m >= startMinutes ? m - startMinutes : (1440 - startMinutes) + m;
     }
     final total = durationMinutes;
     if (total <= 0) return 0;
@@ -153,9 +164,7 @@ class ShiftModel {
   int? minutesRemaining(DateTime now) {
     if (!containsTime(now)) return null;
     final m = now.hour * 60 + now.minute;
-    final endAbs = endMinutes >= startMinutes
-        ? endMinutes
-        : 1440 + endMinutes;
+    final endAbs = endMinutes >= startMinutes ? endMinutes : 1440 + endMinutes;
     final mAbs = m >= startMinutes ? m : 1440 + m;
     return endAbs - mAbs;
   }
@@ -198,6 +207,13 @@ class ShiftModel {
       aiCommander: m['aiCommander'] == true,
       aiModel: (m['aiModel'] ?? 'llama-3.2-3b').toString(),
       aiConfidence: _coerceDouble(m['aiConfidence'], 0.65),
+      handleAssignments:
+          m['fullControl'] == true || m['handleAssignments'] == true,
+      handleCollaborations:
+          m['fullControl'] == true || m['handleCollaborations'] == true,
+      handleCrossFactoryTransfer:
+          m['fullControl'] == true || m['handleCrossFactoryTransfer'] == true,
+      fullControl: m['fullControl'] == true,
       randomize: m['randomize'] == true,
       createdAt: DateTime.tryParse((m['createdAt'] ?? '').toString()) ??
           DateTime.now(),
@@ -220,6 +236,10 @@ class ShiftModel {
         'aiCommander': aiCommander,
         'aiModel': aiModel,
         'aiConfidence': aiConfidence,
+        'handleAssignments': handleAssignments,
+        'handleCollaborations': handleCollaborations,
+        'handleCrossFactoryTransfer': handleCrossFactoryTransfer,
+        'fullControl': fullControl,
         'randomize': randomize,
         'createdAt': createdAt.toIso8601String(),
         if (lastHandoverSummary != null)
@@ -238,6 +258,10 @@ class ShiftModel {
     bool? aiCommander,
     String? aiModel,
     double? aiConfidence,
+    bool? handleAssignments,
+    bool? handleCollaborations,
+    bool? handleCrossFactoryTransfer,
+    bool? fullControl,
     bool? randomize,
     String? lastHandoverSummary,
     DateTime? lastHandoverAt,
@@ -252,6 +276,11 @@ class ShiftModel {
         aiCommander: aiCommander ?? this.aiCommander,
         aiModel: aiModel ?? this.aiModel,
         aiConfidence: aiConfidence ?? this.aiConfidence,
+        handleAssignments: handleAssignments ?? this.handleAssignments,
+        handleCollaborations: handleCollaborations ?? this.handleCollaborations,
+        handleCrossFactoryTransfer:
+            handleCrossFactoryTransfer ?? this.handleCrossFactoryTransfer,
+        fullControl: fullControl ?? this.fullControl,
         randomize: randomize ?? this.randomize,
         createdAt: createdAt,
         lastHandoverSummary: lastHandoverSummary ?? this.lastHandoverSummary,

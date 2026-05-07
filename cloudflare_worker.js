@@ -130,6 +130,47 @@ function _toMs(value) {
   return null;
 }
 
+function commanderCapabilities(shift) {
+  const aiCommander = !!(shift && shift.aiCommander === true);
+  const fullControl = !!(shift && shift.fullControl === true);
+  return {
+    aiCommander,
+    fullControl,
+    handleAssignments: aiCommander && (fullControl || shift?.handleAssignments === true),
+    handleCollaborations: aiCommander && (fullControl || shift?.handleCollaborations === true),
+    handleCrossFactoryTransfer:
+      aiCommander && (fullControl || shift?.handleCrossFactoryTransfer === true),
+  };
+}
+
+async function writeShiftAiLog(env, token, shiftId, entry) {
+  if (!shiftId) return null;
+  try {
+    const nowIso = new Date().toISOString();
+    const res = await fetch(`${env.FB_DB_URL}shift_ai_logs/${shiftId}.json?auth=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        at: entry.at || nowIso,
+        kind: String(entry.kind || 'action'),
+        shiftId,
+        alertLabel: entry.alertLabel || null,
+        supervisorName: entry.supervisorName || null,
+        supervisorId: entry.supervisorId || null,
+        factory: entry.factory || null,
+        confidence: Number(entry.confidence || 0),
+        reason: String(entry.reason || ''),
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data?.name || null;
+  } catch (e) {
+    console.error('[SHIFT-AI] log write failed: ' + e.message);
+    return null;
+  }
+}
+
 function _aggregateWeek(alertsMap = {}, factoryFilter = null) {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const stats = {
@@ -1536,11 +1577,8 @@ async function runAIAssignments(env, ctx) {
     const shiftsMap = sr.ok ? ((await sr.json()) || {}) : {};
     activeShift = pickActiveShift(shiftsMap, new Date());
   }
-  const aiCommander = !!(activeShift && activeShift.aiCommander === true);
-  const shiftConfidenceFloor =
-    activeShift && typeof activeShift.aiConfidence === 'number'
-      ? Number(activeShift.aiConfidence)
-      : 0;
+  const capabilities = commanderCapabilities(activeShift);
+  const aiCommander = capabilities.aiCommander;
   const shiftRandomize = !!(activeShift && activeShift.randomize === true);
   const shiftMaxSupervisors =
     activeShift && Number.isFinite(Number(activeShift.maxSupervisors))
@@ -1551,6 +1589,13 @@ async function runAIAssignments(env, ctx) {
       ? Object.keys(activeShift.supervisors)
       : []),
   );
+  if (aiCommander && !capabilities.handleAssignments) {
+    await writeShiftAiLog(env, token, activeShift?.id, {
+      kind: 'skipped',
+      reason: `Assignments were skipped because "Handle Assignments" is disabled for shift "${activeShift?.name || activeShift?.id || 'Unknown'}".`,
+    });
+    return 0;
+  }
   let feedbackSummary = {};
   try {
     const fbRes = await fetch(`${env.FB_DB_URL}ai_feedback/summary.json?auth=${token}`);
@@ -1614,14 +1659,22 @@ async function runAIAssignments(env, ctx) {
 
       if (aiCommander) {
         // Under AI Commander, ONLY assign supervisors in this shift's roster.
-        // Cross-factory transfers are allowed but the person must be a shift member.
+        // Cross-factory transfers are only allowed when enabled for the shift.
         if (!shiftSupervisorIds.has(uid)) continue;
+        if (!capabilities.handleCrossFactoryTransfer && (!userFactory || userFactory !== factoryId)) {
+          continue;
+        }
       } else {
         // Normal mode: same factory only.
         if (!userFactory || userFactory !== factoryId) continue;
       }
 
-      candidates.push({ ...u, uid });
+      candidates.push({
+        ...u,
+        uid,
+        factoryId: userFactory,
+        factoryName: u.usine || null,
+      });
     }
     if (candidates.length === 0) continue;
     const recentCounts = {};
@@ -1642,7 +1695,15 @@ async function runAIAssignments(env, ctx) {
         now,
         { isCommander: aiCommander, reinforcementAdjustment: adj },
       );
-      return { uid: u.uid, name: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(), fcmToken: u.fcmToken, score, reasons };
+      return {
+        uid: u.uid,
+        name: u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+        fcmToken: u.fcmToken,
+        factoryId: u.factoryId || null,
+        factoryName: u.factoryName || u.usine || null,
+        score,
+        reasons,
+      };
     });
 
     // Step 1: sort by score so the confidence calculation reflects the true best candidates.
@@ -1652,11 +1713,6 @@ async function runAIAssignments(env, ctx) {
     // This ensures a randomly-ordered low-score pick can never falsely block a valid pool.
     const topSum = scored.slice(0, 3).reduce((s, c) => s + c.score, 0);
     const confidence = topSum > 0 ? Math.min(scored[0].score / topSum, 1.0) : 1.0;
-    if (aiCommander && shiftConfidenceFloor > 0 && confidence < shiftConfidenceFloor) {
-      console.log(`[SHIFT-AI] Skipping: confidence ${confidence.toFixed(2)} < floor ${shiftConfidenceFloor.toFixed(2)}`);
-      continue;
-    }
-
     // Step 3: optionally shuffle so the AI Commander picks randomly from the confident pool.
     if (shiftRandomize) {
       for (let k = scored.length - 1; k > 0; k--) {
@@ -1670,7 +1726,34 @@ async function runAIAssignments(env, ctx) {
       reasonSummary = `[Shift "${activeShift.name || activeShift.id}"] ` + reasonSummary;
     }
     const ok = await aiAssignAlert(alert.id, best, reasonSummary, confidence, env, token, scored);
-    if (ok) { busy.add(best.uid); assignedCount++; }
+    if (ok) {
+      const transferUsed =
+        aiCommander &&
+        capabilities.handleCrossFactoryTransfer &&
+        best.factoryId &&
+        best.factoryId !== factoryId;
+      const detailParts = [
+        `Auto-assigned "${alert.type || 'alert'}"`,
+        alert.usine ? `for ${alert.usine}` : null,
+        `to ${best.name}.`,
+        transferUsed
+            ? `Cross-factory transfer used from ${best.factoryName || best.factoryId} to ${alert.usine || factoryId}.`
+            : 'Assignment stayed within the allowed factory scope.',
+        `Confidence ${(confidence * 100).toFixed(0)}%.`,
+        `Reasoning: ${best.reasons.join(' | ') || 'No score breakdown provided.'}`,
+      ].filter(Boolean);
+      await writeShiftAiLog(env, token, activeShift?.id, {
+        kind: transferUsed ? 'transfer' : 'assigned',
+        alertLabel: `${alert.type || 'Alert'}${alert.usine ? ` • ${alert.usine}` : ''}`,
+        supervisorName: best.name,
+        supervisorId: best.uid,
+        factory: alert.usine || null,
+        confidence,
+        reason: detailParts.join(' '),
+      });
+      busy.add(best.uid);
+      assignedCount++;
+    }
   }
   return assignedCount;
 }
@@ -1681,14 +1764,20 @@ async function runAIAssignments(env, ctx) {
 // cross-factory transfers without human intervention.
 async function processShiftCollaborations(env, ctx) {
   const activeShift = ctx?.activeShift;
-  if (!activeShift || activeShift.aiCommander !== true) return;
+  const capabilities = commanderCapabilities(activeShift);
+  if (!capabilities.aiCommander) return 0;
 
   const token = ctx?.token ?? (await getFirebaseToken(env));
+  if (!capabilities.handleCollaborations) {
+    await writeShiftAiLog(env, token, activeShift?.id, {
+      kind: 'skipped',
+      reason: `Collaboration approvals were skipped because "Handle Collaborations" is disabled for shift "${activeShift?.name || activeShift?.id || 'Unknown'}".`,
+    });
+    return 0;
+  }
   const res = await fetch(`${env.FB_DB_URL}collaboration_requests.json?auth=${token}`);
-  if (!res.ok) return;
+  if (!res.ok) return 0;
   const reqs = (await res.json()) || {};
-  const minConfidence =
-    typeof activeShift.aiConfidence === 'number' ? Number(activeShift.aiConfidence) : 0.65;
 
   let processed = 0;
   for (const [reqId, req] of Object.entries(reqs)) {
@@ -1697,8 +1786,6 @@ async function processShiftCollaborations(env, ctx) {
     if (req.status && req.status !== 'pending' && req.status !== 'awaiting_pm') continue;
     if (req.pmApproved === true || req.pmApproved === false) continue;
 
-    // Require a minimum fraction of assistants to have accepted.
-    // Using a fraction (vs strict "every") lets the confidence floor act as the threshold.
     const assistantDecisions = req.assistantDecisions
       ? Object.values(req.assistantDecisions)
       : [];
@@ -1707,10 +1794,6 @@ async function processShiftCollaborations(env, ctx) {
       (d) => d && (d === 'accepted' || d.status === 'accepted'),
     ).length;
     const collabConfidence = acceptedCount / assistantDecisions.length;
-    if (collabConfidence < minConfidence) {
-      console.log(`[SHIFT-COLLAB] Skipping ${reqId}: confidence ${collabConfidence.toFixed(2)} < floor ${minConfidence.toFixed(2)}`);
-      continue;
-    }
 
     const nowIso = new Date().toISOString();
     const patch = {
@@ -1719,8 +1802,8 @@ async function processShiftCollaborations(env, ctx) {
       pmApprovedBy: 'ai_shift_commander',
       pmApprovedShiftId: activeShift.id,
       pmApprovedAt: nowIso,
-      aiConfidence: minConfidence,
-      aiReason: `Auto-approved by AI Shift Commander during "${activeShift.name || activeShift.id}".`,
+      aiConfidence: collabConfidence,
+      aiReason: `Auto-approved by AI Shift Commander during "${activeShift.name || activeShift.id}" after ${acceptedCount}/${assistantDecisions.length} assistant approvals.`,
     };
     const patchRes = await fetch(
       `${env.FB_DB_URL}collaboration_requests/${reqId}.json?auth=${token}`,
@@ -1732,6 +1815,18 @@ async function processShiftCollaborations(env, ctx) {
     );
     if (patchRes.ok) {
       processed++;
+      await writeShiftAiLog(env, token, activeShift.id, {
+        kind: 'collaboration',
+        alertLabel: req.alertTitle || req.alertLabel || req.alertId || 'Collaboration request',
+        supervisorName: req.requesterName || req.requesterFullName || null,
+        supervisorId: req.requesterId || null,
+        factory: req.factoryName || req.usine || null,
+        confidence: collabConfidence,
+        reason:
+          `Approved collaboration request ${reqId} for shift "${activeShift.name || activeShift.id}". ` +
+          `Assistant approvals: ${acceptedCount}/${assistantDecisions.length}. ` +
+          `Requester: ${req.requesterName || req.requesterFullName || req.requesterId || 'Unknown'}.`,
+      });
       // Notify the requester so the UI updates.
       if (req.requesterId) {
         await fetch(
@@ -1858,6 +1953,14 @@ async function processShiftEnding(env, ctx) {
         }),
       });
     }
+    await writeShiftAiLog(env, ctx.token, id, {
+      kind: 'handover',
+      confidence: 1,
+      reason:
+        `Generated live handover for shift "${shift.name || id}". ` +
+        `Resolved ${result.resolved}, pending ${result.pending}, critical ${result.critical}. ` +
+        `Summary: ${result.summary}`,
+    });
     handoverCount++;
   }
   return handoverCount;
@@ -1877,11 +1980,31 @@ async function handleShiftAiAction(request, env) {
     }
 
     if (action === 'evaluate' || action === 'created' || action === 'updated') {
+      const targetShiftId = shift?.id ?? null;
+      if (targetShiftId) {
+        await writeShiftAiLog(env, coreCtx.token, targetShiftId, {
+          kind: action,
+          reason: `AI Shift Commander received "${action}" for shift "${shift?.name || targetShiftId}" and started a live evaluation cycle.`,
+        });
+      }
       // Re-run AI assignment + collaboration approval immediately.
-      await runAIAssignments(env, coreCtx);
-      await processShiftCollaborations(env, coreCtx);
+      const assignedCount = await runAIAssignments(env, coreCtx);
+      const collaborationCount = await processShiftCollaborations(env, coreCtx);
+      if (targetShiftId && assignedCount === 0 && collaborationCount === 0) {
+        await writeShiftAiLog(env, coreCtx.token, targetShiftId, {
+          kind: 'idle',
+          reason:
+            `Evaluation finished for shift "${shift?.name || targetShiftId}" with no new assignments or collaboration approvals to apply.`,
+        });
+      }
       return new Response(
-        JSON.stringify({ ok: true, action, shiftId: shift?.id ?? null }),
+        JSON.stringify({
+          ok: true,
+          action,
+          shiftId: shift?.id ?? null,
+          assignedCount,
+          collaborationCount,
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -1923,6 +2046,14 @@ async function handleShiftAiAction(request, env) {
           }),
         });
       }
+      await writeShiftAiLog(env, coreCtx.token, shift.id, {
+        kind: 'handover',
+        confidence: 1,
+        reason:
+          `Generated on-demand handover for shift "${shift.name || shift.id}". ` +
+          `Resolved ${result.resolved}, pending ${result.pending}, critical ${result.critical}. ` +
+          `Summary: ${result.summary}`,
+      });
       return new Response(
         JSON.stringify({
           ok: true,
@@ -2239,4 +2370,3 @@ export {
   validatePredictions,
   _historyKey,
 };
-
