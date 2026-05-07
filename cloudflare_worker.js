@@ -133,11 +133,25 @@ function _toMs(value) {
 function commanderCapabilities(shift) {
   const aiCommander = !!(shift && shift.aiCommander === true);
   const fullControl = !!(shift && shift.fullControl === true);
+  const hasExplicitTaskConfig =
+    shift &&
+    (Object.prototype.hasOwnProperty.call(shift, 'handleAssignments') ||
+      Object.prototype.hasOwnProperty.call(shift, 'handleCollaborations') ||
+      Object.prototype.hasOwnProperty.call(shift, 'handleCrossFactoryTransfer') ||
+      Object.prototype.hasOwnProperty.call(shift, 'fullControl'));
   return {
     aiCommander,
     fullControl,
-    handleAssignments: aiCommander && (fullControl || shift?.handleAssignments === true),
-    handleCollaborations: aiCommander && (fullControl || shift?.handleCollaborations === true),
+    handleAssignments:
+      aiCommander &&
+      (fullControl ||
+        shift?.handleAssignments === true ||
+        (!hasExplicitTaskConfig && aiCommander)),
+    handleCollaborations:
+      aiCommander &&
+      (fullControl ||
+        shift?.handleCollaborations === true ||
+        (!hasExplicitTaskConfig && aiCommander)),
     handleCrossFactoryTransfer:
       aiCommander && (fullControl || shift?.handleCrossFactoryTransfer === true),
   };
@@ -169,6 +183,14 @@ async function writeShiftAiLog(env, token, shiftId, entry) {
     console.error('[SHIFT-AI] log write failed: ' + e.message);
     return null;
   }
+}
+
+function cloneCtxWithShift(ctx, shift) {
+  return {
+    ...ctx,
+    activeShift: shift ?? null,
+    targetShift: shift ?? null,
+  };
 }
 
 function _aggregateWeek(alertsMap = {}, factoryFilter = null) {
@@ -1564,7 +1586,7 @@ async function runAIAssignments(env, ctx) {
   if (ctx) {
     alertsMap = ctx.alertsMap;
     usersMap = ctx.usersMap;
-    activeShift = ctx.activeShift ?? null;
+    activeShift = ctx.targetShift ?? ctx.activeShift ?? null;
   } else {
     const [ar, ur, sr] = await Promise.all([
       fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
@@ -1763,7 +1785,7 @@ async function runAIAssignments(env, ctx) {
 // have all assistant approvals but are awaiting PM approval. Also handles
 // cross-factory transfers without human intervention.
 async function processShiftCollaborations(env, ctx) {
-  const activeShift = ctx?.activeShift;
+  const activeShift = ctx?.targetShift ?? ctx?.activeShift;
   const capabilities = commanderCapabilities(activeShift);
   if (!capabilities.aiCommander) return 0;
 
@@ -1783,19 +1805,49 @@ async function processShiftCollaborations(env, ctx) {
   for (const [reqId, req] of Object.entries(reqs)) {
     if (processed >= 5) break;
     if (!req || typeof req !== 'object') continue;
-    if (req.status && req.status !== 'pending' && req.status !== 'awaiting_pm') continue;
-    if (req.pmApproved === true || req.pmApproved === false) continue;
+    if (req.status === 'approved' || req.status === 'rejected') continue;
+    if (req.pmApproved === true) continue;
+    if (req.requiresPMApproval === false) continue;
 
     const assistantDecisions = req.assistantDecisions
       ? Object.values(req.assistantDecisions)
       : [];
-    if (assistantDecisions.length === 0) continue;
     const acceptedCount = assistantDecisions.filter(
       (d) => d && (d === 'accepted' || d.status === 'accepted'),
     ).length;
-    const collabConfidence = acceptedCount / assistantDecisions.length;
+    const hasTopLevelAcceptance = req.assistantDecision === 'accepted';
+    if (acceptedCount === 0 && !hasTopLevelAcceptance) continue;
+    const denominator = assistantDecisions.length > 0 ? assistantDecisions.length : 1;
+    const collabConfidence = Math.min(
+      1,
+      acceptedCount > 0 ? acceptedCount / denominator : 1,
+    );
+    const acceptedCollaborators = [];
+    const targetIds = Array.isArray(req.targetSupervisorIds) ? req.targetSupervisorIds : [];
+    const targetNames = Array.isArray(req.targetSupervisorNames) ? req.targetSupervisorNames : [];
+    for (let i = 0; i < targetIds.length; i++) {
+      const supId = String(targetIds[i] || '');
+      const supName = String(targetNames[i] || '');
+      const decision = req.assistantDecisions?.[supId] || 'pending';
+      if (decision === 'accepted') {
+        acceptedCollaborators.push({ id: supId, name: supName });
+      }
+    }
+    if (
+      acceptedCollaborators.length === 0 &&
+      req.assistantId &&
+      req.assistantName &&
+      hasTopLevelAcceptance
+    ) {
+      acceptedCollaborators.push({
+        id: String(req.assistantId),
+        name: String(req.assistantName),
+      });
+    }
+    if (acceptedCollaborators.length === 0) continue;
 
     const nowIso = new Date().toISOString();
+    const leadAssistant = acceptedCollaborators[0];
     const patch = {
       status: 'approved',
       pmApproved: true,
@@ -1805,27 +1857,46 @@ async function processShiftCollaborations(env, ctx) {
       aiConfidence: collabConfidence,
       aiReason: `Auto-approved by AI Shift Commander during "${activeShift.name || activeShift.id}" after ${acceptedCount}/${assistantDecisions.length} assistant approvals.`,
     };
-    const patchRes = await fetch(
-      `${env.FB_DB_URL}collaboration_requests/${reqId}.json?auth=${token}`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      },
-    );
+    const [patchRes, alertUpdateRes] = await Promise.all([
+      fetch(
+        `${env.FB_DB_URL}collaboration_requests/${reqId}.json?auth=${token}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        },
+      ),
+      req.alertId
+        ? fetch(`${env.FB_DB_URL}alerts/${req.alertId}.json?auth=${token}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              collaborators: acceptedCollaborators,
+              assistantId: leadAssistant?.id || null,
+              assistantName: leadAssistant?.name || null,
+            }),
+          })
+        : Promise.resolve({ ok: true }),
+    ]);
     if (patchRes.ok) {
       processed++;
       await writeShiftAiLog(env, token, activeShift.id, {
         kind: 'collaboration',
-        alertLabel: req.alertTitle || req.alertLabel || req.alertId || 'Collaboration request',
+        alertLabel:
+          req.alertTitle ||
+          req.alertLabel ||
+          req.alertType ||
+          req.alertId ||
+          'Collaboration request',
         supervisorName: req.requesterName || req.requesterFullName || null,
         supervisorId: req.requesterId || null,
         factory: req.factoryName || req.usine || null,
         confidence: collabConfidence,
         reason:
           `Approved collaboration request ${reqId} for shift "${activeShift.name || activeShift.id}". ` +
-          `Assistant approvals: ${acceptedCount}/${assistantDecisions.length}. ` +
-          `Requester: ${req.requesterName || req.requesterFullName || req.requesterId || 'Unknown'}.`,
+          `Assistant approvals: ${acceptedCount}/${denominator}. ` +
+          `Requester: ${req.requesterName || req.requesterFullName || req.requesterId || 'Unknown'}. ` +
+          `${alertUpdateRes.ok ? `Attached ${acceptedCollaborators.length} collaborator(s) to alert ${req.alertId || 'unknown'}.` : 'Alert collaborator sync failed.'}`,
       });
       // Notify the requester so the UI updates.
       if (req.requesterId) {
@@ -1837,6 +1908,23 @@ async function processShiftCollaborations(env, ctx) {
             body: JSON.stringify({
               type: 'collab_auto_approved',
               message: 'AI Shift Commander approved your collaboration request.',
+              alertId: req.alertId || null,
+              collaborationId: reqId,
+              timestamp: nowIso,
+              status: 'unread',
+            }),
+          },
+        );
+      }
+      for (const collaborator of acceptedCollaborators) {
+        await fetch(
+          `${env.FB_DB_URL}notifications/${collaborator.id}.json?auth=${token}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'collaboration_approved',
+              message: 'AI Shift Commander approved your collaboration request. You can now assist on this alert.',
               alertId: req.alertId || null,
               collaborationId: reqId,
               timestamp: nowIso,
@@ -1981,6 +2069,7 @@ async function handleShiftAiAction(request, env) {
 
     if (action === 'evaluate' || action === 'created' || action === 'updated') {
       const targetShiftId = shift?.id ?? null;
+      const actionCtx = shift ? cloneCtxWithShift(coreCtx, shift) : coreCtx;
       if (targetShiftId) {
         await writeShiftAiLog(env, coreCtx.token, targetShiftId, {
           kind: action,
@@ -1988,8 +2077,8 @@ async function handleShiftAiAction(request, env) {
         });
       }
       // Re-run AI assignment + collaboration approval immediately.
-      const assignedCount = await runAIAssignments(env, coreCtx);
-      const collaborationCount = await processShiftCollaborations(env, coreCtx);
+      const assignedCount = await runAIAssignments(env, actionCtx);
+      const collaborationCount = await processShiftCollaborations(env, actionCtx);
       if (targetShiftId && assignedCount === 0 && collaborationCount === 0) {
         await writeShiftAiLog(env, coreCtx.token, targetShiftId, {
           kind: 'idle',
