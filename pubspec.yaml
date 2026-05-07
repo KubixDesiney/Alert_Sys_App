@@ -48,6 +48,11 @@ dependencies:
 
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Connectivity (Phase 5)
+  connectivity_plus: ^6.0.5
 
   # Firebase
   firebase_core: ^4.4.0
@@ -70,6 +75,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
   assets:
     - shorebird.yaml
     - assets/models/conformer_tisid_small.tflite
