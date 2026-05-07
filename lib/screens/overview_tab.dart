@@ -443,6 +443,21 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       if (!mounted) return;
       _detectIncomingCriticalAlerts(oldWidget.allAlerts);
     });
+    if (oldWidget.selectedUsine != widget.selectedUsine) {
+      _rebindBriefingStream();
+    }
+  }
+
+  void _rebindBriefingStream() {
+    _briefSub?.cancel();
+    _briefSub = null;
+    _briefing = null;
+    _briefingWarmed = false;
+    final factory = widget.selectedUsine == 'all' ? null : widget.selectedUsine;
+    _briefSub = PredictiveIntelService.instance.briefingStream(factory: factory).listen((b) {
+      if (mounted) setState(() => _briefing = b);
+    });
+    unawaited(PredictiveIntelService.instance.fetchBriefing(factory: factory));
   }
 
   void _seedKnownCriticalAlerts() {
@@ -521,8 +536,13 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     });
   }
 
+  String? get _briefingFactory =>
+      widget.selectedUsine == 'all' ? null : widget.selectedUsine;
+
   void _bindPredictiveStreams() {
-    _briefSub = PredictiveIntelService.instance.briefingStream().listen((b) {
+    _briefSub = PredictiveIntelService.instance
+        .briefingStream(factory: _briefingFactory)
+        .listen((b) {
       if (mounted) setState(() => _briefing = b);
     });
     _predSub = PredictiveIntelService.instance.predictionsStream().listen((p) {
@@ -536,7 +556,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   Future<void> _warmPredictiveCaches() async {
     if (!_briefingWarmed) {
       _briefingWarmed = true;
-      unawaited(PredictiveIntelService.instance.fetchBriefing());
+      unawaited(PredictiveIntelService.instance.fetchBriefing(factory: _briefingFactory));
     }
     if (!_predictionsWarmed) {
       _predictionsWarmed = true;
@@ -545,8 +565,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   Future<void> _refreshBriefing() async {
-    final fresh =
-        await PredictiveIntelService.instance.fetchBriefing(force: true);
+    final fresh = await PredictiveIntelService.instance
+        .fetchBriefing(force: true, factory: _briefingFactory);
     if (mounted && fresh != null) setState(() => _briefing = fresh);
   }
 

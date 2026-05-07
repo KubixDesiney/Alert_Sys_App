@@ -18,15 +18,25 @@ class PredictiveRepository {
   static const Duration requestTimeout = AppConfig.defaultRequestTimeout;
   static const Duration cacheTtl = Duration(minutes: 5);
 
-  MorningBriefing? _briefingCache;
-  DateTime? _briefingCachedAt;
+  // Per-factory cache: null key = global.
+  final Map<String?, MorningBriefing?> _briefingCache = {};
+  final Map<String?, DateTime> _briefingCachedAt = {};
   PredictiveModel? _predictionsCache;
   DateTime? _predictionsCachedAt;
   AssigneeSuggestion? _suggestionCache;
   DateTime? _suggestionCachedAt;
 
-  Stream<MorningBriefing?> briefingStream() {
-    return _db.ref('ai_briefing/latest').onValue.map((event) {
+  // Returns the Firebase path for a factory slug (null → global).
+  static String _briefingPath(String? factory) {
+    if (factory == null || factory.isEmpty || factory == 'all') {
+      return 'ai_briefing/latest';
+    }
+    final slug = factory.toLowerCase().replaceAll(RegExp(r'\s+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    return 'ai_briefing/factory/$slug/latest';
+  }
+
+  Stream<MorningBriefing?> briefingStream({String? factory}) {
+    return _db.ref(_briefingPath(factory)).onValue.map((event) {
       final value = event.snapshot.value;
       if (value is! Map) return null;
       return MorningBriefing.fromMap(Map<String, dynamic>.from(value));
@@ -41,18 +51,18 @@ class PredictiveRepository {
     });
   }
 
-  Future<MorningBriefing?> getBriefing({bool force = false}) async {
-    if (!force && _isFresh(_briefingCachedAt)) return _briefingCache;
-    final result =
-        await _fetchJson('$workerBase/briefing${force ? '?force=1' : ''}');
+  Future<MorningBriefing?> getBriefing({bool force = false, String? factory}) async {
+    final cacheKey = (factory == null || factory.isEmpty || factory == 'all') ? null : factory;
+    if (!force && _isFresh(_briefingCachedAt[cacheKey])) return _briefingCache[cacheKey];
+    final factoryQuery = cacheKey != null ? 'factory=${Uri.encodeQueryComponent(cacheKey)}&' : '';
+    final result = await _fetchJson('$workerBase/briefing?$factoryQuery${force ? 'force=1' : ''}');
     if (result is Map) {
-      final briefing =
-          MorningBriefing.fromMap(Map<String, dynamic>.from(result));
-      _briefingCache = briefing;
-      _briefingCachedAt = DateTime.now();
+      final briefing = MorningBriefing.fromMap(Map<String, dynamic>.from(result));
+      _briefingCache[cacheKey] = briefing;
+      _briefingCachedAt[cacheKey] = DateTime.now();
       return briefing;
     }
-    return _briefingCache;
+    return _briefingCache[cacheKey];
   }
 
   Future<PredictiveModel?> getPredictions({bool force = false}) async {

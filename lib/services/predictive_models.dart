@@ -10,6 +10,22 @@ class MorningBriefing {
   final String? topFactory;
   final int? topFactoryCount;
 
+  // Factory scope — null means global (all factories).
+  final String? factoryScope;
+
+  // Validated predictive model accuracy (0-100), null when unavailable.
+  final int? accuracyPct;
+
+  // Top predicted issue for this factory today.
+  final String? predictiveType;
+  final int? predictiveConvoyeur;
+  final int? predictiveConfidence;
+
+  // Top performing supervisor this week.
+  final String? topSupervisorName;
+  final int? topSupervisorCount;
+  final String? topSupervisorType;
+
   MorningBriefing({
     required this.date,
     required this.summary,
@@ -21,11 +37,21 @@ class MorningBriefing {
     this.topTypeCount,
     this.topFactory,
     this.topFactoryCount,
+    this.factoryScope,
+    this.accuracyPct,
+    this.predictiveType,
+    this.predictiveConvoyeur,
+    this.predictiveConfidence,
+    this.topSupervisorName,
+    this.topSupervisorCount,
+    this.topSupervisorType,
   });
 
   factory MorningBriefing.fromMap(Map<String, dynamic> m) {
     final tt = m['topType'];
     final tf = m['topFactory'];
+    final pi = m['predictiveInsight'];
+    final ts = m['topSupervisor'];
     return MorningBriefing(
       date: (m['date'] ?? '').toString(),
       summary: (m['summary'] ?? '').toString(),
@@ -39,6 +65,14 @@ class MorningBriefing {
       topTypeCount: tt is Map ? (tt['count'] as num?)?.toInt() : null,
       topFactory: tf is Map ? tf['name']?.toString() : null,
       topFactoryCount: tf is Map ? (tf['count'] as num?)?.toInt() : null,
+      factoryScope: m['factoryScope']?.toString(),
+      accuracyPct: (m['accuracyPct'] as num?)?.toInt(),
+      predictiveType: pi is Map ? pi['type']?.toString() : null,
+      predictiveConvoyeur: pi is Map ? (pi['convoyeur'] as num?)?.toInt() : null,
+      predictiveConfidence: pi is Map ? (pi['confidence'] as num?)?.toInt() : null,
+      topSupervisorName: ts is Map ? ts['name']?.toString() : null,
+      topSupervisorCount: ts is Map ? (ts['count'] as num?)?.toInt() : null,
+      topSupervisorType: ts is Map ? ts['topType']?.toString() : null,
     );
   }
 

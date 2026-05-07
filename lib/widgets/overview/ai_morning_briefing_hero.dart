@@ -263,12 +263,18 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                   spacing: 6,
                   runSpacing: 5,
                   children: [
+                    if (b?.factoryScope != null)
+                      _briefChip(
+                        Icons.factory_rounded,
+                        b!.factoryScope!,
+                        color: const Color(0xFF34D399),
+                      ),
                     if (b?.topType != null)
                       _briefChip(
                         Icons.local_fire_department_rounded,
                         '${typeMeta(b!.topType!, context.appTheme).label} · ${b.topTypeCount}',
                       ),
-                    if (b?.topFactory != null && !compact)
+                    if (b?.topFactory != null && !compact && b?.factoryScope == null)
                       _briefChip(
                         Icons.factory_rounded,
                         '${b!.topFactory} most active',
@@ -277,6 +283,26 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                       _briefChip(
                         Icons.trending_up_rounded,
                         '${b.resolutionRate}% resolved',
+                      ),
+                    if (b?.accuracyPct != null && b!.accuracyPct! > 0)
+                      _briefChip(
+                        Icons.track_changes_rounded,
+                        'AI accuracy: ${b.accuracyPct}%',
+                        color: const Color(0xFFA78BFA),
+                      ),
+                    if (b?.predictiveType != null && b!.predictiveConfidence != null)
+                      _briefChip(
+                        Icons.warning_amber_rounded,
+                        'Expected: ${typeMeta(b.predictiveType!, context.appTheme).label}'
+                        '${b.predictiveConvoyeur != null ? ' · Line ${b.predictiveConvoyeur}' : ''}'
+                        ' (${b.predictiveConfidence}%)',
+                        color: const Color(0xFFFBBF24),
+                      ),
+                    if (b?.topSupervisorName != null && b!.topSupervisorCount != null)
+                      _briefChip(
+                        Icons.emoji_events_rounded,
+                        '${b.topSupervisorName} · ${b.topSupervisorCount} resolved',
+                        color: const Color(0xFF60A5FA),
                       ),
                     _briefChip(
                       Icons.schedule_rounded,
@@ -361,27 +387,30 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
     );
   }
 
-  Widget _briefChip(IconData icon, String label) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.13),
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 11, color: Colors.white.withValues(alpha: 0.92)),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: Colors.white.withValues(alpha: 0.95),
-              letterSpacing: 0.2,
-            ),
+  Widget _briefChip(IconData icon, String label, {Color? color}) {
+    final tint = color ?? Colors.white;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: tint.withValues(alpha: 0.28)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 11, color: tint.withValues(alpha: 0.95)),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: tint.withValues(alpha: 0.98),
+            letterSpacing: 0.2,
           ),
-        ]),
-      );
+        ),
+      ]),
+    );
+  }
 }
 
 class _AuroraMeshPainter extends CustomPainter {

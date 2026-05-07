@@ -17,12 +17,12 @@ class PredictiveIntelService {
   final PredictiveRepository repository;
   final PredictiveIntelStreamService streams;
 
-  Stream<MorningBriefing?> briefingStream() => streams.briefingStream();
+  Stream<MorningBriefing?> briefingStream({String? factory}) => streams.briefingStream(factory: factory);
   Stream<PredictiveModel?> predictionsStream() => streams.predictionsStream();
   Stream<PredictiveAccuracy?> accuracyStream() => streams.accuracyStream();
 
-  Future<MorningBriefing?> fetchBriefing({bool force = false}) =>
-      repository.getBriefing(force: force);
+  Future<MorningBriefing?> fetchBriefing({bool force = false, String? factory}) =>
+      repository.getBriefing(force: force, factory: factory);
 
   Future<PredictiveModel?> fetchPredictions({bool force = false}) =>
       repository.getPredictions(force: force);
