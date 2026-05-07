@@ -1,7 +1,6 @@
 import 'package:alertsysapp/models/alert_model.dart';
 import 'package:alertsysapp/models/user_model.dart';
 import 'package:alertsysapp/services/ai/ai_scoring_engine.dart';
-import 'package:alertsysapp/services/ai_assignment_service.dart' show AICandidate;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
