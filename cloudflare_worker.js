@@ -1800,6 +1800,8 @@ async function processShiftCollaborations(env, ctx) {
   const res = await fetch(`${env.FB_DB_URL}collaboration_requests.json?auth=${token}`);
   if (!res.ok) return 0;
   const reqs = (await res.json()) || {};
+  const minConfidence =
+    typeof activeShift?.aiConfidence === 'number' ? Number(activeShift.aiConfidence) : 0.65;
 
   let processed = 0;
   for (const [reqId, req] of Object.entries(reqs)) {
@@ -1822,6 +1824,7 @@ async function processShiftCollaborations(env, ctx) {
       1,
       acceptedCount > 0 ? acceptedCount / denominator : 1,
     );
+    if (collabConfidence < minConfidence) continue;
     const acceptedCollaborators = [];
     const targetIds = Array.isArray(req.targetSupervisorIds) ? req.targetSupervisorIds : [];
     const targetNames = Array.isArray(req.targetSupervisorNames) ? req.targetSupervisorNames : [];
@@ -1844,8 +1847,6 @@ async function processShiftCollaborations(env, ctx) {
         name: String(req.assistantName),
       });
     }
-    if (acceptedCollaborators.length === 0) continue;
-
     const nowIso = new Date().toISOString();
     const leadAssistant = acceptedCollaborators[0];
     const patch = {
@@ -1881,7 +1882,7 @@ async function processShiftCollaborations(env, ctx) {
     if (patchRes.ok) {
       processed++;
       await writeShiftAiLog(env, token, activeShift.id, {
-        kind: 'collaboration',
+      kind: 'collaboration',
         alertLabel:
           req.alertTitle ||
           req.alertLabel ||
@@ -1896,7 +1897,11 @@ async function processShiftCollaborations(env, ctx) {
           `Approved collaboration request ${reqId} for shift "${activeShift.name || activeShift.id}". ` +
           `Assistant approvals: ${acceptedCount}/${denominator}. ` +
           `Requester: ${req.requesterName || req.requesterFullName || req.requesterId || 'Unknown'}. ` +
-          `${alertUpdateRes.ok ? `Attached ${acceptedCollaborators.length} collaborator(s) to alert ${req.alertId || 'unknown'}.` : 'Alert collaborator sync failed.'}`,
+          `${acceptedCollaborators.length > 0
+            ? (alertUpdateRes.ok
+                ? `Attached ${acceptedCollaborators.length} collaborator(s) to alert ${req.alertId || 'unknown'}.`
+                : 'Alert collaborator sync failed.')
+            : 'No collaborator roster was supplied, so only the collaboration request was approved.'}`,
       });
       // Notify the requester so the UI updates.
       if (req.requesterId) {
@@ -1916,22 +1921,24 @@ async function processShiftCollaborations(env, ctx) {
           },
         );
       }
-      for (const collaborator of acceptedCollaborators) {
-        await fetch(
-          `${env.FB_DB_URL}notifications/${collaborator.id}.json?auth=${token}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'collaboration_approved',
-              message: 'AI Shift Commander approved your collaboration request. You can now assist on this alert.',
-              alertId: req.alertId || null,
-              collaborationId: reqId,
-              timestamp: nowIso,
-              status: 'unread',
-            }),
-          },
-        );
+      if (acceptedCollaborators.length > 0) {
+        for (const collaborator of acceptedCollaborators) {
+          await fetch(
+            `${env.FB_DB_URL}notifications/${collaborator.id}.json?auth=${token}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'collaboration_approved',
+                message: 'AI Shift Commander approved your collaboration request. You can now assist on this alert.',
+                alertId: req.alertId || null,
+                collaborationId: reqId,
+                timestamp: nowIso,
+                status: 'unread',
+              }),
+            },
+          );
+        }
       }
     }
   }
