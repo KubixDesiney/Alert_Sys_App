@@ -175,6 +175,7 @@ class _OriginalDashboardContent extends StatefulWidget {
 class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
   String _activeView = 'received';
   bool _showPanel = false;
+  final GlobalKey<_HeaderState> _headerKey = GlobalKey<_HeaderState>();
 
   void _handleCardClick(String view) {
     setState(() {
@@ -202,9 +203,11 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
         children: [
           // Use the existing _Header (with notifications, buzzing, etc.)
           _Header(
+            key: _headerKey,
             userName: widget.superviseurName,
             clientName: 'SAGEM',
             activeBadge: badge,
+            usine: widget.usine,
             onLogout: widget.onLogout,
           ),
           Expanded(
@@ -271,6 +274,9 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                       provider: provider,
                       superviseurId: widget.superviseurId,
                       superviseurName: widget.superviseurName,
+                      onAlertClaimed: () async {
+                        await _headerKey.currentState?.stopBuzzingFromClaim();
+                      },
                     ),
                   ],
                 ],
@@ -291,11 +297,14 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
 class _Header extends StatefulWidget {
   final String userName, clientName;
   final int activeBadge;
+  final String usine;
   final VoidCallback onLogout;
   const _Header({
+    super.key,
     required this.userName,
     required this.clientName,
     required this.activeBadge,
+    required this.usine,
     required this.onLogout,
   });
 
@@ -314,9 +323,19 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
   bool _isBuzzing = false;
   String? _buzzingNotificationId;
-  static const Set<String> _forceBuzzNotificationTypes = {
+  static const Set<String> _crossFactoryNotificationTypes = {
     'assistant_assigned',
+    'collab_auto_approved',
+    'collaboration_approved',
+    'collaboration_assistant_accepted',
+    'collaboration_assistant_removed',
+    'collaboration_removed',
+    'collaboration_rejected',
+    'collaboration_request',
+    'collaboration_request_admin',
   };
+
+  Future<void> stopBuzzingFromClaim() => _stopBuzzing();
 
   @override
   void initState() {
@@ -328,7 +347,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       _db.child('pm_actions/$uid').remove();
 
       _notifSubscription =
-          _db.child('notifications/$uid').onValue.listen((event) async {
+          _db.child('notifications/$uid').onValue.listen(_handleNotifications);
+      /*
         final data = event.snapshot.value;
         if (!mounted) return; // ← add this
         if (data == null) {
@@ -394,6 +414,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
         });
       });
 
+      */
       _pmSubscription = _db.child('pm_actions/$uid').onValue.listen((event) {
         final data = event.snapshot.value;
         if (data == null) {
@@ -416,27 +437,152 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     _tabController.dispose();
     _notifSubscription?.cancel();
     _pmSubscription?.cancel();
-    _stopBuzzing();
+    Vibration.cancel();
     super.dispose();
   }
 
-  Future<Map<String, String>> _getUserInfo() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return {'role': 'supervisor', 'usine': 'Usine A'};
-    final snapshot = await _db.child('users/$uid').get();
-    if (!snapshot.exists) return {'role': 'supervisor', 'usine': 'Usine A'};
-    final data = snapshot.value as Map;
-    return {
-      'role': data['role']?.toString() ?? 'supervisor',
-      'usine': data['usine']?.toString() ?? 'Usine A',
-    };
+  Future<void> _handleNotifications(DatabaseEvent event) async {
+    final data = event.snapshot.value;
+    if (!mounted) return;
+    if (data == null) {
+      await _stopBuzzing();
+      setState(() {
+        _notificationCount = 0;
+        _notifications = [];
+      });
+      return;
+    }
+
+    final map = Map<String, dynamic>.from(data as Map);
+    final rawList = map.entries.map((e) {
+      final m = Map<String, dynamic>.from(e.value as Map);
+      m['id'] = e.key;
+      return m;
+    }).toList();
+    final previousIds = _notifications
+        .map((notification) => notification['id']?.toString())
+        .whereType<String>()
+        .toSet();
+    final list = <Map<String, dynamic>>[];
+    for (final notification in rawList) {
+      if (await _shouldKeepNotification(notification)) {
+        list.add(notification);
+      }
+    }
+    final pending = list.where((n) => n['status'] != 'read').toList();
+
+    if (pending.isNotEmpty) {
+      Map<String, dynamic>? newUnread;
+      for (final n in pending) {
+        final id = n['id']?.toString();
+        if (id != null && !previousIds.contains(id)) {
+          newUnread = n;
+          break;
+        }
+      }
+      if (newUnread != null &&
+          _isAiAssignmentNotification(newUnread) &&
+          !_hasClaimedAlert()) {
+        await _startBuzzing(newUnread);
+      }
+    }
+
+    if (_buzzingNotificationId != null &&
+        list.every(
+            (notification) => notification['id'] != _buzzingNotificationId)) {
+      await _stopBuzzing();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _notifications = list;
+      _notificationCount = pending.length;
+    });
   }
 
-  Future<void> _startBuzzing(String notificationId) async {
-    if (_isBuzzing) return;
+  bool _sameFactory(String? a, String? b) {
+    final left = (a ?? '').trim().toLowerCase();
+    final right = (b ?? '').trim().toLowerCase();
+    return left.isNotEmpty && left == right;
+  }
+
+  bool _isCollaborationNotification(Map<String, dynamic> notification) {
+    final type = notification['type']?.toString() ?? '';
+    return _crossFactoryNotificationTypes.contains(type);
+  }
+
+  bool _isAiAssignmentNotification(Map<String, dynamic> notification) {
+    return notification['type']?.toString() == 'ai_assigned';
+  }
+
+  bool _hasClaimedAlert() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || !mounted) return false;
+    return context.read<AlertProvider>().inProgressAlerts(uid).isNotEmpty;
+  }
+
+  String? _notificationFactory(Map<String, dynamic> notification) {
+    for (final key in const ['usine', 'alertUsine', 'factoryName']) {
+      final value = notification[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return null;
+  }
+
+  Future<String?> _fetchAlertFactory(String alertId) async {
+    final alertSnap = await _db.child('alerts/$alertId/usine').get();
+    final value = alertSnap.value?.toString().trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  Future<bool> _shouldKeepNotification(
+      Map<String, dynamic> notification) async {
+    if (_isCollaborationNotification(notification)) return true;
+
+    final usine = _notificationFactory(notification);
+    final alertId = notification['alertId']?.toString().trim();
+    if ((usine == null || usine.isEmpty) &&
+        (alertId == null || alertId.isEmpty)) {
+      return true;
+    }
+
+    final resolvedFactory = (usine != null && usine.isNotEmpty)
+        ? usine
+        : await _fetchAlertFactory(alertId!);
+    if (resolvedFactory == null || resolvedFactory.isEmpty) {
+      return false;
+    }
+    return _sameFactory(resolvedFactory, widget.usine);
+  }
+
+  Widget _buildStopBuzzingButton(StateSetter setModalState) {
+    final t = context.appTheme;
+    return OutlinedButton.icon(
+      onPressed: () async {
+        await _stopBuzzing();
+        if (mounted) {
+          setModalState(() {});
+        }
+      },
+      icon: Icon(Icons.vibration, size: 16, color: t.red),
+      label: Text('Stop Buzzing', style: TextStyle(color: t.red)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: t.red),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Future<void> _startBuzzing(Map<String, dynamic> notification) async {
+    final notificationId = notification['id']?.toString();
+    if (notificationId == null || !_isAiAssignmentNotification(notification)) {
+      return;
+    }
+    await Vibration.cancel();
     final hasVibrator = await Vibration.hasVibrator();
     if (hasVibrator == true) {
       Vibration.vibrate(pattern: [1000, 1000], repeat: 0);
+      if (!mounted) return;
       setState(() {
         _isBuzzing = true;
         _buzzingNotificationId = notificationId;
@@ -445,8 +591,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   }
 
   Future<void> _stopBuzzing() async {
-    if (_isBuzzing) {
-      await Vibration.cancel();
+    await Vibration.cancel();
+    if (!mounted) return;
+    if (_isBuzzing || _buzzingNotificationId != null) {
       setState(() {
         _isBuzzing = false;
         _buzzingNotificationId = null;
@@ -825,20 +972,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8))),
               ),
-              if (isUnread) ...[
+              if (isBuzzingForThis) ...[
                 const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    await _stopBuzzing();
-                    setModalState(() {});
-                  },
-                  icon: Icon(Icons.vibration, size: 16, color: t.red),
-                  label: Text('Stop Buzzing', style: TextStyle(color: t.red)),
-                  style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: t.red),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8))),
-                ),
+                _buildStopBuzzingButton(setModalState),
               ],
             ],
           ),
@@ -1110,8 +1246,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           }
                         } catch (e) {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(UserFriendlyError.message(e))));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(UserFriendlyError.message(e))));
                           }
                         }
                       },
@@ -1162,8 +1298,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           }
                         } catch (e) {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(UserFriendlyError.message(e))));
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                content: Text(UserFriendlyError.message(e))));
                           }
                         }
                       },
@@ -1227,6 +1363,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   Widget _buildDefaultNotificationItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
     final t = context.appTheme;
+    final isBuzzingForThis = _isBuzzing && _buzzingNotificationId == n['id'];
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -1234,76 +1371,80 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           color: t.card,
           border: Border.all(color: t.border),
           borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(n['message'] ?? 'Notification',
-            style: TextStyle(fontWeight: FontWeight.bold, color: t.text)),
-        subtitle:
-            Text(n['alertDescription'] ?? '', style: TextStyle(color: t.muted)),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isUnread && _buzzingNotificationId == n['id'])
-              IconButton(
-                icon: Icon(Icons.vibration, size: 18, color: t.red),
-                onPressed: () async {
-                  await _stopBuzzing();
-                  setModalState(() {});
-                },
-              ),
-            if (isUnread)
-              IconButton(
-                icon: Icon(Icons.visibility, size: 18, color: t.blue),
-                onPressed: () async {
-                  await _db
-                      .child(
-                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
-                      .remove();
-                  if (context.mounted) {
-                    setModalState(() {
-                      _notifications
-                          .removeWhere((item) => item['id'] == n['id']);
-                      _notificationCount = _notifications
-                          .where((x) => x['status'] != 'read')
-                          .length;
-                    });
-                  }
-                },
-              ),
-            IconButton(
-              icon: Icon(Icons.open_in_new, size: 18, color: t.navy),
-              onPressed: () async {
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(n['message'] ?? 'Notification',
+                style: TextStyle(fontWeight: FontWeight.bold, color: t.text)),
+            subtitle: Text(n['alertDescription'] ?? '',
+                style: TextStyle(color: t.muted)),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 if (isUnread)
-                  await _db
-                      .child(
-                          'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
-                      .remove();
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              AlertDetailScreen(alertId: n['alertId'])));
-                }
-              },
+                  IconButton(
+                    icon: Icon(Icons.visibility, size: 18, color: t.blue),
+                    onPressed: () async {
+                      await _db
+                          .child(
+                              'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                          .remove();
+                      if (context.mounted) {
+                        setModalState(() {
+                          _notifications
+                              .removeWhere((item) => item['id'] == n['id']);
+                          _notificationCount = _notifications
+                              .where((x) => x['status'] != 'read')
+                              .length;
+                        });
+                      }
+                    },
+                  ),
+                IconButton(
+                  icon: Icon(Icons.open_in_new, size: 18, color: t.navy),
+                  onPressed: () async {
+                    if (isUnread)
+                      await _db
+                          .child(
+                              'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                          .remove();
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  AlertDetailScreen(alertId: n['alertId'])));
+                    }
+                  },
+                ),
+              ],
+            ),
+            onTap: () async {
+              if (isUnread)
+                await _db
+                    .child(
+                        'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
+                    .remove();
+              if (context.mounted) {
+                Navigator.pop(context);
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            AlertDetailScreen(alertId: n['alertId'])));
+              }
+            },
+          ),
+          if (isBuzzingForThis) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _buildStopBuzzingButton(setModalState),
             ),
           ],
-        ),
-        onTap: () async {
-          if (isUnread)
-            await _db
-                .child(
-                    'notifications/${FirebaseAuth.instance.currentUser!.uid}/${n['id']}')
-                .remove();
-          if (context.mounted) {
-            Navigator.pop(context);
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => AlertDetailScreen(alertId: n['alertId'])));
-          }
-        },
+        ],
       ),
     );
   }
@@ -1506,6 +1647,7 @@ class _DetailPanel extends StatelessWidget {
   final List<AlertModel> available, allInProgress, validated, assisted;
   final AlertProvider provider;
   final String superviseurId, superviseurName;
+  final Future<void> Function()? onAlertClaimed;
   const _DetailPanel(
       {required this.activeView,
       required this.available,
@@ -1514,7 +1656,8 @@ class _DetailPanel extends StatelessWidget {
       required this.assisted,
       required this.provider,
       required this.superviseurId,
-      required this.superviseurName});
+      required this.superviseurName,
+      this.onAlertClaimed});
 
   String get _title => switch (activeView) {
         'received' => 'Manage Pending Alerts',
@@ -1549,7 +1692,8 @@ class _DetailPanel extends StatelessWidget {
               alerts: available,
               provider: provider,
               superviseurId: superviseurId,
-              superviseurName: superviseurName),
+              superviseurName: superviseurName,
+              onAlertClaimed: onAlertClaimed),
         if (activeView == 'claimed')
           _ClaimedView(alerts: allInProgress, provider: provider),
         if (activeView == 'fixed')
@@ -1565,17 +1709,19 @@ class _ReceivedView extends StatelessWidget {
   final List<AlertModel> alerts;
   final AlertProvider provider;
   final String superviseurId, superviseurName;
+  final Future<void> Function()? onAlertClaimed;
   const _ReceivedView(
       {required this.alerts,
       required this.provider,
       required this.superviseurId,
-      required this.superviseurName});
+      required this.superviseurName,
+      this.onAlertClaimed});
 
   @override
   Widget build(BuildContext context) {
     if (alerts.isEmpty)
-      return _empty(Icons.notifications_off, Colors.orange,
-          'No pending alerts', 'All alerts are being handled');
+      return _empty(Icons.notifications_off, Colors.orange, 'No pending alerts',
+          'All alerts are being handled');
     return Column(
         children: alerts
             .map((a) => _AlertRow(
@@ -1588,6 +1734,7 @@ class _ReceivedView extends StatelessWidget {
                       try {
                         await provider.takeAlert(
                             a.id, superviseurId, superviseurName);
+                        await onAlertClaimed?.call();
                         final pmRef = FirebaseDatabase.instance
                             .ref('pm_actions/$superviseurId')
                             .push();
@@ -2204,7 +2351,8 @@ class _AlertRow extends StatelessWidget {
                       color: Colors.red, size: 16),
                 if (alert.isCritical) const SizedBox(width: 4),
                 pulseDot
-                    ? PulseDot(color: typeMeta(alert.type, context.appTheme).color)
+                    ? PulseDot(
+                        color: typeMeta(alert.type, context.appTheme).color)
                     : Container(
                         width: 10,
                         height: 10,
@@ -2221,8 +2369,8 @@ class _AlertRow extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                         color: const Color(0xFFE8F0F8),
                         borderRadius: BorderRadius.circular(99)),
@@ -2537,4 +2685,3 @@ Widget _empty(IconData icon, Color color, String title, String sub) => Padding(
         ]),
       ),
     );
-
