@@ -11,7 +11,7 @@
 # trigger that drives AI assignment, escalation, and push fan-out.
 
 name = "alert-notifier"
-main = "index.js"
+main = "../cloudflare_workerV2.js"
 compatibility_date = "2025-01-01"
 
 [triggers]
