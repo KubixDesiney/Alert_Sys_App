@@ -1,5 +1,12 @@
+// ignore_for_file: deprecated_member_use, prefer_const_constructors, prefer_const_declarations, unused_element, unused_element_parameter, use_build_context_synchronously, use_key_in_widget_constructors
+
 import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../../models/alert_model.dart';
 import '../../models/hierarchy_model.dart';
@@ -24,10 +31,24 @@ const _green = adminGreen;
 const _orange = adminOrange;
 const _blue = adminBlue;
 
-Color _typeColor(String type) => typeMeta(type, const AppTheme(isDark: false)).color;
-String _typeLabel(String type) => typeMeta(type, const AppTheme(isDark: false)).label;
+Color _typeColor(String type) =>
+    typeMeta(type, const AppTheme(isDark: false)).color;
+String _typeLabel(String type) =>
+    typeMeta(type, const AppTheme(isDark: false)).label;
 String _fmtMin(int min) => formatAdminMinutes(min);
 String _fmtDate(DateTime d) => formatAdminDate(d);
+String _initials(UserModel sup) {
+  final first = sup.firstName.trim();
+  final last = sup.lastName.trim();
+  final letters = [
+    if (first.isNotEmpty) first[0],
+    if (last.isNotEmpty) last[0],
+  ].join();
+  if (letters.isNotEmpty) return letters.toUpperCase();
+  return sup.fullName.trim().isEmpty
+      ? 'S'
+      : sup.fullName.trim()[0].toUpperCase();
+}
 
 // SUPERVISORS TAB (unchanged from original – keep as is)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -56,12 +77,23 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
   StreamSubscription<List<Factory>>? _factoriesSubscription;
   List<Factory> _factories = [];
   String _searchQuery = '';
+  int _tabIndex = 0;
+  int _previousTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _sub = TabController(length: 4, vsync: this);
+    _sub = TabController(length: 3, vsync: this);
+    _sub.addListener(_handleSubTabChanged);
     _loadFactories();
+  }
+
+  void _handleSubTabChanged() {
+    if (_tabIndex == _sub.index) return;
+    setState(() {
+      _previousTabIndex = _tabIndex;
+      _tabIndex = _sub.index;
+    });
   }
 
   void _loadFactories() {
@@ -79,6 +111,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
   void dispose() {
     _factoriesSubscription?.cancel();
     _searchCtrl.dispose();
+    _sub.removeListener(_handleSubTabChanged);
     _sub.dispose();
     super.dispose();
   }
@@ -114,48 +147,62 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
                   index: 1,
                   ctrl: _sub),
               _SubPill(
-                  label: 'Performance',
-                  icon: Icons.show_chart,
-                  index: 2,
-                  ctrl: _sub),
-              _SubPill(
                   label: 'Assignments',
                   icon: Icons.bar_chart,
-                  index: 3,
+                  index: 2,
                   ctrl: _sub),
             ],
           ),
         ),
       ),
-      Expanded(
-        child: TabBarView(
-          controller: _sub,
-          children: [
-            _ManagementSubTab(
-              supervisors: filteredSupervisors,
-              totalSupervisors: widget.supervisors.length,
-              alerts: widget.alerts,
-              factories: _factories,
-              onAdd: widget.onAdd,
-              onDelete: widget.onDelete,
-              onRefresh: widget.onRefresh,
-              searchCtrl: _searchCtrl,
-              searchQuery: _searchQuery,
-              onSearchChanged: (v) => setState(() => _searchQuery = v),
-            ),
-            const CollaborationsTab(),
-            _PerformanceSubTab(
-              supervisors: widget.supervisors,
-              alerts: widget.alerts,
-            ),
-            _AssignmentsSubTab(
-              supervisors: widget.supervisors,
-              onRefresh: widget.onRefresh,
-            ),
-          ],
-        ),
-      ),
+      Expanded(child: _buildAnimatedSubTab(filteredSupervisors)),
     ]);
+  }
+
+  Widget _buildAnimatedSubTab(List<UserModel> filteredSupervisors) {
+    final forward = _tabIndex >= _previousTabIndex;
+    final children = [
+      _ManagementSubTab(
+        key: const ValueKey('management'),
+        supervisors: filteredSupervisors,
+        allSupervisors: widget.supervisors,
+        totalSupervisors: widget.supervisors.length,
+        alerts: widget.alerts,
+        factories: _factories,
+        onAdd: widget.onAdd,
+        onDelete: widget.onDelete,
+        onRefresh: widget.onRefresh,
+        searchCtrl: _searchCtrl,
+        searchQuery: _searchQuery,
+        onSearchChanged: (v) => setState(() => _searchQuery = v),
+      ),
+      const KeyedSubtree(
+        key: ValueKey('collaborations'),
+        child: CollaborationsTab(),
+      ),
+      _AssignmentsSubTab(
+        key: const ValueKey('assignments'),
+        supervisors: widget.supervisors,
+        onRefresh: widget.onRefresh,
+      ),
+    ];
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 330),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final offset = Tween<Offset>(
+          begin: Offset(forward ? 0.035 : -0.035, 0),
+          end: Offset.zero,
+        ).animate(animation);
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(position: offset, child: child),
+        );
+      },
+      child: children[_tabIndex],
+    );
   }
 }
 
@@ -217,8 +264,9 @@ class _SubPillState extends State<_SubPill> {
   }
 }
 
-class _ManagementSubTab extends StatelessWidget {
+class _ManagementSubTab extends StatefulWidget {
   final List<UserModel> supervisors;
+  final List<UserModel> allSupervisors;
   final int totalSupervisors;
   final List<AlertModel> alerts;
   final List<Factory> factories;
@@ -229,7 +277,9 @@ class _ManagementSubTab extends StatelessWidget {
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
   const _ManagementSubTab(
-      {required this.supervisors,
+      {super.key,
+      required this.supervisors,
+      required this.allSupervisors,
       required this.alerts,
       required this.factories,
       required this.onAdd,
@@ -241,95 +291,2984 @@ class _ManagementSubTab extends StatelessWidget {
       required this.onSearchChanged});
 
   @override
-  Widget build(BuildContext context) => Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+  State<_ManagementSubTab> createState() => _ManagementSubTabState();
+}
+
+class _ManagementSubTabState extends State<_ManagementSubTab>
+    with TickerProviderStateMixin {
+  String? _selectedId;
+  String _chartRange = '7days';
+  late final AnimationController _liveActivityController;
+
+  @override
+  void initState() {
+    super.initState();
+    _liveActivityController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+    _syncSelection();
+  }
+
+  @override
+  void dispose() {
+    _liveActivityController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ManagementSubTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncSelection();
+  }
+
+  void _syncSelection() {
+    if (widget.allSupervisors.isEmpty) {
+      _selectedId = null;
+      return;
+    }
+    final exists = widget.allSupervisors.any((s) => s.id == _selectedId);
+    if (!exists) {
+      _selectedId = widget.supervisors.isNotEmpty
+          ? widget.supervisors.first.id
+          : widget.allSupervisors.first.id;
+    }
+  }
+
+  UserModel? get _selectedSupervisor {
+    if (_selectedId == null) return null;
+    for (final sup in widget.allSupervisors) {
+      if (sup.id == _selectedId) return sup;
+    }
+    return null;
+  }
+
+  List<AlertModel> _alertsFor(UserModel sup) => widget.alerts
+      .where((a) =>
+          a.superviseurId == sup.id ||
+          a.assistantId == sup.id ||
+          a.assistedBySupervisorId == sup.id)
+      .toList();
+
+  List<AlertModel> _solvedFor(UserModel sup) =>
+      _alertsFor(sup).where((a) => a.status == 'validee').toList();
+
+  int _claimedFor(UserModel sup) => widget.alerts
+      .where((a) => a.status == 'en_cours' && a.superviseurId == sup.id)
+      .length;
+
+  int? _avgMinFor(List<AlertModel> solved) {
+    final timed = solved.where((a) => a.elapsedTime != null).toList();
+    if (timed.isEmpty) return null;
+    return timed.fold(0, (sum, a) => sum + (a.elapsedTime ?? 0)) ~/
+        timed.length;
+  }
+
+  int _impactScore(UserModel sup) {
+    final solved = _solvedFor(sup);
+    final avg = _avgMinFor(solved);
+    final speedWindow = avg == null ? 0 : (120 - avg).clamp(0, 120).toInt();
+    final aiWins = _alertsFor(sup).where((a) => a.aiAssigned).length;
+    return solved.length * 8 +
+        _claimedFor(sup) * 5 +
+        aiWins * 3 +
+        speedWindow ~/ 6;
+  }
+
+  int _rankFor(UserModel sup) {
+    final ranked = [...widget.allSupervisors]..sort((a, b) {
+        final score = _impactScore(b).compareTo(_impactScore(a));
+        if (score != 0) return score;
+        return _solvedFor(b).length.compareTo(_solvedFor(a).length);
+      });
+    final index = ranked.indexWhere((s) => s.id == sup.id);
+    return index < 0 ? ranked.length : index + 1;
+  }
+
+  double _validationRate(UserModel sup) {
+    final all = _alertsFor(sup);
+    if (all.isEmpty) return 0;
+    return _solvedFor(sup).length / all.length;
+  }
+
+  List<_ChartPoint> _buildChartPoints(UserModel sup) {
+    final days = _chartRange == '7days' ? 7 : 30;
+    final solved = _solvedFor(sup);
+    final now = DateTime.now();
+    return List.generate(days, (i) {
+      final day = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: days - 1 - i));
+      final next = day.add(const Duration(days: 1));
+      final count = solved
+          .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
+          .length;
+      return _ChartPoint(day: day, value: count.toDouble());
+    });
+  }
+
+  List<int> _resolvedSpark(UserModel sup, {int days = 7}) {
+    final solved = _solvedFor(sup);
+    final now = DateTime.now();
+    return List.generate(days, (i) {
+      final day = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: days - 1 - i));
+      final next = day.add(const Duration(days: 1));
+      return solved
+          .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
+          .length;
+    });
+  }
+
+  List<int> _teamResolvedWeek() {
+    final solved = widget.alerts.where((a) => a.status == 'validee').toList();
+    final now = DateTime.now();
+    return List.generate(7, (i) {
+      final day = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: 6 - i));
+      final next = day.add(const Duration(days: 1));
+      return solved
+          .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
+          .length;
+    });
+  }
+
+  Map<String, int> _teamTypeDistribution() {
+    final map = <String, int>{};
+    for (final alert in widget.alerts) {
+      final involved = alert.superviseurId != null ||
+          alert.assistantId != null ||
+          alert.assistedBySupervisorId != null;
+      if (!involved) continue;
+      map[alert.type] = (map[alert.type] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  List<_LeaderboardEntry> _leaderboard() {
+    final entries = widget.allSupervisors
+        .map((sup) => _LeaderboardEntry(
+              supervisor: sup,
+              score: _impactScore(sup),
+            ))
+        .toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    return entries.take(5).toList();
+  }
+
+  Map<String, List<_FactoryWorkloadSegment>> _factoryWorkload() {
+    final result = <String, List<_FactoryWorkloadSegment>>{};
+    final factories = <String>{
+      ...widget.factories.map((f) => f.name),
+      ...widget.alerts.map((a) => a.usine),
+    }..removeWhere((name) => name.trim().isEmpty);
+
+    for (final factory in factories) {
+      final segments = <_FactoryWorkloadSegment>[];
+      for (final sup in widget.allSupervisors) {
+        final count = widget.alerts
+            .where((a) =>
+                a.usine == factory &&
+                (a.superviseurId == sup.id || a.assistantId == sup.id))
+            .length;
+        if (count == 0) continue;
+        segments.add(_FactoryWorkloadSegment(supervisor: sup, count: count));
+      }
+      segments.sort((a, b) => b.count.compareTo(a.count));
+      result[factory] = segments.take(5).toList();
+    }
+    return result;
+  }
+
+  List<double> _activityPulseSamples() {
+    final now = DateTime.now();
+    return List.generate(24, (i) {
+      final end = now.subtract(Duration(seconds: (23 - i) * 3));
+      final start = end.subtract(const Duration(seconds: 3));
+      final count = widget.alerts
+          .where((a) => a.timestamp.isAfter(start) && a.timestamp.isBefore(end))
+          .length;
+      final heartbeat = math.sin((i / 23) * math.pi * 4) * 0.35 + 0.45;
+      return count + heartbeat;
+    });
+  }
+
+  Future<void> _refreshManagement() async {
+    HapticFeedback.selectionClick();
+    await widget.onRefresh();
+  }
+
+  Map<String, int> _factoryDist(UserModel sup) {
+    final map = <String, int>{};
+    for (final alert in _solvedFor(sup)) {
+      map[alert.usine] = (map[alert.usine] ?? 0) + 1;
+    }
+    return map;
+  }
+
+  Map<String, _TypeStats> _typeStats(UserModel sup) {
+    final involved = _alertsFor(sup);
+    final types = <String>{
+      'qualite',
+      'maintenance',
+      'defaut_produit',
+      'manque_ressource',
+      ...involved.map((a) => a.type),
+    }.toList();
+    return {
+      for (final type in types)
+        type: _TypeStats(
+          validated: involved
+              .where((a) => a.type == type && a.status == 'validee')
+              .length,
+          notValidated: involved
+              .where((a) => a.type == type && a.status != 'validee')
+              .length,
+        )
+    };
+  }
+
+  Map<String, List<UserModel>> _groupByFactory() {
+    final map = <String, List<UserModel>>{};
+    for (final factory in widget.factories) {
+      map[factory.name] = widget.allSupervisors
+          .where((s) => s.usine == factory.name)
+          .toList()
+        ..sort((a, b) => a.fullName.compareTo(b.fullName));
+    }
+    return map;
+  }
+
+  List<UserModel> _unassigned() {
+    final factoryNames = widget.factories.map((f) => f.name).toSet();
+    return widget.allSupervisors
+        .where((s) => s.usine.isEmpty || !factoryNames.contains(s.usine))
+        .toList()
+      ..sort((a, b) => a.fullName.compareTo(b.fullName));
+  }
+
+  String? _locationFor(String factoryName) {
+    for (final factory in widget.factories) {
+      if (factory.name == factoryName) return factory.location;
+    }
+    return null;
+  }
+
+  Future<void> _reassign(UserModel sup, String newFactory) async {
+    if (sup.usine == newFactory) return;
+    try {
+      await AuthService().updateSupervisorProfile(
+        userId: sup.id,
+        firstName: sup.firstName,
+        lastName: sup.lastName,
+        email: sup.email,
+        phone: sup.phone,
+        usine: newFactory,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(newFactory.isEmpty
+            ? '${sup.fullName} unassigned'
+            : '${sup.fullName} moved to $newFactory'),
+        backgroundColor: context.appTheme.green,
+      ));
+      await widget.onRefresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Update failed: ${UserFriendlyError.message(e)}'),
+      ));
+    }
+  }
+
+  Future<void> _showDeleteConfirmDialog(UserModel sup) async {
+    return showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: context.appTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: _red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.warning_outlined, color: _red, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Delete Supervisor',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: context.appTheme.text)),
+              const SizedBox(height: 2),
+              Text(sup.fullName,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: _red)),
+            ]),
+          ),
+        ]),
+        content: Text(
+          'This permanently removes ${sup.fullName} from ${sup.usine.isEmpty ? 'the roster' : sup.usine}.',
+          style: TextStyle(fontSize: 13, color: context.appTheme.muted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(dialogCtx);
+              widget.onDelete(sup);
+            },
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('Delete'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _red,
+              foregroundColor: _white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showModifyDialog(UserModel sup) async {
+    final firstCtrl = TextEditingController(text: sup.firstName);
+    final lastCtrl = TextEditingController(text: sup.lastName);
+    final emailCtrl = TextEditingController(text: sup.email);
+    final phoneCtrl = TextEditingController(text: sup.phone);
+    final usineChoices = <String>{
+      if (sup.usine.isNotEmpty) sup.usine,
+      ...widget.factories.map((f) => f.name),
+    }.toList()
+      ..sort();
+    var selectedUsine = sup.usine;
+    var saving = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              title: const Text('Modify Supervisor'),
+              content: SizedBox(
+                width: 380,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SheetLabel('First Name'),
+                      TextField(
+                        controller: firstCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'First name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SheetLabel('Last Name'),
+                      TextField(
+                        controller: lastCtrl,
+                        decoration: const InputDecoration(
+                          hintText: 'Last name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SheetLabel('Email'),
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          hintText: 'Email address',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SheetLabel('Phone'),
+                      TextField(
+                        controller: phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          hintText: 'Phone number',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SheetLabel('Assigned Plant'),
+                      DropdownButtonFormField<String>(
+                        value: usineChoices.contains(selectedUsine)
+                            ? selectedUsine
+                            : null,
+                        hint: const Text('Unassigned'),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: usineChoices
+                            .map((u) =>
+                                DropdownMenuItem(value: u, child: Text(u)))
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (v) {
+                                if (v == null) return;
+                                setDialogState(() => selectedUsine = v);
+                              },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final first = firstCtrl.text.trim();
+                          final last = lastCtrl.text.trim();
+                          final email = emailCtrl.text.trim();
+                          final phone = phoneCtrl.text.trim();
+                          if (first.isEmpty || last.isEmpty || email.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'First name, last name, and email are required')),
+                            );
+                            return;
+                          }
+                          if (!email.contains('@')) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Please enter a valid email')),
+                            );
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          try {
+                            await AuthService().updateSupervisorProfile(
+                              userId: sup.id,
+                              firstName: first,
+                              lastName: last,
+                              email: email,
+                              phone: phone,
+                              usine: selectedUsine,
+                            );
+                            await widget.onRefresh();
+                            if (!mounted) return;
+                            Navigator.pop(dialogCtx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content:
+                                    Text('Supervisor updated successfully'),
+                                backgroundColor: _green,
+                              ),
+                            );
+                          } catch (e) {
+                            if (!mounted) return;
+                            setDialogState(() => saving = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text(
+                                      'Update failed: ${UserFriendlyError.message(e)}')),
+                            );
+                          }
+                        },
+                  child: saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    firstCtrl.dispose();
+    lastCtrl.dispose();
+    emailCtrl.dispose();
+    phoneCtrl.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final selected = _selectedSupervisor;
+    return Column(children: [
+      _buildCommandHeader(t),
+      Expanded(
+        child: RefreshIndicator(
+          color: t.navy,
+          backgroundColor: t.card,
+          notificationPredicate: (_) => true,
+          onRefresh: _refreshManagement,
+          child: widget.totalSupervisors == 0
+              ? _emptySups()
+              : LayoutBuilder(builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 920;
+                  if (compact) {
+                    return _buildCompact(t, selected);
+                  }
+                  return _buildWide(t, selected);
+                }),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _buildCommandHeader(AppTheme t) {
+    final active = widget.allSupervisors.where((s) => s.isActive).length;
+    final absent = widget.allSupervisors.length - active;
+    final assignedPlants = widget.allSupervisors
+        .map((s) => s.usine)
+        .where((u) => u.isNotEmpty)
+        .toSet()
+        .length;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            t.isDark ? const Color(0xFF0B1220) : const Color(0xFF0D4A75),
+            t.isDark ? const Color(0xFF123A55) : const Color(0xFF0F766E),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        boxShadow: [
+          BoxShadow(
+            color: t.navy.withValues(alpha: 0.18),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: CustomPaint(
+        painter:
+            _CommandGridPainter(color: Colors.white.withValues(alpha: 0.08)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
           child: Row(children: [
-            _Chip('${supervisors.where((s) => s.isActive).length} Active',
-                _green),
-            const SizedBox(width: 8),
-            _Chip(
-                '${supervisors.where((s) => !s.isActive).length} Absent', _red),
-            const Spacer(),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+              ),
+              child:
+                  const Icon(Icons.auto_graph, color: Colors.white, size: 25),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Supervisor Command Center',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            height: 1.05)),
+                    const SizedBox(height: 7),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      _GlassChip(Icons.bolt, '$active active', _green),
+                      _GlassChip(Icons.nights_stay_outlined, '$absent absent',
+                          _orange),
+                      _GlassChip(Icons.factory_outlined,
+                          '$assignedPlants plants', _blue),
+                    ]),
+                  ]),
+            ),
             ElevatedButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.person_add, size: 16),
+              onPressed: widget.onAdd,
+              icon: const Icon(Icons.person_add, size: 17),
               label: const Text('Add Supervisor',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: _navy,
-                  foregroundColor: _white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9))),
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF0D4A75),
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
             ),
           ]),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-          child: Builder(
-            builder: (context) {
-              final t = context.appTheme;
-              return TextField(
-                controller: searchCtrl,
-                onChanged: onSearchChanged,
-                style: TextStyle(color: t.text, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search supervisor by name...',
-                  hintStyle: TextStyle(color: t.muted),
-                  prefixIcon: Icon(Icons.search, color: t.muted),
-                  suffixIcon: searchQuery.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: Icon(Icons.close, size: 18, color: t.muted),
-                          onPressed: () {
-                            searchCtrl.clear();
-                            onSearchChanged('');
-                          },
-                        ),
-                  filled: true,
-                  fillColor: t.scaffold,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: t.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: t.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: t.navy, width: 1.4),
-                  ),
-                ),
-              );
-            },
+      ),
+    );
+  }
+
+  Widget _buildPerformanceDashboard(AppTheme t) {
+    final weekly = _teamResolvedWeek();
+    final types = _teamTypeDistribution();
+    final leaderboard = _leaderboard();
+    final factoryWorkload = _factoryWorkload();
+    final hasAnyData =
+        widget.allSupervisors.isNotEmpty || widget.alerts.isNotEmpty;
+
+    if (!hasAnyData) {
+      return const _DashboardShimmerSkeleton();
+    }
+
+    final cards = [
+      _SectionShell(
+        icon: Icons.stacked_bar_chart,
+        title: 'Weekly Team Resolution Heatmap',
+        subtitle: 'Total resolved alerts by day',
+        child: _WeeklyResolutionHeatmap(values: weekly),
+      ),
+      _SectionShell(
+        icon: Icons.donut_large,
+        title: 'Alert Type Distribution',
+        subtitle: 'Combined supervisor workload mix',
+        child: _AlertTypeDonut(distribution: types),
+      ),
+      _SectionShell(
+        icon: Icons.emoji_events_outlined,
+        title: 'Supervisor Leaderboard',
+        subtitle: 'Top 5 by impact score',
+        child: _SupervisorLeaderboardChart(entries: leaderboard),
+      ),
+      _SectionShell(
+        icon: Icons.monitor_heart_outlined,
+        title: 'Live Activity Pulse',
+        subtitle: 'Rolling alert activity window',
+        child: AnimatedBuilder(
+          animation: _liveActivityController,
+          builder: (context, _) => _LiveActivityPulseChart(
+            samples: _activityPulseSamples(),
+            progress: _liveActivityController.value,
           ),
         ),
-        Expanded(
-          child: supervisors.isEmpty
-              ? (totalSupervisors == 0
-                  ? _emptySups()
-                  : Center(
-                      child: Text(
-                        'No supervisors match "$searchQuery"',
-                        style: const TextStyle(fontSize: 13, color: _muted),
-                      ),
-                    ))
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                  itemCount: supervisors.length,
-                  itemBuilder: (_, i) => _SupervisorCard(
-                      supervisor: supervisors[i],
-                      alerts: alerts,
-                      factories: factories,
-                      onRefresh: onRefresh,
-                      onDelete: () => onDelete(supervisors[i]))),
+      ),
+      _SectionShell(
+        icon: Icons.factory_outlined,
+        title: 'Factory Workload Map',
+        subtitle: 'Supervisor load by factory',
+        child: _FactoryWorkloadChart(workload: factoryWorkload),
+      ),
+    ];
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final columns = constraints.maxWidth > 1180
+          ? 3
+          : constraints.maxWidth > 760
+              ? 2
+              : 1;
+      final gap = 12.0;
+      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: List.generate(cards.length, (index) {
+          return SizedBox(
+            width: width,
+            child: _StaggeredEntrance(
+              delay: Duration(milliseconds: 60 * index),
+              child: cards[index],
+            ),
+          );
+        }),
+      );
+    });
+  }
+
+  Widget _buildWide(AppTheme t, UserModel? selected) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(width: 342, child: _buildRail(t)),
+        const SizedBox(width: 14),
+        Expanded(child: _buildDetailScroller(t, selected)),
+      ]),
+    );
+  }
+
+  Widget _buildCompact(AppTheme t, UserModel? selected) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+      child: Column(children: [
+        _buildRail(t, compact: true),
+        const SizedBox(height: 14),
+        _buildDetailContent(t, selected),
+      ]),
+    );
+  }
+
+  Widget _buildRail(AppTheme t, {bool compact = false}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.border),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x08000000), blurRadius: 12, offset: Offset(0, 6))
+        ],
+      ),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+          child: Row(children: [
+            Icon(Icons.manage_accounts_outlined, size: 18, color: t.navy),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Roster',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: t.text)),
+            ),
+            _Chip('${widget.allSupervisors.length}', t.navy),
+          ]),
         ),
-      ]);
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+          child: _buildSearchField(t),
+        ),
+        if (compact)
+          SizedBox(height: 154, child: _buildRosterList(t, compact: true))
+        else
+          Expanded(child: _buildRosterList(t)),
+      ]),
+    );
+  }
+
+  Widget _buildSearchField(AppTheme t) {
+    return TextField(
+      controller: widget.searchCtrl,
+      onChanged: widget.onSearchChanged,
+      style: TextStyle(color: t.text, fontSize: 13),
+      decoration: InputDecoration(
+        hintText: 'Search supervisor',
+        hintStyle: TextStyle(color: t.muted),
+        prefixIcon: Icon(Icons.search, color: t.muted, size: 18),
+        suffixIcon: widget.searchQuery.isEmpty
+            ? null
+            : IconButton(
+                icon: Icon(Icons.close, size: 18, color: t.muted),
+                onPressed: () {
+                  widget.searchCtrl.clear();
+                  widget.onSearchChanged('');
+                },
+              ),
+        filled: true,
+        fillColor: t.scaffold,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: t.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: t.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: t.navy, width: 1.4),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRosterList(AppTheme t, {bool compact = false}) {
+    if (widget.supervisors.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Text('No supervisors match "${widget.searchQuery}"',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: t.muted)),
+        ),
+      );
+    }
+
+    if (compact) {
+      return ListView.separated(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        scrollDirection: Axis.horizontal,
+        itemCount: widget.supervisors.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final sup = widget.supervisors[i];
+          return SizedBox(
+            width: 260,
+            child: _StaggeredEntrance(
+              delay: Duration(milliseconds: 55 * i),
+              child: _SupervisorRailTile(
+                supervisor: sup,
+                selected: sup.id == _selectedId,
+                solved: _solvedFor(sup).length,
+                claimed: _claimedFor(sup),
+                score: _impactScore(sup),
+                spark: _resolvedSpark(sup),
+                onTap: () => setState(() => _selectedId = sup.id),
+                onEdit: () => _showModifyDialog(sup),
+                onDelete: () => _showDeleteConfirmDialog(sup),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      itemCount: widget.supervisors.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final sup = widget.supervisors[i];
+        return _StaggeredEntrance(
+          delay: Duration(milliseconds: 55 * (i % 8)),
+          child: _SupervisorRailTile(
+            supervisor: sup,
+            selected: sup.id == _selectedId,
+            solved: _solvedFor(sup).length,
+            claimed: _claimedFor(sup),
+            score: _impactScore(sup),
+            spark: _resolvedSpark(sup),
+            onTap: () => setState(() => _selectedId = sup.id),
+            onEdit: () => _showModifyDialog(sup),
+            onDelete: () => _showDeleteConfirmDialog(sup),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailScroller(AppTheme t, UserModel? selected) {
+    return SingleChildScrollView(
+      child: _buildDetailContent(t, selected),
+    );
+  }
+
+  Widget _buildDetailContent(AppTheme t, UserModel? selected) {
+    if (selected == null) {
+      return Container(
+        height: 420,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: t.border),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.person_search, size: 42, color: t.muted),
+          const SizedBox(height: 12),
+          Text('Select a supervisor',
+              style: TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w800, color: t.muted)),
+        ]),
+      );
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 320),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: Column(
+        key: ValueKey(selected.id),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSupervisorHero(t, selected),
+          const SizedBox(height: 14),
+          _buildMetricGrid(t, selected),
+          const SizedBox(height: 14),
+          _buildPerformanceCard(t, selected),
+          const SizedBox(height: 14),
+          _buildTypeBreakdown(t, selected),
+          const SizedBox(height: 14),
+          _buildValidatedList(t, selected),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSupervisorHero(AppTheme t, UserModel sup) {
+    final solved = _solvedFor(sup);
+    final avg = _avgMinFor(solved);
+    final dist = _factoryDist(sup);
+    final rank = _rankFor(sup);
+    final statusColor = sup.isActive ? t.green : t.red;
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [
+            t.card,
+            t.isDark ? const Color(0xFF132238) : const Color(0xFFEFF6FF),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: t.border),
+      ),
+      child: Stack(children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _CommandGridPainter(color: t.navy.withValues(alpha: 0.06)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(18),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 66,
+                height: 66,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [t.navy, t.green],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: t.navy.withValues(alpha: 0.25),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(_initials(sup),
+                      style: const TextStyle(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(sup.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              color: t.text,
+                              height: 1.05)),
+                      const SizedBox(height: 7),
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        _StatusPill(
+                            color: statusColor,
+                            label: sup.isActive ? 'Active' : 'Absent',
+                            icon: Icons.circle,
+                            pulse: sup.isActive),
+                        _StatusPill(
+                            color: t.blue,
+                            label: sup.usine.isEmpty ? 'Unassigned' : sup.usine,
+                            icon: Icons.factory_outlined),
+                        _AnimatedRankPill(rank: rank, color: t.purple),
+                      ]),
+                    ]),
+              ),
+              IconButton(
+                onPressed: () => _showModifyDialog(sup),
+                icon: Icon(Icons.edit, color: t.navy),
+                tooltip: 'Modify Supervisor',
+              ),
+              IconButton(
+                onPressed: () => _showDeleteConfirmDialog(sup),
+                icon: Icon(Icons.delete_outline, color: t.red),
+                tooltip: 'Delete Supervisor',
+              ),
+            ]),
+            const SizedBox(height: 16),
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              _FloatingHeroSignal(
+                delay: const Duration(milliseconds: 0),
+                child: _HeroSignal(
+                    label: 'Resolved',
+                    value: '${solved.length}',
+                    color: t.green,
+                    icon: Icons.check_circle_outline),
+              ),
+              _FloatingHeroSignal(
+                delay: const Duration(milliseconds: 90),
+                child: _HeroSignal(
+                    label: 'Avg Time',
+                    value: avg == null ? '-' : _fmtMin(avg),
+                    color: t.orange,
+                    icon: Icons.timer_outlined),
+              ),
+              _FloatingHeroSignal(
+                delay: const Duration(milliseconds: 180),
+                child: _HeroSignal(
+                    label: 'Impact',
+                    value: '${_impactScore(sup)}',
+                    color: t.blue,
+                    icon: Icons.bolt_outlined),
+              ),
+              if (dist.isNotEmpty)
+                _FloatingHeroSignal(
+                  delay: const Duration(milliseconds: 270),
+                  child: _HeroSignal(
+                      label: 'Top Plant',
+                      value: dist.entries
+                          .reduce((a, b) => a.value >= b.value ? a : b)
+                          .key,
+                      color: t.purple,
+                      icon: Icons.hub_outlined),
+                ),
+            ]),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildMetricGrid(AppTheme t, UserModel sup) {
+    final solved = _solvedFor(sup);
+    final involved = _alertsFor(sup);
+    final avg = _avgMinFor(solved);
+    final ai = involved.where((a) => a.aiAssigned).length;
+    final critical = involved.where((a) => a.isCritical).length;
+    final rate = (_validationRate(sup) * 100).round();
+    final tiles = [
+      _CommandMetric(
+          icon: Icons.done_all,
+          label: 'Resolved Alerts',
+          value: '${solved.length}',
+          tone: t.green),
+      _CommandMetric(
+          icon: Icons.speed,
+          label: 'Average Resolution',
+          value: avg == null ? '-' : _fmtMin(avg),
+          tone: t.orange),
+      _CommandMetric(
+          icon: Icons.verified_outlined,
+          label: 'Validation Rate',
+          value: '$rate%',
+          tone: t.blue),
+      _CommandMetric(
+          icon: Icons.psychology_alt_outlined,
+          label: 'AI Assigned',
+          value: '$ai',
+          tone: t.purple),
+      _CommandMetric(
+          icon: Icons.warning_amber_rounded,
+          label: 'Critical Load',
+          value: '$critical',
+          tone: t.red),
+    ];
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final columns = constraints.maxWidth > 980
+          ? 5
+          : constraints.maxWidth > 720
+              ? 3
+              : 2;
+      final gap = 10.0;
+      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children:
+            tiles.map((tile) => SizedBox(width: width, child: tile)).toList(),
+      );
+    });
+  }
+
+  Widget _buildPerformanceCard(AppTheme t, UserModel sup) {
+    final points = _buildChartPoints(sup);
+    final chartTotal = points.fold<double>(0, (sum, p) => sum + p.value);
+    final key = ValueKey('${sup.id}-$_chartRange-$chartTotal');
+
+    return _SectionShell(
+      icon: Icons.show_chart,
+      title: 'Performance Graph',
+      subtitle: 'Resolved alerts over time',
+      trailing: _RangeToggle(
+        value: _chartRange,
+        onChanged: (v) => setState(() => _chartRange = v),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          height: 230,
+          child: TweenAnimationBuilder<double>(
+            key: key,
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 850),
+            curve: Curves.easeOutCubic,
+            builder: (context, progress, _) => _LineChart(
+              points: points,
+              progress: progress,
+              color: t.navy,
+              fillColor: t.green,
+              gridColor: t.border,
+              labelColor: t.muted,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Container(width: 30, height: 3, color: t.navy),
+          const SizedBox(width: 7),
+          Icon(Icons.circle, size: 8, color: t.green),
+          const SizedBox(width: 7),
+          Text('Validations', style: TextStyle(fontSize: 11, color: t.muted)),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _buildTypeBreakdown(AppTheme t, UserModel sup) {
+    final stats = _typeStats(sup);
+    return _SectionShell(
+      icon: Icons.analytics_outlined,
+      title: 'Alert Type Breakdown',
+      subtitle: 'Validation quality by alert class',
+      child: LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth > 900
+            ? 4
+            : constraints.maxWidth > 620
+                ? 2
+                : 1;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: stats.entries.map((entry) {
+            final type = entry.key;
+            final data = entry.value;
+            final total = data.validated + data.notValidated;
+            final pct = total == 0 ? 0 : (data.validated / total * 100).round();
+            final color = _typeColor(type);
+            return SizedBox(
+              width: width,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withValues(alpha: 0.24)),
+                ),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(
+                          child: Text(_typeLabel(type),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: color)),
+                        ),
+                        Text('$pct%',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: color)),
+                      ]),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: LinearProgressIndicator(
+                          minHeight: 7,
+                          value: pct / 100,
+                          backgroundColor: color.withValues(alpha: 0.12),
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _PerfStatRow(
+                          label: 'Validated',
+                          value: data.validated,
+                          color: _green),
+                      const SizedBox(height: 3),
+                      _PerfStatRow(
+                          label: 'Open / returned',
+                          value: data.notValidated,
+                          color: _orange),
+                    ]),
+              ),
+            );
+          }).toList(),
+        );
+      }),
+    );
+  }
+
+  Widget _buildAssignmentMatrix(AppTheme t) {
+    final grouped = _groupByFactory();
+    final unassigned = _unassigned();
+    final cards = <Widget>[
+      ...grouped.entries.map((entry) => _buildFactoryDropCard(
+            t,
+            factoryName: entry.key,
+            location: _locationFor(entry.key),
+            supervisors: entry.value,
+            accent: t.navy,
+            emptyLabel: 'Open slot',
+            onAccept: (sup) => _reassign(sup, entry.key),
+          )),
+      if (unassigned.isNotEmpty || grouped.isEmpty)
+        _buildFactoryDropCard(
+          t,
+          factoryName: 'Unassigned',
+          location: 'Awaiting plant placement',
+          supervisors: unassigned,
+          accent: t.orange,
+          emptyLabel: 'No unassigned supervisors',
+          onAccept: (sup) => _reassign(sup, ''),
+          accepts: (sup) => sup.usine.isNotEmpty,
+          removable: false,
+        ),
+    ];
+
+    return _SectionShell(
+      icon: Icons.account_tree_outlined,
+      title: 'Plant Assignment Matrix',
+      subtitle: 'Drag a supervisor chip into a plant lane',
+      child: LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth > 980
+            ? 3
+            : constraints.maxWidth > 640
+                ? 2
+                : 1;
+        final gap = 12.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children:
+              cards.map((card) => SizedBox(width: width, child: card)).toList(),
+        );
+      }),
+    );
+  }
+
+  Widget _buildFactoryDropCard(
+    AppTheme t, {
+    required String factoryName,
+    required String? location,
+    required List<UserModel> supervisors,
+    required Color accent,
+    required String emptyLabel,
+    required ValueChanged<UserModel> onAccept,
+    bool Function(UserModel sup)? accepts,
+    bool removable = true,
+  }) {
+    return DragTarget<UserModel>(
+      onWillAcceptWithDetails: (details) =>
+          accepts?.call(details.data) ?? details.data.usine != factoryName,
+      onAcceptWithDetails: (details) => onAccept(details.data),
+      builder: (context, candidates, _) {
+        final hovering = candidates.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: hovering
+                ? accent.withValues(alpha: 0.10)
+                : t.scaffold.withValues(alpha: t.isDark ? 0.7 : 1),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: hovering ? accent : t.border,
+              width: hovering ? 1.8 : 1,
+            ),
+          ),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.factory_outlined, color: accent, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(factoryName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: t.text)),
+                      if (location != null && location.isNotEmpty)
+                        Text(location,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: t.muted)),
+                    ]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text('${supervisors.length}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: accent)),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            if (supervisors.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color:
+                          hovering ? accent.withValues(alpha: 0.45) : t.border),
+                ),
+                child: Text(hovering ? 'Release to assign' : emptyLabel,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            hovering ? FontWeight.w800 : FontWeight.w500,
+                        color: hovering ? accent : t.muted)),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: supervisors
+                    .map((sup) => _SupChip(
+                          sup: sup,
+                          selected: sup.id == _selectedId,
+                          onTap: () => setState(() => _selectedId = sup.id),
+                          onRemove: removable ? () => _reassign(sup, '') : null,
+                        ))
+                    .toList(),
+              ),
+          ]),
+        );
+      },
+    );
+  }
+
+  Widget _buildValidatedList(AppTheme t, UserModel sup) {
+    final solved = _solvedFor(sup)
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return _SectionShell(
+      icon: Icons.fact_check_outlined,
+      title: 'Validated Alert Trail',
+      subtitle: '${solved.length} resolved records',
+      child: solved.isEmpty
+          ? Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              alignment: Alignment.center,
+              child: Text('No validated alerts yet',
+                  style: TextStyle(fontSize: 13, color: t.muted)),
+            )
+          : Column(
+              children: solved
+                  .take(12)
+                  .map((alert) => _ValidatedAlertRow(alert: alert))
+                  .toList(),
+            ),
+    );
+  }
+}
+
+class _LeaderboardEntry {
+  final UserModel supervisor;
+  final int score;
+  const _LeaderboardEntry({required this.supervisor, required this.score});
+}
+
+class _FactoryWorkloadSegment {
+  final UserModel supervisor;
+  final int count;
+  const _FactoryWorkloadSegment({
+    required this.supervisor,
+    required this.count,
+  });
+}
+
+class _DashboardShimmerSkeleton extends StatelessWidget {
+  const _DashboardShimmerSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Shimmer.fromColors(
+      baseColor: t.border.withValues(alpha: 0.38),
+      highlightColor: t.card.withValues(alpha: 0.92),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: List.generate(
+          5,
+          (index) => Container(
+            width: 320,
+            height: 210,
+            decoration: BoxDecoration(
+              color: t.border,
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StaggeredEntrance extends StatefulWidget {
+  final Widget child;
+  final Duration delay;
+  const _StaggeredEntrance({required this.child, required this.delay});
+
+  @override
+  State<_StaggeredEntrance> createState() => _StaggeredEntranceState();
+}
+
+class _StaggeredEntranceState extends State<_StaggeredEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _offset;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+    );
+    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _offset = Tween(begin: const Offset(0, 0.035), end: Offset.zero).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+    _timer = Timer(widget.delay, () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(position: _offset, child: widget.child),
+    );
+  }
+}
+
+class _WeeklyResolutionHeatmap extends StatelessWidget {
+  final List<int> values;
+  const _WeeklyResolutionHeatmap({required this.values});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final maxY = math.max(1, values.fold<int>(0, math.max)).toDouble();
+    final now = DateTime.now();
+    final days = List.generate(
+      values.length,
+      (i) => now.subtract(Duration(days: values.length - 1 - i)),
+    );
+
+    return SizedBox(
+      height: 198,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: maxY + 1,
+          minY: 0,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) => FlLine(
+              color: t.border.withValues(alpha: 0.52),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: math.max(1, maxY / 3),
+                getTitlesWidget: (value, _) => Text(
+                  value.toInt().toString(),
+                  style: TextStyle(fontSize: 9, color: t.muted),
+                ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, _) {
+                  final index = value.toInt();
+                  if (index < 0 || index >= days.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _weekdayShort(days[index].weekday),
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: t.muted,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          barTouchData: BarTouchData(
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (_) => t.text,
+              getTooltipItem: (group, _, rod, __) => BarTooltipItem(
+                '${rod.toY.toInt()} resolved',
+                TextStyle(
+                  color: t.card,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          barGroups: List.generate(values.length, (i) {
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: values[i].toDouble(),
+                  width: 18,
+                  borderRadius: BorderRadius.circular(7),
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      t.green.withValues(alpha: 0.55),
+                      t.green,
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }),
+        ),
+        duration: const Duration(milliseconds: 850),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+}
+
+class _AlertTypeDonut extends StatelessWidget {
+  final Map<String, int> distribution;
+  const _AlertTypeDonut({required this.distribution});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final entries = distribution.entries.where((e) => e.value > 0).toList();
+    if (entries.isEmpty) {
+      return _EmptyChartState(label: 'No alert type activity');
+    }
+    final total = entries.fold<int>(0, (sum, e) => sum + e.value);
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, _) {
+        return Row(children: [
+          SizedBox(
+            width: 150,
+            height: 150,
+            child: PieChart(
+              PieChartData(
+                centerSpaceRadius: 42,
+                sectionsSpace: 2,
+                startDegreeOffset: -90,
+                sections: List.generate(entries.length, (i) {
+                  final visible =
+                      ((progress * entries.length) - i).clamp(0.0, 1.0);
+                  final entry = entries[i];
+                  final color = typeMeta(entry.key, t).color;
+                  return PieChartSectionData(
+                    value: entry.value * visible,
+                    title: visible > 0.85
+                        ? '${(entry.value / total * 100).round()}%'
+                        : '',
+                    color: color,
+                    radius: 34 + visible * 12,
+                    titleStyle: TextStyle(
+                      color: t.card,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  );
+                }),
+              ),
+              duration: const Duration(milliseconds: 250),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: entries.map((entry) {
+                final color = typeMeta(entry.key, t).color;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.28),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        typeMeta(entry.key, t).label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: t.text,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Text(
+                      entry.value.toString(),
+                      style: TextStyle(
+                          color: t.muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800),
+                    ),
+                  ]),
+                );
+              }).toList(),
+            ),
+          ),
+        ]);
+      },
+    );
+  }
+}
+
+class _SupervisorLeaderboardChart extends StatelessWidget {
+  final List<_LeaderboardEntry> entries;
+  const _SupervisorLeaderboardChart({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    if (entries.isEmpty) {
+      return _EmptyChartState(label: 'No supervisor scores yet');
+    }
+    final maxScore = math.max(1, entries.map((e) => e.score).reduce(math.max));
+    return Column(
+      children: List.generate(entries.length, (index) {
+        final entry = entries[index];
+        final color = _rankTone(t, index);
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: Duration(milliseconds: 520 + index * 90),
+          curve: Curves.easeOutCubic,
+          builder: (context, progress, _) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                SizedBox(
+                  width: 92,
+                  child: Text(
+                    entry.supervisor.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: t.text,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: Stack(children: [
+                      Container(height: 12, color: t.scaffold),
+                      FractionallySizedBox(
+                        widthFactor: (entry.score / maxScore) * progress,
+                        child: Container(
+                          height: 12,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                color.withValues(alpha: 0.55),
+                                color,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 34,
+                  child: Text(
+                    '${(entry.score * progress).round()}',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ]),
+            );
+          },
+        );
+      }),
+    );
+  }
+}
+
+class _LiveActivityPulseChart extends StatelessWidget {
+  final List<double> samples;
+  final double progress;
+  const _LiveActivityPulseChart({
+    required this.samples,
+    required this.progress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return SizedBox(
+      height: 156,
+      child: CustomPaint(
+        painter: _HeartbeatPainter(
+          samples: samples,
+          progress: progress,
+          color: t.green,
+          gridColor: t.border,
+          labelColor: t.muted,
+          backgroundColor: t.scaffold,
+        ),
+        size: Size.infinite,
+      ),
+    );
+  }
+}
+
+class _FactoryWorkloadChart extends StatelessWidget {
+  final Map<String, List<_FactoryWorkloadSegment>> workload;
+  const _FactoryWorkloadChart({required this.workload});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final entries = workload.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .take(5)
+        .toList();
+    if (entries.isEmpty) {
+      return _EmptyChartState(label: 'No factory workload yet');
+    }
+    final maxTotal = entries
+        .map((e) => e.value.fold<int>(0, (sum, segment) => sum + segment.count))
+        .fold<int>(1, math.max);
+    final palette = [t.green, t.blue, t.orange, t.purple, t.yellow];
+
+    return Column(
+      children: List.generate(entries.length, (index) {
+        final entry = entries[index];
+        final total =
+            entry.value.fold<int>(0, (sum, segment) => sum + segment.count);
+        return TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: Duration(milliseconds: 620 + index * 80),
+          curve: Curves.easeOutCubic,
+          builder: (context, progress, _) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(children: [
+                SizedBox(
+                  width: 86,
+                  child: Text(
+                    entry.key,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: t.text,
+                        fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: SizedBox(
+                      height: 16,
+                      child: Row(children: [
+                        for (var i = 0; i < entry.value.length; i++)
+                          Flexible(
+                            flex: math.max(
+                                1, (entry.value[i].count * progress).round()),
+                            child: Container(
+                              color: palette[i % palette.length],
+                            ),
+                          ),
+                        if (total < maxTotal)
+                          Flexible(
+                            flex: math.max(1, maxTotal - total),
+                            child: Container(color: t.scaffold),
+                          ),
+                      ]),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  total.toString(),
+                  style: TextStyle(
+                      color: t.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800),
+                ),
+              ]),
+            );
+          },
+        );
+      }),
+    );
+  }
+}
+
+class _EmptyChartState extends StatelessWidget {
+  final String label;
+  const _EmptyChartState({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      height: 136,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: t.scaffold,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.border),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 12, color: t.muted),
+      ),
+    );
+  }
+}
+
+Color _rankTone(AppTheme t, int index) {
+  if (index == 0) return t.yellow;
+  if (index == 1) return t.blue;
+  if (index == 2) return t.orange;
+  return t.green;
+}
+
+String _weekdayShort(int weekday) {
+  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return labels[(weekday - 1).clamp(0, 6)];
+}
+
+class _HeartbeatPainter extends CustomPainter {
+  final List<double> samples;
+  final double progress;
+  final Color color;
+  final Color gridColor;
+  final Color labelColor;
+  final Color backgroundColor;
+
+  const _HeartbeatPainter({
+    required this.samples,
+    required this.progress,
+    required this.color,
+    required this.gridColor,
+    required this.labelColor,
+    required this.backgroundColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (samples.isEmpty) return;
+    final rect = Offset.zero & size;
+    final bg = Paint()..color = backgroundColor.withValues(alpha: 0.42);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+      bg,
+    );
+
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: 0.55)
+      ..strokeWidth = 1;
+    for (var i = 1; i < 4; i++) {
+      final y = size.height * i / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    final maxVal = math.max(1.0, samples.reduce(math.max));
+    final step = size.width / math.max(1, samples.length - 1);
+    final shift = progress * step;
+    Offset point(int i) {
+      final x = i * step - shift;
+      final y = size.height -
+          14 -
+          (samples[i] / maxVal) * math.max(1, size.height - 28);
+      return Offset(x, y);
+    }
+
+    final path = Path();
+    for (var i = 0; i < samples.length; i++) {
+      final p = point(i);
+      if (i == 0) {
+        path.moveTo(p.dx, p.dy);
+      } else {
+        final prev = point(i - 1);
+        final cx = (prev.dx + p.dx) / 2;
+        path.cubicTo(cx, prev.dy, cx, p.dy, p.dx, p.dy);
+      }
+    }
+
+    final glow = Paint()
+      ..color = color.withValues(alpha: 0.42)
+      ..strokeWidth = 7
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawPath(path, glow);
+
+    final line = Paint()
+      ..color = color
+      ..strokeWidth = 2.4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, line);
+
+    final current = point(samples.length - 1);
+    final dotGlow = Paint()
+      ..color = color.withValues(alpha: 0.45)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
+    canvas.drawCircle(current, 9, dotGlow);
+    canvas.drawCircle(current, 3.5, Paint()..color = color);
+
+    final label = TextPainter(
+      text: TextSpan(
+        text: 'LIVE',
+        style: TextStyle(
+          color: labelColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    label.paint(canvas, const Offset(10, 10));
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeartbeatPainter oldDelegate) =>
+      oldDelegate.samples != samples ||
+      oldDelegate.progress != progress ||
+      oldDelegate.color != color ||
+      oldDelegate.gridColor != gridColor ||
+      oldDelegate.labelColor != labelColor ||
+      oldDelegate.backgroundColor != backgroundColor;
+}
+
+class _SupervisorRailTile extends StatefulWidget {
+  final UserModel supervisor;
+  final bool selected;
+  final int solved;
+  final int claimed;
+  final int score;
+  final List<int> spark;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _SupervisorRailTile({
+    required this.supervisor,
+    required this.selected,
+    required this.solved,
+    required this.claimed,
+    required this.score,
+    required this.spark,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  State<_SupervisorRailTile> createState() => _SupervisorRailTileState();
+}
+
+class _SupervisorRailTileState extends State<_SupervisorRailTile> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final status = widget.supervisor.isActive ? t.green : t.red;
+    final borderColor = widget.selected ? t.navy : t.border;
+    final tile = AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      transform: Matrix4.translationValues(0, _hovering ? -3 : 0, 0),
+      padding: const EdgeInsets.all(1.3),
+      decoration: BoxDecoration(
+        gradient: widget.selected
+            ? LinearGradient(
+                colors: [
+                  t.navy.withValues(alpha: 0.72),
+                  t.green.withValues(alpha: 0.48),
+                  t.blue.withValues(alpha: 0.42),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : null,
+        borderRadius: BorderRadius.circular(14),
+        border:
+            Border.all(color: borderColor, width: widget.selected ? 1.4 : 1),
+        boxShadow: widget.selected || _hovering
+            ? [
+                BoxShadow(
+                  color: t.navy.withValues(alpha: 0.14),
+                  blurRadius: _hovering ? 18 : 14,
+                  offset: Offset(0, _hovering ? 10 : 7),
+                ),
+              ]
+            : null,
+      ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: widget.selected
+              ? t.navyLt.withValues(alpha: t.isDark ? 0.82 : 0.96)
+              : t.card,
+          borderRadius: BorderRadius.circular(13),
+        ),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: widget.selected ? t.navy : t.scaffold,
+                  borderRadius: BorderRadius.circular(13),
+                  border:
+                      Border.all(color: widget.selected ? t.navy : t.border),
+                ),
+                child: Center(
+                  child: Text(_initials(widget.supervisor),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          color: widget.selected ? Colors.white : t.navy)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.supervisor.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: t.text)),
+                      const SizedBox(height: 3),
+                      Row(children: [
+                        _LivePulseDot(
+                          color: status,
+                          pulse: widget.supervisor.isActive,
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            widget.supervisor.usine.isEmpty
+                                ? 'Unassigned'
+                                : widget.supervisor.usine,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: t.muted),
+                          ),
+                        ),
+                      ]),
+                    ]),
+              ),
+              Icon(Icons.drag_indicator, size: 18, color: t.muted),
+            ]),
+            const SizedBox(height: 11),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              _AnimatedMiniChip(
+                  icon: Icons.check_circle_outline,
+                  value: widget.solved,
+                  suffix: ' fixed',
+                  color: t.green),
+              _AnimatedMiniChip(
+                  icon: Icons.timer_outlined,
+                  value: widget.claimed,
+                  suffix: ' live',
+                  color: t.blue),
+              _AnimatedMiniChip(
+                  icon: Icons.bolt_outlined,
+                  value: widget.score,
+                  suffix: ' pts',
+                  color: t.orange),
+            ]),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 30,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 760),
+                curve: Curves.easeOutCubic,
+                builder: (context, progress, _) => CustomPaint(
+                  painter: _MiniSparklinePainter(
+                    data: widget.spark,
+                    color: widget.selected ? t.navy : t.green,
+                    gridColor: t.border,
+                    progress: progress,
+                  ),
+                  size: Size.infinite,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: Text(widget.supervisor.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10, color: t.muted)),
+              ),
+              Tooltip(
+                message: 'Modify Supervisor',
+                child: InkWell(
+                  onTap: widget.onEdit,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(5),
+                    child: Icon(Icons.edit, size: 16, color: t.navy),
+                  ),
+                ),
+              ),
+              Tooltip(
+                message: 'Delete Supervisor',
+                child: InkWell(
+                  onTap: widget.onDelete,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(5),
+                    child: Icon(Icons.delete_outline, size: 16, color: t.red),
+                  ),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: LongPressDraggable<UserModel>(
+        data: widget.supervisor,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 240,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: t.navy,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: t.navy.withValues(alpha: 0.35),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(children: [
+              const Icon(Icons.person_outline, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(widget.supervisor.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ]),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: 0.35, child: tile),
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: tile,
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedMiniChip extends StatelessWidget {
+  final IconData icon;
+  final int value;
+  final String suffix;
+  final Color color;
+  const _AnimatedMiniChip({
+    required this.icon,
+    required this.value,
+    required this.suffix,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<int>(
+      tween: IntTween(begin: 0, end: value),
+      duration: const Duration(milliseconds: 720),
+      curve: Curves.easeOutCubic,
+      builder: (context, animated, _) {
+        return _MiniChip(icon, '$animated$suffix', color);
+      },
+    );
+  }
+}
+
+class _LivePulseDot extends StatefulWidget {
+  final Color color;
+  final bool pulse;
+  const _LivePulseDot({required this.color, this.pulse = true});
+
+  @override
+  State<_LivePulseDot> createState() => _LivePulseDotState();
+}
+
+class _LivePulseDotState extends State<_LivePulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.pulse) _controller.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _LivePulseDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pulse && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (!widget.pulse && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final v = widget.pulse ? _controller.value : 0.0;
+        return SizedBox(
+          width: 14,
+          height: 14,
+          child: Stack(alignment: Alignment.center, children: [
+            Container(
+              width: 12 + v * 3,
+              height: 12 + v * 3,
+              decoration: BoxDecoration(
+                color:
+                    widget.color.withValues(alpha: widget.pulse ? 0.18 : 0.10),
+                shape: BoxShape.circle,
+              ),
+            ),
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: widget.color,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.color
+                        .withValues(alpha: widget.pulse ? 0.48 : 0.22),
+                    blurRadius: widget.pulse ? 5 + v * 5 : 3,
+                  ),
+                ],
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+class _MiniSparklinePainter extends CustomPainter {
+  final List<int> data;
+  final Color color;
+  final Color gridColor;
+  final double progress;
+
+  const _MiniSparklinePainter({
+    required this.data,
+    required this.color,
+    required this.gridColor,
+    required this.progress,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (data.isEmpty || size.isEmpty) return;
+    final maxVal = math.max(1, data.reduce(math.max)).toDouble();
+    final visibleCount =
+        (data.length * progress).clamp(1.0, data.length.toDouble());
+    final n = visibleCount.ceil();
+    final stepX = data.length > 1 ? size.width / (data.length - 1) : size.width;
+
+    final grid = Paint()
+      ..color = gridColor.withValues(alpha: 0.34)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(0, size.height - 2),
+      Offset(size.width, size.height - 2),
+      grid,
+    );
+
+    double yFor(int i) {
+      final pad = size.height * 0.18;
+      final usable = size.height - pad * 2;
+      return pad + usable - (data[i] / maxVal) * usable;
+    }
+
+    final path = Path();
+    final fill = Path();
+    for (var i = 0; i < n; i++) {
+      final x = i * stepX;
+      final y = yFor(i);
+      if (i == 0) {
+        path.moveTo(x, y);
+        fill.moveTo(x, size.height);
+        fill.lineTo(x, y);
+      } else {
+        final prevX = (i - 1) * stepX;
+        final prevY = yFor(i - 1);
+        final cp1 = Offset(prevX + stepX / 2, prevY);
+        final cp2 = Offset(x - stepX / 2, y);
+        path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, x, y);
+        fill.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, x, y);
+      }
+    }
+    final lastX = (n - 1) * stepX;
+    fill.lineTo(lastX, size.height);
+    fill.close();
+
+    canvas.drawPath(
+      fill,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            color.withValues(alpha: 0.24),
+            color.withValues(alpha: 0.0),
+          ],
+        ).createShader(Offset.zero & size),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniSparklinePainter oldDelegate) =>
+      oldDelegate.data != data ||
+      oldDelegate.color != color ||
+      oldDelegate.gridColor != gridColor ||
+      oldDelegate.progress != progress;
+}
+
+class _GlassChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _GlassChip(this.icon, this.label, this.color);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.13),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white)),
+        ]),
+      );
+}
+
+class _StatusPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool pulse;
+  const _StatusPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.pulse = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.34)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: icon == Icons.circle ? 8 : 14, color: color),
+        const SizedBox(width: 6),
+        Text(label,
+            style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+      ]),
+    );
+    if (!pulse) return pill;
+    return _PulsingRing(color: color, child: pill);
+  }
+}
+
+class _AnimatedRankPill extends StatelessWidget {
+  final int rank;
+  final Color color;
+  const _AnimatedRankPill({required this.rank, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutBack,
+      builder: (context, value, _) {
+        return Transform.translate(
+          offset: Offset((1 - value) * 14, 0),
+          child: Transform.scale(
+            scale: 0.92 + value * 0.08,
+            child: Opacity(
+              opacity: value.clamp(0.0, 1.0),
+              child: _StatusPill(
+                color: color,
+                label: 'Rank #$rank',
+                icon: Icons.leaderboard_outlined,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PulsingRing extends StatefulWidget {
+  final Widget child;
+  final Color color;
+  const _PulsingRing({required this.child, required this.color});
+
+  @override
+  State<_PulsingRing> createState() => _PulsingRingState();
+}
+
+class _PulsingRingState extends State<_PulsingRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1700),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final v = _controller.value;
+        return Container(
+          padding: EdgeInsets.all(2 + v * 2),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(99),
+            border: Border.all(
+              color: widget.color.withValues(alpha: 0.12 + v * 0.22),
+            ),
+          ),
+          child: widget.child,
+        );
+      },
+    );
+  }
+}
+
+class _FloatingHeroSignal extends StatefulWidget {
+  final Widget child;
+  final Duration delay;
+  const _FloatingHeroSignal({required this.child, required this.delay});
+
+  @override
+  State<_FloatingHeroSignal> createState() => _FloatingHeroSignalState();
+}
+
+class _FloatingHeroSignalState extends State<_FloatingHeroSignal>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  );
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(widget.delay, () {
+      if (mounted) _controller.repeat(reverse: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final wave = math.sin(_controller.value * math.pi);
+        return Opacity(
+          opacity: (0.88 + wave * 0.12).clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, -wave * 3.5),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+class _HeroSignal extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _HeroSignal({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      width: 150,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.card.withValues(alpha: t.isDark ? 0.62 : 0.86),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: color, size: 18),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: t.text,
+                    height: 1)),
+            const SizedBox(height: 4),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: t.muted)),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+class _CommandMetric extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color tone;
+  const _CommandMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.tone,
+  });
+
+  @override
+  State<_CommandMetric> createState() => _CommandMetricState();
+}
+
+class _CommandMetricState extends State<_CommandMetric> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        transform: Matrix4.translationValues(0, _hovering ? -3 : 0, 0),
+        height: 94,
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: t.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: widget.tone.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: widget.tone.withValues(alpha: _hovering ? 0.16 : 0.06),
+              blurRadius: _hovering ? 18 : 10,
+              offset: Offset(0, _hovering ? 9 : 5),
+            )
+          ],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(widget.icon, size: 17, color: widget.tone),
+            const Spacer(),
+            Container(
+              width: 22,
+              height: 3,
+              decoration: BoxDecoration(
+                color: widget.tone.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ]),
+          const Spacer(),
+          Text(widget.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: t.text,
+                  height: 1)),
+          const SizedBox(height: 5),
+          Text(widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: t.muted)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _SectionShell extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget child;
+  final Widget? trailing;
+  const _SectionShell({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.child,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: t.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.border),
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x06000000), blurRadius: 12, offset: Offset(0, 6))
+        ],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: t.navyLt,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: t.navy),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: t.text)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: t.muted)),
+            ]),
+          ),
+          if (trailing != null) trailing!,
+        ]),
+        const SizedBox(height: 15),
+        child,
+      ]),
+    );
+  }
+}
+
+class _RangeToggle extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _RangeToggle({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      width: 142,
+      height: 34,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: t.scaffold,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.border),
+      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final itemW = constraints.maxWidth / 2;
+        final selectedIndex = value == '30days' ? 1 : 0;
+        Widget item(String id, String label) {
+          final selected = value == id;
+          return Expanded(
+            child: InkWell(
+              onTap: () => onChanged(id),
+              borderRadius: BorderRadius.circular(9),
+              child: Center(
+                child: AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 180),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: selected ? Colors.white : t.muted,
+                  ),
+                  child: Text(label),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Stack(children: [
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            left: itemW * selectedIndex,
+            top: 0,
+            bottom: 0,
+            width: itemW,
+            child: Container(
+              decoration: BoxDecoration(
+                color: t.navy,
+                borderRadius: BorderRadius.circular(9),
+                boxShadow: [
+                  BoxShadow(
+                    color: t.navy.withValues(alpha: 0.24),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Row(children: [item('7days', '7D'), item('30days', '30D')]),
+        ]);
+      }),
+    );
+  }
+}
+
+class _CommandGridPainter extends CustomPainter {
+  final Color color;
+  const _CommandGridPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    const step = 28.0;
+    for (double x = 0; x < size.width; x += step) {
+      canvas.drawLine(
+          Offset(x, 0), Offset(x + size.height * 0.35, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CommandGridPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _PerformanceSubTab extends StatefulWidget {
@@ -449,8 +3388,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                                   size: 16, color: t.navy),
                               const SizedBox(width: 8),
                               Text(s.fullName,
-                                  style: TextStyle(
-                                      fontSize: 14, color: t.text)),
+                                  style:
+                                      TextStyle(fontSize: 14, color: t.text)),
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -482,8 +3421,8 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
               Container(
                 width: 64,
                 height: 64,
-                decoration: BoxDecoration(
-                    color: t.scaffold, shape: BoxShape.circle),
+                decoration:
+                    BoxDecoration(color: t.scaffold, shape: BoxShape.circle),
                 child: Icon(Icons.person_search, size: 32, color: t.muted),
               ),
               const SizedBox(height: 14),
@@ -864,22 +3803,108 @@ class _ChartPoint {
   const _ChartPoint({required this.day, required this.value});
 }
 
-class _LineChart extends StatelessWidget {
+class _LineChart extends StatefulWidget {
   final List<_ChartPoint> points;
-  const _LineChart({required this.points});
+  final double progress;
+  final Color? color;
+  final Color? fillColor;
+  final Color? gridColor;
+  final Color? labelColor;
+  const _LineChart({
+    required this.points,
+    this.progress = 1,
+    this.color,
+    this.fillColor,
+    this.gridColor,
+    this.labelColor,
+  });
+
+  @override
+  State<_LineChart> createState() => _LineChartState();
+}
+
+class _LineChartState extends State<_LineChart> {
+  int? _selectedIndex;
+
+  int? _nearestPoint(Size size, Offset localPosition) {
+    if (widget.points.isEmpty) return null;
+    const leftPad = 36.0;
+    const rightPad = 16.0;
+    final chartW = size.width - leftPad - rightPad;
+    final n = widget.points.length;
+    if (chartW <= 0) return null;
+    final ratio = ((localPosition.dx - leftPad) / chartW).clamp(0.0, 1.0);
+    return (ratio * (n - 1)).round().clamp(0, n - 1);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _LineChartPainter(points: points),
-      size: const Size(double.infinity, 200),
-    );
+    final t = context.appTheme;
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (details) {
+          setState(() {
+            _selectedIndex = _nearestPoint(
+              Size(width, constraints.maxHeight),
+              details.localPosition,
+            );
+          });
+        },
+        child: Stack(children: [
+          CustomPaint(
+            painter: _LineChartPainter(
+              points: widget.points,
+              progress: widget.progress,
+              color: widget.color ?? t.navy,
+              fillColor: widget.fillColor ?? t.navy,
+              gridColor: widget.gridColor ?? t.border,
+              labelColor: widget.labelColor ?? t.muted,
+              dotBorderColor: t.card,
+              selectedIndex: _selectedIndex,
+            ),
+            size: const Size(double.infinity, 200),
+          ),
+          if (_selectedIndex != null && widget.points.isNotEmpty)
+            _LineChartTooltip(
+              point: widget.points[_selectedIndex!],
+              left: _tooltipLeft(width, _selectedIndex!, widget.points.length),
+            ),
+        ]),
+      );
+    });
+  }
+
+  double _tooltipLeft(double width, int index, int count) {
+    const leftPad = 36.0;
+    const rightPad = 16.0;
+    final chartW = width - leftPad - rightPad;
+    final x =
+        leftPad + (count == 1 ? chartW / 2 : index / (count - 1) * chartW);
+    return (x - 58).clamp(6.0, math.max(6.0, width - 116));
   }
 }
 
 class _LineChartPainter extends CustomPainter {
   final List<_ChartPoint> points;
-  _LineChartPainter({required this.points});
+  final double progress;
+  final Color color;
+  final Color fillColor;
+  final Color gridColor;
+  final Color labelColor;
+  final Color dotBorderColor;
+  final int? selectedIndex;
+  _LineChartPainter({
+    required this.points,
+    required this.progress,
+    required this.color,
+    required this.fillColor,
+    required this.gridColor,
+    required this.labelColor,
+    required this.dotBorderColor,
+    this.selectedIndex,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -898,7 +3923,7 @@ class _LineChartPainter extends CustomPainter {
     final n = points.length;
 
     final gridPaint = Paint()
-      ..color = const Color(0xFFE2E8F0)
+      ..color = gridColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
@@ -909,7 +3934,7 @@ class _LineChartPainter extends CustomPainter {
       final textPainter = TextPainter(
         text: TextSpan(
             text: (yMax * i / 4).toStringAsFixed(0),
-            style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+            style: TextStyle(fontSize: 9, color: labelColor)),
         textDirection: TextDirection.ltr,
       )..layout();
       textPainter.paint(canvas, Offset(0, y - textPainter.height / 2));
@@ -917,7 +3942,7 @@ class _LineChartPainter extends CustomPainter {
 
     Offset pos(int i) {
       final x = leftPad + (n == 1 ? chartW / 2 : i / (n - 1) * chartW);
-      final y = topPad + chartH * (1 - (points[i].value / yMax));
+      final y = topPad + chartH * (1 - ((points[i].value * progress) / yMax));
       return Offset(x, y);
     }
 
@@ -933,13 +3958,16 @@ class _LineChartPainter extends CustomPainter {
         fillPath,
         Paint()
           ..shader = LinearGradient(
-            colors: [_navy.withOpacity(.15), _navy.withOpacity(.01)],
+            colors: [
+              fillColor.withValues(alpha: .18),
+              color.withValues(alpha: .015)
+            ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ).createShader(Rect.fromLTWH(0, topPad, size.width, chartH)));
 
     final linePaint = Paint()
-      ..color = _navy
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round;
@@ -953,9 +3981,9 @@ class _LineChartPainter extends CustomPainter {
     }
     canvas.drawPath(linePath, linePaint);
 
-    final dotPaint = Paint()..color = _navy;
+    final dotPaint = Paint()..color = color;
     final dotBorder = Paint()
-      ..color = _white
+      ..color = dotBorderColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
@@ -963,7 +3991,12 @@ class _LineChartPainter extends CustomPainter {
 
     for (int i = 0; i < n; i++) {
       final p = pos(i);
-      canvas.drawCircle(p, 4, dotPaint);
+      final isSelected = i == selectedIndex;
+      final glowPaint = Paint()
+        ..color = color.withValues(alpha: isSelected ? 0.42 : 0.20)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, isSelected ? 9 : 5);
+      canvas.drawCircle(p, isSelected ? 9 : 6, glowPaint);
+      canvas.drawCircle(p, isSelected ? 5 : 4, dotPaint);
       canvas.drawCircle(p, 4, dotBorder);
 
       if (i % dateSteps == 0 || i == n - 1) {
@@ -971,8 +4004,7 @@ class _LineChartPainter extends CustomPainter {
         final label = '${d.day} ${_monthAbbr(d.month)}';
         final tp = TextPainter(
           text: TextSpan(
-              text: label,
-              style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+              text: label, style: TextStyle(fontSize: 9, color: labelColor)),
           textDirection: TextDirection.ltr,
         )..layout();
         tp.paint(canvas, Offset(p.dx - tp.width / 2, topPad + chartH + 6));
@@ -1000,13 +4032,74 @@ class _LineChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LineChartPainter old) => old.points != points;
+  bool shouldRepaint(_LineChartPainter old) =>
+      old.points != points ||
+      old.progress != progress ||
+      old.color != color ||
+      old.fillColor != fillColor ||
+      old.gridColor != gridColor ||
+      old.labelColor != labelColor ||
+      old.dotBorderColor != dotBorderColor ||
+      old.selectedIndex != selectedIndex;
+}
+
+class _LineChartTooltip extends StatelessWidget {
+  final _ChartPoint point;
+  final double left;
+  const _LineChartTooltip({required this.point, required this.left});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Positioned(
+      top: 8,
+      left: left,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutBack,
+        builder: (context, value, child) {
+          return Transform.scale(
+            scale: 0.86 + value * 0.14,
+            child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+          );
+        },
+        child: Container(
+          width: 116,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: t.text,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: t.text.withValues(alpha: 0.18),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('${point.value.toInt()} resolved',
+                style: TextStyle(
+                    color: t.card, fontSize: 12, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 2),
+            Text('${point.day.day}/${point.day.month}/${point.day.year}',
+                style: TextStyle(
+                    color: t.card.withValues(alpha: 0.74),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700)),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 class _AssignmentsSubTab extends StatefulWidget {
   final List<UserModel> supervisors;
   final Future<void> Function()? onRefresh;
-  const _AssignmentsSubTab({required this.supervisors, this.onRefresh});
+  const _AssignmentsSubTab(
+      {super.key, required this.supervisors, this.onRefresh});
 
   @override
   State<_AssignmentsSubTab> createState() => _AssignmentsSubTabState();
@@ -1115,15 +4208,20 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
               borderRadius: BorderRadius.circular(14),
               boxShadow: const [
                 BoxShadow(
-                    color: Color(0x06000000), blurRadius: 4, offset: Offset(0, 2))
+                    color: Color(0x06000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 2))
               ]),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Icon(Icons.bar_chart, size: 16, color: t.navy),
               const SizedBox(width: 8),
               Text('Assignments by Plant',
                   style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w700, color: t.text)),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: t.text)),
             ]),
             const SizedBox(height: 4),
             Text('Drag a supervisor to a different plant to reassign',
@@ -1137,7 +4235,8 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
     );
   }
 
-  Widget _buildFactoryCard(AppTheme t, String factoryName, List<UserModel> sups) {
+  Widget _buildFactoryCard(
+      AppTheme t, String factoryName, List<UserModel> sups) {
     final location = _locationFor(factoryName);
     return DragTarget<UserModel>(
       onWillAcceptWithDetails: (d) => d.data.usine != factoryName,
@@ -1151,27 +4250,29 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
           decoration: BoxDecoration(
               color: hovering ? t.navy.withValues(alpha: .08) : t.scaffold,
               border: Border.all(
-                  color: hovering ? t.navy : t.border,
-                  width: hovering ? 2 : 1),
+                  color: hovering ? t.navy : t.border, width: hovering ? 2 : 1),
               borderRadius: BorderRadius.circular(10)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                Text(factoryName,
-                    style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: t.text)),
-                if (location != null && location.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(location, style: TextStyle(fontSize: 12, color: t.muted)),
-                ],
-              ])),
+                    Text(factoryName,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: t.text)),
+                    if (location != null && location.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(location,
+                          style: TextStyle(fontSize: 12, color: t.muted)),
+                    ],
+                  ])),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
                     color: sups.isEmpty ? t.scaffold : t.navyLt,
                     borderRadius: BorderRadius.circular(99)),
@@ -1191,13 +4292,14 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                     border: Border.all(
-                        color: hovering
-                            ? t.navy.withValues(alpha: .4)
-                            : t.border),
+                        color:
+                            hovering ? t.navy.withValues(alpha: .4) : t.border),
                     borderRadius: BorderRadius.circular(8)),
                 child: Center(
                   child: Text(
-                      hovering ? 'Drop here to assign' : 'No supervisor assigned',
+                      hovering
+                          ? 'Drop here to assign'
+                          : 'No supervisor assigned',
                       style: TextStyle(
                           fontSize: 12,
                           color: hovering ? t.navy : t.muted,
@@ -1210,8 +4312,8 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
                   spacing: 8,
                   runSpacing: 8,
                   children: sups
-                      .map((s) => _SupChip(
-                          sup: s, onRemove: () => _reassign(s, '')))
+                      .map((s) =>
+                          _SupChip(sup: s, onRemove: () => _reassign(s, '')))
                       .toList()),
           ]),
         );
@@ -1234,28 +4336,28 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
                   ? t.orange.withValues(alpha: .08)
                   : t.orangeLt.withValues(alpha: .5),
               border: Border.all(
-                  color: hovering
-                      ? t.orange
-                      : t.orange.withValues(alpha: .35),
+                  color: hovering ? t.orange : t.orange.withValues(alpha: .35),
                   width: hovering ? 2 : 1),
               borderRadius: BorderRadius.circular(10)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                Text('Unassigned',
-                    style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: t.orange)),
-                const SizedBox(height: 2),
-                Text('Not assigned to any plant',
-                    style: TextStyle(fontSize: 12, color: t.muted)),
-              ])),
+                    Text('Unassigned',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: t.orange)),
+                    const SizedBox(height: 2),
+                    Text('Not assigned to any plant',
+                        style: TextStyle(fontSize: 12, color: t.muted)),
+                  ])),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
                     color: t.orangeLt, borderRadius: BorderRadius.circular(99)),
                 child: Text(
@@ -1281,36 +4383,61 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
 class _SupChip extends StatelessWidget {
   final UserModel sup;
   final VoidCallback? onRemove;
-  const _SupChip({required this.sup, this.onRemove});
+  final VoidCallback? onTap;
+  final bool selected;
+  const _SupChip({
+    required this.sup,
+    this.onRemove,
+    this.onTap,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    final chip = Container(
-      padding: EdgeInsets.only(
-          left: 10, right: onRemove != null ? 6 : 12, top: 6, bottom: 6),
-      decoration:
-          BoxDecoration(color: t.navyLt, borderRadius: BorderRadius.circular(20)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.person_outline, size: 13, color: t.navy),
-        const SizedBox(width: 6),
-        Text(sup.fullName,
-            style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w600, color: t.navy)),
-        if (onRemove != null) ...[
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                  color: t.navy.withValues(alpha: .15),
-                  shape: BoxShape.circle),
-              child: Icon(Icons.close, size: 11, color: t.navy),
+    final chip = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: EdgeInsets.only(
+              left: 10, right: onRemove != null ? 6 : 12, top: 6, bottom: 6),
+          decoration: BoxDecoration(
+            color: selected ? t.navy : t.navyLt,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? t.navy : t.navy.withValues(alpha: 0.12),
             ),
           ),
-        ],
-      ]),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.person_outline,
+                size: 13, color: selected ? Colors.white : t.navy),
+            const SizedBox(width: 6),
+            Text(sup.fullName,
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? Colors.white : t.navy)),
+            if (onRemove != null) ...[
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                      color: (selected ? Colors.white : t.navy)
+                          .withValues(alpha: .15),
+                      shape: BoxShape.circle),
+                  child: Icon(Icons.close,
+                      size: 11, color: selected ? Colors.white : t.navy),
+                ),
+              ),
+            ],
+          ]),
+        ),
+      ),
     );
 
     return Draggable<UserModel>(
@@ -1396,7 +4523,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   color: _red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.warning_outlined, color: _red, size: 24),
+                child:
+                    const Icon(Icons.warning_outlined, color: _red, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1506,7 +4634,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
               backgroundColor: _red,
               foregroundColor: _white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
           ),
         ],
@@ -1623,13 +4752,15 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           if (first.isEmpty || last.isEmpty || email.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('First name, last name, and email are required')),
+                                  content: Text(
+                                      'First name, last name, and email are required')),
                             );
                             return;
                           }
                           if (!email.contains('@')) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter a valid email')),
+                              const SnackBar(
+                                  content: Text('Please enter a valid email')),
                             );
                             return;
                           }
@@ -1657,7 +4788,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             if (!mounted) return;
                             setDialogState(() => saving = false);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Update failed: ${UserFriendlyError.message(e)}')),
+                              SnackBar(
+                                  content: Text(
+                                      'Update failed: ${UserFriendlyError.message(e)}')),
                             );
                           }
                         },
@@ -1686,7 +4819,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
   Widget build(BuildContext context) {
     final sup = widget.supervisor;
     final solved = widget.alerts
-        .where((a) => a.status == 'validee' &&
+        .where((a) =>
+            a.status == 'validee' &&
             (a.superviseurId == sup.id || a.assistantId == sup.id))
         .toList();
     final inProg = widget.alerts
@@ -1719,8 +4853,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   height: 48,
                   decoration: BoxDecoration(
                       color: _navyLt, borderRadius: BorderRadius.circular(12)),
-                  child: const Center(
-                      child: Icon(Icons.engineering, size: 24))),
+                  child:
+                      const Center(child: Icon(Icons.engineering, size: 24))),
               Positioned(
                   bottom: 0,
                   right: 0,
@@ -1782,8 +4916,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   ]),
                   if (sup.hiredDate != null)
                     Row(children: [
-                      const Icon(Icons.calendar_today,
-                          size: 12, color: _muted),
+                      const Icon(Icons.calendar_today, size: 12, color: _muted),
                       const SizedBox(width: 3),
                       Text('Hired: ${_fmtDate(sup.hiredDate!)}',
                           style: const TextStyle(fontSize: 11, color: _muted)),
@@ -1792,11 +4925,10 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   Wrap(spacing: 8, runSpacing: 6, children: [
                     _MiniChip(Icons.check_circle_outline,
                         '${solved.length} fixed', _green),
-                    _MiniChip(
-                      Icons.timer, '$inProg claimed', _blue),
+                    _MiniChip(Icons.timer, '$inProg claimed', _blue),
                     if (avgMin != null)
-                      _MiniChip(Icons.av_timer,
-                          'Avg ${_fmtMin(avgMin)}', _orange),
+                      _MiniChip(
+                          Icons.av_timer, 'Avg ${_fmtMin(avgMin)}', _orange),
                   ]),
                 ])),
             Column(children: [
