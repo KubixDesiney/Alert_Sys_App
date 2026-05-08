@@ -5,7 +5,13 @@
  * All Firebase / fetch calls are mocked at the global level.
  */
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
-import { _shiftContainsTime, pickActiveShift, scoreSupervisor } from '../cloudflare_worker.js';
+import {
+  _shiftContainsTime,
+  pickActiveShift,
+  processShiftCollaborations,
+  runAIAssignments,
+  scoreSupervisor,
+} from '../cloudflare_worker.js';
 import worker from '../cloudflare_worker.js';
 
 // ─── shared mock helpers ─────────────────────────────────────────────────────
@@ -829,6 +835,392 @@ describe('collaboration auto-approval confidence check', () => {
 });
 
 // ─── 8. Idempotency: duplicate write ignored ─────────────────────────────────
+
+describe('collaboration auto-approval workload cleanup', () => {
+  afterEach(() => {
+    delete globalThis.fetch;
+    jest.restoreAllMocks();
+  });
+
+  test('suspends an accepted assistant\'s owned alert before approval', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const activeShift = {
+      id: 'shift-1',
+      name: 'Morning',
+      aiCommander: true,
+      handleCollaborations: true,
+    };
+    const alertsMap = {
+      targetAlert: {
+        status: 'en_cours',
+        usine: 'Factory A',
+        superviseurId: 'u1',
+      },
+      ownedAlert: {
+        status: 'en_cours',
+        usine: 'Factory B',
+        superviseurId: 'u2',
+        superviseurName: 'Bob',
+        takenAtTimestamp: '2026-05-08T05:00:00.000Z',
+        aiAssigned: true,
+        aiAssignmentReason: 'Earlier assignment',
+        aiConfidence: 0.81,
+        aiAssignedAt: '2026-05-08T05:00:00.000Z',
+      },
+    };
+    const usersMap = {
+      u1: { role: 'supervisor', usine: 'Factory A', fullName: 'Alice' },
+      u2: { role: 'supervisor', usine: 'Factory B', fullName: 'Bob' },
+    };
+
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      let body = null;
+      try { body = opts?.body ? JSON.parse(opts.body) : null; } catch (_) {}
+      fetchCalls.push({ url: u, method, body });
+
+      if (u.includes('collaboration_requests.json')) {
+        return Promise.resolve(jsonRes({
+          req1: {
+            status: 'awaiting_pm',
+            requesterId: 'u1',
+            requesterName: 'Alice',
+            alertId: 'targetAlert',
+            usine: 'Factory A',
+            assistantDecisions: { u2: 'accepted' },
+            targetSupervisorIds: ['u2'],
+            targetSupervisorNames: ['Bob'],
+            requiresPMApproval: true,
+          },
+        }));
+      }
+      if (u.includes('ai_collaboration_learning/latest.json')) {
+        return Promise.resolve(jsonRes({}));
+      }
+      if (u.includes('alerts/ownedAlert.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('alerts/ownedAlert/aiHistory.json') && method === 'POST') {
+        return Promise.resolve(jsonRes({ name: 'hist1' }));
+      }
+      if (u.includes('collaboration_requests/req1.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('alerts/targetAlert.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('notifications/')) {
+        return Promise.resolve(jsonRes({ name: 'notif1' }));
+      }
+      if (u.includes('shift_ai_logs/shift-1.json')) {
+        return Promise.resolve(jsonRes({ name: 'log1' }));
+      }
+      return Promise.resolve(jsonRes({}));
+    });
+
+    const processed = await processShiftCollaborations(env, {
+      token: 'tok',
+      activeShift,
+      alertsMap,
+      usersMap,
+    });
+
+    expect(processed).toBe(1);
+
+    const suspensionCall = fetchCalls.find(
+      (c) => c.url.includes('alerts/ownedAlert.json') && c.method === 'PATCH',
+    );
+    expect(suspensionCall).toBeTruthy();
+    expect(suspensionCall.body.status).toBe('disponible');
+    expect(suspensionCall.body.superviseurId).toBeNull();
+    expect(suspensionCall.body.superviseurName).toBeNull();
+    expect(suspensionCall.body.takenAtTimestamp).toBeNull();
+    expect(suspensionCall.body.aiAssigned).toBe(false);
+    expect(suspensionCall.body.aiAssignmentReason).toBeNull();
+    expect(suspensionCall.body.aiConfidence).toBeNull();
+    expect(suspensionCall.body.aiAssignedAt).toBeNull();
+
+    const approvalCall = fetchCalls.find(
+      (c) => c.url.includes('collaboration_requests/req1.json') && c.method === 'PATCH',
+    );
+    expect(approvalCall).toBeTruthy();
+    expect(approvalCall.body.status).toBe('approved');
+    expect(fetchCalls.indexOf(suspensionCall)).toBeLessThan(fetchCalls.indexOf(approvalCall));
+  });
+
+  test('does not suspend alerts when the accepted assistant owns none', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const activeShift = {
+      id: 'shift-1',
+      name: 'Morning',
+      aiCommander: true,
+      handleCollaborations: true,
+    };
+    const alertsMap = {
+      targetAlert: {
+        status: 'en_cours',
+        usine: 'Factory A',
+        superviseurId: 'u1',
+      },
+      unrelatedAlert: {
+        status: 'en_cours',
+        usine: 'Factory B',
+        superviseurId: 'u3',
+      },
+    };
+    const usersMap = {
+      u1: { role: 'supervisor', usine: 'Factory A', fullName: 'Alice' },
+      u2: { role: 'supervisor', usine: 'Factory B', fullName: 'Bob' },
+    };
+
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      let body = null;
+      try { body = opts?.body ? JSON.parse(opts.body) : null; } catch (_) {}
+      fetchCalls.push({ url: u, method, body });
+
+      if (u.includes('collaboration_requests.json')) {
+        return Promise.resolve(jsonRes({
+          req1: {
+            status: 'awaiting_pm',
+            requesterId: 'u1',
+            requesterName: 'Alice',
+            alertId: 'targetAlert',
+            usine: 'Factory A',
+            assistantDecisions: { u2: 'accepted' },
+            targetSupervisorIds: ['u2'],
+            targetSupervisorNames: ['Bob'],
+            requiresPMApproval: true,
+          },
+        }));
+      }
+      if (u.includes('ai_collaboration_learning/latest.json')) {
+        return Promise.resolve(jsonRes({}));
+      }
+      if (u.includes('collaboration_requests/req1.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('alerts/targetAlert.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('notifications/')) {
+        return Promise.resolve(jsonRes({ name: 'notif1' }));
+      }
+      if (u.includes('shift_ai_logs/shift-1.json')) {
+        return Promise.resolve(jsonRes({ name: 'log1' }));
+      }
+      return Promise.resolve(jsonRes({}));
+    });
+
+    const processed = await processShiftCollaborations(env, {
+      token: 'tok',
+      activeShift,
+      alertsMap,
+      usersMap,
+    });
+
+    expect(processed).toBe(1);
+
+    const suspensionCalls = fetchCalls.filter(
+      (c) =>
+        c.url.includes('/alerts/') &&
+        c.url.includes('.json') &&
+        c.method === 'PATCH' &&
+        c.body?.status === 'disponible',
+    );
+    expect(suspensionCalls.length).toBe(0);
+
+    const approvalCall = fetchCalls.find(
+      (c) => c.url.includes('collaboration_requests/req1.json') && c.method === 'PATCH',
+    );
+    expect(approvalCall).toBeTruthy();
+    expect(approvalCall.body.status).toBe('approved');
+  });
+});
+
+describe('AI Commander cross-factory staffing guardrail', () => {
+  afterEach(() => {
+    delete globalThis.fetch;
+    jest.restoreAllMocks();
+  });
+
+  test('blocks cross-factory assignment when the alert factory still has active supervisors present', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const activeShift = {
+      id: 'shift-1',
+      name: 'Morning',
+      aiCommander: true,
+      handleAssignments: true,
+      handleCrossFactoryTransfer: true,
+      supervisors: {
+        sameBusy: { ready: true },
+        cross1: { ready: true },
+      },
+    };
+    const alertsMap = {
+      a1: {
+        status: 'disponible',
+        type: 'qualite',
+        usine: 'Factory A',
+        convoyeur: 1,
+        poste: 1,
+        timestamp: '2026-05-08T05:00:00.000Z',
+      },
+      busyA: {
+        status: 'en_cours',
+        type: 'maintenance',
+        usine: 'Factory A',
+        superviseurId: 'sameBusy',
+        takenAtTimestamp: '2026-05-08T05:10:00.000Z',
+      },
+    };
+    const usersMap = {
+      sameBusy: {
+        role: 'supervisor',
+        usine: 'Factory A',
+        factoryId: 'factory_a',
+        status: 'active',
+        fullName: 'Same Busy',
+      },
+      cross1: {
+        role: 'supervisor',
+        usine: 'Factory B',
+        factoryId: 'factory_b',
+        status: 'active',
+        fullName: 'Cross Shift',
+      },
+    };
+
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      fetchCalls.push({ url: u, method });
+
+      if (u.includes('ai_feedback/summary.json')) return Promise.resolve(jsonRes({}));
+      if (u.includes('ai_feedback/adjustments.json')) return Promise.resolve(jsonRes({}));
+      return Promise.resolve(jsonRes({}));
+    });
+
+    const assigned = await runAIAssignments(env, {
+      token: 'tok',
+      activeShift,
+      alertsMap,
+      usersMap,
+    });
+
+    expect(assigned).toBe(0);
+    const alertPut = fetchCalls.find(
+      (c) => c.url.includes('/alerts/a1.json') && c.method === 'PUT',
+    );
+    expect(alertPut).toBeUndefined();
+  });
+
+  test('allows cross-factory assignment when the alert factory has zero active supervisors present', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const activeShift = {
+      id: 'shift-1',
+      name: 'Morning',
+      aiCommander: true,
+      handleAssignments: true,
+      handleCrossFactoryTransfer: true,
+      supervisors: {
+        cross1: { ready: true },
+      },
+    };
+    const alertsMap = {
+      a1: {
+        status: 'disponible',
+        type: 'qualite',
+        usine: 'Factory A',
+        convoyeur: 1,
+        poste: 1,
+        timestamp: '2026-05-08T05:00:00.000Z',
+      },
+    };
+    const alertData = { ...alertsMap.a1, push_sent: false };
+    const usersMap = {
+      cross1: {
+        role: 'supervisor',
+        usine: 'Factory B',
+        factoryId: 'factory_b',
+        status: 'active',
+        fcmToken: null,
+        fullName: 'Cross Shift',
+      },
+      offlineLocal: {
+        role: 'supervisor',
+        usine: 'Factory A',
+        factoryId: 'factory_a',
+        status: 'offline',
+        fullName: 'Offline Local',
+      },
+    };
+
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      let body = null;
+      try { body = opts?.body ? JSON.parse(opts.body) : null; } catch (_) {}
+      fetchCalls.push({ url: u, method, body });
+
+      if (u.includes('ai_feedback/summary.json')) return Promise.resolve(jsonRes({}));
+      if (u.includes('ai_feedback/adjustments.json')) return Promise.resolve(jsonRes({}));
+      if (u.includes('ai_decisions/a1/actionId.json')) return Promise.resolve(jsonRes(null));
+      if (u.includes('/alerts/a1.json') && method === 'GET') {
+        return Promise.resolve(etagRes(alertData, '"etag1"'));
+      }
+      if (u.includes('/alerts/a1.json') && method === 'PUT') {
+        return Promise.resolve(jsonRes({ ...alertData, ...body }));
+      }
+      if (u.includes('users/cross1/aiCooldownUntil.json')) {
+        return Promise.resolve(jsonRes('ok'));
+      }
+      if (u.includes('alerts/a1/aiHistory.json')) {
+        return Promise.resolve(jsonRes({ name: 'hist1' }));
+      }
+      if (u.includes('ai_decisions/a1.json')) {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('shift_ai_logs/shift-1.json')) {
+        return Promise.resolve(jsonRes({ name: 'log1' }));
+      }
+      return Promise.resolve(jsonRes({}));
+    });
+
+    const assigned = await runAIAssignments(env, {
+      token: 'tok',
+      activeShift,
+      alertsMap,
+      usersMap,
+    });
+
+    expect(assigned).toBe(1);
+    const alertPut = fetchCalls.find(
+      (c) => c.url.includes('/alerts/a1.json') && c.method === 'PUT',
+    );
+    expect(alertPut).toBeTruthy();
+    expect(alertPut.body.superviseurId).toBe('cross1');
+    expect(alertPut.body.status).toBe('en_cours');
+  });
+});
 
 describe('idempotency keys', () => {
   afterEach(() => {
