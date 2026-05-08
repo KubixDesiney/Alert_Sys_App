@@ -31,6 +31,7 @@ class CollaborationRequest {
 
   /// Per-supervisor decision map: uid → 'pending' | 'accepted' | 'refused'
   final Map<String, String> assistantDecisions;
+  final Map<String, DateTime> assistantDecisionTimestamps;
 
   CollaborationRequest({
     required this.id,
@@ -62,6 +63,7 @@ class CollaborationRequest {
     this.alertType,
     this.alertDescription,
     this.assistantDecisions = const {},
+    this.assistantDecisionTimestamps = const {},
   });
 
   factory CollaborationRequest.fromMap(String id, Map<String, dynamic> map) {
@@ -104,6 +106,13 @@ class CollaborationRequest {
           ? Map<String, String>.from((map['assistantDecisions'] as Map)
               .map((k, v) => MapEntry(k.toString(), v.toString())))
           : {},
+      assistantDecisionTimestamps: map['assistantDecisionTimestamps'] != null
+          ? Map<String, DateTime>.from(
+              (map['assistantDecisionTimestamps'] as Map).map(
+                (k, v) => MapEntry(k.toString(), DateTime.parse(v.toString())),
+              ),
+            )
+          : {},
     );
   }
 
@@ -137,6 +146,8 @@ class CollaborationRequest {
       'alertType': alertType,
       'alertDescription': alertDescription,
       'assistantDecisions': assistantDecisions,
+      'assistantDecisionTimestamps': assistantDecisionTimestamps
+          .map((key, value) => MapEntry(key, value.toIso8601String())),
     };
   }
 }

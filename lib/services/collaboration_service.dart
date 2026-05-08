@@ -337,6 +337,10 @@ class CollaborationService {
         .child(
             'collaboration_requests/$requestId/assistantDecisions/$responderId')
         .set(accepted ? 'accepted' : 'refused');
+    await _db
+        .child(
+            'collaboration_requests/$requestId/assistantDecisionTimestamps/$responderId')
+        .set(nowIso);
 
     if (accepted) {
       // First acceptance → update top-level fields and notify.
@@ -441,6 +445,7 @@ class CollaborationService {
       'targetSupervisorIds': newIds,
       'targetSupervisorNames': newNames,
       'assistantDecisions/$assistantId': null,
+      'assistantDecisionTimestamps/$assistantId': null,
     };
 
     // If this was the accepted assistant, clear top-level acceptance.

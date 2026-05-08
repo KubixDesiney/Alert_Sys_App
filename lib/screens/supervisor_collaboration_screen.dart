@@ -4,7 +4,6 @@ import '../models/alert_model.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../models/collaboration_model.dart';
-import '../services/collaboration_service.dart';
 import '../services/service_locator.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
@@ -16,6 +15,8 @@ const _purpleLt = Color(0xFFF3E8FF);
 const _green = Color(0xFF16A34A);
 const _greenLt = Color(0xFFDCFCE7);
 const _red = Color(0xFFDC2626);
+// ignore: constant_identifier_names
+const _RECENT_INCOMING_TTL = Duration(hours: 2);
 
 // ============================================================================
 // COLLABORATION PROGRESS SCREEN
@@ -93,30 +94,77 @@ class CollaborationProgressScreen extends StatelessWidget {
                   if (requests.isEmpty) return _buildEmpty(context);
 
                   // Split into sent (I'm requester) vs received (I'm a target)
-                  final sent =
-                      requests.where((r) => r.requesterId == userId).toList();
+                  final sent = requests
+                      .where((r) => r.requesterId == userId)
+                      .toList()
+                    ..sort((a, b) => _requestActivityTime(b)
+                        .compareTo(_requestActivityTime(a)));
                   final received = requests
                       .where((r) =>
                           r.targetSupervisorIds.contains(userId) &&
                           r.requesterId != userId)
-                      .toList();
+                      .toList()
+                    ..sort((a, b) => _requestActivityTime(b)
+                        .compareTo(_requestActivityTime(a)));
+
+                  final pendingIncoming = received
+                      .where((r) => _decisionForUser(r, userId) == 'pending')
+                      .cast<CollaborationRequest?>()
+                      .firstWhere((r) => r != null, orElse: () => null);
+
+                  final recentRespondedIncoming = received
+                      .where((r) =>
+                          _decisionForUser(r, userId) != 'pending' &&
+                          _isRecentIncomingResponse(r, userId))
+                      .cast<CollaborationRequest?>()
+                      .firstWhere((r) => r != null, orElse: () => null);
+
+                  final latestInteraction = _latestInteractionForSupervisor(
+                    userId: userId,
+                    sent: sent,
+                    received: received,
+                  );
+
+                  final hasTopCards = pendingIncoming != null ||
+                      recentRespondedIncoming != null;
+                  final hasContent = hasTopCards ||
+                      latestInteraction != null ||
+                      sent.isNotEmpty;
+                  if (!hasContent) return _buildEmpty(context);
 
                   return ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
-                      if (received.isNotEmpty) ...[
-                        _sectionHeader(
-                            context, Icons.inbox, 'Requests For You', _red),
-                        const SizedBox(height: 8),
-                        ...received.map(
-                            (r) => _ReceivedCard(request: r, userId: userId)),
-                        const SizedBox(height: 20),
+                      if (pendingIncoming != null) ...[
+                        _ReceivedCard(request: pendingIncoming, userId: userId),
+                        if (recentRespondedIncoming != null &&
+                            recentRespondedIncoming.id != pendingIncoming.id)
+                          const SizedBox(height: 2),
                       ],
+                      if (recentRespondedIncoming != null &&
+                          recentRespondedIncoming.id != pendingIncoming?.id) ...[
+                        _ReceivedCard(
+                            request: recentRespondedIncoming, userId: userId),
+                      ],
+                      if (latestInteraction != null) ...[
+                        if (hasTopCards) const SizedBox(height: 8),
+                        Divider(color: t.border, height: 24),
+                        _InteractionSummaryLine(interaction: latestInteraction),
+                        const SizedBox(height: 14),
+                      ],
+                      if (sent.isNotEmpty)
+                        ...sent.map((r) => _SentCard(
+                              request: r,
+                              relativeTimestamp:
+                                  _formatRelativeTime(_requestActivityTime(r)),
+                            ))
+                      else
+                        Padding(
+                          padding: EdgeInsets.only(top: hasTopCards ? 12 : 32),
+                          child: _buildEmpty(context),
+                        ),
                       if (sent.isNotEmpty) ...[
-                        _sectionHeader(
-                            context, Icons.send, 'Sent Requests', t.navy),
                         const SizedBox(height: 8),
-                        ...sent.map((r) => _SentCard(request: r)),
                       ],
                     ],
                   );
@@ -128,27 +176,12 @@ class CollaborationProgressScreen extends StatelessWidget {
       ),
     );
   }
-
-  Widget _sectionHeader(
-      BuildContext context, IconData icon, String label, Color color) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
-        Text(label,
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: context.appTheme.text)),
-      ],
-    );
-  }
-
   Widget _buildEmpty(BuildContext context) {
     final t = context.appTheme;
-    return Center(
+    return SizedBox(
+      width: double.infinity,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             padding: const EdgeInsets.all(16),
@@ -176,7 +209,8 @@ class CollaborationProgressScreen extends StatelessWidget {
 // ============================================================================
 class _SentCard extends StatefulWidget {
   final CollaborationRequest request;
-  const _SentCard({required this.request});
+  final String? relativeTimestamp;
+  const _SentCard({required this.request, this.relativeTimestamp});
 
   @override
   State<_SentCard> createState() => _SentCardState();
@@ -307,6 +341,13 @@ class _SentCardState extends State<_SentCard> {
             ),
             _StatusBadge(r),
           ]),
+          if ((widget.relativeTimestamp?.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 4),
+            Text(
+              widget.relativeTimestamp!,
+              style: TextStyle(fontSize: 11, color: t.muted),
+            ),
+          ],
           const SizedBox(height: 4),
           Text('ID: collab-${r.id.substring(0, 12)}',
               style: TextStyle(
@@ -858,6 +899,218 @@ class _StatusBadge extends StatelessWidget {
             style: TextStyle(
                 fontSize: 10, fontWeight: FontWeight.w700, color: color)),
       );
+}
+
+class _InteractionSummaryLine extends StatelessWidget {
+  const _InteractionSummaryLine({required this.interaction});
+
+  final _CollaborationInteraction interaction;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final localizations = MaterialLocalizations.of(context);
+    final timeOfDay = TimeOfDay.fromDateTime(interaction.at.toLocal());
+    final absoluteTime = localizations.formatTimeOfDay(timeOfDay);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: t.scaffold,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: t.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: interaction.color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Icon(interaction.icon, size: 14, color: interaction.color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Last interaction: ${interaction.label} - ${_formatRelativeTime(interaction.at)}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: t.muted,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            absoluteTime,
+            style: TextStyle(fontSize: 11, color: t.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CollaborationInteraction {
+  const _CollaborationInteraction({
+    required this.at,
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final DateTime at;
+  final IconData icon;
+  final String label;
+  final Color color;
+}
+
+String _decisionForUser(CollaborationRequest request, String userId) =>
+    request.assistantDecisions[userId] ?? 'pending';
+
+bool _isRecentIncomingResponse(
+  CollaborationRequest request,
+  String userId,
+) {
+  final respondedAt = _responseTimestampForUser(request, userId);
+  if (respondedAt == null) return false;
+  return DateTime.now().difference(respondedAt) < _RECENT_INCOMING_TTL;
+}
+
+DateTime? _responseTimestampForUser(
+  CollaborationRequest request, [
+  String? userId,
+]) {
+  if (userId != null) {
+    return request.assistantDecisionTimestamps[userId] ??
+        request.assistantRespondedAt;
+  }
+
+  if (request.assistantDecisionTimestamps.isNotEmpty) {
+    final timestamps = request.assistantDecisionTimestamps.values.toList()
+      ..sort();
+    return timestamps.last;
+  }
+  return request.assistantRespondedAt;
+}
+
+DateTime _requestActivityTime(CollaborationRequest request) {
+  final candidates = <DateTime>[
+    request.timestamp,
+    if (request.assistantRespondedAt != null) request.assistantRespondedAt!,
+    if (request.approvedAt != null) request.approvedAt!,
+    if (request.rejectedAt != null) request.rejectedAt!,
+  ];
+  candidates.sort();
+  return candidates.last;
+}
+
+_CollaborationInteraction? _latestInteractionForSupervisor({
+  required String userId,
+  required List<CollaborationRequest> sent,
+  required List<CollaborationRequest> received,
+}) {
+  final interactions = <_CollaborationInteraction>[
+    for (final request in received) _interactionForIncoming(request, userId),
+    for (final request in sent) _interactionForSent(request),
+  ];
+  if (interactions.isEmpty) return null;
+  interactions.sort((a, b) => b.at.compareTo(a.at));
+  return interactions.first;
+}
+
+_CollaborationInteraction _interactionForIncoming(
+  CollaborationRequest request,
+  String userId,
+) {
+  final decision = _decisionForUser(request, userId);
+  final responseAt = _responseTimestampForUser(request, userId);
+  if (decision == 'accepted' && responseAt != null) {
+    return _CollaborationInteraction(
+      at: responseAt,
+      icon: Icons.check_circle,
+      label: 'accepted',
+      color: _green,
+    );
+  }
+  if (decision == 'refused' && responseAt != null) {
+    return _CollaborationInteraction(
+      at: responseAt,
+      icon: Icons.cancel,
+      label: 'declined',
+      color: _red,
+    );
+  }
+  if (request.pmApproved && request.approvedAt != null) {
+    return _CollaborationInteraction(
+      at: request.approvedAt!,
+      icon: Icons.verified,
+      label: 'PM approved',
+      color: _green,
+    );
+  }
+  if (request.status == 'rejected' && request.rejectedAt != null) {
+    return _CollaborationInteraction(
+      at: request.rejectedAt!,
+      icon: Icons.block,
+      label: 'rejected',
+      color: _red,
+    );
+  }
+  return _CollaborationInteraction(
+    at: request.timestamp,
+    icon: Icons.inbox,
+    label: 'incoming request',
+    color: _purple,
+  );
+}
+
+_CollaborationInteraction _interactionForSent(CollaborationRequest request) {
+  if (request.pmApproved && request.approvedAt != null) {
+    return _CollaborationInteraction(
+      at: request.approvedAt!,
+      icon: Icons.verified,
+      label: 'approved',
+      color: _green,
+    );
+  }
+  if (request.status == 'rejected' && request.rejectedAt != null) {
+    return _CollaborationInteraction(
+      at: request.rejectedAt!,
+      icon: Icons.cancel,
+      label: 'rejected',
+      color: _red,
+    );
+  }
+  final responseAt = _responseTimestampForUser(request);
+  if (responseAt != null) {
+    final label =
+        request.assistantDecision == 'refused' ? 'declined' : 'responded';
+    return _CollaborationInteraction(
+      at: responseAt,
+      icon: request.assistantDecision == 'refused'
+          ? Icons.cancel
+          : Icons.mark_email_read,
+      label: label,
+      color: request.assistantDecision == 'refused' ? _red : _purple,
+    );
+  }
+  return _CollaborationInteraction(
+    at: request.timestamp,
+    icon: Icons.send,
+    label: 'sent request',
+    color: _purple,
+  );
+}
+
+String _formatRelativeTime(DateTime dt) {
+  final diff = DateTime.now().difference(dt);
+  if (diff.inSeconds < 60) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  return '${diff.inDays}d ago';
 }
 
 class _InfoRow extends StatelessWidget {
