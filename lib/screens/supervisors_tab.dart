@@ -851,82 +851,75 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            t.isDark ? const Color(0xFF0B1220) : const Color(0xFF0D4A75),
-            t.isDark ? const Color(0xFF123A55) : const Color(0xFF0F766E),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        color: t.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.border),
         boxShadow: [
           BoxShadow(
-            color: t.navy.withValues(alpha: 0.18),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
+            color: Colors.black.withValues(alpha: t.isDark ? 0.18 : 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: CustomPaint(
-        painter:
-            _CommandGridPainter(color: Colors.white.withValues(alpha: 0.08)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-          child: Row(children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-              ),
-              child:
-                  const Icon(Icons.auto_graph, color: Colors.white, size: 25),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Supervisor Command Center',
-                        style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            height: 1.05)),
-                    const SizedBox(height: 7),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      _GlassChip(Icons.bolt, '$active active', _green),
-                      _GlassChip(Icons.nights_stay_outlined, '$absent absent',
-                          _orange),
-                      _GlassChip(Icons.factory_outlined,
-                          '$assignedPlants plants', _blue),
-                    ]),
-                  ]),
-            ),
-            ElevatedButton.icon(
-              onPressed: widget.onAdd,
-              icon: const Icon(Icons.person_add, size: 17),
-              label: const Text('Add Supervisor',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF0D4A75),
-                elevation: 0,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
-          ]),
-        ),
-      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final compact = constraints.maxWidth < 720;
+        final titleBlock = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Supervisors',
+                style: TextStyle(
+                    fontSize: 22, fontWeight: FontWeight.w900, color: t.text)),
+            const SizedBox(height: 4),
+            Text('Roster, availability, and individual performance.',
+                style: TextStyle(
+                    fontSize: 13, color: t.muted, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 10),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              _Chip('$active active', t.green),
+              _Chip('$absent absent', t.orange),
+              _Chip('$assignedPlants plants', t.blue),
+            ]),
+          ],
+        );
+
+        final action = ElevatedButton.icon(
+          onPressed: widget.onAdd,
+          icon: const Icon(Icons.person_add, size: 17),
+          label: const Text('Add Supervisor',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: t.navy,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              titleBlock,
+              const SizedBox(height: 14),
+              action,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: titleBlock),
+            const SizedBox(width: 16),
+            action,
+          ],
+        );
+      }),
     );
   }
 
@@ -1458,78 +1451,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     return _SectionShell(
       icon: Icons.analytics_outlined,
       title: 'Alert Type Breakdown',
-      subtitle: 'Validation quality by alert class',
-      child: LayoutBuilder(builder: (context, constraints) {
-        final columns = constraints.maxWidth > 900
-            ? 4
-            : constraints.maxWidth > 620
-                ? 2
-                : 1;
-        final gap = 10.0;
-        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: stats.entries.map((entry) {
-            final type = entry.key;
-            final data = entry.value;
-            final total = data.validated + data.notValidated;
-            final pct = total == 0 ? 0 : (data.validated / total * 100).round();
-            final color = _typeColor(type);
-            return SizedBox(
-              width: width,
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: color.withValues(alpha: 0.24)),
-                ),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Expanded(
-                          child: Text(_typeLabel(type),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: color)),
-                        ),
-                        Text('$pct%',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: color)),
-                      ]),
-                      const SizedBox(height: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: LinearProgressIndicator(
-                          minHeight: 7,
-                          value: pct / 100,
-                          backgroundColor: color.withValues(alpha: 0.12),
-                          valueColor: AlwaysStoppedAnimation<Color>(color),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _PerfStatRow(
-                          label: 'Validated',
-                          value: data.validated,
-                          color: _green),
-                      const SizedBox(height: 3),
-                      _PerfStatRow(
-                          label: 'Open / returned',
-                          value: data.notValidated,
-                          color: _orange),
-                    ]),
-              ),
-            );
-          }).toList(),
-        );
-      }),
+      subtitle: 'Validated alerts by class',
+      child: _SupervisorTypeDonutChart(stats: stats),
     );
   }
 
@@ -2212,6 +2135,347 @@ class _FactoryWorkloadChart extends StatelessWidget {
         );
       }),
     );
+  }
+}
+
+class _SupervisorTypeDonutChart extends StatefulWidget {
+  final Map<String, _TypeStats> stats;
+  const _SupervisorTypeDonutChart({required this.stats});
+
+  @override
+  State<_SupervisorTypeDonutChart> createState() =>
+      _SupervisorTypeDonutChartState();
+}
+
+class _SupervisorTypeDonutChartState extends State<_SupervisorTypeDonutChart> {
+  int _activeIndex = -1;
+
+  List<_TypeDonutDatum> get _data {
+    final items = widget.stats.entries
+        .where((entry) =>
+            entry.value.validated > 0 || entry.value.notValidated > 0)
+        .map((entry) => _TypeDonutDatum(
+              type: entry.key,
+              validated: entry.value.validated,
+              notValidated: entry.value.notValidated,
+              color: _typeColor(entry.key),
+            ))
+        .toList()
+      ..sort((a, b) {
+        final byValidated = b.validated.compareTo(a.validated);
+        if (byValidated != 0) {
+          return byValidated;
+        }
+        return _typeLabel(a.type).compareTo(_typeLabel(b.type));
+      });
+    return items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final data = _data;
+    final totalValidated =
+        data.fold<int>(0, (sum, item) => sum + item.validated);
+    if (data.isEmpty || totalValidated == 0) {
+      return const _EmptyChartState(label: 'No validated alerts yet');
+    }
+
+    final selected = (_activeIndex >= 0 && _activeIndex < data.length)
+        ? data[_activeIndex]
+        : data.first;
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxWidth < 760;
+      final chart = TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 900),
+        curve: Curves.easeOutCubic,
+        builder: (context, progress, _) {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                width: compact ? 220 : 250,
+                height: compact ? 220 : 250,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      selected.color.withValues(alpha: 0.22),
+                      selected.color.withValues(alpha: 0.02),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: compact ? 220 : 250,
+                height: compact ? 220 : 250,
+                child: PieChart(
+                  PieChartData(
+                    startDegreeOffset: -90,
+                    sectionsSpace: 4,
+                    centerSpaceRadius: compact ? 54 : 62,
+                    pieTouchData: PieTouchData(
+                      enabled: true,
+                      touchCallback: (event, response) {
+                        final touched =
+                            response?.touchedSection?.touchedSectionIndex ?? -1;
+                        if (!event.isInterestedForInteractions || touched < 0) {
+                          if (_activeIndex != -1) {
+                            setState(() => _activeIndex = -1);
+                          }
+                          return;
+                        }
+                        if (_activeIndex != touched) {
+                          setState(() => _activeIndex = touched);
+                        }
+                      },
+                    ),
+                    sections: List.generate(data.length, (index) {
+                      final item = data[index];
+                      final selectedSlice = index == _activeIndex;
+                      return PieChartSectionData(
+                        color: item.color,
+                        value: math.max(
+                            (item.validated * progress).toDouble(), 0.001),
+                        title: '',
+                        radius: selectedSlice ? 78 : 68,
+                        borderSide: BorderSide(
+                          color: t.card
+                              .withValues(alpha: selectedSlice ? 0.96 : 0.74),
+                          width: selectedSlice ? 4 : 2,
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: Container(
+                  width: compact ? 108 : 122,
+                  height: compact ? 108 : 122,
+                  decoration: BoxDecoration(
+                    color: t.card.withValues(alpha: t.isDark ? 0.92 : 0.96),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected.color.withValues(alpha: 0.24),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withValues(alpha: t.isDark ? 0.18 : 0.05),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    child: Column(
+                      key: ValueKey(selected.type),
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('${selected.validated}',
+                            style: TextStyle(
+                                fontSize: compact ? 28 : 32,
+                                fontWeight: FontWeight.w900,
+                                color: selected.color,
+                                height: 1)),
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Text(_typeLabel(selected.type),
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: t.text,
+                                  height: 1.15)),
+                        ),
+                        const SizedBox(height: 3),
+                        Text('validated',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: t.muted,
+                                letterSpacing: 0.2)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+
+      final details = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: selected.color.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: selected.color.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: selected.color,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: selected.color.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_typeLabel(selected.type),
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: t.text)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${selected.validated} validated • ${selected.share(totalValidated)}% of validated alerts',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: selected.color),
+                      ),
+                      if (selected.notValidated > 0) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '${selected.notValidated} open / returned in this class',
+                          style: TextStyle(fontSize: 11, color: t.muted),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...List.generate(data.length, (index) {
+            final item = data[index];
+            final highlighted =
+                index == _activeIndex || (_activeIndex < 0 && index == 0);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _activeIndex = index),
+                onExit: (_) => setState(() => _activeIndex = -1),
+                child: GestureDetector(
+                  onTap: () => setState(() => _activeIndex = index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: highlighted
+                          ? item.color.withValues(alpha: 0.08)
+                          : t.scaffold.withValues(alpha: t.isDark ? 0.45 : 1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: highlighted
+                            ? item.color.withValues(alpha: 0.36)
+                            : t.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: item.color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(_typeLabel(item.type),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: t.text)),
+                        ),
+                        Text('${item.validated}',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: item.color)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      );
+
+      if (compact) {
+        return Column(
+          children: [
+            chart,
+            const SizedBox(height: 16),
+            details,
+          ],
+        );
+      }
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(child: Center(child: chart)),
+          const SizedBox(width: 20),
+          SizedBox(width: 280, child: details),
+        ],
+      );
+    });
+  }
+}
+
+class _TypeDonutDatum {
+  final String type;
+  final int validated;
+  final int notValidated;
+  final Color color;
+
+  const _TypeDonutDatum({
+    required this.type,
+    required this.validated,
+    required this.notValidated,
+    required this.color,
+  });
+
+  int share(int totalValidated) {
+    if (totalValidated == 0) {
+      return 0;
+    }
+    return ((validated / totalValidated) * 100).round();
   }
 }
 
