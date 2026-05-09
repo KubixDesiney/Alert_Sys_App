@@ -850,8 +850,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         .length;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
       decoration: BoxDecoration(
         color: t.card,
         borderRadius: BorderRadius.circular(16),
@@ -871,12 +871,12 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           children: [
             Text('Supervisors',
                 style: TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w900, color: t.text)),
-            const SizedBox(height: 4),
+                    fontSize: 20, fontWeight: FontWeight.w900, color: t.text)),
+            const SizedBox(height: 3),
             Text('Roster, availability, and individual performance.',
                 style: TextStyle(
-                    fontSize: 13, color: t.muted, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 10),
+                    fontSize: 12, color: t.muted, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: [
               _Chip('$active active', t.green),
               _Chip('$absent absent', t.orange),
@@ -894,7 +894,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
             backgroundColor: t.navy,
             foregroundColor: Colors.white,
             elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
@@ -999,11 +999,12 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   }
 
   Widget _buildWide(AppTheme t, UserModel? selected) {
+    final railWidth = MediaQuery.sizeOf(context).width >= 1600 ? 310.0 : 326.0;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SizedBox(width: 342, child: _buildRail(t)),
-        const SizedBox(width: 14),
+        SizedBox(width: railWidth, child: _buildRail(t)),
+        const SizedBox(width: 12),
         Expanded(child: _buildDetailScroller(t, selected)),
       ]),
     );
@@ -1197,13 +1198,13 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSupervisorHero(t, selected),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _buildMetricGrid(t, selected),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _buildPerformanceCard(t, selected),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _buildTypeBreakdown(t, selected),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _buildValidatedList(t, selected),
         ],
       ),
@@ -1238,13 +1239,13 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(14),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Container(
-                width: 66,
-                height: 66,
+                width: 58,
+                height: 58,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [t.navy, t.green],
@@ -1263,12 +1264,12 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 child: Center(
                   child: Text(_initials(sup),
                       style: const TextStyle(
-                          fontSize: 19,
+                          fontSize: 18,
                           fontWeight: FontWeight.w900,
                           color: Colors.white)),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1277,11 +1278,11 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 24,
+                              fontSize: 20,
                               fontWeight: FontWeight.w900,
                               color: t.text,
                               height: 1.05)),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 6),
                       Wrap(spacing: 8, runSpacing: 8, children: [
                         _StatusPill(
                             color: statusColor,
@@ -1307,7 +1308,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 tooltip: 'Delete Supervisor',
               ),
             ]),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Wrap(spacing: 10, runSpacing: 10, children: [
               _FloatingHeroSignal(
                 delay: const Duration(milliseconds: 0),
@@ -1418,7 +1419,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SizedBox(
-          height: 230,
+          height: 190,
           child: TweenAnimationBuilder<double>(
             key: key,
             tween: Tween(begin: 0, end: 1),
@@ -3262,8 +3263,8 @@ class _HeroSignal extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     return Container(
-      width: 150,
-      padding: const EdgeInsets.all(12),
+      width: 142,
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: t.card.withValues(alpha: t.isDark ? 0.62 : 0.86),
         borderRadius: BorderRadius.circular(14),
@@ -3271,15 +3272,15 @@ class _HeroSignal extends StatelessWidget {
       ),
       child: Row(children: [
         Container(
-          width: 34,
-          height: 34,
+          width: 30,
+          height: 30,
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: color, size: 18),
+          child: Icon(icon, color: color, size: 16),
         ),
-        const SizedBox(width: 9),
+        const SizedBox(width: 8),
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -3287,15 +3288,15 @@ class _HeroSignal extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w900,
                     color: t.text,
                     height: 1)),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 10, color: t.muted)),
+                style: TextStyle(fontSize: 9, color: t.muted)),
           ]),
         ),
       ]),
@@ -3332,8 +3333,8 @@ class _CommandMetricState extends State<_CommandMetric> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         transform: Matrix4.translationValues(0, _hovering ? -3 : 0, 0),
-        height: 94,
-        padding: const EdgeInsets.all(13),
+        height: 84,
+        padding: const EdgeInsets.all(11),
         decoration: BoxDecoration(
           color: t.card,
           borderRadius: BorderRadius.circular(14),
@@ -3348,7 +3349,7 @@ class _CommandMetricState extends State<_CommandMetric> {
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Icon(widget.icon, size: 17, color: widget.tone),
+            Icon(widget.icon, size: 16, color: widget.tone),
             const Spacer(),
             Container(
               width: 22,
@@ -3364,15 +3365,15 @@ class _CommandMetricState extends State<_CommandMetric> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  fontSize: 22,
+                  fontSize: 18,
                   fontWeight: FontWeight.w900,
                   color: t.text,
                   height: 1)),
-          const SizedBox(height: 5),
+          const SizedBox(height: 4),
           Text(widget.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, color: t.muted)),
+              style: TextStyle(fontSize: 9, color: t.muted)),
         ]),
       ),
     );
@@ -3398,7 +3399,7 @@ class _SectionShell extends StatelessWidget {
     final t = context.appTheme;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: t.card,
         borderRadius: BorderRadius.circular(16),
@@ -3411,30 +3412,30 @@ class _SectionShell extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: t.navyLt,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 18, color: t.navy),
+            child: Icon(icon, size: 17, color: t.navy),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title,
                   style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w900,
                       color: t.text)),
               const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(fontSize: 11, color: t.muted)),
+              Text(subtitle, style: TextStyle(fontSize: 10, color: t.muted)),
             ]),
           ),
           if (trailing != null) trailing!,
         ]),
-        const SizedBox(height: 15),
+        const SizedBox(height: 12),
         child,
       ]),
     );

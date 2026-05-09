@@ -28,22 +28,7 @@ class AdminEscalationScreen extends StatefulWidget {
   State<AdminEscalationScreen> createState() => _AdminEscalationScreenState();
 }
 
-class _AdminEscalationScreenState extends State<AdminEscalationScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
+class _AdminEscalationScreenState extends State<AdminEscalationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,102 +55,78 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
                           color: context.appTheme.navy,
                         ),
                       ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Escalation Settings',
+                        onPressed: _showSettingsDialog,
+                        icon: Icon(
+                          Icons.settings,
+                          color: context.appTheme.navy,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Tab Bar
+                  // Escalated alerts section header
                   Container(
                     decoration: BoxDecoration(
                       color: context.appTheme.scaffold,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: context.appTheme.border),
                     ),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicator: BoxDecoration(
-                        color: context.appTheme.card,
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0A000000),
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning, size: 16, color: _navy),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Escalated Alerts',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: context.appTheme.navy,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          StreamBuilder<List<dynamic>>(
+                            stream: _getEscalatedAlertsCount(),
+                            builder: (context, snapshot) {
+                              final count = snapshot.data?.length ?? 0;
+                              if (count == 0) {
+                                return const SizedBox.shrink();
+                              }
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _red,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '$count',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: _white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
-                      labelColor: _navy,
-                      unselectedLabelColor: _muted,
-                      labelStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      dividerColor: Colors.transparent,
-                      tabs: [
-                        Tab(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.warning, size: 16),
-                              const SizedBox(width: 6),
-                              const Text('Escalated Alerts'),
-                              const SizedBox(width: 4),
-                              StreamBuilder<List<dynamic>>(
-                                stream: _getEscalatedAlertsCount(),
-                                builder: (context, snapshot) {
-                                  final count = snapshot.data?.length ?? 0;
-                                  if (count == 0)
-                                    return const SizedBox.shrink();
-                                  return Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: _red,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      '$count',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: _white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Tab(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.settings, size: 16),
-                              SizedBox(width: 6),
-                              Text('Settings'),
-                            ],
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            // Tab Content
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: const [
-                  _EscalatedAlertsTab(),
-                  _SettingsTab(),
-                ],
-              ),
-            ),
+            const Expanded(child: _EscalatedAlertsTab()),
           ],
         ),
       ),
@@ -188,6 +149,43 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen>
         return status != 'validee' && status != 'cancelled';
       }).toList();
     });
+  }
+
+  Future<void> _showSettingsDialog() async {
+    final t = context.appTheme;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: t.card,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Stack(
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 900,
+                  maxHeight: size.height * 0.82,
+                ),
+                child: const _SettingsTab(),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton(
+                  tooltip: 'Close',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: Icon(Icons.close, color: t.muted),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -732,10 +730,9 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
         isPMApproval: true,
         confirmTransfer: decision.confirmTransfer,
         confirmCancelOriginal: decision.confirmCancelOriginal,
-        cancelExistingAlertIds:
-            decision.cancelExistingAlertIds.isNotEmpty
-                ? decision.cancelExistingAlertIds
-                : null,
+        cancelExistingAlertIds: decision.cancelExistingAlertIds.isNotEmpty
+            ? decision.cancelExistingAlertIds
+            : null,
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -744,8 +741,9 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(UserFriendlyError.message(e)), backgroundColor: _red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(UserFriendlyError.message(e)),
+            backgroundColor: _red));
       }
     }
   }
