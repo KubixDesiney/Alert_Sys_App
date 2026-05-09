@@ -385,25 +385,70 @@ Data products:
 - Factory risk rankings.
 - Assignee recommendation details.
 
-## T. Cloudflare Worker Responsibilities
+## T. Cloudflare Worker Architecture
 
-cloudflare_worker.js provides:
-- CORS-enabled HTTP endpoints.
-- Cron-triggered periodic processing every minute.
-- Firebase token generation and caching.
-- Push fan-out controls with internal max limits.
-- Escalation checks.
-- Supervisor scoring and assignment support helpers.
-- Predictive model computation.
-- Briefing aggregation.
+The worker codebase has been refactored into 15 modular ES6 modules under `/worker` directory. The root-level `cloudflare_worker.js` is a re-export shim that delegates to `worker/index.js`.
 
-Deployment:
-- Configured in wrangler.toml.
-- Main script cloudflare_worker.js.
-- Cron trigger configured to * * * * *.
+**Modular Worker Structure:**
 
-Local/CI worker package:
-- package.json at root defines worker test and deploy scripts.
+**Core Entry Point:**
+- `worker/index.js` — Orchestrates scheduled (cron) and fetch handlers, imports all modules, exports public APIs.
+
+**Functional Modules:**
+
+1. **auth.js** — Firebase service account auth, token generation and caching.
+2. **alerts.js** — Alert state processing, timestamp updates, status transitions.
+3. **ai_suggest.js** — AI suggestion proxy and insight endpoint handlers.
+4. **auto_fix.js** — Automatic remediation logic (partial and full modes).
+5. **briefing.js** — Morning briefing generation with factory-scoped aggregation via Llama 3.2.
+6. **config.js** — CORS headers and configuration metadata endpoints.
+7. **escalation.js** — Escalation policy checking and enforcement.
+8. **fcm.js** — Firebase Cloud Messaging fan-out, token fetching, notification formatting.
+9. **health.js** — Cron execution health monitoring and reporting to RTDB.
+10. **load_core.js** — Parallel data loading: alerts, users, shifts, hierarchy, factories.
+11. **predictive.js** — Predictive model computation, validation, history snapshot writes.
+12. **scoring.js** — Supervisor scoring engine, workload calculations, candidate ranking.
+13. **shift_commander.js** — Shift management, AI assignments during active shifts, handover generation.
+14. **suggest_assignee.js** — Assignee recommendation endpoint.
+15. **utils.js** — Shared utilities: factory ID sanitization, time handling, briefing slugs, shift window helpers.
+
+**Scheduled Handler (Cron: every minute):**
+
+1. Distributed lock acquisition via cron_lock RTDB node (prevents concurrent runs).
+2. Load core data in parallel (loadCoreData).
+3. Process alerts (state transitions, timestamps).
+4. Check escalations.
+5. Run AI assignments with shift override support.
+6. Process shift collaborations (auto-approve when conditions met).
+7. Process shift ending (generate handover summaries).
+8. Validate predictions (cross-check historical forecasts against realized alerts).
+9. Write cron health metrics to database.
+10. Release lock.
+
+**HTTP Fetch Handler Endpoints:**
+
+- `/config` — Configuration metadata.
+- `/ai-proxy` — AI integration proxy (Gemini, Claude, Llama).
+- `/ai-suggest` — Alert resolution suggestions.
+- `/predict` — Predictive model computation.
+- `/briefing` — Morning briefing (supports `?factory=` query parameter for scoped briefings).
+- `/suggest-assignee` — Assignee recommendation.
+- `/auto-fix` — Partial automatic remediation.
+- `/auto-fix-full` — Full automatic remediation.
+- `/shift-ai-action` — Shift-specific AI operations (evaluate, handover, created, updated).
+- `/validate-predictions` — Manual trigger for prediction validation run.
+- `/ai-retry` — Trigger AI assignment retry.
+- `/notify` — Fan-out pending notifications from RTDB queue.
+- Default (all other fetch) — Unified manual trigger: runs assignments, alerts, escalations, collaborations.
+
+**Deployment Status:**
+
+- **Active deployment:** wrangler.toml points to `cloudflare_workerV2.js` (legacy monolithic version, 118KB).
+- **Modular ready:** `/worker` directory contains fully refactored and tested 15-module version.
+- **Transition path:** Once modular version is validated in staging, update wrangler.toml `main` field to `cloudflare_worker.js` (which re-exports `worker/index.js`).
+- **Configuration:** wrangler.toml specifies cron trigger `* * * * *`, secrets management via `wrangler secret put`, and worker name "alert-notifier".
+- **Testing:** worker_test/ includes Jest tests for pure functions; npm test runs all tests.
+- **Package.json:** scripts for `npm test` and `npm run deploy`.
 
 ## U. Firebase Functions Responsibilities
 
@@ -1140,28 +1185,97 @@ Sequence: Morning briefing with factory personalization
 
 ## Quick File-to-Responsibility Index
 
+**Flutter App Core:**
 - lib/main.dart: bootstrap, providers, role routing.
 - lib/providers/alert_provider.dart: alert state and action entry points.
+
+**Alert and Stream Services:**
 - lib/services/alert_service.dart: CRUD and transactional alert operations.
 - lib/services/alert_stream_service.dart: merged streaming and new-alert detection.
-- lib/services/fcm_service.dart: FCM + local notification + lock-screen action handling.
+- lib/services/alert_actions_service.dart: alert action helpers.
+- lib/services/alert_pdf_service.dart: alert detail PDF export.
+
+**Voice and Communication:**
 - lib/services/voice_service_io.dart: capture, TTS, lock-flow integration.
 - lib/services/voice_command_parser.dart: intent and number parsing logic.
 - lib/services/voice_command_dispatcher.dart: command execution and spoken feedback.
 - lib/services/voice_auth_service_io.dart: enrollment and speaker verification.
-- lib/services/ai_assignment_service.dart: assignment policy and logs.
-- lib/services/predictive_repository.dart: worker predictive endpoint client.
-- lib/services/hierarchy_service.dart: topology and asset mapping.
-- lib/services/collaboration_service.dart: collaboration request and PM approval.
+- lib/services/voice_lock_service.dart: lock-screen voice flow.
+- lib/services/fcm_service.dart: FCM + local notification + lock-screen action handling.
+- lib/services/notification_service.dart: notification content and delivery.
+
+**AI and Predictive:**
+- lib/services/ai_assignment_service.dart: assignment policy and logs (orchestrator).
+- lib/services/ai/ai_scoring_engine.dart: pure scoring logic (7 factors, 4 disqualifiers).
+- lib/services/ai/ai_state_manager.dart: transient state (cooldowns, skipped alerts).
+- lib/services/ai/ai_decision_repository.dart: Firebase persistence and feedback.
+- lib/services/ai/score_adjuster.dart: reinforcement adjustment application.
+- lib/services/ai_service.dart: AI suggestion endpoint client.
+- lib/services/predictive_repository.dart: worker predictive endpoints client.
+- lib/services/predictive_models.dart: data models (MorningBriefing, PredictiveModel, etc.).
+- lib/services/predictive_intel_service.dart: predictive facade.
+- lib/services/predictive_intel_stream_service.dart: RTDB stream subscriptions (factory-scoped).
+- lib/services/score_reinforcement_service.dart: reinforcement learning integration.
+
+**System and Offline:**
+- lib/services/connectivity_service.dart: app-wide connectivity signal.
+- lib/services/offline_database_service.dart: RTDB persistence config.
+- lib/services/offline_account_cache.dart: offline role/factory caching.
+- lib/services/worker_trigger_queue.dart: resilient worker trigger queue.
+- lib/services/background_sync_service.dart: reconnection-triggered sync.
+
+**Organization and Coordination:**
+- lib/services/hierarchy_service.dart: topology, assets, location validation.
+- lib/services/work_instruction_service.dart: location-aware guidance.
+- lib/services/collaboration_service.dart: multi-supervisor coordination and PM approval.
+
+**Shift Management:**
 - lib/services/shift_service.dart: shift CRUD and AI action triggers.
 - lib/services/shift_pdf_service.dart: shift report PDF generation and export.
-- lib/services/offline_database_service.dart: RTDB offline config.
-- lib/services/worker_trigger_queue.dart: resilient worker trigger queue.
 - lib/screens/admin/shifts_tab.dart: shift scheduling UI (schedule, live, timeline tabs).
-- lib/screens/admin/shift_creation_dialog.dart: shift and supervisor configuration with conflict detection.
-- cloudflare_worker.js: edge orchestration and predictive/briefing logic.
-- functions/index.js: assignment retry and additional backend automation.
-- database.rules.json: data authorization and validation rules.
-- TESTING.md: testing and CI execution details.
+- lib/screens/admin/shift_creation_dialog.dart: shift configuration with conflict detection.
+- lib/widgets/shifts/: shift UI components (cards, backgrounds, logs panel).
 
-This is the current architecture baseline for AlertSys.
+**Core Infrastructure:**
+- lib/services/service_locator.dart: dependency injection container.
+- lib/services/auth_service.dart: Firebase authentication.
+- lib/services/app_logger.dart: logging.
+- lib/services/config_service.dart: app configuration.
+- lib/services/push_notification_service.dart: platform notification wrapper.
+- lib/services/app_lifecycle_observer.dart: app foreground/background transitions.
+
+**Worker (Cloudflare):**
+- cloudflare_worker.js: re-export shim to worker/index.js.
+- worker/index.js: orchestrator, scheduled and fetch handlers.
+- worker/auth.js: Firebase token generation.
+- worker/alerts.js: alert state processing.
+- worker/ai_suggest.js: AI suggestion endpoint.
+- worker/auto_fix.js: automatic remediation.
+- worker/briefing.js: briefing generation (factory-scoped).
+- worker/config.js: CORS and config.
+- worker/escalation.js: escalation policy checks.
+- worker/fcm.js: FCM fan-out.
+- worker/health.js: cron health monitoring.
+- worker/load_core.js: parallel core data loading.
+- worker/predictive.js: predictive model and validation.
+- worker/scoring.js: supervisor scoring.
+- worker/shift_commander.js: shift management and handovers.
+- worker/suggest_assignee.js: assignee recommendations.
+- worker/utils.js: shared utilities.
+- worker/wrangler.toml: worker configuration.
+
+**Backend:**
+- functions/index.js: Firebase Functions (retry, assignment fallback).
+- codebasedelta/: secondary Firebase Functions codebase.
+
+**Database and Rules:**
+- database.rules.json: Realtime Database authorization, validation, indexes.
+- firebase.json: Firebase project configuration (hosting, functions).
+- wrangler.toml: Cloudflare Worker deployment config (points to cloudflare_workerV2.js, legacy).
+
+**Testing:**
+- test/: Flutter tests (parsers, models, utilities, widgets).
+- worker_test/: Jest tests for worker pure functions.
+- TESTING.md: testing strategy and CI expectations.
+
+This is the current architecture baseline for AlertSys (May 2026).
