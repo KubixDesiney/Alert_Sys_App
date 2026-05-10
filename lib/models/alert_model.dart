@@ -24,6 +24,9 @@ class AlertModel {
   final String? collaborationRequestId; // ✅ NEW
   final bool isEscalated;
   final DateTime? escalatedAt;
+  final DateTime? escalationAcknowledgedAt;
+  final String? escalationAcknowledgedBy;
+  final String? escalationAcknowledgedByName;
   final bool? wasAssisted; // ✅ NEW - Track if this alert was assisted
   final String? assistedBySupervisorId; // ✅ NEW - Who supervised the assist
   final String? assistedBySupervisorName; // ✅ NEW - Name of supervisor
@@ -70,6 +73,9 @@ class AlertModel {
     required this.description,
     this.isEscalated = false,
     this.escalatedAt,
+    this.escalationAcknowledgedAt,
+    this.escalationAcknowledgedBy,
+    this.escalationAcknowledgedByName,
     this.assistantId,
     this.assistantName,
     this.helpRequestId,
@@ -144,6 +150,11 @@ class AlertModel {
       isEscalated: data['isEscalated'] ?? false,
       escalatedAt:
           data['escalatedAt'] != null ? _parseDate(data['escalatedAt']) : null,
+      escalationAcknowledgedAt: data['escalationAcknowledgedAt'] != null
+          ? _parseDate(data['escalationAcknowledgedAt'])
+          : null,
+      escalationAcknowledgedBy: data['escalationAcknowledgedBy'],
+      escalationAcknowledgedByName: data['escalationAcknowledgedByName'],
       wasAssisted: data['wasAssisted'] ?? false,
       assistedBySupervisorId: data['assistedBySupervisorId'],
       assistedBySupervisorName: data['assistedBySupervisorName'],
@@ -191,6 +202,9 @@ class AlertModel {
         'resolvedAt': resolvedAt?.toIso8601String(),
         'isEscalated': isEscalated,
         'escalatedAt': escalatedAt?.toIso8601String(),
+        'escalationAcknowledgedAt': escalationAcknowledgedAt?.toIso8601String(),
+        'escalationAcknowledgedBy': escalationAcknowledgedBy,
+        'escalationAcknowledgedByName': escalationAcknowledgedByName,
         'aiAssigned': aiAssigned,
         'aiAssignmentReason': aiAssignmentReason,
         'aiConfidence': aiConfidence,
@@ -237,6 +251,9 @@ class AlertModel {
     bool clearTakenAt = false,
     bool? isEscalated,
     DateTime? escalatedAt,
+    DateTime? escalationAcknowledgedAt,
+    String? escalationAcknowledgedBy,
+    String? escalationAcknowledgedByName,
     bool? aiAssigned,
     String? aiAssignmentReason,
     double? aiConfidence,
@@ -282,6 +299,12 @@ class AlertModel {
         resolvedAt: resolvedAt ?? this.resolvedAt,
         isEscalated: isEscalated ?? this.isEscalated,
         escalatedAt: escalatedAt ?? this.escalatedAt,
+        escalationAcknowledgedAt:
+            escalationAcknowledgedAt ?? this.escalationAcknowledgedAt,
+        escalationAcknowledgedBy:
+            escalationAcknowledgedBy ?? this.escalationAcknowledgedBy,
+        escalationAcknowledgedByName:
+            escalationAcknowledgedByName ?? this.escalationAcknowledgedByName,
         aiAssigned: aiAssigned ?? this.aiAssigned,
         aiAssignmentReason: aiAssignmentReason ?? this.aiAssignmentReason,
         aiConfidence: aiConfidence ?? this.aiConfidence,

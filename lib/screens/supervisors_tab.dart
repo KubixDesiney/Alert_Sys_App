@@ -1478,7 +1478,6 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 selected: sup.id == _selectedId,
                 solved: _solvedFor(sup).length,
                 claimed: _claimedFor(sup),
-                score: _impactScore(sup),
                 spark: _resolvedSpark(sup),
                 onTap: () => _openPerformancePanel(sup),
                 onEdit: () => _showModifyDialog(sup),
@@ -1503,7 +1502,6 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
             selected: sup.id == _selectedId,
             solved: _solvedFor(sup).length,
             claimed: _claimedFor(sup),
-            score: _impactScore(sup),
             spark: _resolvedSpark(sup),
             onTap: () => _openPerformancePanel(sup),
             onEdit: () => _showModifyDialog(sup),
@@ -1825,17 +1823,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                     color: t.orange,
                     icon: Icons.timer_outlined),
               ),
-              _FloatingHeroSignal(
-                delay: const Duration(milliseconds: 180),
-                child: _HeroSignal(
-                    label: 'Impact',
-                    value: '${_impactScore(sup)}',
-                    color: t.blue,
-                    icon: Icons.bolt_outlined),
-              ),
               if (dist.isNotEmpty)
                 _FloatingHeroSignal(
-                  delay: const Duration(milliseconds: 270),
+                  delay: const Duration(milliseconds: 180),
                   child: _HeroSignal(
                       label: 'Top Plant',
                       value: dist.entries
@@ -3123,7 +3113,6 @@ class _SupervisorRailTile extends StatefulWidget {
   final bool selected;
   final int solved;
   final int claimed;
-  final int score;
   final List<int> spark;
   final VoidCallback onTap;
   final VoidCallback onEdit;
@@ -3134,7 +3123,6 @@ class _SupervisorRailTile extends StatefulWidget {
     required this.selected,
     required this.solved,
     required this.claimed,
-    required this.score,
     required this.spark,
     required this.onTap,
     required this.onEdit,
@@ -3261,11 +3249,6 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
                   value: widget.claimed,
                   suffix: ' live',
                   color: t.blue),
-              _AnimatedMiniChip(
-                  icon: Icons.bolt_outlined,
-                  value: widget.score,
-                  suffix: ' pts',
-                  color: t.orange),
             ]),
             const SizedBox(height: 10),
             SizedBox(
