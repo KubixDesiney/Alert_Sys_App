@@ -83,7 +83,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
   @override
   void initState() {
     super.initState();
-    _sub = TabController(length: 3, vsync: this);
+    _sub = TabController(length: 2, vsync: this);
     _sub.addListener(_handleSubTabChanged);
     _loadFactories();
   }
@@ -146,11 +146,6 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
                   icon: Icons.shield,
                   index: 1,
                   ctrl: _sub),
-              _SubPill(
-                  label: 'Assignments',
-                  icon: Icons.bar_chart,
-                  index: 2,
-                  ctrl: _sub),
             ],
           ),
         ),
@@ -179,11 +174,6 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
       const KeyedSubtree(
         key: ValueKey('collaborations'),
         child: CollaborationsTab(),
-      ),
-      _AssignmentsSubTab(
-        key: const ValueKey('assignments'),
-        supervisors: widget.supervisors,
-        onRefresh: widget.onRefresh,
       ),
     ];
 
@@ -298,7 +288,14 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     with TickerProviderStateMixin {
   String? _selectedId;
   String _chartRange = '7days';
+  bool _performancePanelOpen = false;
+  Offset? _performancePanelOffset;
+  double _performancePanelWidth = 460;
+  double _performancePanelHeight = 620;
   late final AnimationController _liveActivityController;
+
+  static const double _panelMinWidth = 340;
+  static const double _panelMinHeight = 360;
 
   @override
   void initState() {
@@ -341,6 +338,107 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       if (sup.id == _selectedId) return sup;
     }
     return null;
+  }
+
+  void _openPerformancePanel(UserModel sup) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _selectedId = sup.id;
+      _performancePanelOpen = true;
+    });
+  }
+
+  void _closePerformancePanel() {
+    setState(() => _performancePanelOpen = false);
+  }
+
+  double _clampPanelValue(double value, double min, double max) {
+    if (max < min) return min;
+    return value.clamp(min, max).toDouble();
+  }
+
+  Offset _resolvedPanelOffset({
+    required Size bounds,
+    required Size panelSize,
+    required Offset fallback,
+  }) {
+    final raw = _performancePanelOffset ?? fallback;
+    return Offset(
+      _clampPanelValue(raw.dx, 8, bounds.width - panelSize.width - 8),
+      _clampPanelValue(raw.dy, 8, bounds.height - panelSize.height - 8),
+    );
+  }
+
+  void _movePerformancePanel({
+    required Offset delta,
+    required Size bounds,
+    required Size panelSize,
+    required Offset fallback,
+  }) {
+    final current = _resolvedPanelOffset(
+      bounds: bounds,
+      panelSize: panelSize,
+      fallback: fallback,
+    );
+    setState(() {
+      _performancePanelOffset = Offset(
+        _clampPanelValue(
+            current.dx + delta.dx, 8, bounds.width - panelSize.width - 8),
+        _clampPanelValue(
+            current.dy + delta.dy, 8, bounds.height - panelSize.height - 8),
+      );
+    });
+  }
+
+  void _resizePerformancePanel({
+    required Offset delta,
+    required Size bounds,
+    required Offset fallback,
+  }) {
+    setState(() {
+      final availableWidth = math.max(280.0, bounds.width - 16);
+      final availableHeight = math.max(320.0, bounds.height - 16);
+      final minWidth = math.min(_panelMinWidth, availableWidth);
+      final minHeight = math.min(_panelMinHeight, availableHeight);
+      _performancePanelWidth = _clampPanelValue(
+        _performancePanelWidth + delta.dx,
+        minWidth,
+        availableWidth,
+      );
+      _performancePanelHeight = _clampPanelValue(
+        _performancePanelHeight + delta.dy,
+        minHeight,
+        availableHeight,
+      );
+      final panelSize = Size(_performancePanelWidth, _performancePanelHeight);
+      _performancePanelOffset = _resolvedPanelOffset(
+        bounds: bounds,
+        panelSize: panelSize,
+        fallback: fallback,
+      );
+    });
+  }
+
+  void _togglePerformancePanelSize(Size bounds, Offset fallback) {
+    final expanded = _performancePanelWidth > 560;
+    setState(() {
+      final availableWidth = math.max(280.0, bounds.width - 16);
+      final availableHeight = math.max(320.0, bounds.height - 16);
+      final minWidth = math.min(_panelMinWidth, availableWidth);
+      final minHeight = math.min(_panelMinHeight, availableHeight);
+      _performancePanelWidth = expanded
+          ? _clampPanelValue(460, minWidth, availableWidth)
+          : _clampPanelValue(760, minWidth, availableWidth);
+      _performancePanelHeight = expanded
+          ? _clampPanelValue(620, minHeight, availableHeight)
+          : _clampPanelValue(760, minHeight, availableHeight);
+      final panelSize = Size(_performancePanelWidth, _performancePanelHeight);
+      _performancePanelOffset = _resolvedPanelOffset(
+        bounds: bounds,
+        panelSize: panelSize,
+        fallback: fallback,
+      );
+    });
   }
 
   List<AlertModel> _alertsFor(UserModel sup) => widget.alerts
@@ -873,7 +971,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 style: TextStyle(
                     fontSize: 20, fontWeight: FontWeight.w900, color: t.text)),
             const SizedBox(height: 3),
-            Text('Roster, availability, and individual performance.',
+            Text('Roster, plant assignments, and on-demand performance.',
                 style: TextStyle(
                     fontSize: 12, color: t.muted, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
@@ -1000,24 +1098,245 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
   Widget _buildWide(AppTheme t, UserModel? selected) {
     final railWidth = MediaQuery.sizeOf(context).width >= 1600 ? 310.0 : 326.0;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SizedBox(width: railWidth, child: _buildRail(t)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildDetailScroller(t, selected)),
-      ]),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final bounds =
+          Size(constraints.maxWidth - 32, constraints.maxHeight - 20);
+      final fallback = Offset(railWidth + 24, 16);
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SizedBox(width: railWidth, child: _buildRail(t)),
+            const SizedBox(width: 12),
+            Expanded(child: _buildDetailScroller(t, selected)),
+          ]),
+          if (selected != null && _performancePanelOpen)
+            _buildPerformanceOverlay(t, selected, bounds, fallback),
+        ]),
+      );
+    });
   }
 
   Widget _buildCompact(AppTheme t, UserModel? selected) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-      child: Column(children: [
-        _buildRail(t, compact: true),
-        const SizedBox(height: 14),
-        _buildDetailContent(t, selected),
-      ]),
+    return LayoutBuilder(builder: (context, constraints) {
+      final bounds = Size(constraints.maxWidth, constraints.maxHeight);
+      const fallback = Offset(12, 12);
+      return Stack(fit: StackFit.expand, children: [
+        SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+          child: Column(children: [
+            _buildRail(t, compact: true),
+            const SizedBox(height: 14),
+            _buildDetailContent(t, selected),
+          ]),
+        ),
+        if (selected != null && _performancePanelOpen)
+          _buildPerformanceOverlay(t, selected, bounds, fallback),
+      ]);
+    });
+  }
+
+  Widget _buildPerformanceOverlay(
+    AppTheme t,
+    UserModel sup,
+    Size bounds,
+    Offset fallback,
+  ) {
+    final availableWidth = math.max(280.0, bounds.width - 16);
+    final availableHeight = math.max(320.0, bounds.height - 16);
+    final minWidth = math.min(_panelMinWidth, availableWidth);
+    final minHeight = math.min(_panelMinHeight, availableHeight);
+    final width =
+        _clampPanelValue(_performancePanelWidth, minWidth, availableWidth);
+    final height =
+        _clampPanelValue(_performancePanelHeight, minHeight, availableHeight);
+    final panelSize = Size(width, height);
+    final offset = _resolvedPanelOffset(
+      bounds: bounds,
+      panelSize: panelSize,
+      fallback: fallback,
+    );
+    final statusColor = sup.isActive ? t.green : t.red;
+
+    return Positioned(
+      left: offset.dx,
+      top: offset.dy,
+      width: width,
+      height: height,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 18,
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(children: [
+          Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: t.card.withValues(alpha: t.isDark ? 0.98 : 0.96),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: t.navy.withValues(alpha: 0.22)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: t.isDark ? 0.42 : 0.18),
+                  blurRadius: 34,
+                  offset: const Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: (details) => _movePerformancePanel(
+                  delta: details.delta,
+                  bounds: bounds,
+                  panelSize: panelSize,
+                  fallback: fallback,
+                ),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.move,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          t.navy.withValues(alpha: t.isDark ? 0.32 : 0.10),
+                          t.green.withValues(alpha: t.isDark ? 0.18 : 0.07),
+                        ],
+                      ),
+                      border: Border(bottom: BorderSide(color: t.border)),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [t.navy, t.green],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Center(
+                          child: Text(_initials(sup),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Performance',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.5,
+                                      color: t.muted)),
+                              const SizedBox(height: 2),
+                              Text(sup.fullName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: t.text)),
+                              const SizedBox(height: 4),
+                              Row(children: [
+                                _LivePulseDot(
+                                    color: statusColor, pulse: sup.isActive),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    sup.usine.isEmpty
+                                        ? 'Unassigned'
+                                        : sup.usine,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        TextStyle(fontSize: 11, color: t.muted),
+                                  ),
+                                ),
+                              ]),
+                            ]),
+                      ),
+                      Tooltip(
+                        message: 'Resize panel',
+                        child: Icon(Icons.drag_indicator,
+                            color: t.muted, size: 20),
+                      ),
+                      Tooltip(
+                        message: 'Toggle size',
+                        child: IconButton(
+                          onPressed: () =>
+                              _togglePerformancePanelSize(bounds, fallback),
+                          icon:
+                              Icon(Icons.open_in_full, color: t.navy, size: 18),
+                        ),
+                      ),
+                      Tooltip(
+                        message: 'Close',
+                        child: IconButton(
+                          onPressed: _closePerformancePanel,
+                          icon: Icon(Icons.close, color: t.red, size: 19),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildMetricGrid(t, sup),
+                        const SizedBox(height: 12),
+                        _buildPerformanceCard(t, sup),
+                        const SizedBox(height: 12),
+                        _buildTypeBreakdown(t, sup),
+                        const SizedBox(height: 12),
+                        _buildValidatedList(t, sup),
+                        const SizedBox(height: 18),
+                      ]),
+                ),
+              ),
+            ]),
+          ),
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanUpdate: (details) => _resizePerformancePanel(
+                delta: details.delta,
+                bounds: bounds,
+                fallback: fallback,
+              ),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.resizeUpLeftDownRight,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: t.navy.withValues(alpha: 0.10),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(14),
+                      bottomRight: Radius.circular(16),
+                    ),
+                    border: Border.all(color: t.navy.withValues(alpha: 0.16)),
+                  ),
+                  child: Icon(Icons.open_in_full, size: 15, color: t.navy),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -1129,7 +1448,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 claimed: _claimedFor(sup),
                 score: _impactScore(sup),
                 spark: _resolvedSpark(sup),
-                onTap: () => setState(() => _selectedId = sup.id),
+                onTap: () => _openPerformancePanel(sup),
                 onEdit: () => _showModifyDialog(sup),
                 onDelete: () => _showDeleteConfirmDialog(sup),
               ),
@@ -1154,7 +1473,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
             claimed: _claimedFor(sup),
             score: _impactScore(sup),
             spark: _resolvedSpark(sup),
-            onTap: () => setState(() => _selectedId = sup.id),
+            onTap: () => _openPerformancePanel(sup),
             onEdit: () => _showModifyDialog(sup),
             onDelete: () => _showDeleteConfirmDialog(sup),
           ),
@@ -1170,44 +1489,192 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   }
 
   Widget _buildDetailContent(AppTheme t, UserModel? selected) {
-    if (selected == null) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildAssignmentCommandDeck(t, selected),
+        const SizedBox(height: 12),
+        _buildAssignmentMatrix(t),
+      ],
+    );
+  }
+
+  Widget _buildAssignmentCommandDeck(AppTheme t, UserModel? selected) {
+    final grouped = _groupByFactory();
+    final unassigned = _unassigned().length;
+    final active = widget.allSupervisors.where((s) => s.isActive).length;
+    final assigned = math.max(0, widget.allSupervisors.length - unassigned);
+    final staffedFactories =
+        grouped.values.where((sups) => sups.isNotEmpty).length;
+
+    Widget signal({
+      required IconData icon,
+      required String label,
+      required String value,
+      required Color color,
+    }) {
       return Container(
-        height: 420,
-        alignment: Alignment.center,
+        width: 146,
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: t.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: t.border),
+          color: t.card.withValues(alpha: t.isDark ? 0.54 : 0.82),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.20)),
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.person_search, size: 42, color: t.muted),
-          const SizedBox(height: 12),
-          Text('Select a supervisor',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w800, color: t.muted)),
+        child: Row(children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: t.text,
+                        height: 1)),
+                const SizedBox(height: 4),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10, color: t.muted)),
+              ])),
         ]),
       );
     }
 
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 320),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      child: Column(
-        key: ValueKey(selected.id),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSupervisorHero(t, selected),
-          const SizedBox(height: 12),
-          _buildMetricGrid(t, selected),
-          const SizedBox(height: 12),
-          _buildPerformanceCard(t, selected),
-          const SizedBox(height: 12),
-          _buildTypeBreakdown(t, selected),
-          const SizedBox(height: 12),
-          _buildValidatedList(t, selected),
+    return Container(
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: t.border),
+        gradient: LinearGradient(
+          colors: [
+            t.card,
+            t.isDark ? const Color(0xFF12263A) : const Color(0xFFEFF6FF),
+            t.isDark ? const Color(0xFF10261B) : const Color(0xFFF0FDF4),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: t.isDark ? 0.20 : 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
+      child: Stack(children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _CommandGridPainter(color: t.navy.withValues(alpha: 0.06)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: t.navy.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: t.navy.withValues(alpha: 0.18)),
+                ),
+                child:
+                    Icon(Icons.account_tree_outlined, color: t.navy, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Factory Assignments',
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: t.text,
+                              height: 1.05)),
+                      const SizedBox(height: 5),
+                      Text('Live supervisor placement by plant.',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: t.muted,
+                              fontWeight: FontWeight.w600)),
+                    ]),
+              ),
+              if (selected != null && _performancePanelOpen)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  constraints: const BoxConstraints(maxWidth: 230),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: t.navy.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: t.navy.withValues(alpha: 0.18)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.analytics_outlined, size: 14, color: t.navy),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(selected.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: t.navy)),
+                    ),
+                  ]),
+                ),
+            ]),
+            const SizedBox(height: 16),
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              signal(
+                  icon: Icons.factory_outlined,
+                  label: 'plant lanes',
+                  value: '${widget.factories.length}',
+                  color: t.navy),
+              signal(
+                  icon: Icons.groups_2_outlined,
+                  label: 'assigned',
+                  value: '$assigned',
+                  color: t.green),
+              signal(
+                  icon: Icons.pending_actions_outlined,
+                  label: 'unassigned',
+                  value: '$unassigned',
+                  color: t.orange),
+              signal(
+                  icon: Icons.sensors_outlined,
+                  label: 'active',
+                  value: '$active',
+                  color: t.blue),
+              signal(
+                  icon: Icons.domain_verification_outlined,
+                  label: 'staffed plants',
+                  value: '$staffedFactories',
+                  color: t.purple),
+            ]),
+          ]),
+        ),
+      ]),
     );
   }
 
@@ -1486,8 +1953,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
     return _SectionShell(
       icon: Icons.account_tree_outlined,
-      title: 'Plant Assignment Matrix',
-      subtitle: 'Drag a supervisor chip into a plant lane',
+      title: 'Assignment Board',
+      subtitle: 'Roster source, factory lanes, and unassigned pool',
       child: LayoutBuilder(builder: (context, constraints) {
         final columns = constraints.maxWidth > 980
             ? 3
@@ -1608,7 +2075,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                     .map((sup) => _SupChip(
                           sup: sup,
                           selected: sup.id == _selectedId,
-                          onTap: () => setState(() => _selectedId = sup.id),
+                          onTap: () => _openPerformancePanel(sup),
                           onRemove: removable ? () => _reassign(sup, '') : null,
                         ))
                     .toList(),
@@ -2825,7 +3292,7 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
-      child: LongPressDraggable<UserModel>(
+      child: Draggable<UserModel>(
         data: widget.supervisor,
         feedback: Material(
           color: Colors.transparent,

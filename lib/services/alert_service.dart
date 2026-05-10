@@ -16,14 +16,16 @@ String _defaultDescription(String type) => switch (type) {
     };
 
 class AlertService {
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final DatabaseReference _db;
   final HierarchyService? _hierarchyService;
   final AppLogger _logger;
 
   AlertService({
+    DatabaseReference? database,
     HierarchyService? hierarchyService,
     AppLogger logger = const AppLogger(),
-  })  : _hierarchyService = hierarchyService,
+  })  : _db = database ?? FirebaseDatabase.instance.ref(),
+        _hierarchyService = hierarchyService,
         _logger = logger;
 
   /// Get hierarchy service (may be null if not injected)
@@ -45,7 +47,8 @@ class AlertService {
         .map((event) => _toAlertList(event.snapshot));
   }
 
-  Stream<List<AlertModel>> getAlertsWhereAssistant(String assistantId, {int? limit}) {
+  Stream<List<AlertModel>> getAlertsWhereAssistant(String assistantId,
+      {int? limit}) {
     return _db
         .child('alerts')
         .orderByChild('assistantId')
@@ -54,7 +57,8 @@ class AlertService {
         .map((event) => _toAlertList(event.snapshot));
   }
 
-  Stream<List<AlertModel>> getAlertsWhereSupervisor(String supervisorId, {int? limit}) {
+  Stream<List<AlertModel>> getAlertsWhereSupervisor(String supervisorId,
+      {int? limit}) {
     return _db
         .child('alerts')
         .orderByChild('superviseurId')
@@ -89,18 +93,13 @@ class AlertService {
     int limit = 50,
   }) async {
     try {
-      final snapshot = await _db
-          .child('alerts')
-          .orderByChild('usine')
-          .equalTo(usine)
-          .get();
-      
+      final snapshot =
+          await _db.child('alerts').orderByChild('usine').equalTo(usine).get();
+
       final alerts = _toAlertList(snapshot);
-      final older = alerts
-          .where((a) => a.timestamp.isBefore(before))
-          .toList()
+      final older = alerts.where((a) => a.timestamp.isBefore(before)).toList()
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      
+
       return older.take(limit).toList();
     } catch (e) {
       _logger.error('Error fetching older alerts for usine: $e');
@@ -231,7 +230,8 @@ class AlertService {
       );
     }
 
-    final alertResult = await _db.child('alerts/$alertId').runTransaction((current) {
+    final alertResult =
+        await _db.child('alerts/$alertId').runTransaction((current) {
       if (current == null) return Transaction.abort();
       final currentMap = current is Map
           ? Map<String, dynamic>.from(current)
@@ -260,9 +260,8 @@ class AlertService {
   Future<void> returnToQueue(String alertId, {String? reason}) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
     final alertData = alertSnap.value;
-    final superviseurId = alertData is Map
-        ? (alertData['superviseurId']?.toString())
-        : null;
+    final superviseurId =
+        alertData is Map ? (alertData['superviseurId']?.toString()) : null;
     final updates = {
       'status': 'disponible',
       'superviseurId': null,
@@ -303,9 +302,8 @@ class AlertService {
       {String? assistingSupervisorId, String? assistingSupervisorName}) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
     final alertData = alertSnap.value;
-    final superviseurId = alertData is Map
-        ? (alertData['superviseurId']?.toString())
-        : null;
+    final superviseurId =
+        alertData is Map ? (alertData['superviseurId']?.toString()) : null;
     final Map<String, dynamic> updates = {
       'status': 'validee',
       'elapsedTime': elapsedMinutes,
@@ -435,8 +433,10 @@ class AlertService {
 
   Future<void> acceptHelpRequest(String alertId, String requestId,
       String assistantId, String assistantName) async {
-    print(
-        'acceptHelpRequest: alertId=$alertId, requestId=$requestId, assistantId=$assistantId, assistantName=$assistantName');
+    _logger.debug(
+      'acceptHelpRequest: alertId=$alertId, requestId=$requestId, '
+      'assistantId=$assistantId, assistantName=$assistantName',
+    );
     await _db.child('alerts/$alertId').update({
       'assistantId': assistantId,
       'assistantName': assistantName,

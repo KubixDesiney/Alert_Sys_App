@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../../services/connectivity_service.dart';
 import '../../theme.dart';
 
@@ -17,8 +18,7 @@ class OfflineBanner extends StatelessWidget {
   });
 
   /// Reactive variant. Drop at the top of any [Scaffold] body.
-  factory OfflineBanner.live({Key? key, String? message}) =
-      _LiveOfflineBanner;
+  factory OfflineBanner.live({Key? key, String? message}) = _LiveOfflineBanner;
 
   final bool isOffline;
   final String? message;
@@ -26,7 +26,12 @@ class OfflineBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
+    final l10n = Localizations.of<AppLocalizations>(
+      context,
+      AppLocalizations,
+    );
     final text = message ??
+        l10n?.offlineBannerMessage ??
         'You are offline. Changes will sync when reconnected.';
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
@@ -38,8 +43,8 @@ class OfflineBanner extends StatelessWidget {
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
                     children: [
                       const Icon(Icons.cloud_off,

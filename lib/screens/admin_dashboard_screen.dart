@@ -53,19 +53,31 @@ String _fmtDate(DateTime d) =>
 // MAIN SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
 class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+  final bool enableLiveData;
+  final List<UserModel> initialSupervisors;
+  final List<AlertModel> initialAlerts;
+
+  const AdminDashboardScreen({
+    super.key,
+    this.enableLiveData = true,
+    this.initialSupervisors = const <UserModel>[],
+    this.initialAlerts = const <AlertModel>[],
+  });
+
   @override
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  int _tab = 0; // 0=Overview  1=Supervisors  2=Shifts  3=Alerts  4=Escalations  5=Hierarchy
+  int _tab =
+      0; // 0=Overview  1=Supervisors  2=Shifts  3=Alerts  4=Escalations  5=Hierarchy
   List<UserModel> _supervisors = [];
   List<AlertModel> _alerts = [];
   bool _loading = true;
 
-  final _db = FirebaseDatabase.instance;
-  final _auth = AuthService();
+  late final FirebaseDatabase _db;
+  late final AuthService _auth;
+  late final AlertService _alertService;
 
   // Filter state
   String _timeRange = 'all';
@@ -84,6 +96,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    if (!widget.enableLiveData) {
+      _supervisors = List<UserModel>.of(widget.initialSupervisors);
+      _alerts = List<AlertModel>.of(widget.initialAlerts);
+      _filteredAlerts = List<AlertModel>.of(widget.initialAlerts);
+      _loading = false;
+      return;
+    }
+    _db = FirebaseDatabase.instance;
+    _auth = AuthService();
+    _alertService = AlertService();
     _loadSavedFilters();
     _loadSupervisors();
     _loadAlerts();
@@ -206,9 +228,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   // ── Alert creation methods (added) ────────────────────────────────────
-  // Add an instance of AlertService at the top of the state class
-  final AlertService _alertService = AlertService();
-
   Future<void> _simulateAlert({
     required String type,
     required String usine,
@@ -229,7 +248,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-                content: Text(
+            content: Text(
                 'Simulated ${typeMeta(type, context.appTheme).label} alert on $usine, Conv $convoyeur, Post $poste'),
             backgroundColor: _green,
           ),
@@ -1004,7 +1023,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 return;
                               }
                               if (pass.text.length < 6) {
-                                setS(() => error = 'Password must be at least 6 characters.');
+                                setS(() => error =
+                                    'Password must be at least 6 characters.');
                                 return;
                               }
                               if (usine.isEmpty) {
@@ -1091,7 +1111,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(9),
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
       ),
     );
@@ -1126,12 +1147,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       backgroundColor: context.appTheme.scaffold,
       body: SafeArea(
           child: Column(children: [
-        _Header(activeSups: _activeSups, onLogout: _logout, onSimulateAlert: _showSimulateDialog),
+        _Header(
+          activeSups: _activeSups,
+          onLogout: _logout,
+          onSimulateAlert: _showSimulateDialog,
+          enableNotifications: widget.enableLiveData,
+        ),
         PillTabBar(tab: _tab, onSelect: (i) => setState(() => _tab = i)),
         Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _navy))
-                : _buildContent()),
+                : widget.enableLiveData
+                    ? _buildContent()
+                    : const SizedBox.shrink()),
       ])),
     );
   }
@@ -1230,7 +1258,15 @@ class _Header extends StatefulWidget {
   final int activeSups;
   final VoidCallback onLogout;
   final VoidCallback onSimulateAlert;
-  const _Header({required this.activeSups, required this.onLogout, required this.onSimulateAlert});
+  final bool enableNotifications;
+
+  const _Header({
+    required this.activeSups,
+    required this.onLogout,
+    required this.onSimulateAlert,
+    this.enableNotifications = true,
+  });
+
   @override
   State<_Header> createState() => _HeaderState();
 }
@@ -1238,12 +1274,16 @@ class _Header extends StatefulWidget {
 class _HeaderState extends State<_Header> {
   int _notificationCount = 0;
   List<Map<String, dynamic>> _notifications = [];
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  late final DatabaseReference _db;
   StreamSubscription<DatabaseEvent>? _notifSub;
 
   @override
   void initState() {
     super.initState();
+    if (!widget.enableNotifications) {
+      return;
+    }
+    _db = FirebaseDatabase.instance.ref();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       _db.child('notifications/$uid').remove();
@@ -1389,9 +1429,10 @@ class _HeaderState extends State<_Header> {
                                     n['message'] ??
                                         'AI cross-factory recommendation',
                                     style: TextStyle(
-                                        color: theme.brightness == Brightness.dark
-                                            ? Colors.white
-                                            : Colors.black87),
+                                        color:
+                                            theme.brightness == Brightness.dark
+                                                ? Colors.white
+                                                : Colors.black87),
                                   ),
                                   subtitle: Column(
                                     crossAxisAlignment:
@@ -1482,12 +1523,14 @@ class _HeaderState extends State<_Header> {
                                 return ListTile(
                                   title: Text(n['message'] ?? 'Help request',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white
                                               : Colors.black87)),
                                   subtitle: Text('Tap to accept or refuse',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white70
                                               : Colors.black54)),
                                   trailing: Row(
@@ -1572,14 +1615,17 @@ class _HeaderState extends State<_Header> {
                                 );
                               } else if (n['type'] == 'assistance_request') {
                                 return ListTile(
-                                  title: Text(n['message'] ?? 'Assistance request',
+                                  title: Text(
+                                      n['message'] ?? 'Assistance request',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white
                                               : Colors.black87)),
                                   subtitle: Text(n['alertDescription'] ?? '',
                                       style: TextStyle(
-                                          color: theme.brightness == Brightness.dark
+                                          color: theme.brightness ==
+                                                  Brightness.dark
                                               ? Colors.white70
                                               : Colors.black54)),
                                   trailing: ElevatedButton(
@@ -1808,7 +1854,7 @@ class _HeaderState extends State<_Header> {
         Stack(children: [
           IconButton(
             icon: Icon(Icons.notifications_none, color: t.muted, size: 24),
-            onPressed: _showNotifications,
+            onPressed: widget.enableNotifications ? _showNotifications : null,
           ),
           if (_notificationCount > 0)
             Positioned(

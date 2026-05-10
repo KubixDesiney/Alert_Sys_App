@@ -110,13 +110,13 @@ class FcmService {
 
     // Handle notification taps when app is in background/terminated
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('Notification opened app: ${message.data}');
+      debugPrint('Notification opened app: ${message.data}');
       _navigateToAlertDetail(message);
     });
 
     // Handle notification taps when app is in foreground
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('Foreground message received: ${message.data}');
+      debugPrint('Foreground message received: ${message.data}');
       _handleForegroundMessage(message);
     });
   }
@@ -158,7 +158,7 @@ class FcmService {
   void _navigateToAlertDetail(RemoteMessage message) {
     final alertId = message.data['alertId'];
     if (alertId != null && navigatorKey.currentState != null) {
-      print('Navigating to alert: $alertId');
+      debugPrint('Navigating to alert: $alertId');
       navigatorKey.currentState!.push(
         MaterialPageRoute(
           builder: (context) => AlertDetailScreen(alertId: alertId),
@@ -478,6 +478,6 @@ class FcmService {
       'fcmToken': token,
       'lastSeen': DateTime.now().toIso8601String(),
     });
-    print('FCM token saved for user ${user.uid}');
+    debugPrint('FCM token saved for user ${user.uid}');
   }
 }

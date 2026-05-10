@@ -152,6 +152,42 @@ abstract class AppLocalizations {
   /// **'Admin Dashboard'**
   String get adminDashboardTitle;
 
+  /// No description provided for @adminTabOverview.
+  ///
+  /// In en, this message translates to:
+  /// **'Overview'**
+  String get adminTabOverview;
+
+  /// No description provided for @adminTabSupervisors.
+  ///
+  /// In en, this message translates to:
+  /// **'Supervisors'**
+  String get adminTabSupervisors;
+
+  /// No description provided for @adminTabShifts.
+  ///
+  /// In en, this message translates to:
+  /// **'Shifts'**
+  String get adminTabShifts;
+
+  /// No description provided for @adminTabAlerts.
+  ///
+  /// In en, this message translates to:
+  /// **'Alerts'**
+  String get adminTabAlerts;
+
+  /// No description provided for @adminTabEscalations.
+  ///
+  /// In en, this message translates to:
+  /// **'Escalations'**
+  String get adminTabEscalations;
+
+  /// No description provided for @adminTabHierarchy.
+  ///
+  /// In en, this message translates to:
+  /// **'Hierarchy'**
+  String get adminTabHierarchy;
+
   /// No description provided for @offlineBannerMessage.
   ///
   /// In en, this message translates to:

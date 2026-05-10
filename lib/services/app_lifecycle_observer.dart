@@ -7,9 +7,9 @@ import 'background_sync_service.dart';
 
 class AppLifecycleObserver extends WidgetsBindingObserver {
   AppLifecycleObserver() : _isPaused = false;
-  
+
   bool _isPaused = false;
-  
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
@@ -17,21 +17,23 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
         if (_isPaused) {
           // App came back to foreground after being paused
           if (kDebugMode) {
-            print('[AppLifecycle] App resumed - triggering AI sync');
+            debugPrint('[AppLifecycle] App resumed - triggering AI sync');
           }
           // Force sync AI history when coming back from background
           BackgroundSyncService.instance.forceSyncNow();
         }
         _isPaused = false;
         break;
-        
+
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
-          case AppLifecycleState.inactive:
+      case AppLifecycleState.inactive:
         _isPaused = true;
         if (kDebugMode) {
-          print('[AppLifecycle] App paused/hidden - maintaining background listeners');
+          debugPrint(
+            '[AppLifecycle] App paused/hidden - maintaining background listeners',
+          );
         }
         break;
     }

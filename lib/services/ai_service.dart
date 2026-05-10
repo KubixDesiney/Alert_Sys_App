@@ -16,7 +16,7 @@ class AIService {
       // /ai-suggest fetches Firebase history itself and uses Llama 3.2.
       final response = await http.post(
         Uri.parse(AppConfig.aiSuggestEndpoint),
-        headers: {'Content-Type': 'application/json'},
+        headers: _workerHeaders(),
         body: jsonEncode({
           'type': alertType,
           'usine': usine,
@@ -33,5 +33,15 @@ class AIService {
     } catch (e) {
       return 'Error generating suggestion: $e';
     }
+  }
+
+  Map<String, String> _workerHeaders() {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
+    if (AppConfig.workerSharedSecret.isNotEmpty) {
+      headers['x-worker-secret'] = AppConfig.workerSharedSecret;
+    }
+    return headers;
   }
 }

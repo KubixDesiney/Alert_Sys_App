@@ -15,10 +15,23 @@ const MAX_ESCALATION_CHECKS = 5;
 const MAX_FANOUT = 2;
 
 function handleConfigRequest() {
-  return new Response(JSON.stringify({ message: 'Config endpoint deprecated' }), {
-    status: 200,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+  return new Response(
+    JSON.stringify({
+      service: 'alertsys-worker',
+      entrypoint: 'worker/index.js',
+      status: 'ok',
+      generatedAt: new Date().toISOString(),
+      limits: {
+        maxAlertsToPush: MAX_ALERTS_TO_PUSH,
+        maxEscalationChecks: MAX_ESCALATION_CHECKS,
+        maxFanout: MAX_FANOUT,
+      },
+    }),
+    {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    },
+  );
 }
 
 // ============ Health monitoring helper ============

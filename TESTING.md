@@ -17,12 +17,12 @@ GitHub Actions wires both together in [.github/workflows/ci.yml](.github/workflo
 ```bash
 # Flutter side
 flutter pub get
-flutter test                 # 122 tests, ~2s
+flutter test                 # 198 tests
 flutter analyze --no-fatal-infos --no-fatal-warnings
 
 # Worker side
 npm install
-npm test                     # 56 tests, <1s
+npm test                     # 123 tests, <2s
 ```
 
 Both suites are hermetic — no Firebase emulator, no Cloudflare account, no

@@ -19,8 +19,7 @@ class PredictiveAccuracy {
   factory PredictiveAccuracy.fromMap(Map<String, dynamic> m) =>
       PredictiveAccuracy(
         totalSnapshots: (m['totalSnapshots'] as num?)?.toInt() ?? 0,
-        averageAccuracy:
-            (m['averageAccuracy'] as num?)?.toDouble() ?? 0.0,
+        averageAccuracy: (m['averageAccuracy'] as num?)?.toDouble() ?? 0.0,
         lastValidatedUtc: m['lastValidatedUtc'] as String?,
       );
 }
@@ -35,37 +34,57 @@ class PredictiveIntelStreamService {
   final FirebaseDatabase _db;
   // Per-factory subscriptions and controllers (null key = global).
   final Map<String?, StreamSubscription<DatabaseEvent>> _briefingSubs = {};
-  final Map<String?, StreamController<MorningBriefing?>> _briefingControllers = {};
+  final Map<String?, StreamController<MorningBriefing?>> _briefingControllers =
+      {};
   final Map<String?, MorningBriefing?> _lastBriefings = {};
   StreamSubscription<DatabaseEvent>? _predictionsSub;
   StreamSubscription<DatabaseEvent>? _accuracySub;
   final _predictionsController = StreamController<PredictiveModel?>.broadcast();
-  final _accuracyController =
-      StreamController<PredictiveAccuracy?>.broadcast();
+  final _accuracyController = StreamController<PredictiveAccuracy?>.broadcast();
   PredictiveModel? _lastPredictions;
   PredictiveAccuracy? _lastAccuracy;
 
   Stream<MorningBriefing?> briefingStream({String? factory}) {
-    final key = (factory == null || factory.isEmpty || factory == 'all') ? null : factory;
+    final key = (factory == null || factory.isEmpty || factory == 'all')
+        ? null
+        : factory;
     _ensureBriefingSubscription(key);
-    return _briefingControllers[key]!.stream;
+    return (() async* {
+      if (_lastBriefings.containsKey(key)) {
+        yield _lastBriefings[key];
+      }
+      yield* _briefingControllers[key]!.stream;
+    })();
   }
 
   Stream<PredictiveModel?> predictionsStream() {
     _ensurePredictionsSubscription();
-    return _predictionsController.stream;
+    return (() async* {
+      if (_lastPredictions != null) {
+        yield _lastPredictions;
+      }
+      yield* _predictionsController.stream;
+    })();
   }
 
   Stream<PredictiveAccuracy?> accuracyStream() {
     _ensureAccuracySubscription();
-    return _accuracyController.stream;
+    return (() async* {
+      if (_lastAccuracy != null) {
+        yield _lastAccuracy;
+      }
+      yield* _accuracyController.stream;
+    })();
   }
 
   PredictiveAccuracy? get lastAccuracy => _lastAccuracy;
 
   static String _briefingDbPath(String? key) {
     if (key == null) return 'ai_briefing/latest';
-    final slug = key.toLowerCase().replaceAll(RegExp(r'\s+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    final slug = key
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^a-z0-9_]'), '');
     return 'ai_briefing/factory/$slug/latest';
   }
 

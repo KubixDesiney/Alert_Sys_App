@@ -31,7 +31,10 @@ class PredictiveRepository {
     if (factory == null || factory.isEmpty || factory == 'all') {
       return 'ai_briefing/latest';
     }
-    final slug = factory.toLowerCase().replaceAll(RegExp(r'\s+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    final slug = factory
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^a-z0-9_]'), '');
     return 'ai_briefing/factory/$slug/latest';
   }
 
@@ -51,13 +54,22 @@ class PredictiveRepository {
     });
   }
 
-  Future<MorningBriefing?> getBriefing({bool force = false, String? factory}) async {
-    final cacheKey = (factory == null || factory.isEmpty || factory == 'all') ? null : factory;
-    if (!force && _isFresh(_briefingCachedAt[cacheKey])) return _briefingCache[cacheKey];
-    final factoryQuery = cacheKey != null ? 'factory=${Uri.encodeQueryComponent(cacheKey)}&' : '';
-    final result = await _fetchJson('$workerBase/briefing?$factoryQuery${force ? 'force=1' : ''}');
+  Future<MorningBriefing?> getBriefing(
+      {bool force = false, String? factory}) async {
+    final cacheKey = (factory == null || factory.isEmpty || factory == 'all')
+        ? null
+        : factory;
+    if (!force && _isFresh(_briefingCachedAt[cacheKey])) {
+      return _briefingCache[cacheKey];
+    }
+    final factoryQuery = cacheKey != null
+        ? 'factory=${Uri.encodeQueryComponent(cacheKey)}&'
+        : '';
+    final result = await _fetchJson(
+        '$workerBase/briefing?$factoryQuery${force ? 'force=1' : ''}');
     if (result is Map) {
-      final briefing = MorningBriefing.fromMap(Map<String, dynamic>.from(result));
+      final briefing =
+          MorningBriefing.fromMap(Map<String, dynamic>.from(result));
       _briefingCache[cacheKey] = briefing;
       _briefingCachedAt[cacheKey] = DateTime.now();
       return briefing;
@@ -100,13 +112,25 @@ class PredictiveRepository {
   Future<Object?> _fetchJson(String url) async {
     try {
       final response = await _client
-          .get(Uri.parse(url))
+          .get(
+            Uri.parse(url),
+            headers: _workerHeaders(),
+          )
           .timeout(requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) return null;
       return jsonDecode(response.body);
     } catch (_) {
       return null;
     }
+  }
+
+  Map<String, String> _workerHeaders() {
+    if (AppConfig.workerSharedSecret.isEmpty) {
+      return const {};
+    }
+    return {
+      'x-worker-secret': AppConfig.workerSharedSecret,
+    };
   }
 
   bool _isFresh(DateTime? cachedAt) {

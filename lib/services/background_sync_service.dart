@@ -17,7 +17,7 @@ class BackgroundSyncService {
   static final BackgroundSyncService instance = BackgroundSyncService._();
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  
+
   StreamSubscription<DatabaseEvent>? _connectionSubscription;
   Timer? _periodicSyncTimer;
   bool _isConnected = false;
@@ -28,7 +28,7 @@ class BackgroundSyncService {
   void initialize() {
     // Monitor connection state to detect when we come back online
     _monitorConnectionState();
-    
+
     // Set up periodic background sync every 5 minutes
     _startPeriodicSync();
   }
@@ -38,24 +38,28 @@ class BackgroundSyncService {
     _connectionSubscription = _db.child('.info/connected').onValue.listen(
       (event) {
         final isConnected = event.snapshot.value as bool? ?? false;
-        
+
         if (isConnected && !_isConnected) {
           // Connection established - sync immediately
           if (kDebugMode) {
-            print('[BackgroundSync] Connected to Firebase - syncing AI history');
+            debugPrint(
+              '[BackgroundSync] Connected to Firebase - syncing AI history',
+            );
           }
           _performSync();
         } else if (!isConnected && _isConnected) {
           // Connection lost
           if (kDebugMode) {
-            print('[BackgroundSync] Disconnected from Firebase');
+            debugPrint('[BackgroundSync] Disconnected from Firebase');
           }
         }
-        
+
         _isConnected = isConnected;
       },
       onError: (e) {
-        if (kDebugMode) print('[BackgroundSync] Connection monitoring error: $e');
+        if (kDebugMode) {
+          debugPrint('[BackgroundSync] Connection monitoring error: $e');
+        }
       },
     );
   }
@@ -64,13 +68,15 @@ class BackgroundSyncService {
   void _startPeriodicSync() {
     // Cancel existing timer if any
     _periodicSyncTimer?.cancel();
-    
+
     // Sync every 5 minutes for offline actions
     _periodicSyncTimer = Timer.periodic(
       const Duration(minutes: 5),
       (_) {
         if (_isConnected) {
-          if (kDebugMode) print('[BackgroundSync] Periodic sync triggered');
+          if (kDebugMode) {
+            debugPrint('[BackgroundSync] Periodic sync triggered');
+          }
           _performSync();
         }
       },
@@ -82,18 +88,22 @@ class BackgroundSyncService {
     try {
       // Sync recent AI assignments that may have happened while asleep
       await AIAssignmentService.instance.syncRecentAIHistory();
-      
+
       if (kDebugMode) {
-        print('[BackgroundSync] Sync completed successfully');
+        debugPrint('[BackgroundSync] Sync completed successfully');
       }
     } catch (e) {
-      if (kDebugMode) print('[BackgroundSync] Sync error: $e');
+      if (kDebugMode) {
+        debugPrint('[BackgroundSync] Sync error: $e');
+      }
     }
   }
 
   /// Force an immediate sync (useful when app comes to foreground)
   Future<void> forceSyncNow() async {
-    if (kDebugMode) print('[BackgroundSync] Forcing immediate sync');
+    if (kDebugMode) {
+      debugPrint('[BackgroundSync] Forcing immediate sync');
+    }
     await _performSync();
   }
 
