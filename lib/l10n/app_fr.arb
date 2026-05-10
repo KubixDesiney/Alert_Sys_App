@@ -8,7 +8,18 @@
   "loginError": "Connexion impossible. Vérifiez vos identifiants et réessayez.",
   "dashboardHeaderTitle": "Tableau de bord",
   "dashboardHeaderGreeting": "Bon retour, {name}",
+  "@dashboardHeaderGreeting": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
   "adminDashboardTitle": "Tableau de bord administrateur",
+  "adminTabOverview": "Vue d'ensemble",
+  "adminTabSupervisors": "Superviseurs",
+  "adminTabShifts": "Équipes",
+  "adminTabAlerts": "Alertes",
+  "adminTabEscalations": "Escalades",
+  "adminTabHierarchy": "Hiérarchie",
   "offlineBannerMessage": "Vous êtes hors ligne. Les modifications seront synchronisées à la reconnexion.",
   "voiceEnrollmentPromptTitle": "Configurer la commande vocale",
   "voiceEnrollmentPromptBody": "Enregistrez votre voix pour réclamer et résoudre les alertes mains libres.",

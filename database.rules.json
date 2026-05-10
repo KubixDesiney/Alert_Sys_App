@@ -6,7 +6,7 @@
       ".write": "auth != null",
       ".indexOn": [
         "usine", "status", "superviseurId", "assistantId",
-        "type", "convoyeur", "poste", "assetId", "push_sent"
+        "type", "convoyeur", "poste", "assetId", "push_sent", "isEscalated"
       ],
       "$alertId": {
         ".read": "auth != null",

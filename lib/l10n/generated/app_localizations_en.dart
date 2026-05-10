@@ -39,6 +39,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get adminDashboardTitle => 'Admin Dashboard';
 
   @override
+  String get adminTabOverview => 'Overview';
+
+  @override
+  String get adminTabSupervisors => 'Supervisors';
+
+  @override
+  String get adminTabShifts => 'Shifts';
+
+  @override
+  String get adminTabAlerts => 'Alerts';
+
+  @override
+  String get adminTabEscalations => 'Escalations';
+
+  @override
+  String get adminTabHierarchy => 'Hierarchy';
+
+  @override
   String get offlineBannerMessage =>
       'You are offline. Changes will sync when reconnected.';
 

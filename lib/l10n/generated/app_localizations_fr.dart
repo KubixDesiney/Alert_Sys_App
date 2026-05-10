@@ -39,6 +39,24 @@ class AppLocalizationsFr extends AppLocalizations {
   String get adminDashboardTitle => 'Tableau de bord administrateur';
 
   @override
+  String get adminTabOverview => 'Vue d\'ensemble';
+
+  @override
+  String get adminTabSupervisors => 'Superviseurs';
+
+  @override
+  String get adminTabShifts => 'Équipes';
+
+  @override
+  String get adminTabAlerts => 'Alertes';
+
+  @override
+  String get adminTabEscalations => 'Escalades';
+
+  @override
+  String get adminTabHierarchy => 'Hiérarchie';
+
+  @override
   String get offlineBannerMessage =>
       'Vous êtes hors ligne. Les modifications seront synchronisées à la reconnexion.';
 

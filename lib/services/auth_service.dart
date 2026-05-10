@@ -7,8 +7,14 @@ import 'offline_account_cache.dart';
 import 'worker_trigger_queue.dart';
 
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final FirebaseAuth _auth;
+  final DatabaseReference _db;
+
+  AuthService({
+    FirebaseAuth? auth,
+    DatabaseReference? database,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _db = database ?? FirebaseDatabase.instance.ref();
 
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();

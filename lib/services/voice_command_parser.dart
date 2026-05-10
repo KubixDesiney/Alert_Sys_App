@@ -1,5 +1,7 @@
 // Pure-logic voice command parser. No I/O, no Flutter — easy to unit test.
 //
+import 'dart:developer' as developer;
+
 // Translates a transcription like "claim alert one thousand twenty five"
 // into a structured [VoiceCommand]. Knows how to:
 //   1. Map English number words ("one thousand twenty five") to digits (1025).
@@ -67,8 +69,7 @@ class VoiceCommandParser {
 
   /// Snapshot of the most recently observed unparsed transcripts (newest
   /// last). Returns an unmodifiable copy.
-  static List<UnparsedSample> recentUnparsed() =>
-      List.unmodifiable(_unparsed);
+  static List<UnparsedSample> recentUnparsed() => List.unmodifiable(_unparsed);
 
   static void clearUnparsedLog() => _unparsed.clear();
 
@@ -78,11 +79,12 @@ class VoiceCommandParser {
     if (_unparsed.length > _unparsedCapacity) {
       _unparsed.removeRange(0, _unparsed.length - _unparsedCapacity);
     }
-    // ignore: avoid_print
     assert(() {
       // Only emits in debug builds.
-      // ignore: avoid_print
-      print('[VoiceCommandParser] unparsed transcript: "$raw"');
+      developer.log(
+        'unparsed transcript: "$raw"',
+        name: 'VoiceCommandParser',
+      );
       return true;
     }());
   }
@@ -493,7 +495,8 @@ class VoiceCommandParser {
 
   static bool _hasNumberWord(List<String> tokens) {
     for (final t in tokens) {
-      if (_ones.containsKey(t) || _tens.containsKey(t) ||
+      if (_ones.containsKey(t) ||
+          _tens.containsKey(t) ||
           _scales.containsKey(t)) {
         return true;
       }

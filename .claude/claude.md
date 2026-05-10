@@ -1183,11 +1183,51 @@ Sequence: Morning briefing with factory personalization
 
 ---
 
+## AF. Supervisors Workspace Redesign (May 2026)
+
+Implemented a structural redesign of the Supervisors area to unify assignment operations and move individual analytics into a contextual overlay.
+
+**Navigation and Subtabs:**
+
+- Supervisors subtab set reduced to 2 tabs:
+  - `Management`
+  - `Collaborations`
+- Legacy standalone `Assignments` subtab removed from navigation.
+
+**Management Tab Behavior:**
+
+- Main right-hand workspace is now assignment-first.
+- Assignment board is rendered in the Management flow as the primary interaction surface.
+- Supervisors can be dragged from roster cards directly into plant/factory lanes.
+- Unassigned lane remains available as a drop target for removing plant assignment.
+
+**Performance Access Pattern:**
+
+- Supervisor performance is no longer permanently embedded in the detail column.
+- Clicking a supervisor opens a floating performance popup panel contextual to that supervisor.
+- The popup includes:
+  - performance trend graph
+  - metric cards
+  - type breakdown donut and related cards
+  - validated alert trail cards
+- Popup supports:
+  - drag to reposition
+  - resize via corner handle
+  - quick expand/collapse sizing toggle
+  - close action
+
+**Interaction Notes:**
+
+- Roster cards use direct drag behavior for assignment workflows.
+- Selected supervisor state is reused by both assignment chips and overlay context.
+- Theme tokens from `AppTheme` remain the single source of visual styling for light/dark consistency.
+
 ## Quick File-to-Responsibility Index
 
 **Flutter App Core:**
 - lib/main.dart: bootstrap, providers, role routing.
 - lib/providers/alert_provider.dart: alert state and action entry points.
+- lib/screens/supervisors_tab.dart: supervisors Management/Collaborations UI, assignment board drag-and-drop, and draggable/resizable performance overlay.
 
 **Alert and Stream Services:**
 - lib/services/alert_service.dart: CRUD and transactional alert operations.
@@ -1271,7 +1311,7 @@ Sequence: Morning briefing with factory personalization
 **Database and Rules:**
 - database.rules.json: Realtime Database authorization, validation, indexes.
 - firebase.json: Firebase project configuration (hosting, functions).
-- wrangler.toml: Cloudflare Worker deployment config (points to cloudflare_workerV2.js, legacy).
+- wrangler.toml: Cloudflare Worker deployment config (points to `cloudflare_workerV2.js`, legacy).
 
 **Testing:**
 - test/: Flutter tests (parsers, models, utilities, widgets).
