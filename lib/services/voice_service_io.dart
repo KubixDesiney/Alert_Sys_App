@@ -366,9 +366,19 @@ class VoiceService {
       String transcript = '';
       final List<String> alternatives = [];
       if (rawAudio != null && SherpaSttService.instance.isReady) {
-        transcript = await SherpaSttService.instance
-            .transcribe(rawAudio, sampleRate: sampleRate);
-        if (transcript.isNotEmpty) alternatives.add(transcript);
+        try {
+          transcript = await SherpaSttService.instance
+              .transcribe(rawAudio, sampleRate: sampleRate)
+              .timeout(const Duration(seconds: 3), onTimeout: () {
+            debugPrint('VoiceService: sherpa transcription timed out');
+            return '';
+          });
+          if (transcript.isNotEmpty) alternatives.add(transcript);
+        } catch (e) {
+          debugPrint('VoiceService: sherpa transcription failed: $e');
+        }
+      } else if (rawAudio != null) {
+        lastError = 'Offline voice transcription is still warming up';
       }
 
       return VoiceCommandCapture(

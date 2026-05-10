@@ -1388,7 +1388,9 @@ class AIAssignmentService extends ChangeNotifier {
         }
       }
     } catch (e) {
-      if (kDebugMode) print('[AI_SYNC] Error syncing history: $e');
+      if (kDebugMode) {
+        debugPrint('[AI_SYNC] Error syncing history: $e');
+      }
     }
   }
 
@@ -1402,7 +1404,9 @@ class AIAssignmentService extends ChangeNotifier {
       _alertsAddedSubscription = _db.child('alerts').onChildAdded.listen(
         _handleAlertSnapshot,
         onError: (Object e) {
-          if (kDebugMode) print('[AI_SYNC] onChildAdded error: $e');
+          if (kDebugMode) {
+            debugPrint('[AI_SYNC] onChildAdded error: $e');
+          }
           // Reconnect on error
           Future.delayed(const Duration(seconds: 5), _startRealtimeAiHistoryListener);
         },
@@ -1411,15 +1415,21 @@ class AIAssignmentService extends ChangeNotifier {
       _alertsChangedSubscription = _db.child('alerts').onChildChanged.listen(
         _handleAlertSnapshot,
         onError: (Object e) {
-          if (kDebugMode) print('[AI_SYNC] onChildChanged error: $e');
+          if (kDebugMode) {
+            debugPrint('[AI_SYNC] onChildChanged error: $e');
+          }
           // Reconnect on error
           Future.delayed(const Duration(seconds: 5), _startRealtimeAiHistoryListener);
         },
       );
       
-      if (kDebugMode) print('[AI_SYNC] Realtime listeners started');
+      if (kDebugMode) {
+        debugPrint('[AI_SYNC] Realtime listeners started');
+      }
     } catch (e) {
-      if (kDebugMode) print('[AI_SYNC] Failed to start realtime listener: $e');
+      if (kDebugMode) {
+        debugPrint('[AI_SYNC] Failed to start realtime listener: $e');
+      }
     }
   }
 
@@ -1475,7 +1485,9 @@ class AIAssignmentService extends ChangeNotifier {
         _addLog(logEntry);
       }
     } catch (e) {
-      if (kDebugMode) print('[AI_SYNC] Error handling alert snapshot: $e');
+      if (kDebugMode) {
+        debugPrint('[AI_SYNC] Error handling alert snapshot: $e');
+      }
     }
   }
 

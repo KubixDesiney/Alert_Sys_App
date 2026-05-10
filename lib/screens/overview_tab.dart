@@ -400,7 +400,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   List<Factory> _factories = [];
   String? _historyFilter;
   final Set<String> _announcedCriticalIds = <String>{};
-  final Set<String> _handledCriticalIds = <String>{}; // alerts user acknowledged/assigned
+  final Set<String> _handledCriticalIds =
+      <String>{}; // alerts user acknowledged/assigned
   final List<AlertModel> _criticalDialogQueue = <AlertModel>[];
   bool _criticalDialogOpen = false;
 
@@ -450,14 +451,32 @@ class _OverviewTabState extends State<AdminOverviewTab> {
 
   void _rebindBriefingStream() {
     _briefSub?.cancel();
-    _briefSub = null;
-    _briefing = null;
-    _briefingWarmed = false;
+    if (mounted) {
+      setState(() {
+        _briefSub = null;
+        _briefing = null;
+        _briefingWarmed = false;
+      });
+    } else {
+      _briefSub = null;
+      _briefing = null;
+      _briefingWarmed = false;
+    }
     final factory = widget.selectedUsine == 'all' ? null : widget.selectedUsine;
-    _briefSub = PredictiveIntelService.instance.briefingStream(factory: factory).listen((b) {
-      if (mounted) setState(() => _briefing = b);
+    _briefSub = PredictiveIntelService.instance
+        .briefingStream(factory: factory)
+        .listen((b) {
+      if (mounted) {
+        setState(() => _briefing = b);
+      }
     });
-    unawaited(PredictiveIntelService.instance.fetchBriefing(factory: factory));
+    unawaited(() async {
+      final fresh =
+          await PredictiveIntelService.instance.fetchBriefing(factory: factory);
+      if (mounted && fresh != null) {
+        setState(() => _briefing = fresh);
+      }
+    }());
   }
 
   void _seedKnownCriticalAlerts() {
@@ -468,15 +487,15 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   void _detectIncomingCriticalAlerts(List<AlertModel> previousAlerts) {
-    final previousIds = previousAlerts
-        .where((a) => a.isCritical)
-        .map((a) => a.id)
-        .toSet();
+    final previousIds =
+        previousAlerts.where((a) => a.isCritical).map((a) => a.id).toSet();
     final incoming = widget.allAlerts.where((a) {
       if (!a.isCritical) return false;
       if (a.status != 'disponible') return false;
       if (_announcedCriticalIds.contains(a.id)) return false;
-      if (_handledCriticalIds.contains(a.id)) return false; // never show again if handled
+      if (_handledCriticalIds.contains(a.id)) {
+        return false; // never show again if handled
+      }
       return !previousIds.contains(a.id);
     }).toList();
     if (incoming.isEmpty) return;
@@ -512,7 +531,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         describe: _getAlertDisplayDescription,
       ),
       transitionBuilder: (_, anim, __, child) {
-        final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        final curved =
+            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
@@ -556,11 +576,23 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   Future<void> _warmPredictiveCaches() async {
     if (!_briefingWarmed) {
       _briefingWarmed = true;
-      unawaited(PredictiveIntelService.instance.fetchBriefing(factory: _briefingFactory));
+      unawaited(() async {
+        final briefing = await PredictiveIntelService.instance
+            .fetchBriefing(factory: _briefingFactory);
+        if (mounted && briefing != null) {
+          setState(() => _briefing = briefing);
+        }
+      }());
     }
     if (!_predictionsWarmed) {
       _predictionsWarmed = true;
-      unawaited(PredictiveIntelService.instance.fetchPredictions());
+      unawaited(() async {
+        final predictions =
+            await PredictiveIntelService.instance.fetchPredictions();
+        if (mounted && predictions != null) {
+          setState(() => _predictions = predictions);
+        }
+      }());
     }
   }
 
@@ -752,8 +784,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
             a.status == 'validee' &&
             a.elapsedTime != null &&
             a.elapsedTime! > 0 &&
-            (widget.selectedUsine == 'all' ||
-                a.usine == widget.selectedUsine))
+            (widget.selectedUsine == 'all' || a.usine == widget.selectedUsine))
         .toList();
     if (solved.isEmpty) return Duration.zero;
     final totalMin = solved.fold<int>(0, (sum, a) => sum + a.elapsedTime!);
@@ -857,9 +888,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     try {
       await AlertPdfService.exportAndShare(
         alerts: alertsToExport,
-        scopeLabel: widget.selectedUsine == 'all'
-            ? 'All Plants'
-            : widget.selectedUsine,
+        scopeLabel:
+            widget.selectedUsine == 'all' ? 'All Plants' : widget.selectedUsine,
         timeRangeLabel: widget.timeRangeLabel,
         labelType: (t) => adminTypeLabel(context, t),
       );
@@ -1071,9 +1101,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       );
 
       final pages = _displayedAlerts;
-      final pageCount = pages.isEmpty
-          ? 1
-          : ((pages.length + _pageSize - 1) ~/ _pageSize);
+      final pageCount =
+          pages.isEmpty ? 1 : ((pages.length + _pageSize - 1) ~/ _pageSize);
       final clampedPage = _pageIndex.clamp(0, pageCount - 1);
       final start = clampedPage * _pageSize;
       final end = math.min(start + _pageSize, pages.length);
@@ -1102,9 +1131,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         onCsv: () => _exportFilteredAlerts(pages),
         onPdf: () => _exportFilteredAlertsPdf(pages),
         onExcel: () => _exportFilteredAlertsExcel(pages),
-        scope: widget.selectedUsine == 'all'
-            ? 'All Plants'
-            : widget.selectedUsine,
+        scope:
+            widget.selectedUsine == 'all' ? 'All Plants' : widget.selectedUsine,
       );
 
       final predictiveRow = LayoutBuilder(builder: (pctx, pc) {
@@ -1200,8 +1228,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     });
   }
 
-    Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
-      label: 'Pending',
+  Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
+        label: 'Pending',
         value: widget.pending,
         icon: Icons.inbox_rounded,
         color: theme.orange,
@@ -1292,8 +1320,8 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
     setState(() {
       _loadingSuggestion = true;
     });
-    final s = await PredictiveIntelService.instance
-        .suggestAssignee(widget.alert.id);
+    final s =
+        await PredictiveIntelService.instance.suggestAssignee(widget.alert.id);
     if (!mounted) return;
     setState(() {
       _suggestion = s;
@@ -1642,8 +1670,8 @@ class _FactoryMasterBar extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child:
-                  const Icon(Icons.factory_rounded, size: 17, color: Colors.white),
+              child: const Icon(Icons.factory_rounded,
+                  size: 17, color: Colors.white),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1905,8 +1933,8 @@ class _AlertHistoryBox extends StatelessWidget {
                 onPressed: onOpenFilters,
                 icon: const Icon(Icons.tune_rounded, size: 14),
                 label: const Text('Filters',
-                    style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: theme.navy,
                   side: BorderSide(color: theme.border),
@@ -1945,8 +1973,7 @@ class _AlertHistoryBox extends StatelessWidget {
                     const SizedBox(width: 4),
                     GestureDetector(
                       onTap: onClearChip,
-                      child:
-                          Icon(Icons.close, size: 12, color: theme.purple),
+                      child: Icon(Icons.close, size: 12, color: theme.purple),
                     ),
                   ]),
                 ),
@@ -2030,15 +2057,13 @@ class _AlertHistoryBox extends StatelessWidget {
                 icon: const Icon(Icons.chevron_left_rounded),
                 iconSize: 20,
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 30, minHeight: 30),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 color: theme.navy,
                 disabledColor: theme.muted.withValues(alpha: 0.4),
                 tooltip: 'Previous page',
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: theme.navy.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(7),
@@ -2057,8 +2082,7 @@ class _AlertHistoryBox extends StatelessWidget {
                 icon: const Icon(Icons.chevron_right_rounded),
                 iconSize: 20,
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 30, minHeight: 30),
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                 color: theme.navy,
                 disabledColor: theme.muted.withValues(alpha: 0.4),
                 tooltip: 'Next page',
@@ -2200,197 +2224,195 @@ class _FilterSheet extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
               children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(
-                    color: theme.border,
-                    borderRadius: BorderRadius.circular(99),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: theme.border,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
                 ),
-              ),
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: theme.navy.withValues(alpha: 0.13),
-                    borderRadius: BorderRadius.circular(10),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.navy.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child:
+                        Icon(Icons.tune_rounded, size: 18, color: theme.navy),
                   ),
-                  child:
-                      Icon(Icons.tune_rounded, size: 18, color: theme.navy),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Filter alerts',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: theme.text,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Filter alerts',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: theme.text,
+                          ),
                         ),
-                      ),
-                      Text(
-                        'Refine the history list — every selection scopes the dashboard',
-                        style:
-                            TextStyle(fontSize: 11.5, color: theme.muted),
-                      ),
-                    ],
+                        Text(
+                          'Refine the history list — every selection scopes the dashboard',
+                          style: TextStyle(fontSize: 11.5, color: theme.muted),
+                        ),
+                      ],
+                    ),
                   ),
+                  TextButton.icon(
+                    onPressed: () {
+                      onReset();
+                      Navigator.of(ctx).pop();
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 14),
+                    label: const Text('Reset',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700)),
+                    style: TextButton.styleFrom(foregroundColor: theme.red),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                _FilterDropdown(
+                  label: 'Plant',
+                  value: selectedUsine,
+                  items: usines
+                      .map((v) => DropdownMenuItem(
+                            value: v,
+                            child: Text(
+                              v == 'all' ? 'All Plants' : v,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: onUsine,
                 ),
-                TextButton.icon(
-                  onPressed: () {
-                    onReset();
-                    Navigator.of(ctx).pop();
-                  },
-                  icon: const Icon(Icons.refresh_rounded, size: 14),
-                  label: const Text('Reset',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w700)),
-                  style: TextButton.styleFrom(foregroundColor: theme.red),
+                const SizedBox(height: 10),
+                _FilterDropdown(
+                  label: 'Conveyor',
+                  value: filterConvoyeur,
+                  items: convoyeurs
+                      .map((v) => DropdownMenuItem(
+                            value: v,
+                            child: Text(
+                              v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: onConvoyeur,
                 ),
-              ]),
-              const SizedBox(height: 14),
-              _FilterDropdown(
-                label: 'Plant',
-                value: selectedUsine,
-                items: usines
-                    .map((v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(
-                            v == 'all' ? 'All Plants' : v,
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ))
-                    .toList(),
-                onChanged: onUsine,
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Conveyor',
-                value: filterConvoyeur,
-                items: convoyeurs
-                    .map((v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(
-                            v == 'all' ? 'All Conveyors' : 'Conv. $v',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ))
-                    .toList(),
-                onChanged: onConvoyeur,
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Post',
-                value: filterPoste,
-                items: postes
-                    .map((v) => DropdownMenuItem(
-                          value: v,
-                          child: Text(
-                            v == 'all' ? 'All Posts' : 'Post $v',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ))
-                    .toList(),
-                onChanged: onPoste,
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Alert Type',
-                value: filterType,
-                items: [
-                  const DropdownMenuItem(
-                      value: 'all',
-                      child: Text('All Types',
-                          style: TextStyle(fontSize: 13))),
-                  ...[
-                    'qualite',
-                    'maintenance',
-                    'defaut_produit',
-                    'manque_ressource'
-                  ].map((t) => DropdownMenuItem(
-                        value: t,
-                        child: Text(adminTypeLabel(context, t),
-                            style: const TextStyle(fontSize: 13)),
-                      )),
-                ],
-                onChanged: onType,
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Status',
-                value: filterStatus,
-                items: const [
-                  DropdownMenuItem(
-                      value: 'all',
-                      child: Text('All Statuses',
-                          style: TextStyle(fontSize: 13))),
+                const SizedBox(height: 10),
+                _FilterDropdown(
+                  label: 'Post',
+                  value: filterPoste,
+                  items: postes
+                      .map((v) => DropdownMenuItem(
+                            value: v,
+                            child: Text(
+                              v == 'all' ? 'All Posts' : 'Post $v',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: onPoste,
+                ),
+                const SizedBox(height: 10),
+                _FilterDropdown(
+                  label: 'Alert Type',
+                  value: filterType,
+                  items: [
+                    const DropdownMenuItem(
+                        value: 'all',
+                        child:
+                            Text('All Types', style: TextStyle(fontSize: 13))),
+                    ...[
+                      'qualite',
+                      'maintenance',
+                      'defaut_produit',
+                      'manque_ressource'
+                    ].map((t) => DropdownMenuItem(
+                          value: t,
+                          child: Text(adminTypeLabel(context, t),
+                              style: const TextStyle(fontSize: 13)),
+                        )),
+                  ],
+                  onChanged: onType,
+                ),
+                const SizedBox(height: 10),
+                _FilterDropdown(
+                  label: 'Status',
+                  value: filterStatus,
+                  items: const [
                     DropdownMenuItem(
-                      value: 'disponible',
-                      child:
-                        Text('Pending', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'en_cours',
-                      child:
-                          Text('Claimed', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'validee',
-                      child: Text('Fixed', style: TextStyle(fontSize: 13))),
-                ],
-                onChanged: onStatus,
-              ),
-              const SizedBox(height: 10),
-              _FilterDropdown(
-                label: 'Time Range',
-                value: timeRange,
-                items: const [
-                  DropdownMenuItem(
-                      value: 'all',
-                      child: Text('All Time', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'today',
-                      child: Text('Today', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'week',
-                      child: Text('Last 7 Days',
-                          style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'month',
-                      child: Text('This Month',
-                          style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'year',
-                      child:
-                          Text('This Year', style: TextStyle(fontSize: 13))),
-                  DropdownMenuItem(
-                      value: 'custom',
-                      child: Text('Custom', style: TextStyle(fontSize: 13))),
-                ],
-                onChanged: onTime,
-              ),
-              const SizedBox(height: 18),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.of(ctx).pop(),
-                icon: const Icon(Icons.check_rounded, size: 16),
-                label: const Text('Apply',
-                    style:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.navy,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                        value: 'all',
+                        child: Text('All Statuses',
+                            style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'disponible',
+                        child: Text('Pending', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'en_cours',
+                        child: Text('Claimed', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'validee',
+                        child: Text('Fixed', style: TextStyle(fontSize: 13))),
+                  ],
+                  onChanged: onStatus,
+                ),
+                const SizedBox(height: 10),
+                _FilterDropdown(
+                  label: 'Time Range',
+                  value: timeRange,
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'all',
+                        child:
+                            Text('All Time', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'today',
+                        child: Text('Today', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'week',
+                        child: Text('Last 7 Days',
+                            style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'month',
+                        child:
+                            Text('This Month', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'year',
+                        child:
+                            Text('This Year', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(
+                        value: 'custom',
+                        child: Text('Custom', style: TextStyle(fontSize: 13))),
+                  ],
+                  onChanged: onTime,
+                ),
+                const SizedBox(height: 18),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  icon: const Icon(Icons.check_rounded, size: 16),
+                  label: const Text('Apply',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.navy,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           ),
         );
       }),
@@ -2587,8 +2609,7 @@ class _AlertHistoryRow extends StatelessWidget {
                               'Assigned: ${alert.superviseurName}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 11, color: theme.blue),
+                              style: TextStyle(fontSize: 11, color: theme.blue),
                             ),
                           ),
                         ]),
@@ -2644,7 +2665,8 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
     final isDark = context.isDark;
     final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-    final borderColor = isDark ? const Color(0xFF3A3A5C) : const Color(0xFFDDE1EC);
+    final borderColor =
+        isDark ? const Color(0xFF3A3A5C) : const Color(0xFFDDE1EC);
 
     return SizedBox(
       width: double.infinity,
@@ -2658,7 +2680,8 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
             ),
           ),
           elevation: const WidgetStatePropertyAll(4),
-          padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+          padding:
+              const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
         ),
         menuChildren: [
           _ExportMenuItem(
@@ -2718,8 +2741,8 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
     );
   }
 
-  Widget _csvIcon(Color base) => Icon(Icons.table_chart_outlined,
-      size: 16, color: base);
+  Widget _csvIcon(Color base) =>
+      Icon(Icons.table_chart_outlined, size: 16, color: base);
 
   Widget _pdfIcon() => Stack(
         alignment: Alignment.center,
@@ -2854,4 +2877,3 @@ class _ExportMenuItemState extends State<_ExportMenuItem> {
     );
   }
 }
-

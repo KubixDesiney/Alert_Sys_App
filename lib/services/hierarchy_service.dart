@@ -1,10 +1,14 @@
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/factory_map_model.dart';
 import '../models/hierarchy_model.dart';
 
 class HierarchyService {
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final DatabaseReference _db;
   final int maxStations = 32;
+
+  HierarchyService({DatabaseReference? database})
+      : _db = database ?? FirebaseDatabase.instance.ref();
 
   String _formatAssetId(int value) =>
       'MACH-${value.toString().padLeft(3, '0')}';
@@ -92,7 +96,7 @@ class HierarchyService {
                 entry.key.toString(), entry.value as Map<Object?, Object?>));
           }
         } catch (e) {
-          print('Error parsing factory ${entry.key}: $e');
+          debugPrint('Error parsing factory ${entry.key}: $e');
         }
       }
       return factories;

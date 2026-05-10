@@ -135,7 +135,12 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen> {
 
   Stream<List<dynamic>> _getEscalatedAlertsCount() {
     final database = FirebaseDatabase.instance.ref();
-    return database.child('alerts').onValue.map((snapshot) {
+    return database
+        .child('alerts')
+        .orderByChild('isEscalated')
+        .equalTo(true)
+        .onValue
+        .map((snapshot) {
       if (!snapshot.snapshot.exists) return [];
       final alertsMap = snapshot.snapshot.value;
       if (alertsMap == null) return [];
@@ -199,7 +204,11 @@ class _EscalatedAlertsTab extends StatelessWidget {
     final t = context.appTheme;
 
     return StreamBuilder<DatabaseEvent>(
-      stream: database.child('alerts').onValue,
+      stream: database
+          .child('alerts')
+          .orderByChild('isEscalated')
+          .equalTo(true)
+          .onValue,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Center(
