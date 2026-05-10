@@ -62,6 +62,11 @@ class HierarchyService {
       'stationId': stationId,
       'stationNumber': stationNumber,
       'address': address,
+      'isDeleted': false,
+      'status': 'active',
+      'deletedAt': null,
+      'deletedReason': null,
+      'deletedFrom': null,
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
     await _ensureAssetHistoryNode(assetId);
@@ -516,6 +521,48 @@ class HierarchyService {
         .remove();
   }
 
+  Future<void> deleteStation({
+    required String factoryId,
+    required String factoryName,
+    required String conveyorId,
+    required int conveyorNumber,
+    required Station station,
+  }) async {
+    final stationNumber =
+        int.tryParse(station.id.replaceFirst('station_', '')) ?? 0;
+    final assetId = station.assetId.trim();
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    await _db.update({
+      'hierarchy/factories/$factoryId/conveyors/$conveyorId/stations/${station.id}':
+          null,
+      if (assetId.isNotEmpty) ...{
+        'assets/$assetId/assetId': assetId,
+        'assets/$assetId/name': station.name,
+        'assets/$assetId/factoryId': factoryId,
+        'assets/$assetId/factoryName': factoryName,
+        'assets/$assetId/conveyorId': conveyorId,
+        'assets/$assetId/conveyorNumber': conveyorNumber,
+        'assets/$assetId/stationId': station.id,
+        'assets/$assetId/stationNumber': stationNumber,
+        'assets/$assetId/address': station.address,
+        'assets/$assetId/isDeleted': true,
+        'assets/$assetId/status': 'deleted',
+        'assets/$assetId/deletedAt': now,
+        'assets/$assetId/deletedReason': 'station_removed',
+        'assets/$assetId/deletedFrom/factoryId': factoryId,
+        'assets/$assetId/deletedFrom/factoryName': factoryName,
+        'assets/$assetId/deletedFrom/conveyorId': conveyorId,
+        'assets/$assetId/deletedFrom/conveyorNumber': conveyorNumber,
+        'assets/$assetId/deletedFrom/stationId': station.id,
+        'assets/$assetId/deletedFrom/stationName': station.name,
+        'assets/$assetId/deletedFrom/stationNumber': stationNumber,
+        'assets/$assetId/deletedFrom/address': station.address,
+        'assets/$assetId/updatedAt': now,
+      },
+    });
+  }
+
   Future<int> getActiveAlertsCountForConveyor({
     required String usine,
     required int convoyeur,
@@ -537,6 +584,38 @@ class HierarchyService {
 
       final isActive = status == 'disponible' || status == 'en_cours';
       if (isActive && alertUsine == usine && alertConvoyeur == convoyeur) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  Future<int> getActiveAlertsCountForStation({
+    required String usine,
+    required int convoyeur,
+    required int poste,
+  }) async {
+    final snapshot = await _db.child('alerts').get();
+    final data = snapshot.value;
+    if (data == null || data is! Map) {
+      return 0;
+    }
+
+    int count = 0;
+    final alerts = Map<Object?, Object?>.from(data);
+    for (final value in alerts.values) {
+      if (value is! Map) continue;
+      final alert = Map<Object?, Object?>.from(value);
+      final status = alert['status']?.toString() ?? '';
+      final alertUsine = alert['usine']?.toString() ?? '';
+      final alertConvoyeur = int.tryParse('${alert['convoyeur']}');
+      final alertPoste = int.tryParse('${alert['poste']}');
+
+      final isActive = status == 'disponible' || status == 'en_cours';
+      if (isActive &&
+          alertUsine == usine &&
+          alertConvoyeur == convoyeur &&
+          alertPoste == poste) {
         count++;
       }
     }
