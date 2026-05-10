@@ -127,7 +127,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not create Asset ID: ${UserFriendlyError.message(e)}')),
+        SnackBar(
+            content: Text(
+                'Could not create Asset ID: ${UserFriendlyError.message(e)}')),
       );
       return;
     }
@@ -238,7 +240,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not relink asset: ${UserFriendlyError.message(e)}')),
+        SnackBar(
+            content: Text(
+                'Could not relink asset: ${UserFriendlyError.message(e)}')),
       );
     }
   }
@@ -250,6 +254,83 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       }
     }
     return null;
+  }
+
+  Future<void> _deleteStation(Station station) async {
+    final factory = _selectedFactory;
+    final conveyor = _selectedConveyor;
+    final stationNumber = _stationNumber(station);
+    if (factory == null || conveyor == null || stationNumber == null) {
+      return;
+    }
+
+    final activeAlerts = await _service.getActiveAlertsCountForStation(
+      usine: factory.name,
+      convoyeur: conveyor.number,
+      poste: stationNumber,
+    );
+
+    if (activeAlerts > 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot delete ${station.name}: $activeAlerts active alert(s) are still disponible/en_cours for this location.',
+          ),
+          backgroundColor: _red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => _StationDeleteDialog(
+        stationName: station.name,
+        stationId: station.id,
+        stationNumber: stationNumber,
+        stationAddress: station.address,
+        assetId: station.assetId.trim(),
+        factoryName: factory.name,
+        factoryId: factory.id,
+        conveyorNumber: conveyor.number,
+        conveyorId: conveyor.id,
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _service.deleteStation(
+        factoryId: factory.id,
+        factoryName: factory.name,
+        conveyorId: conveyor.id,
+        conveyorNumber: conveyor.number,
+        station: station,
+      );
+      _loadFactories();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            station.assetId.trim().isEmpty
+                ? '${station.name} deleted from the hierarchy.'
+                : '${station.name} deleted. Asset ${station.assetId.trim()} was preserved in the database.',
+          ),
+          backgroundColor: _green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Could not delete station: ${UserFriendlyError.message(e)}'),
+          backgroundColor: _red,
+        ),
+      );
+    }
   }
 
   Future<void> _showMoveStationDialog(Station station) async {
@@ -476,7 +557,6 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     }
   }
 
-
   // ------------------- Add Factory Dialog -------------------
   Future<void> _showAddFactoryDialog() async {
     final nameController = TextEditingController();
@@ -621,7 +701,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(UserFriendlyError.message(e)), backgroundColor: _red),
+            SnackBar(
+                content: Text(UserFriendlyError.message(e)),
+                backgroundColor: _red),
           );
         }
       }
@@ -885,8 +967,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
               child: TabBarView(
                 children: [
                   _buildStructureTab(),
-                  FactoryMappingTab(
-                      factories: _factories, service: _service),
+                  FactoryMappingTab(factories: _factories, service: _service),
                 ],
               ),
             ),
@@ -907,356 +988,367 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         children: [
           Expanded(
             child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Factories Panel
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: context.appTheme.card,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.appTheme.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Factories (${_factories.length})',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: _navy),
-                                  ),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Factories Panel
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: context.appTheme.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: context.appTheme.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Factories (${_factories.length})',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: _navy),
                                 ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add,
+                                    size: 18, color: _green),
+                                onPressed: _showAddFactoryDialog,
+                                tooltip: 'Add Factory',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                            child: _factories.isEmpty
+                                ? const Center(
+                                    child: Text('No factories',
+                                        style: TextStyle(color: _muted)))
+                                : ListView.builder(
+                                    itemCount: _factories.length,
+                                    itemBuilder: (context, index) {
+                                      final factory = _factories[index];
+                                      final isSelected =
+                                          _selectedFactory?.id == factory.id;
+                                      return Container(
+                                        color: isSelected
+                                            ? _navy.withValues(alpha: 0.1)
+                                            : Colors.transparent,
+                                        child: ListTile(
+                                          title: Text(
+                                            factory.name,
+                                            style: TextStyle(
+                                              fontWeight: isSelected
+                                                  ? FontWeight.bold
+                                                  : FontWeight.w600,
+                                              color: isSelected ? _navy : null,
+                                            ),
+                                          ),
+                                          subtitle: Text(
+                                            '${factory.location} · ${factory.conveyors.length} conveyor(s)',
+                                            style: const TextStyle(
+                                                fontSize: 12, color: _muted),
+                                          ),
+                                          trailing: IconButton(
+                                            icon: const Icon(
+                                                Icons.delete_outline,
+                                                size: 18,
+                                                color: _red),
+                                            onPressed: () =>
+                                                _deleteFactory(factory),
+                                          ),
+                                          onTap: () => setState(() {
+                                            _selectedFactory = factory;
+                                            _selectedConveyor = null;
+                                          }),
+                                        ),
+                                      );
+                                    },
+                                  )),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Conveyors Panel
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: context.appTheme.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: context.appTheme.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Conveyors (${conveyors.length})',
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: _navy),
+                              ),
+                              if (_selectedFactory != null)
                                 IconButton(
                                   icon: const Icon(Icons.add,
                                       size: 18, color: _green),
-                                  onPressed: _showAddFactoryDialog,
-                                  tooltip: 'Add Factory',
+                                  onPressed: _showAddConveyorDialog,
+                                  tooltip: 'Add Conveyor',
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                 ),
-                              ],
-                            ),
+                            ],
                           ),
-                          const Divider(height: 1),
-                          Expanded(
-                              child: _factories.isEmpty
-                                  ? const Center(
-                                      child: Text('No factories',
-                                          style: TextStyle(color: _muted)))
-                                  : ListView.builder(
-                                      itemCount: _factories.length,
-                                      itemBuilder: (context, index) {
-                                        final factory = _factories[index];
-                                        final isSelected =
-                                            _selectedFactory?.id == factory.id;
-                                        return Container(
-                                          color: isSelected
-                                              ? _navy.withValues(alpha: 0.1)
-                                              : Colors.transparent,
-                                          child: ListTile(
-                                            title: Text(
-                                              factory.name,
-                                              style: TextStyle(
-                                                fontWeight: isSelected
-                                                    ? FontWeight.bold
-                                                    : FontWeight.w600,
-                                                color:
-                                                    isSelected ? _navy : null,
-                                              ),
-                                            ),
-                                            subtitle: Text(
-                                              '${factory.location} · ${factory.conveyors.length} conveyor(s)',
-                                              style: const TextStyle(
-                                                  fontSize: 12, color: _muted),
-                                            ),
-                                            trailing: IconButton(
-                                              icon: const Icon(
-                                                  Icons.delete_outline,
-                                                  size: 18,
-                                                  color: _red),
-                                              onPressed: () =>
-                                                  _deleteFactory(factory),
-                                            ),
-                                            onTap: () => setState(() {
-                                              _selectedFactory = factory;
-                                              _selectedConveyor = null;
-                                            }),
-                                          ),
-                                        );
-                                      },
-                                    )),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // Conveyors Panel
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: context.appTheme.card,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.appTheme.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Conveyors (${conveyors.length})',
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: _navy),
-                                ),
-                                if (_selectedFactory != null)
-                                  IconButton(
-                                    icon: const Icon(Icons.add,
-                                        size: 18, color: _green),
-                                    onPressed: _showAddConveyorDialog,
-                                    tooltip: 'Add Conveyor',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          Expanded(
-                              child: _selectedFactory == null
-                                  ? const Center(
-                                      child: Text('Select a factory first',
-                                          style: TextStyle(color: _muted)))
-                                  : conveyors.isEmpty
-                                      ? const Center(
-                                          child: Text('No conveyors',
-                                              style: TextStyle(color: _muted)))
-                                      : ListView.builder(
-                                          itemCount: conveyors.length,
-                                          itemBuilder: (context, index) {
-                                            final conveyor = conveyors[index];
-                                            final isSelected =
-                                                _selectedConveyor?.id ==
-                                                    conveyor.id;
-                                            return Container(
-                                              color: isSelected
-                                                  ? _navy.withValues(alpha: 0.1)
-                                                  : Colors.transparent,
-                                              child: ListTile(
-                                                title: Text(
-                                                  'Conveyor ${conveyor.number}',
-                                                  style: TextStyle(
-                                                    fontWeight: isSelected
-                                                        ? FontWeight.bold
-                                                        : FontWeight.w600,
-                                                    color: isSelected
-                                                        ? _navy
-                                                        : null,
-                                                  ),
-                                                ),
-                                                subtitle: Text(
-                                                  '${conveyor.stations.length}/${_service.maxStations} stations',
-                                                  style: const TextStyle(
-                                                      fontSize: 12,
-                                                      color: _muted),
-                                                ),
-                                                trailing: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                          Icons.edit,
-                                                          size: 18),
-                                                      onPressed:
-                                                          _showEditConveyorDialog,
-                                                    ),
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                          Icons.delete_outline,
-                                                          size: 18,
-                                                          color: _red),
-                                                      onPressed: () =>
-                                                          _deleteConveyor(
-                                                              conveyor),
-                                                    ),
-                                                  ],
-                                                ),
-                                                onTap: () => setState(() =>
-                                                    _selectedConveyor =
-                                                        conveyor),
-                                              ),
-                                            );
-                                          },
-                                        )),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  // Stations Panel
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: context.appTheme.card,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.appTheme.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Stations (${stations.length}/${_service.maxStations})',
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: _navy),
-                                ),
-                                if (_selectedConveyor != null &&
-                                    stations.length < _service.maxStations)
-                                  IconButton(
-                                    icon: const Icon(Icons.add,
-                                        size: 18, color: _green),
-                                    onPressed: _showAddStationsDialog,
-                                    tooltip: 'Add Stations',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const Divider(height: 1),
-                          Expanded(
-                            child: _selectedConveyor == null
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                            child: _selectedFactory == null
                                 ? const Center(
-                                    child: Text('Select a conveyor first',
+                                    child: Text('Select a factory first',
                                         style: TextStyle(color: _muted)))
-                                : stations.isEmpty
+                                : conveyors.isEmpty
                                     ? const Center(
-                                        child: Text('No stations',
+                                        child: Text('No conveyors',
                                             style: TextStyle(color: _muted)))
                                     : ListView.builder(
-                                        itemCount: stations.length,
+                                        itemCount: conveyors.length,
                                         itemBuilder: (context, index) {
-                                          final station = stations[index];
-                                          return ListTile(
-                                            title: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    station.name,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
+                                          final conveyor = conveyors[index];
+                                          final isSelected =
+                                              _selectedConveyor?.id ==
+                                                  conveyor.id;
+                                          return Container(
+                                            color: isSelected
+                                                ? _navy.withValues(alpha: 0.1)
+                                                : Colors.transparent,
+                                            child: ListTile(
+                                              title: Text(
+                                                'Conveyor ${conveyor.number}',
+                                                style: TextStyle(
+                                                  fontWeight: isSelected
+                                                      ? FontWeight.bold
+                                                      : FontWeight.w600,
+                                                  color:
+                                                      isSelected ? _navy : null,
                                                 ),
-                                                if (station.assetId
-                                                    .trim()
-                                                    .isNotEmpty)
-                                                  TextButton.icon(
-                                                    onPressed: () =>
-                                                        _showMoveStationDialog(
-                                                            station),
+                                              ),
+                                              subtitle: Text(
+                                                '${conveyor.stations.length}/${_service.maxStations} stations',
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: _muted),
+                                              ),
+                                              trailing: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(Icons.edit,
+                                                        size: 18),
+                                                    onPressed:
+                                                        _showEditConveyorDialog,
+                                                  ),
+                                                  IconButton(
                                                     icon: const Icon(
-                                                      Icons
-                                                          .drive_file_move_outline,
-                                                      size: 16,
-                                                    ),
-                                                    label: const Text('Move'),
-                                                    style: TextButton.styleFrom(
-                                                      foregroundColor: _navy,
-                                                      visualDensity:
-                                                          VisualDensity.compact,
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 0,
-                                                      ),
-                                                    ),
+                                                        Icons.delete_outline,
+                                                        size: 18,
+                                                        color: _red),
+                                                    onPressed: () =>
+                                                        _deleteConveyor(
+                                                            conveyor),
                                                   ),
-                                                IconButton(
-                                                  icon: const Icon(
-                                                    Icons.qr_code_2,
-                                                    size: 18,
-                                                  ),
-                                                  color: _navy,
-                                                  tooltip:
-                                                      'Generate station QR',
-                                                  onPressed: () =>
-                                                      _showStationQrDialog(
-                                                          station),
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(
-                                                    minWidth: 32,
-                                                    minHeight: 32,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            subtitle: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  station.address,
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: _muted,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  station.assetId.trim().isEmpty
-                                                      ? 'Asset ID pending'
-                                                      : station.assetId,
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: station.assetId
-                                                            .trim()
-                                                            .isEmpty
-                                                        ? _muted
-                                                        : _navy,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
+                                              onTap: () => setState(() =>
+                                                  _selectedConveyor = conveyor),
                                             ),
                                           );
                                         },
-                                      ),
-                          ),
-                        ],
-                      ),
+                                      )),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 16),
+                // Stations Panel
+                Expanded(
+                  flex: 1,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: context.appTheme.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: context.appTheme.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Stations (${stations.length}/${_service.maxStations})',
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: _navy),
+                              ),
+                              if (_selectedConveyor != null &&
+                                  stations.length < _service.maxStations)
+                                IconButton(
+                                  icon: const Icon(Icons.add,
+                                      size: 18, color: _green),
+                                  onPressed: _showAddStationsDialog,
+                                  tooltip: 'Add Stations',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: _selectedConveyor == null
+                              ? const Center(
+                                  child: Text('Select a conveyor first',
+                                      style: TextStyle(color: _muted)))
+                              : stations.isEmpty
+                                  ? const Center(
+                                      child: Text('No stations',
+                                          style: TextStyle(color: _muted)))
+                                  : ListView.builder(
+                                      itemCount: stations.length,
+                                      itemBuilder: (context, index) {
+                                        final station = stations[index];
+                                        return ListTile(
+                                          isThreeLine: true,
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 4,
+                                          ),
+                                          title: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  station.name,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              if (station.assetId
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                TextButton.icon(
+                                                  onPressed: () =>
+                                                      _showMoveStationDialog(
+                                                          station),
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .drive_file_move_outline,
+                                                    size: 16,
+                                                  ),
+                                                  label: const Text('Move'),
+                                                  style: TextButton.styleFrom(
+                                                    foregroundColor: _navy,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 0,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                          trailing: SizedBox(
+                                            width: 24,
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                _StationActionIcon(
+                                                  icon: Icons.qr_code_2,
+                                                  color: _navy,
+                                                  tooltip:
+                                                      'Generate station QR',
+                                                  onTap: () =>
+                                                      _showStationQrDialog(
+                                                          station),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                _StationActionIcon(
+                                                  icon: Icons.delete_outline,
+                                                  color: _red,
+                                                  tooltip: 'Delete station',
+                                                  onTap: () =>
+                                                      _deleteStation(station),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          subtitle: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                station.address,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: _muted,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                station.assetId.trim().isEmpty
+                                                    ? 'Asset ID pending'
+                                                    : station.assetId,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: station.assetId
+                                                          .trim()
+                                                          .isEmpty
+                                                      ? _muted
+                                                      : _navy,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 }
+
 Future<Uint8List> _renderQrPng(String data) async {
   final painter = QrPainter(
     data: data,
@@ -1274,6 +1366,320 @@ Future<Uint8List> _renderQrPng(String data) async {
   final image = await painter.toImage(512);
   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
   return bytes!.buffer.asUint8List();
+}
+
+class _StationDeleteDialog extends StatelessWidget {
+  final String stationName;
+  final String stationId;
+  final int stationNumber;
+  final String stationAddress;
+  final String assetId;
+  final String factoryName;
+  final String factoryId;
+  final int conveyorNumber;
+  final String conveyorId;
+
+  const _StationDeleteDialog({
+    required this.stationName,
+    required this.stationId,
+    required this.stationNumber,
+    required this.stationAddress,
+    required this.assetId,
+    required this.factoryName,
+    required this.factoryId,
+    required this.conveyorNumber,
+    required this.conveyorId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final preservedAssetLabel =
+        assetId.isEmpty ? 'No Asset ID linked yet' : assetId;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Material(
+          color: t.card,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      t.red.withValues(alpha: 0.14),
+                      t.orange.withValues(alpha: 0.12),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: t.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border:
+                            Border.all(color: t.red.withValues(alpha: 0.22)),
+                      ),
+                      child: Icon(
+                        Icons.delete_forever_outlined,
+                        color: t.red,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Delete Station',
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'This removes the station from the hierarchy while keeping the asset record archived in the database.',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      tooltip: 'Close',
+                      icon: Icon(Icons.close, color: t.muted),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: t.scaffold,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: t.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            stationName,
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$factoryName  •  Conveyor $conveyorNumber  •  Post $stationNumber',
+                            style: TextStyle(
+                              color: t.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _DeleteDetailRow(
+                              label: 'Factory',
+                              value: '$factoryName ($factoryId)'),
+                          _DeleteDetailRow(
+                            label: 'Conveyor',
+                            value: 'Conveyor $conveyorNumber ($conveyorId)',
+                          ),
+                          _DeleteDetailRow(
+                            label: 'Station',
+                            value: '$stationName ($stationId)',
+                          ),
+                          _DeleteDetailRow(
+                            label: 'Address',
+                            value: stationAddress,
+                          ),
+                          _DeleteDetailRow(
+                            label: 'Asset Record',
+                            value: preservedAssetLabel,
+                            emphasize: assetId.isNotEmpty,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: t.red.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(16),
+                        border:
+                            Border.all(color: t.red.withValues(alpha: 0.18)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: t.red,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              assetId.isEmpty
+                                  ? 'The hierarchy entry will be removed immediately.'
+                                  : 'Asset $assetId will stay under /assets with its last known location and deletion metadata.',
+                              style: TextStyle(
+                                color: t.text,
+                                fontSize: 12.5,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(22, 14, 22, 18),
+                decoration: BoxDecoration(
+                  color: t.scaffold,
+                  border: Border(top: BorderSide(color: t.border)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: t.red,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Delete Station'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeleteDetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool emphasize;
+
+  const _DeleteDetailRow({
+    required this.label,
+    required this.value,
+    this.emphasize = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: t.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: emphasize ? t.navy : t.text,
+                fontSize: 12.5,
+                fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StationActionIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _StationActionIcon({
+    required this.icon,
+    required this.color,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: Icon(icon, size: 16, color: color),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _StationQrDialog extends StatefulWidget {
@@ -1321,7 +1727,8 @@ class _StationQrDialogState extends State<_StationQrDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Download failed: ${UserFriendlyError.message(e)}')),
+        SnackBar(
+            content: Text('Download failed: ${UserFriendlyError.message(e)}')),
       );
     } finally {
       if (mounted) setState(() => _downloading = false);
@@ -1364,7 +1771,8 @@ class _StationQrDialogState extends State<_StationQrDialog> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Print failed: ${UserFriendlyError.message(e)}')),
+        SnackBar(
+            content: Text('Print failed: ${UserFriendlyError.message(e)}')),
       );
     } finally {
       if (mounted) setState(() => _printing = false);

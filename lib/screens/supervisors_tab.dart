@@ -289,6 +289,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   String? _selectedId;
   String _chartRange = '7days';
   bool _performancePanelOpen = false;
+  OverlayEntry? _performanceOverlayEntry;
   Offset? _performancePanelOffset;
   double _performancePanelWidth = 460;
   double _performancePanelHeight = 620;
@@ -309,6 +310,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
   @override
   void dispose() {
+    _removePerformanceOverlay();
     _liveActivityController.dispose();
     super.dispose();
   }
@@ -317,11 +319,14 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   void didUpdateWidget(covariant _ManagementSubTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncSelection();
+    _showOrRefreshPerformanceOverlay();
   }
 
   void _syncSelection() {
     if (widget.allSupervisors.isEmpty) {
       _selectedId = null;
+      _performancePanelOpen = false;
+      _removePerformanceOverlay();
       return;
     }
     final exists = widget.allSupervisors.any((s) => s.id == _selectedId);
@@ -346,10 +351,42 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       _selectedId = sup.id;
       _performancePanelOpen = true;
     });
+    _showOrRefreshPerformanceOverlay();
   }
 
   void _closePerformancePanel() {
-    setState(() => _performancePanelOpen = false);
+    setState(() {
+      _performancePanelOpen = false;
+    });
+    _removePerformanceOverlay();
+  }
+
+  void _showOrRefreshPerformanceOverlay() {
+    if (!_performancePanelOpen || _selectedSupervisor == null) {
+      _removePerformanceOverlay();
+      return;
+    }
+    if (_performanceOverlayEntry == null) {
+      final overlay = Overlay.of(context, rootOverlay: true);
+      _performanceOverlayEntry = OverlayEntry(
+        builder: (overlayContext) => _buildGlobalPerformancePanel(
+          overlayContext,
+          _selectedSupervisor!,
+        ),
+      );
+      overlay.insert(_performanceOverlayEntry!);
+      return;
+    }
+    _performanceOverlayEntry!.markNeedsBuild();
+  }
+
+  void _refreshPerformanceOverlay() {
+    _performanceOverlayEntry?.markNeedsBuild();
+  }
+
+  void _removePerformanceOverlay() {
+    _performanceOverlayEntry?.remove();
+    _performanceOverlayEntry = null;
   }
 
   double _clampPanelValue(double value, double min, double max) {
@@ -388,6 +425,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
             current.dy + delta.dy, 8, bounds.height - panelSize.height - 8),
       );
     });
+    _refreshPerformanceOverlay();
   }
 
   void _resizePerformancePanel({
@@ -417,6 +455,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         fallback: fallback,
       );
     });
+    _refreshPerformanceOverlay();
   }
 
   void _togglePerformancePanelSize(Size bounds, Offset fallback) {
@@ -439,6 +478,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         fallback: fallback,
       );
     });
+    _refreshPerformanceOverlay();
   }
 
   List<AlertModel> _alertsFor(UserModel sup) => widget.alerts
@@ -1098,50 +1138,31 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
   Widget _buildWide(AppTheme t, UserModel? selected) {
     final railWidth = MediaQuery.sizeOf(context).width >= 1600 ? 310.0 : 326.0;
-    return LayoutBuilder(builder: (context, constraints) {
-      final bounds =
-          Size(constraints.maxWidth - 32, constraints.maxHeight - 20);
-      final fallback = Offset(railWidth + 24, 16);
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: Stack(fit: StackFit.expand, clipBehavior: Clip.none, children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            SizedBox(width: railWidth, child: _buildRail(t)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildDetailScroller(t, selected)),
-          ]),
-          if (selected != null && _performancePanelOpen)
-            _buildPerformanceOverlay(t, selected, bounds, fallback),
-        ]),
-      );
-    });
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(width: railWidth, child: _buildRail(t)),
+        const SizedBox(width: 12),
+        Expanded(child: _buildDetailScroller(t, selected)),
+      ]),
+    );
   }
 
   Widget _buildCompact(AppTheme t, UserModel? selected) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final bounds = Size(constraints.maxWidth, constraints.maxHeight);
-      const fallback = Offset(12, 12);
-      return Stack(fit: StackFit.expand, children: [
-        SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-          child: Column(children: [
-            _buildRail(t, compact: true),
-            const SizedBox(height: 14),
-            _buildDetailContent(t, selected),
-          ]),
-        ),
-        if (selected != null && _performancePanelOpen)
-          _buildPerformanceOverlay(t, selected, bounds, fallback),
-      ]);
-    });
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+      child: Column(children: [
+        _buildRail(t, compact: true),
+        const SizedBox(height: 14),
+        _buildDetailContent(t, selected),
+      ]),
+    );
   }
 
-  Widget _buildPerformanceOverlay(
-    AppTheme t,
-    UserModel sup,
-    Size bounds,
-    Offset fallback,
-  ) {
+  Widget _buildGlobalPerformancePanel(
+      BuildContext overlayContext, UserModel sup) {
+    final t = overlayContext.appTheme;
+    final bounds = MediaQuery.sizeOf(overlayContext);
     final availableWidth = math.max(280.0, bounds.width - 16);
     final availableHeight = math.max(320.0, bounds.height - 16);
     final minWidth = math.min(_panelMinWidth, availableWidth);
@@ -1151,6 +1172,10 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final height =
         _clampPanelValue(_performancePanelHeight, minHeight, availableHeight);
     final panelSize = Size(width, height);
+    final fallback = Offset(
+      _clampPanelValue(bounds.width - width - 24, 8, bounds.width - width - 8),
+      _clampPanelValue(92, 8, bounds.height - height - 8),
+    );
     final offset = _resolvedPanelOffset(
       bounds: bounds,
       panelSize: panelSize,
@@ -1158,185 +1183,192 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     );
     final statusColor = sup.isActive ? t.green : t.red;
 
-    return Positioned(
-      left: offset.dx,
-      top: offset.dy,
-      width: width,
-      height: height,
-      child: Material(
-        color: Colors.transparent,
-        elevation: 18,
-        borderRadius: BorderRadius.circular(18),
-        child: Stack(children: [
-          Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: t.card.withValues(alpha: t.isDark ? 0.98 : 0.96),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: t.navy.withValues(alpha: 0.22)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: t.isDark ? 0.42 : 0.18),
-                  blurRadius: 34,
-                  offset: const Offset(0, 18),
-                ),
-              ],
-            ),
-            child: Column(children: [
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanUpdate: (details) => _movePerformancePanel(
-                  delta: details.delta,
-                  bounds: bounds,
-                  panelSize: panelSize,
-                  fallback: fallback,
-                ),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.move,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          t.navy.withValues(alpha: t.isDark ? 0.32 : 0.10),
-                          t.green.withValues(alpha: t.isDark ? 0.18 : 0.07),
-                        ],
-                      ),
-                      border: Border(bottom: BorderSide(color: t.border)),
+    return SizedBox.expand(
+      child: Stack(children: [
+        Positioned(
+          left: offset.dx,
+          top: offset.dy,
+          width: width,
+          height: height,
+          child: Material(
+            color: Colors.transparent,
+            elevation: 18,
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(children: [
+              Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: t.card.withValues(alpha: t.isDark ? 0.98 : 0.96),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: t.navy.withValues(alpha: 0.22)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black
+                          .withValues(alpha: t.isDark ? 0.42 : 0.18),
+                      blurRadius: 34,
+                      offset: const Offset(0, 18),
                     ),
-                    child: Row(children: [
-                      Container(
-                        width: 42,
-                        height: 42,
+                  ],
+                ),
+                child: Column(children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanUpdate: (details) => _movePerformancePanel(
+                      delta: details.delta,
+                      bounds: bounds,
+                      panelSize: panelSize,
+                      fallback: fallback,
+                    ),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.move,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [t.navy, t.green],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                            colors: [
+                              t.navy.withValues(alpha: t.isDark ? 0.32 : 0.10),
+                              t.green.withValues(alpha: t.isDark ? 0.18 : 0.07),
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(14),
+                          border: Border(bottom: BorderSide(color: t.border)),
                         ),
-                        child: Center(
-                          child: Text(_initials(sup),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w900)),
-                        ),
+                        child: Row(children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [t.navy, t.green],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Center(
+                              child: Text(_initials(sup),
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w900)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Performance',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.5,
+                                          color: t.muted)),
+                                  const SizedBox(height: 2),
+                                  Text(sup.fullName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900,
+                                          color: t.text)),
+                                  const SizedBox(height: 4),
+                                  Row(children: [
+                                    _LivePulseDot(
+                                        color: statusColor,
+                                        pulse: sup.isActive),
+                                    const SizedBox(width: 5),
+                                    Expanded(
+                                      child: Text(
+                                        sup.usine.isEmpty
+                                            ? 'Unassigned'
+                                            : sup.usine,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            fontSize: 11, color: t.muted),
+                                      ),
+                                    ),
+                                  ]),
+                                ]),
+                          ),
+                          Tooltip(
+                            message: 'Resize panel',
+                            child: Icon(Icons.drag_indicator,
+                                color: t.muted, size: 20),
+                          ),
+                          Tooltip(
+                            message: 'Toggle size',
+                            child: IconButton(
+                              onPressed: () =>
+                                  _togglePerformancePanelSize(bounds, fallback),
+                              icon: Icon(Icons.open_in_full,
+                                  color: t.navy, size: 18),
+                            ),
+                          ),
+                          Tooltip(
+                            message: 'Close',
+                            child: IconButton(
+                              onPressed: _closePerformancePanel,
+                              icon: Icon(Icons.close, color: t.red, size: 19),
+                            ),
+                          ),
+                        ]),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Performance',
-                                  style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 0.5,
-                                      color: t.muted)),
-                              const SizedBox(height: 2),
-                              Text(sup.fullName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                      color: t.text)),
-                              const SizedBox(height: 4),
-                              Row(children: [
-                                _LivePulseDot(
-                                    color: statusColor, pulse: sup.isActive),
-                                const SizedBox(width: 5),
-                                Expanded(
-                                  child: Text(
-                                    sup.usine.isEmpty
-                                        ? 'Unassigned'
-                                        : sup.usine,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style:
-                                        TextStyle(fontSize: 11, color: t.muted),
-                                  ),
-                                ),
-                              ]),
-                            ]),
-                      ),
-                      Tooltip(
-                        message: 'Resize panel',
-                        child: Icon(Icons.drag_indicator,
-                            color: t.muted, size: 20),
-                      ),
-                      Tooltip(
-                        message: 'Toggle size',
-                        child: IconButton(
-                          onPressed: () =>
-                              _togglePerformancePanelSize(bounds, fallback),
-                          icon:
-                              Icon(Icons.open_in_full, color: t.navy, size: 18),
-                        ),
-                      ),
-                      Tooltip(
-                        message: 'Close',
-                        child: IconButton(
-                          onPressed: _closePerformancePanel,
-                          icon: Icon(Icons.close, color: t.red, size: 19),
-                        ),
-                      ),
-                    ]),
+                    ),
                   ),
-                ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildMetricGrid(t, sup),
+                            const SizedBox(height: 12),
+                            _buildPerformanceCard(t, sup),
+                            const SizedBox(height: 12),
+                            _buildTypeBreakdown(t, sup),
+                            const SizedBox(height: 12),
+                            _buildValidatedList(t, sup),
+                            const SizedBox(height: 18),
+                          ]),
+                    ),
+                  ),
+                ]),
               ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildMetricGrid(t, sup),
-                        const SizedBox(height: 12),
-                        _buildPerformanceCard(t, sup),
-                        const SizedBox(height: 12),
-                        _buildTypeBreakdown(t, sup),
-                        const SizedBox(height: 12),
-                        _buildValidatedList(t, sup),
-                        const SizedBox(height: 18),
-                      ]),
+              Positioned(
+                right: 2,
+                bottom: 2,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanUpdate: (details) => _resizePerformancePanel(
+                    delta: details.delta,
+                    bounds: bounds,
+                    fallback: fallback,
+                  ),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeUpLeftDownRight,
+                    child: Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: t.navy.withValues(alpha: 0.10),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(14),
+                          bottomRight: Radius.circular(16),
+                        ),
+                        border:
+                            Border.all(color: t.navy.withValues(alpha: 0.16)),
+                      ),
+                      child: Icon(Icons.open_in_full, size: 15, color: t.navy),
+                    ),
+                  ),
                 ),
               ),
             ]),
           ),
-          Positioned(
-            right: 2,
-            bottom: 2,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanUpdate: (details) => _resizePerformancePanel(
-                delta: details.delta,
-                bounds: bounds,
-                fallback: fallback,
-              ),
-              child: MouseRegion(
-                cursor: SystemMouseCursors.resizeUpLeftDownRight,
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: t.navy.withValues(alpha: 0.10),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(14),
-                      bottomRight: Radius.circular(16),
-                    ),
-                    border: Border.all(color: t.navy.withValues(alpha: 0.16)),
-                  ),
-                  child: Icon(Icons.open_in_full, size: 15, color: t.navy),
-                ),
-              ),
-            ),
-          ),
-        ]),
-      ),
+        ),
+      ]),
     );
   }
 
