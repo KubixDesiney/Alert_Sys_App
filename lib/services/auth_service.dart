@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'fcm_service.dart';
+import 'location_tracking_service.dart';
 import 'offline_account_cache.dart';
 import 'worker_trigger_queue.dart';
 
@@ -229,6 +230,7 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    await LocationTrackingService.instance.stop();
     try {
       final uid = _auth.currentUser?.uid;
       if (uid != null) {

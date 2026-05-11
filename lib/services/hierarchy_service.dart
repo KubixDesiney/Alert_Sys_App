@@ -285,7 +285,14 @@ class HierarchyService {
   }
 
   Future<void> addFactoryWithConveyors(
-      String id, String name, String location, int numConveyors) async {
+    String id,
+    String name,
+    String location,
+    int numConveyors, {
+    double? lat,
+    double? lng,
+    String? address,
+  }) async {
     final factoryRef = _db.child('hierarchy/factories/$id');
     final existing = await factoryRef.get();
     if (existing.exists) {
@@ -307,6 +314,56 @@ class HierarchyService {
       'conveyors': conveyorsMap,
     };
     await factoryRef.set(factoryMap);
+    await _db.update({
+      'factories/$id/name': name,
+      'factories/$id/address': (address ?? location).trim(),
+      if (lat != null && lng != null)
+        'factories/$id/location': {
+          'lat': lat,
+          'lng': lng,
+        },
+    });
+  }
+
+  Future<Map<String, Object?>?> getFactoryLocationMetadata(
+      String factoryId) async {
+    final snap = await _db.child('factories/$factoryId').get();
+    if (!snap.exists || snap.value is! Map) return null;
+    final data = Map<Object?, Object?>.from(snap.value as Map);
+    final location = data['location'];
+    double? lat;
+    double? lng;
+    if (location is Map) {
+      final loc = Map<Object?, Object?>.from(location);
+      lat = (loc['lat'] as num?)?.toDouble();
+      lng = (loc['lng'] as num?)?.toDouble();
+    }
+    return {
+      'address': data['address']?.toString(),
+      'lat': lat,
+      'lng': lng,
+    };
+  }
+
+  Future<void> updateFactoryDetails({
+    required String factoryId,
+    required String name,
+    required String address,
+    double? lat,
+    double? lng,
+  }) async {
+    await _db.update({
+      'hierarchy/factories/$factoryId/name': name,
+      'hierarchy/factories/$factoryId/location': address,
+      'factories/$factoryId/name': name,
+      'factories/$factoryId/address': address,
+      'factories/$factoryId/location': lat != null && lng != null
+          ? {
+              'lat': lat,
+              'lng': lng,
+            }
+          : null,
+    });
   }
 
   Future<void> addConveyor(String factoryId, int conveyorNumber) async {
@@ -512,7 +569,10 @@ class HierarchyService {
   }
 
   Future<void> deleteFactory(String factoryId) async {
-    await _db.child('hierarchy/factories/$factoryId').remove();
+    await _db.update({
+      'hierarchy/factories/$factoryId': null,
+      'factories/$factoryId': null,
+    });
   }
 
   Future<void> deleteConveyor(String factoryId, String conveyorId) async {
