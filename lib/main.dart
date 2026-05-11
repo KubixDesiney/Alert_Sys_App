@@ -13,6 +13,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
+import 'services/location_tracking_service.dart';
 import 'services/offline_account_cache.dart';
 import 'services/offline_database_service.dart';
 import 'services/service_locator.dart';
@@ -28,10 +29,10 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-    // Add app lifecycle observer for handling foreground/background transitions
-    final lifecycleObserver = AppLifecycleObserver();
-    WidgetsBinding.instance.addObserver(lifecycleObserver);
-  
+  // Add app lifecycle observer for handling foreground/background transitions
+  final lifecycleObserver = AppLifecycleObserver();
+  WidgetsBinding.instance.addObserver(lifecycleObserver);
+
   // Global error handler
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
@@ -72,9 +73,9 @@ void main() async {
   await _safeInitFirebase();
   ServiceLocator.instance.init();
   await OfflineDatabaseService.configure();
-    // Initialize background sync service for offline support
-    BackgroundSyncService.instance.initialize();
-  
+  // Initialize background sync service for offline support
+  BackgroundSyncService.instance.initialize();
+
   WorkerTriggerQueue.instance.start();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
@@ -227,6 +228,10 @@ class _RoleRouterState extends State<RoleRouter> {
           ServiceLocator.instance.logger.warning(
             'Account record unavailable offline. Using cached role.',
           );
+          unawaited(LocationTrackingService.instance.updateForRole(
+            uid: widget.uid,
+            role: cachedRole,
+          ));
           setState(() {
             _role = cachedRole;
             _loading = false;
@@ -237,6 +242,7 @@ class _RoleRouterState extends State<RoleRouter> {
 
         ServiceLocator.instance.logger
             .warning('Account record missing. Signing out.');
+        await LocationTrackingService.instance.stop();
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
         setState(() {
@@ -252,6 +258,7 @@ class _RoleRouterState extends State<RoleRouter> {
       if (!OfflineAccountCache.isValidRole(role)) {
         ServiceLocator.instance.logger
             .warning('Invalid role value for account. Signing out.');
+        await LocationTrackingService.instance.stop();
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
         setState(() {
@@ -266,6 +273,10 @@ class _RoleRouterState extends State<RoleRouter> {
         role: role,
         usine: data['usine']?.toString(),
       );
+      unawaited(LocationTrackingService.instance.updateForRole(
+        uid: widget.uid,
+        role: role,
+      ));
       if (!mounted) return;
       setState(() {
         _role = role;
@@ -278,6 +289,10 @@ class _RoleRouterState extends State<RoleRouter> {
       if (cachedRole != null && (e is TimeoutException || !connected)) {
         ServiceLocator.instance.logger
             .warning('Account load failed; using cached role: $e');
+        unawaited(LocationTrackingService.instance.updateForRole(
+          uid: widget.uid,
+          role: cachedRole,
+        ));
         setState(() {
           _role = cachedRole;
           _loading = false;
@@ -287,6 +302,7 @@ class _RoleRouterState extends State<RoleRouter> {
       }
 
       if (connected) {
+        await LocationTrackingService.instance.stop();
         await FirebaseAuth.instance.signOut();
         if (!mounted) return;
       }
@@ -313,6 +329,12 @@ class _RoleRouterState extends State<RoleRouter> {
     } catch (_) {
       return false;
     }
+  }
+
+  @override
+  void dispose() {
+    unawaited(LocationTrackingService.instance.stop());
+    super.dispose();
   }
 
   @override

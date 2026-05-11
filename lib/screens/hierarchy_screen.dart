@@ -2,8 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:file_saver/file_saver.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geocoding/geocoding.dart' as geo;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -558,10 +562,39 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
   }
 
   // ------------------- Add Factory Dialog -------------------
+  Future<FactoryLocationSelection?> _openFactoryLocationPicker(
+      FactoryLocationSelection initialSelection) {
+    return showDialog<FactoryLocationSelection>(
+      context: context,
+      useSafeArea: false,
+      builder: (_) => FactoryLocationPicker(
+        initialSelection: initialSelection,
+        onCancel: () => Navigator.of(context).pop(),
+        onSave: (selection) => Navigator.of(context).pop(selection),
+      ),
+    );
+  }
+
+  Future<FactoryLocationSelection> _factorySelectionFor(Factory factory) async {
+    try {
+      final metadata = await _service.getFactoryLocationMetadata(factory.id);
+      final lat = metadata?['lat'] as double?;
+      final lng = metadata?['lng'] as double?;
+      final address =
+          (metadata?['address']?.toString().trim().isNotEmpty ?? false)
+              ? metadata!['address'].toString()
+              : factory.location;
+      return FactoryLocationSelection(lat: lat, lng: lng, address: address);
+    } catch (_) {
+      return FactoryLocationSelection(address: factory.location);
+    }
+  }
+
   Future<void> _showAddFactoryDialog() async {
     final nameController = TextEditingController();
     final locationController = TextEditingController();
     final conveyorsController = TextEditingController();
+    var selectedLocation = const FactoryLocationSelection(address: '');
     String? error;
 
     await showDialog(
@@ -588,9 +621,32 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   TextField(
                     controller: locationController,
                     decoration: const InputDecoration(
-                      labelText: 'Location',
+                      labelText: 'Address',
                       hintText: 'Ex: Casablanca',
                       border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await _openFactoryLocationPicker(
+                        selectedLocation.copyWith(
+                          address: locationController.text.trim(),
+                        ),
+                      );
+                      if (picked == null) return;
+                      setStateDialog(() {
+                        selectedLocation = picked;
+                        if (picked.address.trim().isNotEmpty) {
+                          locationController.text = picked.address.trim();
+                        }
+                      });
+                    },
+                    icon: const Icon(Icons.map_outlined),
+                    label: Text(
+                      selectedLocation.hasCoordinates
+                          ? 'Map pin: ${selectedLocation.lat!.toStringAsFixed(5)}, ${selectedLocation.lng!.toStringAsFixed(5)}'
+                          : 'Pick on map',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -634,21 +690,135 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   final id = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
                   try {
                     await _service.addFactoryWithConveyors(
-                        id, name, location, numConveyors);
-                    if (context.mounted) Navigator.pop(context);
+                      id,
+                      name,
+                      location,
+                      numConveyors,
+                      lat: selectedLocation.lat,
+                      lng: selectedLocation.lng,
+                      address: location,
+                    );
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
                     _loadFactories(); // force refresh
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Factory added'),
-                            backgroundColor: _green),
-                      );
-                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Factory added'),
+                          backgroundColor: _green),
+                    );
                   } catch (e) {
                     setStateDialog(() => error = e.toString());
                   }
                 },
                 child: const Text('Add Factory'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showEditFactoryDialog(Factory factory) async {
+    final nameController = TextEditingController(text: factory.name);
+    final locationController = TextEditingController(text: factory.location);
+    var selectedLocation = await _factorySelectionFor(factory);
+    if (selectedLocation.address.trim().isNotEmpty) {
+      locationController.text = selectedLocation.address.trim();
+    }
+    String? error;
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: const Text('Edit Factory'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Factory Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationController,
+                    decoration: const InputDecoration(
+                      labelText: 'Address',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await _openFactoryLocationPicker(
+                        selectedLocation.copyWith(
+                          address: locationController.text.trim(),
+                        ),
+                      );
+                      if (picked == null) return;
+                      setStateDialog(() {
+                        selectedLocation = picked;
+                        if (picked.address.trim().isNotEmpty) {
+                          locationController.text = picked.address.trim();
+                        }
+                      });
+                    },
+                    icon: const Icon(Icons.map_outlined),
+                    label: Text(
+                      selectedLocation.hasCoordinates
+                          ? 'Map pin: ${selectedLocation.lat!.toStringAsFixed(5)}, ${selectedLocation.lng!.toStringAsFixed(5)}'
+                          : 'Pick on map',
+                    ),
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(error!,
+                          style: const TextStyle(color: _red, fontSize: 12)),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  final address = locationController.text.trim();
+                  if (name.isEmpty) {
+                    setStateDialog(() => error = 'Factory name is required');
+                    return;
+                  }
+                  try {
+                    await _service.updateFactoryDetails(
+                      factoryId: factory.id,
+                      name: name,
+                      address: address,
+                      lat: selectedLocation.lat,
+                      lng: selectedLocation.lng,
+                    );
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                    _loadFactories();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Factory updated'),
+                          backgroundColor: _green),
+                    );
+                  } catch (e) {
+                    setStateDialog(() => error = e.toString());
+                  }
+                },
+                child: const Text('Save'),
               ),
             ],
           );
@@ -1058,13 +1228,25 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                             style: const TextStyle(
                                                 fontSize: 12, color: _muted),
                                           ),
-                                          trailing: IconButton(
-                                            icon: const Icon(
-                                                Icons.delete_outline,
-                                                size: 18,
-                                                color: _red),
-                                            onPressed: () =>
-                                                _deleteFactory(factory),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.edit,
+                                                    size: 18),
+                                                onPressed: () =>
+                                                    _showEditFactoryDialog(
+                                                        factory),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(
+                                                    Icons.delete_outline,
+                                                    size: 18,
+                                                    color: _red),
+                                                onPressed: () =>
+                                                    _deleteFactory(factory),
+                                              ),
+                                            ],
                                           ),
                                           onTap: () => setState(() {
                                             _selectedFactory = factory;
@@ -2017,6 +2199,374 @@ class _QrMetaChip extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class FactoryLocationSelection {
+  final double? lat;
+  final double? lng;
+  final String address;
+
+  const FactoryLocationSelection({
+    this.lat,
+    this.lng,
+    required this.address,
+  });
+
+  bool get hasCoordinates => lat != null && lng != null;
+
+  FactoryLocationSelection copyWith({
+    double? lat,
+    double? lng,
+    String? address,
+    bool clearCoordinates = false,
+  }) {
+    return FactoryLocationSelection(
+      lat: clearCoordinates ? null : lat ?? this.lat,
+      lng: clearCoordinates ? null : lng ?? this.lng,
+      address: address ?? this.address,
+    );
+  }
+}
+
+class FactoryLocationPicker extends StatefulWidget {
+  final FactoryLocationSelection initialSelection;
+  final VoidCallback onCancel;
+  final ValueChanged<FactoryLocationSelection> onSave;
+  final bool renderPlatformMap;
+
+  const FactoryLocationPicker({
+    super.key,
+    required this.initialSelection,
+    required this.onCancel,
+    required this.onSave,
+    this.renderPlatformMap = true,
+  });
+
+  @override
+  State<FactoryLocationPicker> createState() => _FactoryLocationPickerState();
+}
+
+class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
+  static const LatLng _defaultTarget = LatLng(33.5731, -7.5898);
+
+  late final TextEditingController _searchController;
+  GoogleMapController? _mapController;
+  LatLng? _selectedLatLng;
+  String _address = '';
+  String? _error;
+  bool _searching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _address = widget.initialSelection.address;
+    _searchController = TextEditingController(text: _address);
+    if (widget.initialSelection.hasCoordinates) {
+      _selectedLatLng = LatLng(
+        widget.initialSelection.lat!,
+        widget.initialSelection.lng!,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  LatLng get _cameraTarget => _selectedLatLng ?? _defaultTarget;
+
+  Set<Marker> get _markers {
+    final point = _selectedLatLng;
+    if (point == null) return {};
+    return {
+      Marker(
+        markerId: const MarkerId('factory-location-pin'),
+        position: point,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(
+          title: 'Lat/Lng',
+          snippet:
+              '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}',
+        ),
+      ),
+    };
+  }
+
+  Future<void> _searchAddress() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
+    try {
+      final point = await _geocodeAddress(query);
+      if (point == null) {
+        setState(() => _error = 'Address not found');
+        return;
+      }
+      await _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(point, 15),
+      );
+      setState(() {
+        _selectedLatLng = point;
+        _address = query;
+      });
+    } catch (e) {
+      setState(() => _error = 'Could not search address');
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  Future<LatLng?> _geocodeAddress(String query) async {
+    try {
+      final locations = await geo.locationFromAddress(query);
+      if (locations.isNotEmpty) {
+        final first = locations.first;
+        return LatLng(first.latitude, first.longitude);
+      }
+    } catch (_) {}
+
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'format': 'json',
+        'limit': '1',
+        'q': query,
+      });
+      final response = await http.get(
+        uri,
+        headers: const {'User-Agent': 'AlertSys/1.0'},
+      );
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body);
+      if (data is! List || data.isEmpty || data.first is! Map) return null;
+      final first = Map<Object?, Object?>.from(data.first as Map);
+      final lat = double.tryParse(first['lat']?.toString() ?? '');
+      final lon = double.tryParse(first['lon']?.toString() ?? '');
+      if (lat == null || lon == null) return null;
+      return LatLng(lat, lon);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _dropPin(LatLng point) async {
+    setState(() {
+      _selectedLatLng = point;
+      _error = null;
+    });
+    try {
+      final marks =
+          await geo.placemarkFromCoordinates(point.latitude, point.longitude);
+      if (marks.isEmpty) return;
+      final formatted = _formatPlacemark(marks.first);
+      if (formatted.isEmpty) return;
+      if (!mounted) return;
+      setState(() {
+        _address = formatted;
+        _searchController.text = formatted;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _address =
+            '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
+      });
+    }
+  }
+
+  Future<void> _dropPinFromScreenOffset(Offset offset) async {
+    final controller = _mapController;
+    if (controller == null) return;
+    final point = await controller.getLatLng(
+      ScreenCoordinate(x: offset.dx.round(), y: offset.dy.round()),
+    );
+    await _dropPin(point);
+  }
+
+  void _clearPin() {
+    if (_selectedLatLng == null) return;
+    setState(() {
+      _selectedLatLng = null;
+      _error = null;
+    });
+  }
+
+  String _formatPlacemark(geo.Placemark mark) {
+    return [
+      mark.street,
+      mark.locality,
+      mark.administrativeArea,
+      mark.country,
+    ].where((part) => part != null && part.trim().isNotEmpty).join(', ');
+  }
+
+  void _save() {
+    final point = _selectedLatLng;
+    widget.onSave(
+      FactoryLocationSelection(
+        lat: point?.latitude,
+        lng: point?.longitude,
+        address: _address.trim().isNotEmpty
+            ? _address.trim()
+            : _searchController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final point = _selectedLatLng;
+    return Dialog.fullscreen(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Factory Location'),
+          actions: [
+            TextButton(
+              onPressed: widget.onCancel,
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: _save,
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('factory-location-search-bar'),
+                      controller: _searchController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _searchAddress(),
+                      decoration: const InputDecoration(
+                        labelText: 'Search address',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    onPressed: _searching ? null : _searchAddress,
+                    icon: _searching
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.search),
+                    tooltip: 'Search',
+                  ),
+                ],
+              ),
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(_error!,
+                      style: const TextStyle(color: _red, fontSize: 12)),
+                ),
+              ),
+            Expanded(
+              child: FactoryLocationMap(
+                key: const Key('factory-location-map'),
+                initialTarget: _cameraTarget,
+                markers: _markers,
+                renderPlatformMap: widget.renderPlatformMap,
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                },
+                onLongPress: _dropPin,
+                onTap: (_) => _clearPin(),
+                onSecondaryTap: _dropPinFromScreenOffset,
+              ),
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: Text(
+                point == null
+                    ? (_address.trim().isEmpty
+                        ? 'No GPS pin selected'
+                        : _address.trim())
+                    : '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'
+                        '${_address.trim().isEmpty ? '' : ' - ${_address.trim()}'}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FactoryLocationMap extends StatelessWidget {
+  final LatLng initialTarget;
+  final Set<Marker> markers;
+  final ValueChanged<GoogleMapController> onMapCreated;
+  final ValueChanged<LatLng> onLongPress;
+  final ValueChanged<LatLng> onTap;
+  final Future<void> Function(Offset offset) onSecondaryTap;
+  final bool renderPlatformMap;
+
+  const FactoryLocationMap({
+    super.key,
+    required this.initialTarget,
+    required this.markers,
+    required this.onMapCreated,
+    required this.onLongPress,
+    required this.onTap,
+    required this.onSecondaryTap,
+    this.renderPlatformMap = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (event) {
+        if (event.buttons == kSecondaryMouseButton) {
+          unawaited(onSecondaryTap(event.localPosition));
+        }
+      },
+      child: renderPlatformMap
+          ? GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: initialTarget,
+                zoom: 12,
+              ),
+              markers: markers,
+              onMapCreated: onMapCreated,
+              onLongPress: onLongPress,
+              onTap: onTap,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: true,
+            )
+          : ColoredBox(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const SizedBox.expand(),
+            ),
     );
   }
 }
