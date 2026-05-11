@@ -323,6 +323,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
   bool _isBuzzing = false;
   String? _buzzingNotificationId;
+  static const Set<String> _forceBuzzNotificationTypes = {
+    'cross_factory_transfer',
+  };
   static const Set<String> _crossFactoryNotificationTypes = {
     'assistant_assigned',
     'collab_auto_approved',
@@ -481,8 +484,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
         }
       }
       if (newUnread != null &&
-          _isAiAssignmentNotification(newUnread) &&
-          !_hasClaimedAlert()) {
+          (_shouldForceBuzzNotification(newUnread) ||
+              (_isAiAssignmentNotification(newUnread) &&
+                  !_hasClaimedAlert()))) {
         await _startBuzzing(newUnread);
       }
     }
@@ -511,8 +515,23 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     return _crossFactoryNotificationTypes.contains(type);
   }
 
+  bool _isCrossFactoryTransferNotification(Map<String, dynamic> notification) {
+    return notification['type']?.toString() == 'cross_factory_transfer';
+  }
+
   bool _isAiAssignmentNotification(Map<String, dynamic> notification) {
     return notification['type']?.toString() == 'ai_assigned';
+  }
+
+  bool _shouldForceBuzzNotification(Map<String, dynamic> notification) {
+    final type = notification['type']?.toString() ?? '';
+    return notification['buzz'] == true ||
+        _forceBuzzNotificationTypes.contains(type);
+  }
+
+  bool _supportsBuzzingNotification(Map<String, dynamic> notification) {
+    return _isAiAssignmentNotification(notification) ||
+        _isCrossFactoryTransferNotification(notification);
   }
 
   bool _hasClaimedAlert() {
@@ -537,7 +556,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
   Future<bool> _shouldKeepNotification(
       Map<String, dynamic> notification) async {
-    if (_isCollaborationNotification(notification)) return true;
+    if (_isCollaborationNotification(notification) ||
+        _isCrossFactoryTransferNotification(notification)) {
+      return true;
+    }
 
     final usine = _notificationFactory(notification);
     final alertId = notification['alertId']?.toString().trim();
@@ -575,7 +597,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
 
   Future<void> _startBuzzing(Map<String, dynamic> notification) async {
     final notificationId = notification['id']?.toString();
-    if (notificationId == null || !_isAiAssignmentNotification(notification)) {
+    if (notificationId == null || !_supportsBuzzingNotification(notification)) {
       return;
     }
     await Vibration.cancel();
@@ -754,6 +776,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                                       n['type'] == 'assistance_request';
                                   final isCollab =
                                       n['type'] == 'collaboration_request';
+                                  final isTransfer =
+                                      n['type'] == 'cross_factory_transfer';
                                   final isUnread = n['status'] != 'read';
                                   if (isHelp) {
                                     return _buildHelpRequestItem(
@@ -763,6 +787,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                                         n, isUnread, setModalState, context);
                                   } else if (isCollab) {
                                     return _buildCollabRequestItem(
+                                        n, isUnread, setModalState, context);
+                                  } else if (isTransfer) {
+                                    return _buildCrossFactoryTransferItem(
                                         n, isUnread, setModalState, context);
                                   } else {
                                     return _buildDefaultNotificationItem(
@@ -823,6 +850,41 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
           _notifications.where((item) => item['status'] != 'read').length;
     });
     setState(() {});
+  }
+
+  double? _notificationDistanceKm(Map<String, dynamic> notification) {
+    final value = notification['distanceKm'];
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
+    return null;
+  }
+
+  String? _distanceLabel(double? distanceKm) {
+    if (distanceKm == null || !distanceKm.isFinite) return null;
+    return '${distanceKm.toStringAsFixed(1)} km away';
+  }
+
+  Future<void> _openNotificationAlert(
+    Map<String, dynamic> notification,
+    bool isUnread,
+    StateSetter setModalState,
+    BuildContext modalContext,
+  ) async {
+    final alertId = notification['alertId']?.toString();
+    if (alertId == null || alertId.isEmpty) return;
+
+    if (isUnread) {
+      await _markNotificationAsRead(notification, setModalState, modalContext);
+    } else if (_buzzingNotificationId == notification['id']) {
+      await _stopBuzzing();
+    }
+
+    if (!mounted || !modalContext.mounted) return;
+    Navigator.pop(modalContext);
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => AlertDetailScreen(alertId: alertId)),
+    );
   }
 
   // Help Request Item
@@ -1360,6 +1422,279 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
   }
 
   // ── Default Notification Item ──
+  Widget _buildCrossFactoryTransferItem(Map<String, dynamic> n, bool isUnread,
+      StateSetter setModalState, BuildContext context) {
+    final t = context.appTheme;
+    final isBuzzingForThis = _isBuzzing && _buzzingNotificationId == n['id'];
+    final distanceLabel = _distanceLabel(_notificationDistanceKm(n));
+    final alertId = n['alertId']?.toString();
+    final canOpenAlert = alertId != null && alertId.isNotEmpty;
+    final accent = t.purple;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: t.orangeLt,
+        border: Border.all(
+          color: isUnread
+              ? accent.withValues(alpha: 0.40)
+              : accent.withValues(alpha: 0.20),
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: canOpenAlert
+              ? () =>
+                  _openNotificationAlert(n, isUnread, setModalState, context)
+              : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.swap_horiz, color: accent, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Cross-factory Transfer',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: t.text,
+                                  ),
+                                ),
+                              ),
+                              if (isUnread)
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: accent,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            n['message'] ??
+                                'Transfer required for a critical alert',
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                          ),
+                          if (distanceLabel != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              distanceLabel,
+                              style: TextStyle(color: t.muted, fontSize: 12),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: accent.withValues(alpha: 0.10),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: accent.withValues(alpha: 0.24),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.alt_route,
+                                      size: 14,
+                                      color: accent,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Urgent transfer',
+                                      style: TextStyle(
+                                        color: accent,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (distanceLabel != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: t.orange.withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: t.orange.withValues(alpha: 0.28),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    distanceLabel,
+                                    style: TextStyle(
+                                      color: t.orange,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.access_time,
+                                    size: 14,
+                                    color: t.muted,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatTimestamp(
+                                      DateTime.parse(
+                                        n['timestamp'] ??
+                                            DateTime.now().toIso8601String(),
+                                      ),
+                                    ),
+                                    style: TextStyle(
+                                      color: t.muted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (isBuzzingForThis)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.vibration,
+                                      size: 14,
+                                      color: t.red,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Phone is buzzing',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: t.red,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: canOpenAlert
+                          ? () => _openNotificationAlert(
+                              n, isUnread, setModalState, context)
+                          : null,
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text(
+                        'Open alert',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    if (isUnread)
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await _markNotificationAsRead(
+                              n, setModalState, context);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text(
+                                  'Cross-factory transfer marked as read',
+                                ),
+                                backgroundColor: t.green,
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(
+                          Icons.done_all_rounded,
+                          size: 16,
+                          color: accent,
+                        ),
+                        label: Text(
+                          'Mark as read',
+                          style: TextStyle(
+                            color: accent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: accent.withValues(alpha: 0.35),
+                          ),
+                          backgroundColor: accent.withValues(alpha: 0.06),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    if (isBuzzingForThis)
+                      _buildStopBuzzingButton(setModalState),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDefaultNotificationItem(Map<String, dynamic> n, bool isUnread,
       StateSetter setModalState, BuildContext context) {
     final t = context.appTheme;
