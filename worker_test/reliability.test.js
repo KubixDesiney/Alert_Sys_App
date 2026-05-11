@@ -8,10 +8,12 @@ import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globa
 import {
   _shiftContainsTime,
   pickActiveShift,
-  processShiftCollaborations,
   runAIAssignments,
   scoreSupervisor,
 } from '../cloudflare_worker.js';
+import {
+  processShiftCollaborations as processShiftCollaborationsV2,
+} from '../cloudflare_workerV2.js';
 import worker from '../cloudflare_worker.js';
 
 // ─── shared mock helpers ─────────────────────────────────────────────────────
@@ -923,7 +925,7 @@ describe('collaboration auto-approval workload cleanup', () => {
       return Promise.resolve(jsonRes({}));
     });
 
-    const processed = await processShiftCollaborations(env, {
+    const processed = await processShiftCollaborationsV2(env, {
       token: 'tok',
       activeShift,
       alertsMap,
@@ -1022,7 +1024,7 @@ describe('collaboration auto-approval workload cleanup', () => {
       return Promise.resolve(jsonRes({}));
     });
 
-    const processed = await processShiftCollaborations(env, {
+    const processed = await processShiftCollaborationsV2(env, {
       token: 'tok',
       activeShift,
       alertsMap,
@@ -1045,6 +1047,102 @@ describe('collaboration auto-approval workload cleanup', () => {
     );
     expect(approvalCall).toBeTruthy();
     expect(approvalCall.body.status).toBe('approved');
+  });
+
+  test('continues collaboration approval when alert suspension write fails', async () => {
+    const fetchCalls = [];
+    const env = { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' };
+    const activeShift = {
+      id: 'shift-1',
+      name: 'Morning',
+      aiCommander: true,
+      handleCollaborations: true,
+    };
+    const alertsMap = {
+      targetAlert: {
+        status: 'en_cours',
+        usine: 'Factory A',
+        superviseurId: 'u1',
+      },
+      ownedAlert: {
+        status: 'en_cours',
+        usine: 'Factory B',
+        superviseurId: 'u2',
+        superviseurName: 'Bob',
+      },
+    };
+    const usersMap = {
+      u1: { role: 'supervisor', usine: 'Factory A', fullName: 'Alice' },
+      u2: { role: 'supervisor', usine: 'Factory B', fullName: 'Bob' },
+    };
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    globalThis.fetch = jest.fn((url, opts) => {
+      const u = String(url);
+      const method = opts?.method ?? 'GET';
+      let body = null;
+      try { body = opts?.body ? JSON.parse(opts.body) : null; } catch (_) {}
+      fetchCalls.push({ url: u, method, body });
+
+      if (u.includes('collaboration_requests.json')) {
+        return Promise.resolve(jsonRes({
+          req1: {
+            status: 'awaiting_pm',
+            requesterId: 'u1',
+            requesterName: 'Alice',
+            alertId: 'targetAlert',
+            usine: 'Factory A',
+            assistantDecisions: { u2: 'accepted' },
+            targetSupervisorIds: ['u2'],
+            targetSupervisorNames: ['Bob'],
+            requiresPMApproval: true,
+          },
+        }));
+      }
+      if (u.includes('ai_collaboration_learning/latest.json')) {
+        return Promise.resolve(jsonRes({}));
+      }
+      if (u.includes('alerts/ownedAlert.json') && method === 'PATCH') {
+        return Promise.reject(new Error('network write failed'));
+      }
+      if (u.includes('collaboration_requests/req1.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('alerts/targetAlert.json') && method === 'PATCH') {
+        return Promise.resolve(jsonRes({ ok: true }));
+      }
+      if (u.includes('notifications/')) {
+        return Promise.resolve(jsonRes({ name: 'notif1' }));
+      }
+      if (u.includes('shift_ai_logs/shift-1.json')) {
+        return Promise.resolve(jsonRes({ name: 'log1' }));
+      }
+      return Promise.resolve(jsonRes({}));
+    });
+
+    const processed = await processShiftCollaborationsV2(env, {
+      token: 'tok',
+      activeShift,
+      alertsMap,
+      usersMap,
+    });
+
+    expect(processed).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to suspend alert ownedAlert for assistant u2: network write failed'),
+    );
+
+    const approvalCall = fetchCalls.find(
+      (c) => c.url.includes('collaboration_requests/req1.json') && c.method === 'PATCH',
+    );
+    expect(approvalCall).toBeTruthy();
+    expect(approvalCall.body.status).toBe('approved');
+
+    const historyCall = fetchCalls.find(
+      (c) => c.url.includes('alerts/ownedAlert/aiHistory.json') && c.method === 'POST',
+    );
+    expect(historyCall).toBeUndefined();
   });
 });
 

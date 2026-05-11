@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: '3.27.4'
+  FLUTTER_VERSION: '3.41.6'
   NODE_VERSION: '20'
   AUTO_FIX_URL: 'https://alert-notifier.aziz-nagati01.workers.dev'
 
@@ -176,7 +176,7 @@ jobs:
 
       - name: Build Web release
         if: steps.tests.outcome == 'success'
-        run: flutter build web --release --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev
+        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev
 
       - name: Upload web build artefact
         if: steps.tests.outcome == 'success'

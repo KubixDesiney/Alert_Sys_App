@@ -174,6 +174,8 @@ async function writeShiftAiLog(env, token, shiftId, entry) {
         factory: entry.factory || null,
         confidence: Number(entry.confidence || 0),
         reason: String(entry.reason || ''),
+        gate: entry.gate || null,
+        details: entry.details ?? null,
       }),
     });
     if (!res.ok) return null;
@@ -645,10 +647,11 @@ function pickActiveShift(shiftsMap, now = new Date()) {
 // ============ Core data loader ============
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
-  const [alertsRes, usersRes, shiftsRes] = await Promise.all([
+  const [alertsRes, usersRes, shiftsRes, factoriesRes] = await Promise.all([
     fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
+    fetch(`${env.FB_DB_URL}factories.json?auth=${token}`),
   ]);
   const shiftsMap = shiftsRes.ok ? ((await shiftsRes.json()) || {}) : {};
   return {
@@ -656,6 +659,7 @@ async function loadCoreData(env) {
     alertsMap: alertsRes.ok ? ((await alertsRes.json()) || {}) : {},
     usersMap: usersRes.ok ? ((await usersRes.json()) || {}) : {},
     shiftsMap,
+    factoriesMap: factoriesRes.ok ? ((await factoriesRes.json()) || {}) : {},
     activeShift: pickActiveShift(shiftsMap, new Date()),
   };
 }
@@ -1364,6 +1368,7 @@ const COLLAB_NOTIF_TYPES = new Set([
   'collaboration_request_admin',
   'assistant_assigned',
   'collab_auto_approved',
+  'cross_factory_transfer',
 ]);
 
 const ADMIN_ONLY_NOTIF_TYPES = new Set([
@@ -1394,6 +1399,7 @@ function notifTitle(type) {
     case 'collaboration_approved':
     case 'collaboration_rejected': return 'Collaboration update';
     case 'assistant_assigned': return 'Assistant assigned';
+    case 'cross_factory_transfer': return 'Cross-factory transfer';
     case 'help_request':
     case 'assistance_request': return 'Help request';
     case 'ai_cross_factory_recommendation': return 'AI recommendation';
@@ -1491,6 +1497,9 @@ async function fanOutPendingNotifications(env, ctx) {
 // ============ AI Assignment Engine (FULL SCORING) ============
 const AI_COOLDOWN_MS = 10 * 60 * 1000;
 const AI_ACTIVE_STATUSES = new Set(['active', 'available']);
+const CROSS_FACTORY_CRITICAL_THRESHOLD = 2;
+const DONOR_MAX_ACTIVE_ALERTS = 2;
+const MAX_LOCATION_AGE_MS = 10 * 60 * 1000;
 
 function aiSanitizeFactoryId(input) {
   return String(input || '')
@@ -1505,6 +1514,176 @@ function aiResolveFactory(obj) {
   if (fid) return aiSanitizeFactoryId(fid);
   const usine = String(obj.usine || '').trim();
   return usine ? aiSanitizeFactoryId(usine) : null;
+}
+
+// ============ Proximity Helpers ============
+function _parseLatLng(value) {
+  if (!value || typeof value !== 'object') return null;
+  const lat = Number(value.lat ?? value.latitude);
+  const lng = Number(value.lng ?? value.lon ?? value.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+function _freshLatLng(value, maxAgeMs, now = Date.now()) {
+  const point = _parseLatLng(value);
+  if (!point) return null;
+  const updatedAt = _toMs(value.updatedAt ?? value.timestamp ?? value.at);
+  if (updatedAt == null || now - updatedAt > maxAgeMs) return null;
+  return { ...point, updatedAt };
+}
+
+function _factoryLookup(factoriesMap = {}, factoryId = '') {
+  const wanted = aiSanitizeFactoryId(factoryId);
+  if (!wanted || !factoriesMap || typeof factoriesMap !== 'object') return null;
+  if (factoriesMap[factoryId]) return factoriesMap[factoryId];
+  if (factoriesMap[wanted]) return factoriesMap[wanted];
+  for (const [key, value] of Object.entries(factoriesMap)) {
+    if (aiSanitizeFactoryId(key) === wanted) return value;
+    if (value && typeof value === 'object' && aiResolveFactory(value) === wanted) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function _factoriesFromUsersMap(usersMap = {}) {
+  return usersMap.__factoriesMap || usersMap.__factories || usersMap.factoriesMap || usersMap.factories || {};
+}
+
+function _usersMapWithFactories(usersMap = {}, factoriesMap = {}) {
+  if (!factoriesMap || typeof factoriesMap !== 'object' || Object.keys(factoriesMap).length === 0) {
+    return usersMap || {};
+  }
+  const enriched = { ...(usersMap || {}) };
+  Object.defineProperty(enriched, '__factoriesMap', {
+    value: factoriesMap,
+    enumerable: false,
+    configurable: true,
+  });
+  return enriched;
+}
+
+function inferFactoryLocation(usersMap = {}, factoryId, maxAgeMs) {
+  const targetFactory = aiSanitizeFactoryId(factoryId);
+  const freshPoints = [];
+  for (const [uid, user] of Object.entries(usersMap || {})) {
+    if (String(uid || '').startsWith('__')) continue;
+    if (!user || typeof user !== 'object' || user.role !== 'supervisor') continue;
+    if (aiResolveFactory(user) !== targetFactory) continue;
+    const point = _freshLatLng(user.currentLocation, maxAgeMs);
+    if (point) freshPoints.push(point);
+  }
+
+  if (freshPoints.length > 0) {
+    const total = freshPoints.reduce(
+      (acc, point) => ({ lat: acc.lat + point.lat, lng: acc.lng + point.lng }),
+      { lat: 0, lng: 0 },
+    );
+    return {
+      lat: total.lat / freshPoints.length,
+      lng: total.lng / freshPoints.length,
+      source: 'supervisor_average',
+      count: freshPoints.length,
+    };
+  }
+
+  const factory = _factoryLookup(_factoriesFromUsersMap(usersMap), targetFactory);
+  const staticPoint = _parseLatLng(factory?.location);
+  return staticPoint ? { ...staticPoint, source: 'factory_static', count: 0 } : null;
+}
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (Number(deg) * Math.PI) / 180;
+  const p1 = toRad(lat1);
+  const p2 = toRad(lat2);
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(p1) * Math.cos(p2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function _isActiveAlert(alert) {
+  const status = String(alert?.status || '').toLowerCase();
+  return status === 'disponible' || status === 'en_cours';
+}
+
+function _isUnclaimedCriticalAlert(alert) {
+  const status = String(alert?.status || '').toLowerCase();
+  return status === 'disponible' && alert?.isCritical === true && !alert?.superviseurId;
+}
+
+function _factoryAlertCounts(alertsMap = {}, factoryId = '') {
+  const targetFactory = aiSanitizeFactoryId(factoryId);
+  let criticalUnclaimed = 0;
+  let activeCritical = 0;
+  let activeTotal = 0;
+  for (const alert of Object.values(alertsMap || {})) {
+    if (!alert || typeof alert !== 'object') continue;
+    if (aiResolveFactory(alert) !== targetFactory) continue;
+    if (_isUnclaimedCriticalAlert(alert)) criticalUnclaimed++;
+    if (_isActiveAlert(alert)) {
+      activeTotal++;
+      if (alert.isCritical === true) activeCritical++;
+    }
+  }
+  return { criticalUnclaimed, activeCritical, activeTotal };
+}
+
+function _activeSupervisorCount(usersMap = {}, factoryId = '', { excludeUid = null } = {}) {
+  const targetFactory = aiSanitizeFactoryId(factoryId);
+  let count = 0;
+  for (const [uid, user] of Object.entries(usersMap || {})) {
+    if (String(uid || '').startsWith('__')) continue;
+    if (!user || user.role !== 'supervisor') continue;
+    if (excludeUid && uid === excludeUid) continue;
+    if (!AI_ACTIVE_STATUSES.has(String(user.status || '').toLowerCase())) continue;
+    if (aiResolveFactory(user) === targetFactory) count++;
+  }
+  return count;
+}
+
+function _crossFactoryGate1(alertsMap = {}, usersMap = {}, factoryId = '') {
+  const counts = _factoryAlertCounts(alertsMap, factoryId);
+  const activeSupervisors = _activeSupervisorCount(usersMap, factoryId);
+  const allowed =
+    counts.criticalUnclaimed >= CROSS_FACTORY_CRITICAL_THRESHOLD &&
+    activeSupervisors < counts.criticalUnclaimed;
+  return {
+    allowed,
+    details: {
+      alertFactory: factoryId,
+      criticalUnclaimedAlerts: counts.criticalUnclaimed,
+      activeSupervisors,
+      threshold: CROSS_FACTORY_CRITICAL_THRESHOLD,
+    },
+  };
+}
+
+function _crossFactoryGate2(alertsMap = {}, usersMap = {}, candidate = {}) {
+  const donorFactory = candidate.factoryId || aiResolveFactory(candidate);
+  const counts = _factoryAlertCounts(alertsMap, donorFactory);
+  const remainingActiveSupervisors = _activeSupervisorCount(usersMap, donorFactory, {
+    excludeUid: candidate.uid,
+  });
+  const allowed =
+    counts.activeCritical === 0 &&
+    counts.activeTotal <= DONOR_MAX_ACTIVE_ALERTS &&
+    remainingActiveSupervisors >= 1;
+  return {
+    allowed,
+    details: {
+      supervisorId: candidate.uid || null,
+      donorFactory,
+      donorCriticalAlerts: counts.activeCritical,
+      donorActiveAlerts: counts.activeTotal,
+      donorMaxActiveAlerts: DONOR_MAX_ACTIVE_ALERTS,
+      donorActiveSupervisorsAfterTransfer: remainingActiveSupervisors,
+    },
+  };
 }
 
 async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env, token, allCandidates = []) {
@@ -1598,25 +1777,80 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
             name: c.name,
             score: c.score,
             reasons: c.reasons || [],
+            distanceKm: c.distanceKm ?? null,
             skipReason: c.skipReason ?? null,
           })),
         }),
       }),
     ]);
+
+    let transferNotificationId = null;
+    if (supervisor.crossFactoryTransfer) {
+      const alertFactory = supervisor.alertFactoryName || current.usine || '';
+      const donorFactory = supervisor.donorFactoryName || supervisor.factoryName || supervisor.factoryId || '';
+      const distanceText =
+        typeof supervisor.distanceKm === 'number'
+          ? ` (${supervisor.distanceKm.toFixed(1)} km away)`
+          : '';
+      const transferMessage =
+        `You are being transferred from ${donorFactory || 'your factory'} ` +
+        `to ${alertFactory || 'another factory'} for ${current.type || 'an alert'}${distanceText}.`;
+      try {
+        const notifRes = await fetch(`${env.FB_DB_URL}notifications/${supervisor.uid}.json?auth=${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'cross_factory_transfer',
+            alertId: String(alertId),
+            alertType: current.type || 'alert',
+            alertDescription: current.description || '',
+            alertFactory,
+            donorFactory,
+            distanceKm: supervisor.distanceKm ?? null,
+            message: transferMessage,
+            timestamp: nowIso,
+            status: 'pending',
+            buzz: true,
+            pushSent: false,
+          }),
+        });
+        if (notifRes.ok) {
+          const notifData = await notifRes.json().catch(() => null);
+          transferNotificationId = notifData?.name || null;
+        }
+      } catch (e) {
+        console.error('[AI-ASSIGN] Cross-factory notification write failed: ' + e.message);
+      }
+    }
+
     if (supervisor.fcmToken) {
-      await sendFcm(
+      const isTransfer = supervisor.crossFactoryTransfer === true;
+      const fcmTitle = isTransfer ? 'Cross-factory transfer' : 'AI Assignment';
+      const fcmBody = isTransfer
+        ? `Transfer to ${supervisor.alertFactoryName || current.usine || 'the alert factory'}: ${current.type || 'alert'}`
+        : `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`;
+      const fcmSent = await sendFcm(
         supervisor.fcmToken,
-        'AI Assignment',
-        `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`,
+        fcmTitle,
+        fcmBody,
         {
-          type: 'ai_assigned',
+          type: isTransfer ? 'cross_factory_transfer' : 'ai_assigned',
           alertId: String(alertId),
           recipientId: String(supervisor.uid),
           reason: reasonSummary,
           usine: String(current.usine || ''),
+          donorFactory: String(supervisor.donorFactoryName || supervisor.factoryName || supervisor.factoryId || ''),
+          distanceKm: supervisor.distanceKm == null ? '' : String(supervisor.distanceKm),
         },
         env,
       );
+      if (fcmSent && transferNotificationId) {
+        await fetch(`${env.FB_DB_URL}notifications/${supervisor.uid}/${transferNotificationId}.json?auth=${token}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pushSent: true, pushSentAt: nowIso }),
+        });
+      }
     }
     return true;
   }
@@ -1625,23 +1859,27 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
 
 async function runAIAssignments(env, ctx) {
   const token = ctx?.token ?? (await getFirebaseToken(env));
-  let alertsMap, usersMap, activeShift;
+  let alertsMap, usersMap, factoriesMap, activeShift;
   if (ctx) {
     alertsMap = ctx.alertsMap;
     usersMap = ctx.usersMap;
+    factoriesMap = ctx.factoriesMap || ctx.factories || {};
     activeShift = ctx.targetShift ?? ctx.activeShift ?? null;
   } else {
-    const [ar, ur, sr] = await Promise.all([
+    const [ar, ur, sr, fr] = await Promise.all([
       fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
       fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
       fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
+      fetch(`${env.FB_DB_URL}factories.json?auth=${token}`),
     ]);
     if (!ar.ok || !ur.ok) return;
     alertsMap = (await ar.json()) || {};
     usersMap = (await ur.json()) || {};
     const shiftsMap = sr.ok ? ((await sr.json()) || {}) : {};
+    factoriesMap = fr.ok ? ((await fr.json()) || {}) : {};
     activeShift = pickActiveShift(shiftsMap, new Date());
   }
+  const proximityUsersMap = _usersMapWithFactories(usersMap, factoriesMap);
   const capabilities = commanderCapabilities(activeShift);
   const aiCommander = capabilities.aiCommander;
   const shiftRandomize = !!(activeShift && activeShift.randomize === true);
@@ -1712,6 +1950,23 @@ async function runAIAssignments(env, ctx) {
     });
     const alert = factoryAlerts[0];
     if (!alert) continue;
+    let gate1Result = null;
+    let alertFactoryLocation = null;
+    let alertFactoryLocationResolved = false;
+    const crossFactoryBlockLogKeys = new Set();
+    const logCrossFactoryBlocked = async (gate, details, reason) => {
+      const key = `${factoryId}:${gate}:${details?.supervisorId || 'factory'}`;
+      if (crossFactoryBlockLogKeys.has(key)) return;
+      crossFactoryBlockLogKeys.add(key);
+      await writeShiftAiLog(env, token, activeShift?.id, {
+        kind: 'cross_factory_blocked',
+        alertLabel: `${alert.type || 'Alert'}${alert.usine ? ` • ${alert.usine}` : ''}`,
+        factory: alert.usine || factoryId,
+        gate,
+        details,
+        reason,
+      });
+    };
     const candidates = [];
     for (const [uid, u] of Object.entries(usersMap)) {
       if (!u || u.role !== 'supervisor') continue;
@@ -1721,13 +1976,68 @@ async function runAIAssignments(env, ctx) {
       const cooldown = Date.parse(String(u.aiCooldownUntil || ''));
       if (!isNaN(cooldown) && cooldown > now) continue;
       const userFactory = aiResolveFactory(u);
+      let distanceKm = null;
+      let currentLocation = null;
 
       if (aiCommander) {
         // Under AI Commander, ONLY assign supervisors in this shift's roster.
-        // Cross-factory transfers are only allowed when enabled for the shift.
+        // Cross-factory transfers are only allowed when enabled for the shift
+        // and the overload/donor/proximity gates below pass.
         if (!shiftSupervisorIds.has(uid)) continue;
-        if (!capabilities.handleCrossFactoryTransfer && (!userFactory || userFactory !== factoryId)) {
-          continue;
+        if (!userFactory) continue;
+        const isCrossFactory = userFactory !== factoryId;
+
+        if (isCrossFactory) {
+          if (!capabilities.handleCrossFactoryTransfer) continue;
+
+          gate1Result ??= _crossFactoryGate1(alertsMap, usersMap, factoryId);
+          if (!gate1Result.allowed) {
+            await logCrossFactoryBlocked(
+              'gate_1_alert_factory_overwhelmed',
+              gate1Result.details,
+              `Cross-factory transfer blocked: alert factory has ${gate1Result.details.criticalUnclaimedAlerts} critical unclaimed alert(s) and ${gate1Result.details.activeSupervisors} active supervisor(s).`,
+            );
+            continue;
+          }
+
+          const gate2Result = _crossFactoryGate2(alertsMap, usersMap, { ...u, uid, factoryId: userFactory });
+          if (!gate2Result.allowed) {
+            await logCrossFactoryBlocked(
+              'gate_2_donor_factory_quiet',
+              gate2Result.details,
+              `Cross-factory transfer blocked: donor factory ${gate2Result.details.donorFactory || 'unknown'} is not quiet enough or would be left unstaffed.`,
+            );
+            continue;
+          }
+
+          currentLocation = _freshLatLng(u.currentLocation, MAX_LOCATION_AGE_MS, now);
+          if (!currentLocation) {
+            await logCrossFactoryBlocked(
+              'gate_3_proximity_scoring',
+              {
+                supervisorId: uid,
+                donorFactory: userFactory,
+                reason: 'missing_or_stale_supervisor_gps',
+                maxLocationAgeMs: MAX_LOCATION_AGE_MS,
+                updatedAt: u.currentLocation?.updatedAt ?? null,
+              },
+              `Cross-factory transfer blocked: ${u.fullName || uid} has no fresh GPS location.`,
+            );
+            continue;
+          }
+
+          if (!alertFactoryLocationResolved) {
+            alertFactoryLocation = inferFactoryLocation(proximityUsersMap, factoryId, MAX_LOCATION_AGE_MS);
+            alertFactoryLocationResolved = true;
+          }
+          if (alertFactoryLocation) {
+            distanceKm = haversineDistance(
+              currentLocation.lat,
+              currentLocation.lng,
+              alertFactoryLocation.lat,
+              alertFactoryLocation.lng,
+            );
+          }
         }
       } else {
         // Normal mode: same factory only.
@@ -1739,6 +2049,9 @@ async function runAIAssignments(env, ctx) {
         uid,
         factoryId: userFactory,
         factoryName: u.usine || null,
+        isCrossFactory: aiCommander && userFactory !== factoryId,
+        distanceKm,
+        currentLocation,
       });
     }
     if (candidates.length === 0) continue;
@@ -1767,25 +2080,61 @@ async function runAIAssignments(env, ctx) {
         factoryId: u.factoryId || null,
         factoryName: u.factoryName || u.usine || null,
         score,
-        reasons,
+        reasons: [
+          ...reasons,
+          ...(u.isCrossFactory
+            ? [
+                typeof u.distanceKm === 'number'
+                  ? `Cross-factory distance ${u.distanceKm.toFixed(1)} km`
+                  : 'Cross-factory distance unavailable; score fallback',
+              ]
+            : []),
+        ],
+        isCrossFactory: u.isCrossFactory === true,
+        distanceKm: u.distanceKm,
+        currentLocation: u.currentLocation,
       };
     });
 
     // Step 1: sort by score so the confidence calculation reflects the true best candidates.
     scored.sort((a, b) => b.score - a.score);
+    const scoreSorted = [...scored];
+    const crossFactoryOnly = scored.length > 0 && scored.every((candidate) => candidate.isCrossFactory);
+    if (crossFactoryOnly) {
+      const withDistance = scored
+        .filter((candidate) => typeof candidate.distanceKm === 'number' && Number.isFinite(candidate.distanceKm))
+        .sort((a, b) => (a.distanceKm - b.distanceKm) || (b.score - a.score));
+      const withoutDistance = scored.filter(
+        (candidate) => !(typeof candidate.distanceKm === 'number' && Number.isFinite(candidate.distanceKm)),
+      );
+      scored.splice(
+        0,
+        scored.length,
+        ...(withDistance.length > 0 ? [...withDistance, ...withoutDistance] : scoreSorted),
+      );
+    }
 
     // Step 2: check confidence floor against the sorted pool BEFORE any shuffle.
     // This ensures a randomly-ordered low-score pick can never falsely block a valid pool.
-    const topSum = scored.slice(0, 3).reduce((s, c) => s + c.score, 0);
-    const confidence = topSum > 0 ? Math.min(scored[0].score / topSum, 1.0) : 1.0;
+    const topSum = scoreSorted.slice(0, 3).reduce((s, c) => s + c.score, 0);
+    const confidence = topSum > 0 ? Math.min(scoreSorted[0].score / topSum, 1.0) : 1.0;
     // Step 3: optionally shuffle so the AI Commander picks randomly from the confident pool.
-    if (shiftRandomize) {
+    if (shiftRandomize && !crossFactoryOnly) {
       for (let k = scored.length - 1; k > 0; k--) {
         const j = Math.floor(Math.random() * (k + 1));
         const tmp = scored[k]; scored[k] = scored[j]; scored[j] = tmp;
       }
     }
     const best = scored[0];
+    if (best?.isCrossFactory) {
+      best.crossFactoryTransfer = true;
+      best.alertFactoryId = factoryId;
+      best.alertFactoryName = alert.usine || factoryId;
+      best.donorFactoryName = best.factoryName || best.factoryId || null;
+      best.criticalAlertCount =
+        gate1Result?.details?.criticalUnclaimedAlerts ??
+        _factoryAlertCounts(alertsMap, factoryId).criticalUnclaimed;
+    }
     let reasonSummary = best.reasons.join(' • ');
     if (aiCommander) {
       reasonSummary = `[Shift "${activeShift.name || activeShift.id}"] ` + reasonSummary;
@@ -1802,18 +2151,27 @@ async function runAIAssignments(env, ctx) {
         alert.usine ? `for ${alert.usine}` : null,
         `to ${best.name}.`,
         transferUsed
-            ? `Cross-factory transfer used from ${best.factoryName || best.factoryId} to ${alert.usine || factoryId}.`
+            ? `Cross-factory transfer used from ${best.factoryName || best.factoryId} to ${alert.usine || factoryId}${typeof best.distanceKm === 'number' ? ` (${best.distanceKm.toFixed(1)} km)` : ''}.`
             : 'Assignment stayed within the allowed factory scope.',
         `Confidence ${(confidence * 100).toFixed(0)}%.`,
         `Reasoning: ${best.reasons.join(' | ') || 'No score breakdown provided.'}`,
       ].filter(Boolean);
       await writeShiftAiLog(env, token, activeShift?.id, {
-        kind: transferUsed ? 'transfer' : 'assigned',
+        kind: transferUsed ? 'cross_factory_transfer' : 'assigned',
         alertLabel: `${alert.type || 'Alert'}${alert.usine ? ` • ${alert.usine}` : ''}`,
         supervisorName: best.name,
         supervisorId: best.uid,
         factory: alert.usine || null,
         confidence,
+        details: transferUsed
+          ? {
+              distanceKm: best.distanceKm ?? null,
+              supervisorName: best.name,
+              alertFactory: alert.usine || factoryId,
+              donorFactory: best.factoryName || best.factoryId || null,
+              criticalAlertCount: best.criticalAlertCount ?? null,
+            }
+          : null,
         reason: detailParts.join(' '),
       });
       busy.add(best.uid);
@@ -1863,6 +2221,88 @@ function _collabAcceptedCollaborators(req = {}) {
     });
   }
   return accepted;
+}
+
+function _buildAssistantAlertSuspensionPatch() {
+  return {
+    status: 'disponible',
+    superviseurId: null,
+    superviseurName: null,
+    takenAtTimestamp: null,
+    aiAssigned: false,
+    aiAssignmentReason: null,
+    aiConfidence: null,
+    aiAssignedAt: null,
+  };
+}
+
+async function suspendAcceptedAssistantAlerts(env, token, acceptedCollaborators = [], alertsMap = {}, {
+  activeShift = null,
+  collaborationRequestId = null,
+} = {}) {
+  const nowIso = new Date().toISOString();
+  const suspended = [];
+
+  for (const collaborator of acceptedCollaborators || []) {
+    const assistantId = String(collaborator?.id || '');
+    if (!assistantId) continue;
+    const ownedAlerts = Object.entries(alertsMap || {}).filter(
+      ([, alert]) =>
+        alert &&
+        typeof alert === 'object' &&
+        String(alert.status || '').toLowerCase() === 'en_cours' &&
+        String(alert.superviseurId || '') === assistantId,
+    );
+
+    for (const [alertId] of ownedAlerts) {
+      try {
+        const patch = _buildAssistantAlertSuspensionPatch();
+        const patchRes = await fetch(`${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        if (!patchRes.ok) {
+          console.error(
+            `[AI-COLLAB] Failed to suspend alert ${alertId} for assistant ${assistantId}: HTTP ${patchRes.status}`,
+          );
+          continue;
+        }
+
+        if (alertsMap?.[alertId]) {
+          Object.assign(alertsMap[alertId], patch);
+        }
+        suspended.push({ assistantId, alertId });
+
+        try {
+          await fetch(`${env.FB_DB_URL}alerts/${alertId}/aiHistory.json?auth=${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'suspended_for_collaboration',
+              assistantId,
+              assistantName: collaborator?.name || null,
+              collaborationRequestId,
+              shiftId: activeShift?.id || null,
+              timestamp: nowIso,
+              reason:
+                'AI Shift Commander suspended the assistant\'s existing claimed alert before auto-approving collaboration.',
+            }),
+          });
+        } catch (historyErr) {
+          console.error(
+            `[AI-COLLAB] Failed to write suspension history for alert ${alertId}: ${historyErr.message}`,
+          );
+        }
+      } catch (err) {
+        console.error(
+          `[AI-COLLAB] Failed to suspend alert ${alertId} for assistant ${assistantId}: ${err.message}`,
+        );
+      }
+    }
+  }
+
+  return suspended;
 }
 
 function _collabAlertFactory(req = {}, alert = {}) {
@@ -2408,6 +2848,16 @@ async function processShiftCollaborations(env, ctx) {
       continue;
     }
     const leadAssistant = acceptedCollaborators[0];
+    const suspendedAlerts = await suspendAcceptedAssistantAlerts(
+      env,
+      token,
+      acceptedCollaborators,
+      alertsMap,
+      {
+        activeShift,
+        collaborationRequestId: reqId,
+      },
+    );
     const patch = {
       status: 'approved',
       pmApproved: true,
@@ -2458,6 +2908,9 @@ async function processShiftCollaborations(env, ctx) {
           `Approved collaboration request ${reqId} for shift "${activeShift.name || activeShift.id}". ` +
           `Assistant approvals: ${acceptedCount}/${denominator}. ` +
           `AI judgement: ${decision.reason} ` +
+          `${suspendedAlerts.length > 0
+            ? `Suspended ${suspendedAlerts.length} pre-existing claimed alert(s) so assistants start collaboration with a clean workload. `
+            : ''}` +
           `Requester: ${req.requesterName || req.requesterFullName || req.requesterId || 'Unknown'}. ` +
           `${acceptedCollaborators.length > 0
             ? (alertUpdateRes.ok
@@ -3016,6 +3469,9 @@ export {
   aiResolveFactory,
   buildSupStats,
   scoreSupervisor,
+  inferFactoryLocation,
+  haversineDistance,
+  runAIAssignments,
   buildPredictiveModel,
   notifTitle,
   base64UrlEncode,
@@ -3031,4 +3487,7 @@ export {
   _writeCronHealth,
   validatePredictions,
   _historyKey,
+  processShiftCollaborations,
+  suspendAcceptedAssistantAlerts,
+  _buildAssistantAlertSuspensionPatch,
 };

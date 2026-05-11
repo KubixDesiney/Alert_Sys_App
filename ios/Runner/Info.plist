@@ -30,6 +30,8 @@
 	<string>This app uses the microphone to allow you to speak voice commands.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera to scan station QR codes.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses location to report supervisor proximity for urgent factory transfers.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>This app uses speech recognition to convert your voice commands into actions.</string>
 	<key>UIApplicationSceneManifest</key>

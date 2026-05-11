@@ -116,7 +116,10 @@
       ".indexOn": ["role", "usine", "aiOptOut"],
       "$userId": {
         ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
-        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        "currentLocation": {
+          ".validate": "newData.hasChildren(['lat','lng']) && newData.child('lat').isNumber() && newData.child('lng').isNumber() && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').isString())"
+        }
       }
     },
 
@@ -230,6 +233,11 @@
       "$factoryId": {
         ".read": "auth != null",
         ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        "name": { ".validate": "!newData.exists() || newData.isString()" },
+        "address": { ".validate": "!newData.exists() || newData.isString()" },
+        "location": {
+          ".validate": "newData.hasChildren(['lat','lng']) && newData.child('lat').isNumber() && newData.child('lng').isNumber()"
+        },
         "aiConfig": {
           ".read": "auth != null",
           ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
