@@ -510,7 +510,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Row(children: [
           Icon(Icons.person_add, size: 20),
           SizedBox(width: 8),
@@ -526,7 +526,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               title: Text(filtered[i].fullName),
               subtitle: Text(filtered[i].email),
               onTap: () async {
-                Navigator.pop(_);
+                Navigator.pop(dialogContext);
                 await _auth.assignSupervisorToAlert(
                     alert.id, filtered[i].id, filtered[i].fullName);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -540,7 +540,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
         ],
       ),
     );
@@ -561,7 +562,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Row(children: [
           Icon(Icons.group_add, size: 20),
           SizedBox(width: 8),
@@ -577,7 +578,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               title: Text(filtered[i].fullName),
               subtitle: Text(filtered[i].email),
               onTap: () async {
-                Navigator.pop(_);
+                Navigator.pop(dialogContext);
                 await _auth.assignAssistantToAlert(
                     alert.id, filtered[i].id, filtered[i].fullName);
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -592,7 +593,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
         ],
       ),
     );
@@ -1643,7 +1645,7 @@ class _HeaderState extends State<_Header> {
                                       }
                                       showDialog(
                                         context: context,
-                                        builder: (_) => AlertDialog(
+                                        builder: (dialogContext) => AlertDialog(
                                           title: const Text('Assign Assistant'),
                                           content: SizedBox(
                                             width: 300,
@@ -1659,7 +1661,7 @@ class _HeaderState extends State<_Header> {
                                                 subtitle:
                                                     Text(supervisors[i].email),
                                                 onTap: () async {
-                                                  Navigator.pop(_);
+                                                  Navigator.pop(dialogContext);
                                                   await AuthService()
                                                       .assignAssistantToAlert(
                                                     n['alertId'],
@@ -1699,7 +1701,7 @@ class _HeaderState extends State<_Header> {
                                           actions: [
                                             TextButton(
                                                 onPressed: () =>
-                                                    Navigator.pop(_),
+                                                    Navigator.pop(dialogContext),
                                                 child: const Text('Cancel')),
                                           ],
                                         ),

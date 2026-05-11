@@ -1109,7 +1109,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               }
               showDialog(
                 context: context,
-                builder: (_) => AlertDialog(
+                builder: (dialogContext) => AlertDialog(
                   title: const Text('Assign Assistant'),
                   content: SizedBox(
                     width: 300,
@@ -1121,7 +1121,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         title: Text(supervisors[i].fullName),
                         subtitle: Text(supervisors[i].email),
                         onTap: () async {
-                          Navigator.pop(_);
+                          Navigator.pop(dialogContext);
                           await AuthService().assignAssistantToAlert(
                               n['alertId'],
                               supervisors[i].id,
@@ -1149,7 +1149,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   ),
                   actions: [
                     TextButton(
-                        onPressed: () => Navigator.pop(_),
+                        onPressed: () => Navigator.pop(dialogContext),
                         child: const Text('Cancel'))
                   ],
                 ),

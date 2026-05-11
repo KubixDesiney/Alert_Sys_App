@@ -56,7 +56,7 @@ class ScoreReinforcementService extends ChangeNotifier {
     if (_db == null) return; // no Firebase in pure-test contexts
 
     // Listen for individual alert resolution events.
-    _alertSub = _db!
+    _alertSub = _db
         .child('alerts')
         .onChildChanged
         .listen(_onAlertChanged, onError: _onError);
@@ -135,7 +135,7 @@ class ScoreReinforcementService extends ChangeNotifier {
   Future<void> _accumulateReward(String supervisorId, double reward) async {
     if (_db == null) return;
     try {
-      final ref = _db!.child('ai_feedback/summary/$supervisorId');
+      final ref = _db.child('ai_feedback/summary/$supervisorId');
       final snap = await ref.get();
       final current = snap.exists
           ? Map<String, dynamic>.from(snap.value as Map)
@@ -162,7 +162,7 @@ class ScoreReinforcementService extends ChangeNotifier {
   Future<void> _recalcAdjustments() async {
     if (_db == null) return;
     try {
-      final snap = await _db!.child('ai_feedback/summary').get();
+      final snap = await _db.child('ai_feedback/summary').get();
       if (!snap.exists) return;
       final summaries = Map<String, dynamic>.from(snap.value as Map);
       final updates = <String, Object>{};
@@ -178,7 +178,7 @@ class ScoreReinforcementService extends ChangeNotifier {
 
       if (updates.isNotEmpty) {
         // Write all adjustments in one multi-path update.
-        final adjRef = _db!.child('ai_feedback/adjustments');
+        final adjRef = _db.child('ai_feedback/adjustments');
         await adjRef.set(updates);
         notifyListeners();
       }
@@ -192,7 +192,7 @@ class ScoreReinforcementService extends ChangeNotifier {
   Future<void> _loadAdjustments() async {
     if (_db == null) return;
     try {
-      final snap = await _db!.child('ai_feedback/adjustments').get();
+      final snap = await _db.child('ai_feedback/adjustments').get();
       if (!snap.exists) return;
       final raw = Map<String, dynamic>.from(snap.value as Map);
       final parsed = {

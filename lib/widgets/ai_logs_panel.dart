@@ -521,7 +521,7 @@ class _LogTile extends StatelessWidget {
     final t = context.appTheme;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Abort AI assignment?'),
         content: Text(
           'This will remove ${entry.assignedSupervisorName ?? "the supervisor"} '
@@ -531,10 +531,10 @@ class _LogTile extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_, false),
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(_, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: t.orange),
             child: const Text('Abort', style: TextStyle(color: Colors.white)),
           ),
@@ -579,7 +579,7 @@ class _LogTile extends StatelessWidget {
     final t = context.appTheme;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Decline recommendation?'),
         content: Text(
           'This will reject the AI cross-factory transfer recommendation for this alert.',
@@ -587,10 +587,10 @@ class _LogTile extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_, false),
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(_, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: t.red),
             child: const Text('Decline', style: TextStyle(color: Colors.white)),
           ),
