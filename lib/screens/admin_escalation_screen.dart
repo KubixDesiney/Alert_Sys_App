@@ -11,7 +11,6 @@ import '../utils/user_friendly_error.dart';
 import '../widgets/common/app_loading_indicator.dart';
 
 const _navy = AppColors.navy;
-const _white = AppColors.white;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
 const _greenLt = AppColors.greenLight;

@@ -834,7 +834,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final controller = TextEditingController();
     final newNumber = await showDialog<int>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Add Conveyor'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -850,9 +850,11 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(_, int.tryParse(controller.text)),
+            onPressed: () =>
+                Navigator.pop(dialogContext, int.tryParse(controller.text)),
             child: const Text('Add'),
           ),
         ],
@@ -888,7 +890,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         TextEditingController(text: _selectedConveyor!.number.toString());
     final newNumber = await showDialog<int>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Edit Conveyor'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -904,9 +906,11 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(_, int.tryParse(controller.text)),
+            onPressed: () =>
+                Navigator.pop(dialogContext, int.tryParse(controller.text)),
             child: const Text('Save'),
           ),
         ],
@@ -933,7 +937,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final controller = TextEditingController();
     final toAdd = await showDialog<int>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Add Station'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -956,12 +960,13 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               final int? count = int.tryParse(controller.text);
               if (count != null && count > 0 && count <= remaining) {
-                Navigator.pop(_, count);
+                Navigator.pop(dialogContext, count);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -996,16 +1001,16 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
   Future<void> _deleteFactory(Factory factory) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Factory'),
         content:
             Text('Delete "${factory.name}" and all its conveyors/stations?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_, false),
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () => Navigator.pop(_, true),
+              onPressed: () => Navigator.pop(dialogContext, true),
               style: ElevatedButton.styleFrom(backgroundColor: _red),
               child: const Text('Delete')),
         ],
@@ -1047,16 +1052,16 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
 
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Conveyor'),
         content:
             Text('Delete Conveyor ${conveyor.number} and all its stations?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(_, false),
+              onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel')),
           ElevatedButton(
-              onPressed: () => Navigator.pop(_, true),
+              onPressed: () => Navigator.pop(dialogContext, true),
               style: ElevatedButton.styleFrom(backgroundColor: _red),
               child: const Text('Delete')),
         ],
