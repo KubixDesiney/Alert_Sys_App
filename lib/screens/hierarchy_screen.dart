@@ -15,6 +15,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../theme.dart';
+import '../utils/google_maps_web_support.dart';
 import '../utils/user_friendly_error.dart';
 import '../widgets/common/app_loading_indicator.dart';
 import 'factory_mapping_tab.dart';
@@ -2230,6 +2231,18 @@ class FactoryLocationSelection {
   }
 }
 
+class _LocationSearchSuggestion {
+  final String displayName;
+  final String cityCountry;
+  final LatLng point;
+
+  const _LocationSearchSuggestion({
+    required this.displayName,
+    required this.cityCountry,
+    required this.point,
+  });
+}
+
 class FactoryLocationPicker extends StatefulWidget {
   final FactoryLocationSelection initialSelection;
   final VoidCallback onCancel;
@@ -2256,7 +2269,10 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
   LatLng? _selectedLatLng;
   String _address = '';
   String? _error;
+  Timer? _searchDebounce;
+  List<_LocationSearchSuggestion> _suggestions = [];
   bool _searching = false;
+  bool _loadingSuggestions = false;
 
   @override
   void initState() {
@@ -2273,8 +2289,8 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
-    _mapController?.dispose();
     super.dispose();
   }
 
@@ -2289,9 +2305,8 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
         position: point,
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         infoWindow: InfoWindow(
-          title: 'Lat/Lng',
-          snippet:
-              '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}',
+          title: 'Selected location',
+          snippet: _displayLocationLabel,
         ),
       ),
     };
@@ -2300,23 +2315,22 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
   Future<void> _searchAddress() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
+    FocusScope.of(context).unfocus();
     setState(() {
       _searching = true;
       _error = null;
+      _suggestions = [];
     });
     try {
-      final point = await _geocodeAddress(query);
-      if (point == null) {
+      final suggestion = await _bestLocationSuggestion(query);
+      if (suggestion == null) {
         setState(() => _error = 'Address not found');
         return;
       }
       await _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(point, 15),
+        CameraUpdate.newLatLngZoom(suggestion.point, 15),
       );
-      setState(() {
-        _selectedLatLng = point;
-        _address = query;
-      });
+      await _selectSuggestion(suggestion, animate: false);
     } catch (e) {
       setState(() => _error = 'Could not search address');
     } finally {
@@ -2324,61 +2338,145 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
     }
   }
 
-  Future<LatLng?> _geocodeAddress(String query) async {
+  Future<_LocationSearchSuggestion?> _bestLocationSuggestion(
+      String query) async {
+    final suggestions = await _fetchLocationSuggestions(query, limit: 1);
+    if (suggestions.isNotEmpty) return suggestions.first;
+
     try {
       final locations = await geo.locationFromAddress(query);
       if (locations.isNotEmpty) {
         final first = locations.first;
-        return LatLng(first.latitude, first.longitude);
+        final point = LatLng(first.latitude, first.longitude);
+        final cityCountry =
+            await _reverseGeocodeCityCountry(point) ?? query.trim();
+        return _LocationSearchSuggestion(
+          displayName: query.trim(),
+          cityCountry: cityCountry,
+          point: point,
+        );
       }
     } catch (_) {}
+
+    return null;
+  }
+
+  Future<List<_LocationSearchSuggestion>> _fetchLocationSuggestions(
+    String query, {
+    int limit = 6,
+  }) async {
+    final normalized = query.trim();
+    if (normalized.length < 3) return [];
+    final googleSuggestions = await googleMapsWebLocationSuggestions(
+      normalized,
+      limit: limit,
+    );
+    if (googleSuggestions.isNotEmpty) {
+      return googleSuggestions
+          .map(
+            (suggestion) => _LocationSearchSuggestion(
+              displayName: suggestion.displayName,
+              cityCountry: suggestion.cityCountry,
+              point: LatLng(suggestion.lat, suggestion.lng),
+            ),
+          )
+          .toList();
+    }
 
     try {
       final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
         'format': 'json',
-        'limit': '1',
-        'q': query,
+        'addressdetails': '1',
+        'limit': '$limit',
+        'q': normalized,
       });
-      final response = await http.get(
-        uri,
-        headers: const {'User-Agent': 'AlertSys/1.0'},
-      );
-      if (response.statusCode != 200) return null;
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return [];
       final data = jsonDecode(response.body);
-      if (data is! List || data.isEmpty || data.first is! Map) return null;
-      final first = Map<Object?, Object?>.from(data.first as Map);
-      final lat = double.tryParse(first['lat']?.toString() ?? '');
-      final lon = double.tryParse(first['lon']?.toString() ?? '');
-      if (lat == null || lon == null) return null;
-      return LatLng(lat, lon);
+      if (data is! List) return [];
+      final suggestions = <_LocationSearchSuggestion>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final map = Map<Object?, Object?>.from(item);
+        final lat = double.tryParse(map['lat']?.toString() ?? '');
+        final lon = double.tryParse(map['lon']?.toString() ?? '');
+        if (lat == null || lon == null) continue;
+        final address = map['address'] is Map
+            ? Map<Object?, Object?>.from(map['address'] as Map)
+            : const <Object?, Object?>{};
+        final cityCountry = _cityCountryFromAddressMap(address);
+        suggestions.add(
+          _LocationSearchSuggestion(
+            displayName: map['display_name']?.toString() ?? query.trim(),
+            cityCountry: cityCountry.isNotEmpty ? cityCountry : normalized,
+            point: LatLng(lat, lon),
+          ),
+        );
+      }
+      return suggestions;
     } catch (_) {
-      return null;
+      return [];
     }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    final query = value.trim();
+    if (query.length < 3) {
+      setState(() {
+        _suggestions = [];
+        _loadingSuggestions = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      if (!mounted) return;
+      setState(() {
+        _loadingSuggestions = true;
+        _error = null;
+      });
+      final suggestions = await _fetchLocationSuggestions(query);
+      if (!mounted || _searchController.text.trim() != query) return;
+      setState(() {
+        _suggestions = suggestions;
+        _loadingSuggestions = false;
+      });
+    });
+  }
+
+  Future<void> _selectSuggestion(
+    _LocationSearchSuggestion suggestion, {
+    bool animate = true,
+  }) async {
+    _searchDebounce?.cancel();
+    FocusScope.of(context).unfocus();
+    if (animate) {
+      await _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(suggestion.point, 15),
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _selectedLatLng = suggestion.point;
+      _address = suggestion.cityCountry;
+      _searchController.text = suggestion.cityCountry;
+      _suggestions = [];
+      _error = null;
+    });
   }
 
   Future<void> _dropPin(LatLng point) async {
     setState(() {
       _selectedLatLng = point;
       _error = null;
+      _suggestions = [];
     });
-    try {
-      final marks =
-          await geo.placemarkFromCoordinates(point.latitude, point.longitude);
-      if (marks.isEmpty) return;
-      final formatted = _formatPlacemark(marks.first);
-      if (formatted.isEmpty) return;
-      if (!mounted) return;
-      setState(() {
-        _address = formatted;
-        _searchController.text = formatted;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _address =
-            '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
-      });
-    }
+    final formatted = await _reverseGeocodeCityCountry(point);
+    if (!mounted) return;
+    setState(() {
+      _address = formatted ?? _fallbackLocationLabel();
+      _searchController.text = _address;
+    });
   }
 
   Future<void> _dropPinFromScreenOffset(Offset offset) async {
@@ -2398,13 +2496,90 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
     });
   }
 
+  Future<String?> _reverseGeocodeCityCountry(LatLng point) async {
+    final googleFormatted = await googleMapsWebReverseGeocodeCityCountry(
+      point.latitude,
+      point.longitude,
+    );
+    if (googleFormatted != null && googleFormatted.trim().isNotEmpty) {
+      return googleFormatted.trim();
+    }
+
+    try {
+      final marks =
+          await geo.placemarkFromCoordinates(point.latitude, point.longitude);
+      if (marks.isNotEmpty) {
+        final formatted = _formatPlacemark(marks.first);
+        if (formatted.isNotEmpty) return formatted;
+      }
+    } catch (_) {}
+
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'format': 'json',
+        'addressdetails': '1',
+        'lat': point.latitude.toString(),
+        'lon': point.longitude.toString(),
+      });
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body);
+      if (data is! Map || data['address'] is! Map) return null;
+      final address = Map<Object?, Object?>.from(data['address'] as Map);
+      final formatted = _cityCountryFromAddressMap(address);
+      return formatted.isEmpty ? null : formatted;
+    } catch (_) {
+      return null;
+    }
+  }
+
   String _formatPlacemark(geo.Placemark mark) {
-    return [
-      mark.street,
+    String city = '';
+    for (final candidate in [
       mark.locality,
+      mark.subAdministrativeArea,
       mark.administrativeArea,
-      mark.country,
-    ].where((part) => part != null && part.trim().isNotEmpty).join(', ');
+    ]) {
+      final normalized = (candidate ?? '').trim();
+      if (normalized.isNotEmpty) {
+        city = normalized;
+        break;
+      }
+    }
+    final country = (mark.country ?? '').trim();
+    final parts = <String>[];
+    if (city.isNotEmpty) parts.add(city);
+    if (country.isNotEmpty && !parts.contains(country)) parts.add(country);
+    return parts.join(', ');
+  }
+
+  String _cityCountryFromAddressMap(Map<Object?, Object?> address) {
+    final city = [
+      address['city'],
+      address['town'],
+      address['village'],
+      address['municipality'],
+      address['county'],
+      address['state'],
+    ]
+        .map((value) => (value ?? '').toString().trim())
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+    final country = (address['country'] ?? '').toString().trim();
+    final parts = <String>[];
+    if (city.isNotEmpty) parts.add(city);
+    if (country.isNotEmpty && !parts.contains(country)) parts.add(country);
+    return parts.join(', ');
+  }
+
+  String _fallbackLocationLabel() {
+    final typed = _searchController.text.trim();
+    return typed.isNotEmpty ? typed : 'Selected location';
+  }
+
+  String get _displayLocationLabel {
+    final address = _address.trim();
+    if (address.isNotEmpty) return address;
+    return _selectedLatLng == null ? 'No location selected' : 'Selected location';
   }
 
   void _save() {
@@ -2449,6 +2624,7 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
                       key: const Key('factory-location-search-bar'),
                       controller: _searchController,
                       textInputAction: TextInputAction.search,
+                      onChanged: _onSearchChanged,
                       onSubmitted: (_) => _searchAddress(),
                       decoration: const InputDecoration(
                         labelText: 'Search address',
@@ -2469,9 +2645,53 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
                         : const Icon(Icons.search),
                     tooltip: 'Search',
                   ),
+                  if (point != null) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _clearPin,
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Clear location',
+                    ),
+                  ],
                 ],
               ),
             ),
+            if (_loadingSuggestions)
+              const LinearProgressIndicator(minHeight: 2),
+            if (_suggestions.isNotEmpty)
+              Container(
+                constraints: const BoxConstraints(maxHeight: 220),
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: Theme.of(context).dividerColor),
+                  itemBuilder: (context, index) {
+                    final suggestion = _suggestions[index];
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.place_outlined),
+                      title: Text(
+                        suggestion.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        suggestion.cityCountry,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => _selectSuggestion(suggestion),
+                    );
+                  },
+                ),
+              ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
@@ -2491,7 +2711,7 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
                   _mapController = controller;
                 },
                 onLongPress: _dropPin,
-                onTap: (_) => _clearPin(),
+                onTap: _dropPin,
                 onSecondaryTap: _dropPinFromScreenOffset,
               ),
             ),
@@ -2505,12 +2725,7 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
                 ),
               ),
               child: Text(
-                point == null
-                    ? (_address.trim().isEmpty
-                        ? 'No GPS pin selected'
-                        : _address.trim())
-                    : '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'
-                        '${_address.trim().isEmpty ? '' : ' - ${_address.trim()}'}',
+                _displayLocationLabel,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -2544,13 +2759,14 @@ class FactoryLocationMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showLiveMap = renderPlatformMap && isGoogleMapsJsLoaded;
     return Listener(
       onPointerDown: (event) {
         if (event.buttons == kSecondaryMouseButton) {
           unawaited(onSecondaryTap(event.localPosition));
         }
       },
-      child: renderPlatformMap
+      child: showLiveMap
           ? GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: initialTarget,
@@ -2565,7 +2781,18 @@ class FactoryLocationMap extends StatelessWidget {
             )
           : ColoredBox(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const SizedBox.expand(),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    renderPlatformMap
+                        ? 'Interactive map unavailable on web. Search for an address or load the Google Maps JavaScript API to enable map preview.'
+                        : 'Map preview disabled for this build.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ),
             ),
     );
   }
