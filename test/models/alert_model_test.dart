@@ -99,6 +99,24 @@ void main() {
       expect(m.aiConfidence, closeTo(87.5, 0.001));
       expect(m.aiAssignmentReason, 'closest supervisor');
     });
+
+    test('parses escalation acknowledgement fields', () {
+      final m = AlertModel.fromMap('a', {
+        'isEscalated': true,
+        'escalatedAt': '2026-05-10T08:00:00.000Z',
+        'escalationAcknowledgedAt': '2026-05-10T08:03:00.000Z',
+        'escalationAcknowledgedBy': 'admin-1',
+        'escalationAcknowledgedByName': 'Production Manager',
+      });
+
+      expect(m.isEscalated, isTrue);
+      expect(
+        m.escalationAcknowledgedAt!.toUtc(),
+        DateTime.utc(2026, 5, 10, 8, 3),
+      );
+      expect(m.escalationAcknowledgedBy, 'admin-1');
+      expect(m.escalationAcknowledgedByName, 'Production Manager');
+    });
   });
 
   group('AlertModel.toMap', () {
