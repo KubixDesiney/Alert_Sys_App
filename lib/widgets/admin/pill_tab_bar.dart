@@ -4,11 +4,22 @@ import '../../l10n/generated/app_localizations.dart';
 import '../../theme.dart';
 
 /// Horizontal pill-shaped tab bar used at the top of the admin dashboard.
+///
+/// When [showDeveloperTab] is true (i.e. the admin has enabled Developer
+/// Mode from the settings popup), an extra "Developer" tab is appended.
+/// The Developer tab's index is `6`; the surrounding screen relies on that
+/// being the last index when selecting which body to render.
 class PillTabBar extends StatelessWidget {
   final int tab;
   final void Function(int) onSelect;
+  final bool showDeveloperTab;
 
-  const PillTabBar({super.key, required this.tab, required this.onSelect});
+  const PillTabBar({
+    super.key,
+    required this.tab,
+    required this.onSelect,
+    this.showDeveloperTab = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -16,7 +27,7 @@ class PillTabBar extends StatelessWidget {
       context,
       AppLocalizations,
     );
-    final tabs = [
+    final tabs = <Map<String, Object>>[
       {'icon': Icons.bar_chart, 'label': l10n?.adminTabOverview ?? 'Overview'},
       {
         'icon': Icons.people,
@@ -35,6 +46,11 @@ class PillTabBar extends StatelessWidget {
         'icon': Icons.account_tree,
         'label': l10n?.adminTabHierarchy ?? 'Hierarchy',
       },
+      if (showDeveloperTab)
+        {
+          'icon': Icons.build_circle_outlined,
+          'label': 'Developer',
+        },
     ];
     final t = context.appTheme;
     return Container(
@@ -50,6 +66,17 @@ class PillTabBar extends StatelessWidget {
               children: List.generate(tabs.length, (i) {
                 final sel = tab == i;
                 final item = tabs[i];
+                // The Developer tab is purple-accented so it visually
+                // signals "elevated mode" — the surrounding row stays
+                // navy-blue, but Developer reads as a distinct tool.
+                final isDev = showDeveloperTab && i == tabs.length - 1;
+                final activeColor = isDev ? t.purple : t.navy;
+                final inactiveBorder = isDev
+                    ? t.purple.withValues(alpha: 0.35)
+                    : t.border;
+                final inactiveText = isDev
+                    ? t.purple
+                    : t.muted;
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: GestureDetector(
@@ -61,15 +88,17 @@ class PillTabBar extends StatelessWidget {
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: sel ? t.navy : t.scaffold,
+                        color: sel ? activeColor : t.scaffold,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: sel ? t.navy : t.border),
+                        border: Border.all(
+                          color: sel ? activeColor : inactiveBorder,
+                        ),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Icon(
                           item['icon'] as IconData,
                           size: 15,
-                          color: sel ? Colors.white : t.muted,
+                          color: sel ? Colors.white : inactiveText,
                         ),
                         const SizedBox(width: 6),
                         Text(
@@ -77,7 +106,7 @@ class PillTabBar extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: sel ? Colors.white : t.muted,
+                            color: sel ? Colors.white : inactiveText,
                           ),
                         ),
                       ]),

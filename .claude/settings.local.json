@@ -17,7 +17,10 @@
       "Read(//c/Users/21652/AppData/Local/Pub/Cache/hosted/pub.dev//**)",
       "Bash(./gradlew :app:compileDebugKotlin)",
       "Bash(./gradlew :app:compileDebugKotlin --rerun-tasks)",
-      "Bash(git -C c:/Users/21652/alertsysapp diff --name-only HEAD)"
+      "Bash(git -C c:/Users/21652/alertsysapp diff --name-only HEAD)",
+      "Bash(ls ~/.claude/projects/ 2>/dev/null | head -20)",
+      "Read(//c/Users/21652/.claude/projects/**)",
+      "Bash(python3 -)"
     ]
   }
 }
