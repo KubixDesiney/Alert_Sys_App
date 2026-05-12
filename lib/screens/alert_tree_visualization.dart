@@ -23,7 +23,7 @@ import '../models/alert_model.dart';
 import '../models/hierarchy_model.dart';
 import '../services/ai_assignment_service.dart';
 import '../services/hierarchy_service.dart';
-import '../services/work_instruction_service.dart';
+import '../services/location_alert_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../widgets/ai_logs_panel.dart';
@@ -84,8 +84,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     with TickerProviderStateMixin {
   // ---------------- Data ----------------
   final HierarchyService _hierarchyService = HierarchyService();
-  final WorkInstructionService _workInstructionService =
-      WorkInstructionService();
+  final LocationAlertService _locationAlertService = LocationAlertService();
   StreamSubscription<List<Factory>>? _hierarchySub;
   List<Factory> _factories = [];
 
@@ -215,8 +214,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     required bool isCritical,
     required Color idle,
   }) {
-    final unclaimedCount =
-        (activeCount - inProgressCount).clamp(0, activeCount);
+    final unclaimedCount = (activeCount - inProgressCount).clamp(
+      0,
+      activeCount,
+    );
     if (isCritical || unclaimedCount > 0) return t.red;
     if (inProgressCount > 0) return t.yellow;
     return idle;
@@ -228,7 +229,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   void _onZoomBtnTick() {
     _transform.value = Matrix4Tween(begin: _zoomBtnFrom, end: _zoomBtnTo)
         .animate(
-            CurvedAnimation(parent: _zoomBtnAnim, curve: Curves.easeOutCubic))
+          CurvedAnimation(parent: _zoomBtnAnim, curve: Curves.easeOutCubic),
+        )
         .value;
   }
 
@@ -272,24 +274,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 child: tree.factories.isEmpty
                     ? _emptyState(t)
                     : (_filter.heatmap
-                        ? _buildHeatmap(tree)
-                        : _buildTreeCanvas(tree)),
+                          ? _buildHeatmap(tree)
+                          : _buildTreeCanvas(tree)),
               ),
             ],
           ),
         ),
         if (!_filter.heatmap && tree.factories.isNotEmpty)
-          Positioned(
-            right: 16,
-            bottom: 88,
-            child: _zoomControls(t),
-          ),
-        Positioned(
-          left: 12,
-          right: 12,
-          bottom: 12,
-          child: _aiBottomPill(t),
-        ),
+          Positioned(right: 16, bottom: 88, child: _zoomControls(t)),
+        Positioned(left: 12, right: 12, bottom: 12, child: _aiBottomPill(t)),
         if (_showAILogsPanel)
           AILogsPanel(
             onClose: () => setState(() => _showAILogsPanel = false),
@@ -391,10 +384,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           ),
           TextButton(
             onPressed: () => setState(() => _filter = const TreeFilterState()),
-            child: Text(
-              'Clear',
-              style: TextStyle(color: t.navy, fontSize: 12),
-            ),
+            child: Text('Clear', style: TextStyle(color: t.navy, fontSize: 12)),
           ),
         ],
       ),
@@ -432,11 +422,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                     ),
                   ),
                 ),
-                ...layout.placements.map((p) => Positioned(
-                      left: p.left,
-                      top: p.top,
-                      child: p.widget,
-                    )),
+                ...layout.placements.map(
+                  (p) => Positioned(left: p.left, top: p.top, child: p.widget),
+                ),
               ],
             );
           },
@@ -459,39 +447,47 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         for (final s in c.stations.values) {
           final stationNumber =
               int.tryParse(s.id.replaceAll('station_', '')) ?? 0;
-          final stationAlerts = widget.alerts.where((a) =>
-              a.usine == f.name &&
-              a.convoyeur == c.number &&
-              a.poste == stationNumber);
-          final active =
-              stationAlerts.where((a) => isActiveStatus(a.status)).toList();
+          final stationAlerts = widget.alerts.where(
+            (a) =>
+                a.usine == f.name &&
+                a.convoyeur == c.number &&
+                a.poste == stationNumber,
+          );
+          final active = stationAlerts
+              .where((a) => isActiveStatus(a.status))
+              .toList();
           final critical = active.where((a) => a.isCritical).toList();
           if (active.isEmpty && critical.isEmpty) {
-            cells.add(HeatmapCell(
-              factoryName: f.name,
-              conveyor: c.number,
-              station: stationNumber,
-              label: s.name,
-              assetId: s.assetId,
-              activeCount: 0,
-              inProgressCount: 0,
-              criticalCount: 0,
-              topAlert: null,
-            ));
+            cells.add(
+              HeatmapCell(
+                factoryName: f.name,
+                conveyor: c.number,
+                station: stationNumber,
+                label: s.name,
+                assetId: s.assetId,
+                activeCount: 0,
+                inProgressCount: 0,
+                criticalCount: 0,
+                topAlert: null,
+              ),
+            );
           } else {
             active.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-            cells.add(HeatmapCell(
-              factoryName: f.name,
-              conveyor: c.number,
-              station: stationNumber,
-              label: s.name,
-              assetId: s.assetId,
-              activeCount: active.length,
-              inProgressCount:
-                  active.where((a) => a.status == 'en_cours').length,
-              criticalCount: critical.length,
-              topAlert: active.isNotEmpty ? active.first : null,
-            ));
+            cells.add(
+              HeatmapCell(
+                factoryName: f.name,
+                conveyor: c.number,
+                station: stationNumber,
+                label: s.name,
+                assetId: s.assetId,
+                activeCount: active.length,
+                inProgressCount: active
+                    .where((a) => a.status == 'en_cours')
+                    .length,
+                criticalCount: critical.length,
+                topAlert: active.isNotEmpty ? active.first : null,
+              ),
+            );
           }
         }
       }
@@ -535,7 +531,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           maxChildSize: 0.9,
           builder: (_, controller) {
             return StreamBuilder<List<AlertModel>>(
-              stream: _workInstructionService.historyAtLocation(
+              stream: _locationAlertService.historyAtLocation(
                 usine: usine,
                 convoyeur: convoyeur,
                 poste: poste,
@@ -543,11 +539,12 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
               ),
               builder: (context, snapshot) {
                 final history = snapshot.data ?? const <AlertModel>[];
-                final current = activeAlert ??
+                final current =
+                    activeAlert ??
                     history.cast<AlertModel?>().firstWhere(
-                          (a) => a != null && isActiveStatus(a.status),
-                          orElse: () => null,
-                        );
+                      (a) => a != null && isActiveStatus(a.status),
+                      orElse: () => null,
+                    );
                 return ListView(
                   controller: controller,
                   padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
@@ -793,8 +790,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                     color: isOn ? t.green : t.navy,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.smart_toy_outlined,
-                      size: 16, color: Colors.white),
+                  child: const Icon(
+                    Icons.smart_toy_outlined,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -874,7 +874,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                             activeColor: t.navy,
                             badge: logCount > 0 ? '$logCount' : null,
                             onTap: () => setState(
-                                () => _showAILogsPanel = !_showAILogsPanel),
+                              () => _showAILogsPanel = !_showAILogsPanel,
+                            ),
                           ),
                         ],
                       ),
@@ -936,8 +937,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             decoration: BoxDecoration(
               color: bg,
               borderRadius: BorderRadius.circular(8),
-              border:
-                  Border.all(color: active ? activeColor : t.border, width: 1),
+              border: Border.all(
+                color: active ? activeColor : t.border,
+                width: 1,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -957,8 +960,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 if (badge != null) ...[
                   const SizedBox(width: 5),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       color: active
                           ? Colors.white.withValues(alpha: 0.25)
@@ -988,9 +993,11 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(on
-            ? 'Global AI ON — auto-assignment enabled'
-            : 'Global AI OFF — manual assignment only'),
+        content: Text(
+          on
+              ? 'Global AI ON — auto-assignment enabled'
+              : 'Global AI OFF — manual assignment only',
+        ),
         backgroundColor: on ? _t.green : _t.muted,
         duration: const Duration(seconds: 2),
       ),
@@ -1101,77 +1108,84 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           factoryCritical += criticalList.length;
           conveyorCritical += criticalList.length;
 
-          final matchesText = nodeMatchesSearch(s.name) ||
+          final matchesText =
+              nodeMatchesSearch(s.name) ||
               nodeMatchesSearch(s.assetId) ||
               conveyorMatches;
-          final allLocationAlerts = [
-            ...activeList,
-            ...resolvedList,
-          ];
+          final allLocationAlerts = [...activeList, ...resolvedList];
           final matches = matchesText && alertsMatchFilters(allLocationAlerts);
           if (matches) matchingNodes++;
 
-          stationNodes.add(_LayoutNode(
-            id: '${f.id}|${c.id}|${s.id}',
-            label: s.name,
-            type: 'workstation',
-            activeCount: activeList.length,
-            inProgressCount: inProgressList.length,
-            resolvedCount: resolvedList.length,
-            isCritical: criticalList.isNotEmpty,
-            matches: matches,
-            topActiveAlert: topActiveAtLocation[key],
-            payload: {
-              'usine': f.name,
-              'convoyeur': c.number,
-              'poste': stationNumber,
-              'assetId': s.assetId,
-            },
-          ));
+          stationNodes.add(
+            _LayoutNode(
+              id: '${f.id}|${c.id}|${s.id}',
+              label: s.name,
+              type: 'workstation',
+              activeCount: activeList.length,
+              inProgressCount: inProgressList.length,
+              resolvedCount: resolvedList.length,
+              isCritical: criticalList.isNotEmpty,
+              matches: matches,
+              topActiveAlert: topActiveAtLocation[key],
+              payload: {
+                'usine': f.name,
+                'convoyeur': c.number,
+                'poste': stationNumber,
+                'assetId': s.assetId,
+              },
+            ),
+          );
         }
 
         final conveyorAlerts = stationNodes
-            .expand((s) =>
-                activeAtLocation[_locationKey(
-                  f.name,
-                  c.number,
-                  s.payload['poste'] as int,
-                )] ??
-                const <AlertModel>[])
+            .expand(
+              (s) =>
+                  activeAtLocation[_locationKey(
+                    f.name,
+                    c.number,
+                    s.payload['poste'] as int,
+                  )] ??
+                  const <AlertModel>[],
+            )
             .toList();
         final conveyorMatchesFilters = alertsMatchFilters(conveyorAlerts);
         final conveyorVisible = conveyorMatches && conveyorMatchesFilters;
         if (conveyorVisible) matchingNodes++;
-        conveyorNodes.add(_LayoutNode(
-          id: '${f.id}|${c.id}',
-          label: 'Conveyor ${c.number}',
-          type: 'conveyor',
-          activeCount: conveyorActive,
-          inProgressCount: conveyorInProgress,
-          resolvedCount: conveyorResolved,
-          isCritical: conveyorCritical > 0,
-          matches: conveyorVisible,
-          children: stationNodes,
-        ));
+        conveyorNodes.add(
+          _LayoutNode(
+            id: '${f.id}|${c.id}',
+            label: 'Conveyor ${c.number}',
+            type: 'conveyor',
+            activeCount: conveyorActive,
+            inProgressCount: conveyorInProgress,
+            resolvedCount: conveyorResolved,
+            isCritical: conveyorCritical > 0,
+            matches: conveyorVisible,
+            children: stationNodes,
+          ),
+        );
       }
 
-      final factoryAlerts =
-          widget.alerts.where((a) => a.usine == f.name).toList();
+      final factoryAlerts = widget.alerts
+          .where((a) => a.usine == f.name)
+          .toList();
       final factoryMatchesFilters = alertsMatchFilters(factoryAlerts);
       final factoryVisible = factoryMatches && factoryMatchesFilters;
       if (factoryVisible) matchingNodes++;
 
-      nodes.add(_LayoutNode(
-        id: f.id,
-        label: f.name,
-        type: 'usine',
-        activeCount: factoryActive,
-        inProgressCount: factoryInProgress,
-        resolvedCount: factoryResolved,
-        isCritical: factoryCritical > 0,
-        matches: factoryVisible,
-        children: conveyorNodes,
-      ));
+      nodes.add(
+        _LayoutNode(
+          id: f.id,
+          label: f.name,
+          type: 'usine',
+          activeCount: factoryActive,
+          inProgressCount: factoryInProgress,
+          resolvedCount: factoryResolved,
+          isCritical: factoryCritical > 0,
+          matches: factoryVisible,
+          children: conveyorNodes,
+        ),
+      );
     }
 
     return _TreeData(
@@ -1211,7 +1225,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     final l1Width = rowWidth(factoryNodes.length);
     var cursorX = padding;
     final factoryCenters = <String, Offset>{};
-    final factoryY = padding;
+    const factoryY = padding;
 
     for (final f in factoryNodes) {
       final left = cursorX;
@@ -1224,37 +1238,39 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         isCritical: f.isCritical,
         idle: t.navy,
       );
-      placements.add(_Placement(
-        left: left,
-        top: factoryY.toDouble(),
-        widget: SizedBox(
-          width: cardW,
-          child: TreeNodeCard(
-            icon: Icons.factory,
-            title: f.label,
-            subtitle:
-                '${f.children.length} conveyor${f.children.length == 1 ? '' : 's'}',
-            activeCount: f.activeCount,
-            inProgressCount: f.inProgressCount,
-            resolvedCount: f.resolvedCount,
-            hasError: f.activeCount > 0,
-            isCritical: f.isCritical,
-            isSelected: selected,
-            isDimmed: dimmed,
-            accent: accent,
-            density: _filter.density,
-            onTap: () => setState(() {
-              if (_selectedUsineId == f.id) {
-                _selectedUsineId = null;
-                _selectedConveyorId = null;
-              } else {
-                _selectedUsineId = f.id;
-                _selectedConveyorId = null;
-              }
-            }),
+      placements.add(
+        _Placement(
+          left: left,
+          top: factoryY.toDouble(),
+          widget: SizedBox(
+            width: cardW,
+            child: TreeNodeCard(
+              icon: Icons.factory,
+              title: f.label,
+              subtitle:
+                  '${f.children.length} conveyor${f.children.length == 1 ? '' : 's'}',
+              activeCount: f.activeCount,
+              inProgressCount: f.inProgressCount,
+              resolvedCount: f.resolvedCount,
+              hasError: f.activeCount > 0,
+              isCritical: f.isCritical,
+              isSelected: selected,
+              isDimmed: dimmed,
+              accent: accent,
+              density: _filter.density,
+              onTap: () => setState(() {
+                if (_selectedUsineId == f.id) {
+                  _selectedUsineId = null;
+                  _selectedConveyorId = null;
+                } else {
+                  _selectedUsineId = f.id;
+                  _selectedConveyorId = null;
+                }
+              }),
+            ),
           ),
         ),
-      ));
+      );
       factoryCenters[f.id] = Offset(left + cardW / 2, factoryY + cardH);
       cursorX += cardW + spacingX;
     }
@@ -1265,9 +1281,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
     // ---- Layer 2: conveyors of selected factory ----
     if (_selectedUsineId != null) {
       final selectedF = factoryNodes.cast<_LayoutNode?>().firstWhere(
-            (f) => f?.id == _selectedUsineId,
-            orElse: () => null,
-          );
+        (f) => f?.id == _selectedUsineId,
+        orElse: () => null,
+      );
       if (selectedF == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -1306,39 +1322,44 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             isCritical: c.isCritical,
             idle: t.blue,
           );
-          placements.add(_Placement(
-            left: left,
-            top: conveyorY.toDouble(),
-            widget: SizedBox(
-              width: cardW,
-              child: TreeNodeCard(
-                icon: Icons.linear_scale,
-                title: c.label,
-                subtitle:
-                    '${c.children.length} station${c.children.length == 1 ? '' : 's'}',
-                activeCount: c.activeCount,
-                inProgressCount: c.inProgressCount,
-                resolvedCount: c.resolvedCount,
-                hasError: c.activeCount > 0,
-                isCritical: c.isCritical,
-                isSelected: selected,
-                isDimmed: !c.matches,
-                accent: accent,
-                density: _filter.density,
-                onTap: () => setState(() {
-                  _selectedConveyorId =
-                      _selectedConveyorId == c.id ? null : c.id;
-                }),
+          placements.add(
+            _Placement(
+              left: left,
+              top: conveyorY.toDouble(),
+              widget: SizedBox(
+                width: cardW,
+                child: TreeNodeCard(
+                  icon: Icons.linear_scale,
+                  title: c.label,
+                  subtitle:
+                      '${c.children.length} station${c.children.length == 1 ? '' : 's'}',
+                  activeCount: c.activeCount,
+                  inProgressCount: c.inProgressCount,
+                  resolvedCount: c.resolvedCount,
+                  hasError: c.activeCount > 0,
+                  isCritical: c.isCritical,
+                  isSelected: selected,
+                  isDimmed: !c.matches,
+                  accent: accent,
+                  density: _filter.density,
+                  onTap: () => setState(() {
+                    _selectedConveyorId = _selectedConveyorId == c.id
+                        ? null
+                        : c.id;
+                  }),
+                ),
               ),
             ),
-          ));
+          );
           conveyorCenters[c.id] = Offset(left + cardW / 2, conveyorY + cardH);
 
-          edges.add(TreeConnectorEdge(
-            from: parentCenter,
-            to: Offset(left + cardW / 2, conveyorY.toDouble()),
-            active: c.activeCount > 0,
-          ));
+          edges.add(
+            TreeConnectorEdge(
+              from: parentCenter,
+              to: Offset(left + cardW / 2, conveyorY.toDouble()),
+              active: c.activeCount > 0,
+            ),
+          );
 
           cx += cardW + spacingX;
         }
@@ -1350,9 +1371,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         // ---- Layer 3: workstations of selected conveyor ----
         if (_selectedConveyorId != null) {
           final selectedC = conveyors.cast<_LayoutNode?>().firstWhere(
-                (c) => c?.id == _selectedConveyorId,
-                orElse: () => null,
-              );
+            (c) => c?.id == _selectedConveyorId,
+            orElse: () => null,
+          );
           if (selectedC == null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
@@ -1370,8 +1391,12 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             const perRow = 6;
             final rows = <List<_LayoutNode>>[];
             for (var i = 0; i < stations.length; i += perRow) {
-              rows.add(stations.sublist(
-                  i, (i + perRow).clamp(0, stations.length).toInt()));
+              rows.add(
+                stations.sublist(
+                  i,
+                  (i + perRow).clamp(0, stations.length).toInt(),
+                ),
+              );
             }
 
             final parentConveyorCenter = conveyorCenters[selectedC.id]!;
@@ -1397,44 +1422,48 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   s.payload['convoyeur'] as int,
                   s.payload['poste'] as int,
                 );
-                placements.add(_Placement(
-                  left: left,
-                  top: rowY.toDouble(),
-                  widget: SizedBox(
-                    width: cardW,
-                    child: TreeNodeCard(
-                      icon: Icons.settings,
-                      title: s.label,
-                      subtitle: hasError
-                          ? '${s.activeCount} active alert${s.activeCount == 1 ? '' : 's'}'
-                          : 'Healthy',
-                      activeCount: s.activeCount,
-                      inProgressCount: s.inProgressCount,
-                      resolvedCount: s.resolvedCount,
-                      hasError: hasError,
-                      isCritical: s.isCritical,
-                      isSelected: false,
-                      isDimmed: !s.matches,
-                      ripple: _rippleStations.contains(stationKey),
-                      accent: accent,
-                      density: _filter.density,
-                      onTap: () => _showStationActions(
-                        usine: s.payload['usine'] as String,
-                        convoyeur: s.payload['convoyeur'] as int,
-                        poste: s.payload['poste'] as int,
-                        stationLabel: s.label,
-                        assetId: s.payload['assetId'] as String?,
-                        activeAlert: activeAlert,
+                placements.add(
+                  _Placement(
+                    left: left,
+                    top: rowY.toDouble(),
+                    widget: SizedBox(
+                      width: cardW,
+                      child: TreeNodeCard(
+                        icon: Icons.settings,
+                        title: s.label,
+                        subtitle: hasError
+                            ? '${s.activeCount} active alert${s.activeCount == 1 ? '' : 's'}'
+                            : 'Healthy',
+                        activeCount: s.activeCount,
+                        inProgressCount: s.inProgressCount,
+                        resolvedCount: s.resolvedCount,
+                        hasError: hasError,
+                        isCritical: s.isCritical,
+                        isSelected: false,
+                        isDimmed: !s.matches,
+                        ripple: _rippleStations.contains(stationKey),
+                        accent: accent,
+                        density: _filter.density,
+                        onTap: () => _showStationActions(
+                          usine: s.payload['usine'] as String,
+                          convoyeur: s.payload['convoyeur'] as int,
+                          poste: s.payload['poste'] as int,
+                          stationLabel: s.label,
+                          assetId: s.payload['assetId'] as String?,
+                          activeAlert: activeAlert,
+                        ),
                       ),
                     ),
                   ),
-                ));
+                );
 
-                edges.add(TreeConnectorEdge(
-                  from: parentConveyorCenter,
-                  to: Offset(left + cardW / 2, rowY.toDouble()),
-                  active: hasError,
-                ));
+                edges.add(
+                  TreeConnectorEdge(
+                    from: parentConveyorCenter,
+                    to: Offset(left + cardW / 2, rowY.toDouble()),
+                    active: hasError,
+                  ),
+                );
 
                 sx += cardW + spacingX;
               }
@@ -1534,4 +1563,3 @@ class _Layout {
     required this.size,
   });
 }
-

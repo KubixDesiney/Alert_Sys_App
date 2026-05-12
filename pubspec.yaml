@@ -42,9 +42,7 @@ dependencies:
   flutter_tts: ^4.2.0
   permission_handler: ^11.3.1
 
-  # AR Work Instructions — camera passthrough + QR scanning for the
-  # ar_instruction_screen.dart flow. mobile_scanner replaces the unmaintained
-  # qr_code_scanner (broken on AGP 8+).
+  # Station scan camera for QR-based workstation lookup and alert history.
   mobile_scanner: ^6.0.11
 
   flutter:

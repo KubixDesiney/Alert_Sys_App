@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,7 +6,8 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/alert_model.dart';
-import '../services/work_instruction_service.dart';
+import '../services/location_alert_parser.dart';
+import '../services/location_alert_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
@@ -34,13 +34,13 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     detectionSpeed: DetectionSpeed.noDuplicates,
     formats: const [BarcodeFormat.qrCode],
   );
-  final WorkInstructionService _service = WorkInstructionService();
+  final LocationAlertService _service = LocationAlertService();
 
   bool _permissionChecked = false;
   bool _cameraGranted = false;
   String? _permissionError;
 
-  _ScannedLocation? _location;
+  LocationAlertScanTarget? _location;
   bool _torchOn = false;
   DateTime? _lastInvalidQrNotice;
 
@@ -91,7 +91,7 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     for (final b in capture.barcodes) {
       final raw = b.rawValue;
       if (raw == null || raw.isEmpty) continue;
-      final loc = _ScannedLocation.tryParse(raw);
+      final loc = LocationAlertScanTarget.tryParse(raw);
       if (loc == null) {
         _showInvalidQrNotice();
         continue;
@@ -104,7 +104,7 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     }
   }
 
-  void _showScannedNotice(_ScannedLocation loc) {
+  void _showScannedNotice(LocationAlertScanTarget loc) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -130,7 +130,7 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     );
   }
 
-  void _bindHistory(_ScannedLocation loc) {
+  void _bindHistory(LocationAlertScanTarget loc) {
     _historySub?.cancel();
     setState(() {
       _historyLoading = true;
@@ -139,27 +139,27 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     });
     _historySub = _service
         .historyAtLocation(
-      usine: loc.usine,
-      convoyeur: loc.convoyeur,
-      poste: loc.poste,
-      assetId: loc.assetId,
-    )
+          usine: loc.usine,
+          convoyeur: loc.convoyeur,
+          poste: loc.poste,
+          assetId: loc.assetId,
+        )
         .listen(
-      (alerts) {
-        if (!mounted) return;
-        setState(() {
-          _history = alerts;
-          _historyLoading = false;
-        });
-      },
-      onError: (e) {
-        if (!mounted) return;
-        setState(() {
-          _historyError = UserFriendlyError.message(e);
-          _historyLoading = false;
-        });
-      },
-    );
+          (alerts) {
+            if (!mounted) return;
+            setState(() {
+              _history = alerts;
+              _historyLoading = false;
+            });
+          },
+          onError: (e) {
+            if (!mounted) return;
+            setState(() {
+              _historyError = UserFriendlyError.message(e);
+              _historyLoading = false;
+            });
+          },
+        );
   }
 
   void _resetScan() {
@@ -225,179 +225,11 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
 // =============================================================================
 // QR payload
 // =============================================================================
-class _ScannedLocation {
-  final String? assetId;
-  final String usine;
-  final int convoyeur;
-  final int poste;
-  const _ScannedLocation({
-    this.assetId,
-    required this.usine,
-    required this.convoyeur,
-    required this.poste,
-  });
-
-  static _ScannedLocation? tryParse(String raw) {
-    final text = raw.trim();
-    if (text.isEmpty) return null;
-
-    try {
-      final decoded = jsonDecode(text);
-      if (decoded is Map) {
-        return _fromMap(Map<Object?, Object?>.from(decoded));
-      }
-      if (decoded is String && decoded != text) {
-        return tryParse(decoded);
-      }
-    } catch (_) {
-      // Not JSON. Continue with URL/address formats below.
-    }
-
-    if (text.contains(r'\"')) {
-      try {
-        final decoded = jsonDecode(text.replaceAll(r'\"', '"'));
-        if (decoded is Map) {
-          return _fromMap(Map<Object?, Object?>.from(decoded));
-        }
-      } catch (_) {
-        // Not backslash-escaped JSON either.
-      }
-    }
-
-    final uri = Uri.tryParse(text);
-    if (uri != null) {
-      if (uri.queryParameters.isNotEmpty) {
-        final fromQuery = _fromMap(uri.queryParameters);
-        if (fromQuery != null) return fromQuery;
-      }
-      if (uri.pathSegments.isNotEmpty) {
-        final fromPath = _fromAddress(uri.pathSegments.last);
-        if (fromPath != null) return fromPath;
-      }
-    }
-
-    return _fromAddress(text) ?? _fromLocationKey(text);
-  }
-
-  static _ScannedLocation? _fromMap(Map<Object?, Object?> data) {
-    final assetId = _firstString(data, const [
-      'assetId',
-      'asset_id',
-      'machineId',
-      'machine_id',
-    ]);
-    final encodedLocation = _firstString(data, const [
-      'adresse',
-      'address',
-      'locationKey',
-      'location',
-    ]);
-    if (encodedLocation != null) {
-      final fromEncoded =
-          _fromAddress(encodedLocation) ?? _fromLocationKey(encodedLocation);
-      if (fromEncoded != null) {
-        return _ScannedLocation(
-          assetId: assetId,
-          usine: fromEncoded.usine,
-          convoyeur: fromEncoded.convoyeur,
-          poste: fromEncoded.poste,
-        );
-      }
-    }
-
-    final usine = _firstString(data, const [
-      'usine',
-      'factory',
-      'factoryName',
-      'plant',
-      'site',
-    ]);
-    final convoyeur = _firstInt(data, const [
-      'convoyeur',
-      'conveyor',
-      'conveyorNumber',
-      'line',
-      'lineNumber',
-    ]);
-    final poste = _firstInt(data, const [
-      'poste',
-      'post',
-      'station',
-      'stationNumber',
-      'workstation',
-      'workstationNumber',
-    ]);
-    if (usine == null || convoyeur == null || poste == null) return null;
-    return _ScannedLocation(
-      assetId: assetId,
-      usine: usine,
-      convoyeur: convoyeur,
-      poste: poste,
-    );
-  }
-
-  static _ScannedLocation? _fromAddress(String raw) {
-    final address = Uri.decodeFull(raw).trim();
-    final match = RegExp(r'^(.+)_C(\d+)_P(\d+)$', caseSensitive: false)
-        .firstMatch(address);
-    if (match == null) return null;
-    return _ScannedLocation(
-      usine: match.group(1)!.replaceAll('_', ' '),
-      convoyeur: int.parse(match.group(2)!),
-      poste: int.parse(match.group(3)!),
-    );
-  }
-
-  static _ScannedLocation? _fromLocationKey(String raw) {
-    final parts = raw.split('|').map((p) => p.trim()).toList();
-    if (parts.length != 3 || parts.any((p) => p.isEmpty)) return null;
-    final convoyeur = int.tryParse(parts[1]);
-    final poste = int.tryParse(parts[2]);
-    if (convoyeur == null || poste == null) return null;
-    return _ScannedLocation(
-      usine: parts[0],
-      convoyeur: convoyeur,
-      poste: poste,
-    );
-  }
-
-  static String? _firstString(Map<Object?, Object?> data, List<String> keys) {
-    for (final key in keys) {
-      final value = data[key];
-      final text = value?.toString().trim();
-      if (text != null && text.isNotEmpty) return text;
-    }
-    return null;
-  }
-
-  static int? _firstInt(Map<Object?, Object?> data, List<String> keys) {
-    for (final key in keys) {
-      final value = data[key];
-      if (value is num) return value.toInt();
-      final text = value?.toString().trim();
-      if (text == null || text.isEmpty) continue;
-      final exact = int.tryParse(text);
-      if (exact != null) return exact;
-      final embeddedNumber = RegExp(r'\d+').firstMatch(text);
-      if (embeddedNumber != null) {
-        return int.tryParse(embeddedNumber.group(0)!);
-      }
-    }
-    return null;
-  }
-
-  @override
-  String toString() {
-    final assetPrefix = assetId == null ? '' : '$assetId - ';
-    return '$assetPrefix$usine - Conveyor $convoyeur - Post $poste';
-  }
-}
-
 // =============================================================================
 // Header
 // =============================================================================
 class _Header extends StatelessWidget {
-  final _ScannedLocation? location;
+  final LocationAlertScanTarget? location;
   final VoidCallback onRescan;
   const _Header({required this.location, required this.onRescan});
 
@@ -459,7 +291,7 @@ class _CameraCard extends StatelessWidget {
   final bool permissionChecked;
   final bool cameraGranted;
   final String? permissionError;
-  final _ScannedLocation? location;
+  final LocationAlertScanTarget? location;
   final bool torchOn;
   final MobileScannerController controller;
   final void Function(BarcodeCapture) onDetect;
@@ -496,10 +328,7 @@ class _CameraCard extends StatelessWidget {
       content = const AppLoadingIndicator();
     } else if (!isActive) {
       content = const Center(
-        child: Text(
-          'Scanner paused',
-          style: TextStyle(color: Colors.white70),
-        ),
+        child: Text('Scanner paused', style: TextStyle(color: Colors.white70)),
       );
     } else if (!cameraGranted) {
       content = _PermissionView(
@@ -528,7 +357,7 @@ class _CameraCard extends StatelessWidget {
             ),
           ),
           const _Reticle(),
-          Positioned(
+          const Positioned(
             left: 12,
             right: 12,
             bottom: 12,
@@ -653,7 +482,7 @@ class _TorchButton extends StatelessWidget {
 }
 
 class _ScannedConfirmation extends StatelessWidget {
-  final _ScannedLocation location;
+  final LocationAlertScanTarget location;
   final VoidCallback onRescan;
   const _ScannedConfirmation({required this.location, required this.onRescan});
 
@@ -769,7 +598,7 @@ class _PermissionView extends StatelessWidget {
 // History section
 // =============================================================================
 class _HistorySection extends StatelessWidget {
-  final _ScannedLocation? location;
+  final LocationAlertScanTarget? location;
   final bool loading;
   final String? error;
   final List<AlertModel> history;
@@ -786,7 +615,7 @@ class _HistorySection extends StatelessWidget {
     final t = context.appTheme;
 
     if (location == null) {
-      return _PlaceholderState(
+      return const _PlaceholderState(
         icon: Icons.qr_code_scanner,
         title: 'No station scanned',
         message:
@@ -846,7 +675,7 @@ class _HistorySection extends StatelessWidget {
         ),
         Expanded(
           child: history.isEmpty
-              ? _PlaceholderState(
+              ? const _PlaceholderState(
                   icon: Icons.inbox,
                   title: 'No alerts yet',
                   message:
@@ -982,8 +811,9 @@ class _AlertHistoryCard extends StatelessWidget {
             border: Border.all(color: t.border, width: 1),
             boxShadow: [
               BoxShadow(
-                color: Colors.black
-                    .withValues(alpha: context.isDark ? 0.25 : 0.04),
+                color: Colors.black.withValues(
+                  alpha: context.isDark ? 0.25 : 0.04,
+                ),
                 blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
@@ -1032,15 +862,15 @@ class _AlertHistoryCard extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.chat_bubble_outline,
-                              size: 14, color: t.muted),
+                          Icon(
+                            Icons.chat_bubble_outline,
+                            size: 14,
+                            color: t.muted,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             '${alert.comments.length} comment${alert.comments.length == 1 ? '' : 's'}',
-                            style: TextStyle(
-                              color: t.muted,
-                              fontSize: 11.5,
-                            ),
+                            style: TextStyle(color: t.muted, fontSize: 11.5),
                           ),
                         ],
                       ),
@@ -1124,16 +954,10 @@ class _AlertHistoryCard extends StatelessWidget {
       label: _relativeTime(alert.timestamp),
     );
     final claimed = alert.superviseurName != null
-        ? _MetaItem(
-            icon: Icons.person,
-            label: alert.superviseurName!,
-          )
+        ? _MetaItem(icon: Icons.person, label: alert.superviseurName!)
         : null;
     final assistant = alert.assistantName != null
-        ? _MetaItem(
-            icon: Icons.handshake,
-            label: alert.assistantName!,
-          )
+        ? _MetaItem(icon: Icons.handshake, label: alert.assistantName!)
         : null;
     final taken = alert.takenAtTimestamp != null
         ? _MetaItem(
@@ -1142,11 +966,7 @@ class _AlertHistoryCard extends StatelessWidget {
           )
         : null;
     final escalated = alert.isEscalated
-        ? _MetaItem(
-            icon: Icons.trending_up,
-            label: 'Escalated',
-            tone: t.orange,
-          )
+        ? _MetaItem(icon: Icons.trending_up, label: 'Escalated', tone: t.orange)
         : null;
 
     final items = <_MetaItem>[
@@ -1162,11 +982,13 @@ class _AlertHistoryCard extends StatelessWidget {
       spacing: 8,
       runSpacing: 6,
       children: items
-          .map((it) => _MetaChip(
-                icon: it.icon,
-                label: it.label,
-                tone: it.tone ?? t.muted,
-              ))
+          .map(
+            (it) => _MetaChip(
+              icon: it.icon,
+              label: it.label,
+              tone: it.tone ?? t.muted,
+            ),
+          )
           .toList(),
     );
   }
@@ -1221,8 +1043,9 @@ class _MetaChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color:
-            t.scaffold == t.card ? t.border.withValues(alpha: 0.4) : t.scaffold,
+        color: t.scaffold == t.card
+            ? t.border.withValues(alpha: 0.4)
+            : t.scaffold,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: t.border, width: 0.8),
       ),
@@ -1335,11 +1158,7 @@ class _ResolutionBlock extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   reason,
-                  style: TextStyle(
-                    color: t.text,
-                    fontSize: 12.5,
-                    height: 1.35,
-                  ),
+                  style: TextStyle(color: t.text, fontSize: 12.5, height: 1.35),
                 ),
               ],
             ),
