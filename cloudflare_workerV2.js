@@ -195,6 +195,549 @@ function cloneCtxWithShift(ctx, shift) {
   };
 }
 
+// ============================================================================
+// SECURITY AI AGENT — defensive layer for every worker request and cron tick.
+// ============================================================================
+// This module hardens the worker against a wide range of external threats:
+//   • DDoS / function exhaustion       (per-IP sliding-window rate limiting)
+//   • LLM prompt injection             (pattern matcher on text fields)
+//   • Payload abuse                    (JSON shape + size validation)
+//   • Database flooding                (cron-time anomaly scan)
+//   • Enumeration / credential abuse   (auth-failure surge detection)
+//   • Replay / burst scripting         (per-fingerprint window budgets)
+//
+// Design rules:
+//   1. Security log writes are ALWAYS fire-and-forget — the user's response
+//      must never wait for an audit write to flush.
+//   2. In-memory state lives in the Worker isolate. Cold starts wipe it, but
+//      a real attacker hits the same isolate repeatedly and convergence is
+//      fast (a handful of requests until throttled).
+//   3. Every block bumps `_securityActionsCounter`, which is read by
+//      `_writeCronHealth` and surfaced as `securityActions` in the health
+//      pulse at `workers/health/lastRun`.
+//   4. We never expose internal patterns or thresholds in error responses —
+//      attackers should not be able to fingerprint the security policy.
+// ============================================================================
+
+// Tunable configuration. Frozen so a runtime bug cannot mutate the policy.
+const _SECURITY = Object.freeze({
+  // Per-endpoint sliding-window rate limits, keyed by URL pathname (no slash).
+  // Tighter limits sit on the expensive LLM endpoints; relaxed limits on the
+  // cheap helpers. Anything not listed falls back to `default`.
+  RATE_LIMITS: {
+    'ai-suggest':          { windowSec: 60, max: 30 },
+    'ai-proxy':            { windowSec: 60, max: 20 },
+    'briefing':            { windowSec: 60, max: 15 },
+    'predict':             { windowSec: 60, max: 10 },
+    'suggest-assignee':    { windowSec: 60, max: 20 },
+    'auto-fix':            { windowSec: 60, max: 10 },
+    'auto-fix-full':       { windowSec: 60, max: 6 },
+    'shift-ai-action':     { windowSec: 60, max: 30 },
+    'validate-predictions':{ windowSec: 60, max: 4 },
+    'ai-retry':            { windowSec: 60, max: 10 },
+    'notify':              { windowSec: 60, max: 15 },
+    'config':              { windowSec: 60, max: 60 },
+    'security-status':     { windowSec: 60, max: 12 },
+    'default':             { windowSec: 60, max: 20 },
+  },
+
+  // Hard caps on payload sizes. Anything larger is rejected outright; we do
+  // not want a malicious client streaming megabytes of text into Llama.
+  MAX_BODY_BYTES: 64 * 1024,        // 64 KB per JSON request
+  MAX_PROMPT_CHARS: 8000,           // single text field max length
+
+  // Cron anomaly thresholds.
+  FLOOD_ALERTS_PER_MIN: 40,         // suspiciously many new alerts in 60 s
+  FLOOD_NOTIF_BACKLOG: 800,         // shallow size of /notifications that
+                                    //   indicates something is mass-writing
+
+  // How many distinct caller fingerprints we keep tracked at once. A soft
+  // cap that protects the isolate's memory; we evict on overflow.
+  MAX_TRACKED_FINGERPRINTS: 1000,
+
+  // A single matched pattern is enough to flag a prompt-injection attempt.
+  // Patterns are heuristic and intentionally tuned to common attack strings.
+  PROMPT_INJECTION_MATCH_THRESHOLD: 1,
+});
+
+// Per-fingerprint sliding window for rate limiting.
+// Map<fingerprint, Map<endpoint, number[]>> where number[] is millisecond
+// timestamps of recent requests. Older entries are pruned on each check.
+const _securityRateLog = new Map();
+
+// Module-level counter of how many security ACTIONS (= blocks) were taken
+// since the last reset. `scheduled()` reads + resets this every cron tick.
+let _securityActionsCounter = 0;
+function _securityIncrementActions(n = 1) { _securityActionsCounter += n; }
+function _securityResetActions()         { _securityActionsCounter = 0; }
+function _securityGetActions()           { return _securityActionsCounter; }
+
+// Firebase keys cannot contain ':' or '.' — reuse the escaping that
+// `_historyKey()` uses elsewhere, so all timestamp-keyed nodes are consistent.
+function _securityFbKey(iso) {
+  return String(iso).replace(/[:.]/g, '-');
+}
+
+// ── Caller fingerprint ─────────────────────────────────────────────────────
+// We never trust client-supplied identifiers. Cloudflare populates
+// `cf-connecting-ip` for us; we combine it with a tiny non-cryptographic
+// hash of the user-agent so different clients behind the same NAT still
+// get separate budgets when their UAs differ. Falls back to a shared `anon`
+// bucket if nothing identifies the caller (which still rate-limits, just
+// less precisely).
+function _securityFingerprint(request) {
+  const rawIp =
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-real-ip') ||
+    request.headers.get('x-forwarded-for') ||
+    'anon';
+  const ip = String(rawIp).split(',')[0].trim() || 'anon';
+  const ua = request.headers.get('user-agent') || '';
+  let h = 0;
+  for (let i = 0; i < ua.length; i++) h = (h * 31 + ua.charCodeAt(i)) | 0;
+  return `${ip}|${h.toString(36)}`;
+}
+
+// ── Sliding-window rate limiter ───────────────────────────────────────────
+// Records timestamps of recent requests per (fingerprint, endpoint), prunes
+// anything outside the configured window, and returns ok=false with a
+// retry-after hint once the budget is exceeded.
+function _securityRateLimit(request, endpoint) {
+  const cfg = _SECURITY.RATE_LIMITS[endpoint] || _SECURITY.RATE_LIMITS.default;
+  const fp = _securityFingerprint(request);
+  const now = Date.now();
+  const windowMs = cfg.windowSec * 1000;
+
+  let perEndpoint = _securityRateLog.get(fp);
+  if (!perEndpoint) {
+    // Soft eviction so a malicious client cannot blow up our memory by
+    // spraying random UAs to spawn distinct fingerprints. We drop the
+    // oldest entry; legitimate clients are the most-recently-used so they
+    // are not evicted.
+    if (_securityRateLog.size >= _SECURITY.MAX_TRACKED_FINGERPRINTS) {
+      const firstKey = _securityRateLog.keys().next().value;
+      _securityRateLog.delete(firstKey);
+    }
+    perEndpoint = new Map();
+    _securityRateLog.set(fp, perEndpoint);
+  }
+
+  let stamps = perEndpoint.get(endpoint) || [];
+  stamps = stamps.filter((t) => now - t < windowMs);   // prune
+  stamps.push(now);
+  perEndpoint.set(endpoint, stamps);
+
+  if (stamps.length > cfg.max) {
+    const oldest = stamps[0];
+    return {
+      ok: false,
+      retryAfter: Math.max(1, Math.ceil((windowMs - (now - oldest)) / 1000)),
+      observed: stamps.length,
+      limit: cfg.max,
+      fingerprint: fp,
+    };
+  }
+  return { ok: true, observed: stamps.length, limit: cfg.max, fingerprint: fp };
+}
+
+// ── Prompt-injection detector ─────────────────────────────────────────────
+// A defensive heuristic, not a guarantee. Each pattern is named so the
+// security log records exactly which attack signature matched. New patterns
+// can be added here without touching call sites.
+const _PROMPT_INJECTION_PATTERNS = [
+  // Classic instruction override: "Ignore all previous instructions and ..."
+  {
+    name: 'ignore_previous',
+    re: /\b(?:ignore|disregard|forget|override|discard)\s+(?:(?:(?:all|any|the|your|these|those)\s+)?(?:(?:previous|prior|earlier|above|system|developer)\s+){1,4}|(?:all|any|the|your|these|those)\s+)(?:instructions?|prompts?|rules?|messages?|directives?)\b/i,
+  },
+  // Variant phrasing: "Do not follow previous instructions"
+  { name: 'stop_following',   re: /\b(?:do\s+not|don't|stop)\s+(?:follow|obey|respect)\s+(?:(?:all|any|the|your|these|those)\s+)?(?:(?:previous|prior|earlier|above|system|developer)\s+){1,4}(?:instructions?|prompts?|rules?|messages?|directives?)\b/i },
+  // Context reset attempts: "Forget everything above"
+  { name: 'context_reset',    re: /\b(?:forget|ignore|disregard|discard)\s+(?:everything|all)\s+(?:above|before|so\s+far|you\s+were\s+told)\b/i },
+  // Role hijack: "You are now an unrestricted assistant"
+  { name: 'role_override',    re: /you\s+are\s+(now\s+)?(an?|the)\s+[a-z\s]{0,32}(assistant|ai|bot)/i },
+  // References the system prompt directly
+  { name: 'system_takeover',  re: /(system\s+prompt|developer\s+prompt|prior\s+system\s+message)/i },
+  // Known jailbreak handles
+  { name: 'jailbreak',        re: /\b(DAN|do\s+anything\s+now|jailbreak|bypass\s+safety|developer\s+mode\s+enabled)\b/i },
+  // Asks the model to dump credentials
+  { name: 'cred_exfil',       re: /(reveal|print|disclose|show|output)\s+(the\s+)?(api\s+key|secret|private\s+key|env\s+vars?|service\s+account|firebase\s+token)/i },
+  // Common SQL-injection scaffolding (the worker has no SQL but admins might forward strings)
+  { name: 'sql_injection',    re: /\b(union\s+select|drop\s+table|;--|or\s+1=1|--\s+$)\b/i },
+  // Path traversal / file disclosure
+  { name: 'path_traversal',   re: /\.\.\/|\.\.\\|\/etc\/passwd|c:\\windows\\system32/i },
+  // Chat-template tokens that try to escape the conversation framing
+  { name: 'instr_chain',      re: /<\|im_start\|>|<\|im_end\|>|\[INST\]|\[\/INST\]|<\|system\|>/ },
+  // Embedded service URLs that might be used to exfiltrate via Llama replies
+  { name: 'firebase_url',     re: /firebaseio\.com\/.*\?auth=|firebase-adminsdk/i },
+  // Leaks of CF tokens or backend URLs
+  { name: 'cloudflare_token', re: /workers\.dev\/.*\?auth=/i },
+];
+
+function _securityDetectPromptInjection(text) {
+  if (typeof text !== 'string' || text.length === 0) {
+    return { hit: false, matches: [] };
+  }
+  const matches = [];
+  for (const p of _PROMPT_INJECTION_PATTERNS) {
+    if (p.re.test(text)) matches.push(p.name);
+  }
+  return {
+    hit: matches.length >= _SECURITY.PROMPT_INJECTION_MATCH_THRESHOLD,
+    matches,
+  };
+}
+
+// ── Text sanitizer ────────────────────────────────────────────────────────
+// Removes control characters that some LLMs treat as separators (NULs,
+// vertical tabs, zero-width joiners, BOMs) and clamps the length. Strings
+// that pass through here are safe to embed inside a Llama prompt without
+// breaking out of the surrounding template.
+function _securitySanitizeText(text, maxLen) {
+  if (typeof text !== 'string') return '';
+  const cap = Number.isFinite(maxLen) ? maxLen : _SECURITY.MAX_PROMPT_CHARS;
+  let cleaned = text.replace(
+    /[ --﻿​-‏]/g,
+    '',
+  );
+  if (cleaned.length > cap) cleaned = cleaned.slice(0, cap);
+  return cleaned;
+}
+
+// ── Safe JSON body parser ─────────────────────────────────────────────────
+// Reads the request body with three guards: declared length, actual length,
+// and JSON validity. Returns a typed result so the caller can map each
+// failure mode to its own HTTP status without try/catching itself.
+async function _securityParseJsonBody(request) {
+  const lenHeader = request.headers.get('content-length');
+  if (lenHeader && Number(lenHeader) > _SECURITY.MAX_BODY_BYTES) {
+    return { ok: false, error: 'payload_too_large', body: null };
+  }
+  let raw;
+  try {
+    raw = await request.text();
+  } catch (e) {
+    return { ok: false, error: 'read_error', body: null };
+  }
+  if (raw.length > _SECURITY.MAX_BODY_BYTES) {
+    return { ok: false, error: 'payload_too_large', body: null };
+  }
+  if (!raw) return { ok: true, body: {} };
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      return { ok: true, body: obj };
+    }
+    return { ok: false, error: 'bad_shape', body: null };
+  } catch (e) {
+    return { ok: false, error: 'invalid_json', body: null };
+  }
+}
+
+// ── Fire-and-forget log writers ───────────────────────────────────────────
+// Two-tier audit trail:
+//   • security/logs/{key}     — every observation (heartbeats, malformed
+//                                payloads we sanitized through, etc.)
+//   • security/actions/{key}  — every BLOCK we took (rate limit hits,
+//                                rejected prompt injections, anomalies)
+// Anything written to `security/actions` also bumps the counter so the next
+// health pulse reflects the new totals.
+async function _securityLogEvent(env, event) {
+  try {
+    if (!env?.FB_DB_URL) return;
+    const token = await getFirebaseToken(env);
+    if (!token) return;
+    const iso = new Date().toISOString();
+    const key = _securityFbKey(iso) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+    // PUT under a unique key — POST would also work, but PUT lets us
+    // dedupe on retry (the worker would compute the same key). We await the
+    // write because fire-and-forget subrequests are not reliable once the
+    // worker response has already been returned.
+    await fetch(`${env.FB_DB_URL}security/logs/${key}.json?auth=${token}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ at: iso, ...event }),
+    });
+  } catch (e) {
+    // Silent — we MUST NOT propagate logging errors.
+  }
+}
+
+async function _securityRecordAction(env, action) {
+  _securityIncrementActions(1);
+  try {
+    if (!env?.FB_DB_URL) return;
+    const token = await getFirebaseToken(env);
+    if (!token) return;
+    const iso = new Date().toISOString();
+    const key = _securityFbKey(iso) + '_' + Math.floor(Math.random() * 1e6).toString(36);
+    await fetch(`${env.FB_DB_URL}security/actions/${key}.json?auth=${token}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ at: iso, ...action }),
+    });
+  } catch (e) {
+    // Silent — see comment above.
+  }
+}
+
+// ── Main per-request guard ────────────────────────────────────────────────
+// Every fetch handler funnels through this. It returns either:
+//   { ok: true,  body }                             — proceed; use `body`
+//   { ok: false, response }                         — bail; return `response`
+//
+// Options:
+//   endpoint:    string keyed into _SECURITY.RATE_LIMITS
+//   requireBody: true if the endpoint expects a JSON payload
+//   textFields:  array of body keys whose contents will be (a) scanned for
+//                prompt injection and (b) sanitized in-place if clean
+//   maxTextLen:  optional cap override per endpoint
+async function _securityGuard(request, env, options) {
+  const opts = options || {};
+  const endpoint = opts.endpoint || 'default';
+
+  // 1. Rate limit per fingerprint × endpoint.
+  const rl = _securityRateLimit(request, endpoint);
+  if (!rl.ok) {
+    await _securityRecordAction(env, {
+      kind: 'rate_limit_block',
+      endpoint,
+      fingerprint: rl.fingerprint,
+      observed: rl.observed,
+      limit: rl.limit,
+    });
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ error: 'rate_limited', retryAfter: rl.retryAfter }),
+        {
+          status: 429,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Retry-After': String(rl.retryAfter),
+          },
+        },
+      ),
+    };
+  }
+
+  // 2. Body parse (size + JSON) and text-field scanning + sanitization.
+  let body = {};
+  if (opts.requireBody) {
+    const parsed = await _securityParseJsonBody(request);
+    if (!parsed.ok) {
+      await _securityRecordAction(env, {
+        kind: 'bad_payload',
+        endpoint,
+        reason: parsed.error,
+        fingerprint: rl.fingerprint,
+      });
+      const status = parsed.error === 'payload_too_large' ? 413 : 400;
+      return {
+        ok: false,
+        response: new Response(JSON.stringify({ error: parsed.error }), {
+          status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }),
+      };
+    }
+    body = parsed.body;
+
+    const textFields = Array.isArray(opts.textFields) ? opts.textFields : [];
+    for (const f of textFields) {
+      if (body[f] != null && typeof body[f] === 'string') {
+        const det = _securityDetectPromptInjection(body[f]);
+        if (det.hit) {
+          // We log the matches but do NOT feed the poisoned text to Llama.
+          await _securityRecordAction(env, {
+            kind: 'prompt_injection_block',
+            endpoint,
+            field: f,
+            matches: det.matches,
+            preview: body[f].slice(0, 120),
+            fingerprint: rl.fingerprint,
+          });
+          return {
+            ok: false,
+            response: new Response(
+              JSON.stringify({
+                error: 'input_blocked_by_security',
+                detail: 'The request was flagged by the security policy.',
+              }),
+              {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              },
+            ),
+          };
+        }
+        body[f] = _securitySanitizeText(body[f], opts.maxTextLen);
+      }
+    }
+  }
+
+  return { ok: true, body, fingerprint: rl.fingerprint };
+}
+
+// ── Cron-time anomaly scan ────────────────────────────────────────────────
+// Runs once per scheduled() tick. It surveys the loaded data for shapes
+// consistent with mass-write, enumeration, or credential-stuffing attacks
+// and logs anything it finds. The return value is the number of actions
+// taken; the caller folds it into the health pulse.
+async function _runSecurityAnomalyScan(env, ctx) {
+  if (!ctx || !ctx.token) return 0;
+  const startActions = _securityGetActions();
+  const nowMs = Date.now();
+
+  try {
+    // 1. ALERT FLOOD — too many alerts created in the last minute.
+    //    Catches scripts that authenticate as a supervisor and loop on
+    //    AlertService.createAlert() to fill the DB.
+    const recentAlerts = Object.values(ctx.alertsMap || {}).filter((a) => {
+      const t = _toMs(a?.timestamp);
+      return t != null && nowMs - t < 60_000;
+    });
+    if (recentAlerts.length >= _SECURITY.FLOOD_ALERTS_PER_MIN) {
+      await _securityRecordAction(env, {
+        kind: 'alert_flood_detected',
+        count: recentAlerts.length,
+        threshold: _SECURITY.FLOOD_ALERTS_PER_MIN,
+        windowSec: 60,
+      });
+    }
+
+    // 2. MALFORMED ALERTS — control characters or absurd field sizes
+    //    suggest someone is fuzzing the create endpoint or trying to
+    //    smuggle prompt-injection payloads through alert descriptions.
+    let malformed = 0;
+    for (const a of Object.values(ctx.alertsMap || {})) {
+      if (!a || typeof a !== 'object') continue;
+      const desc = String(a.description || '');
+      const type = String(a.type || '');
+      if (
+        /[ --]/.test(desc) ||
+        desc.length > 4000 ||
+        type.length > 64
+      ) {
+        malformed++;
+      }
+    }
+    if (malformed > 0) {
+      await _securityLogEvent(env, {
+        kind: 'malformed_alerts_seen',
+        count: malformed,
+      });
+    }
+
+    // 3. NOTIFICATION BACKLOG — too many queued notifications, indicating
+    //    a fan-out loop or a compromised account spamming requests.
+    try {
+      const res = await fetch(
+        `${env.FB_DB_URL}notifications.json?auth=${ctx.token}&shallow=true`,
+      );
+      if (res.ok) {
+        const map = (await res.json()) || {};
+        const total = Object.keys(map).length;
+        if (total >= _SECURITY.FLOOD_NOTIF_BACKLOG) {
+          await _securityRecordAction(env, {
+            kind: 'notifications_backlog',
+            total,
+            threshold: _SECURITY.FLOOD_NOTIF_BACKLOG,
+          });
+        }
+      }
+    } catch (_) {
+      // Best-effort — never block the cron on a security-scan IO error.
+    }
+
+    // 4. AUTH-FAILURE SURGE — look at recent security_logs and see whether
+    //    a particular fingerprint has been failing repeatedly.
+    try {
+      const res = await fetch(
+        `${env.FB_DB_URL}security/logs.json?auth=${ctx.token}` +
+          `&orderBy=%22at%22&limitToLast=200`,
+      );
+      if (res.ok) {
+        const map = (await res.json()) || {};
+        const cutoffIso = new Date(nowMs - 5 * 60_000).toISOString();
+        const perFp = new Map();
+        for (const v of Object.values(map)) {
+          if (!v || typeof v !== 'object') continue;
+          if (String(v.at || '') < cutoffIso) continue;
+          if (v.kind !== 'auth_failure') continue;
+          const fp = String(v.fingerprint || 'unknown');
+          perFp.set(fp, (perFp.get(fp) || 0) + 1);
+        }
+        for (const [fp, count] of perFp) {
+          if (count >= 10) {
+            await _securityRecordAction(env, {
+              kind: 'auth_failure_surge',
+              fingerprint: fp,
+              count,
+              windowMin: 5,
+            });
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 5. HEARTBEAT — write a "scan ran" log so the developer UI always has
+    //    a fresh `last scan` indicator, even when nothing is suspicious.
+    await _securityLogEvent(env, {
+      kind: 'scan_heartbeat',
+      alertsScanned: Object.keys(ctx.alertsMap || {}).length,
+      usersScanned: Object.keys(ctx.usersMap || {}).length,
+      shiftsScanned: Object.keys(ctx.shiftsMap || {}).length,
+    });
+  } catch (e) {
+    console.error('[SECURITY] scan failed: ' + e.message);
+    await _securityLogEvent(env, {
+      kind: 'scan_error',
+      message: String(e?.message || e),
+    });
+  }
+
+  return _securityGetActions() - startActions;
+}
+
+// ── /security-status endpoint ─────────────────────────────────────────────
+// Returns a snapshot of the policy + last cron pulse for the developer UI.
+// Rate-limited so it cannot itself become a probe target.
+async function handleSecurityStatus(env) {
+  let lastHealth = null;
+  try {
+    const token = await getFirebaseToken(env);
+    const res = await fetch(
+      `${env.FB_DB_URL}workers/health/lastRun.json?auth=${token}`,
+    );
+    if (res.ok) lastHealth = await res.json();
+  } catch (_) {}
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      policy: {
+        rateLimits: _SECURITY.RATE_LIMITS,
+        maxBodyBytes: _SECURITY.MAX_BODY_BYTES,
+        maxPromptChars: _SECURITY.MAX_PROMPT_CHARS,
+        floodAlertsPerMin: _SECURITY.FLOOD_ALERTS_PER_MIN,
+        floodNotifBacklog: _SECURITY.FLOOD_NOTIF_BACKLOG,
+        promptInjectionPatterns: _PROMPT_INJECTION_PATTERNS.map((p) => p.name),
+      },
+      runtime: {
+        trackedFingerprints: _securityRateLog.size,
+        pendingActionCount: _securityGetActions(),
+      },
+      lastHealth,
+      generatedAt: new Date().toISOString(),
+    }),
+    {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    },
+  );
+}
+
 function _aggregateWeek(alertsMap = {}, factoryFilter = null) {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const stats = {
@@ -871,11 +1414,22 @@ async function _runLlama(prompt, env) {
   }
 }
 
-// /ai-proxy – generic prompt relay (used by auto-fix features)
+// /ai-proxy – generic prompt relay (used by auto-fix features).
+// Routed through the security guard: rate-limited, body-size-capped, and
+// the `prompt` field is scanned for prompt-injection patterns before we
+// hand it to Llama. A poisoned prompt is rejected with 400 instead of being
+// forwarded.
 async function handleAiProxy(request, env) {
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'ai-proxy',
+    requireBody: true,
+    textFields: ['prompt'],
+  });
+  if (!guard.ok) return guard.response;
+
   try {
-    const { prompt } = await request.json();
-    const suggestion = await _runLlama(String(prompt || ''), env) ?? _AI_FALLBACK;
+    const prompt = String(guard.body.prompt || '');
+    const suggestion = await _runLlama(prompt, env) ?? _AI_FALLBACK;
     return new Response(JSON.stringify({ suggestion }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -891,9 +1445,19 @@ async function handleAiProxy(request, env) {
 // /ai-suggest – context-aware alert resolution suggestion.
 // Reads the last 10 resolved alerts at the same factory/conveyor/station/type
 // from Firebase so Llama can learn from real past fixes.
+// Security: the free-form `description` field is the prime injection vector
+// since it comes from supervisor speech-to-text. The guard sanitizes it
+// before it ever reaches the prompt template.
 async function handleAiSuggest(request, env) {
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'ai-suggest',
+    requireBody: true,
+    textFields: ['description', 'usine', 'type'],
+  });
+  if (!guard.ok) return guard.response;
+
   try {
-    const { type, usine, convoyeur, poste, description } = await request.json();
+    const { type, usine, convoyeur, poste, description } = guard.body;
     if (!type || !usine) {
       return new Response(JSON.stringify({ suggestion: _AI_FALLBACK }), {
         status: 400,
@@ -964,7 +1528,13 @@ function _historyKey(iso) {
   return String(iso).replace(/[:.]/g, '-');
 }
 
-async function handlePredictions(env) {
+async function handlePredictions(request, env) {
+  // /predict triggers a full alerts-history scan + predictive model build,
+  // which is one of the more CPU-heavy paths in the worker. Rate-limit it
+  // so an unauthenticated attacker cannot use it to burn our Worker quota.
+  const guard = await _securityGuard(request, env, { endpoint: 'predict' });
+  if (!guard.ok) return guard.response;
+
   try {
     const coreCtx = await loadCoreData(env);
     const model = buildPredictiveModel(coreCtx.alertsMap || {});
@@ -1140,7 +1710,15 @@ async function validatePredictions(env, ctx) {
   return processed;
 }
 
-async function handleValidatePredictions(env) {
+async function handleValidatePredictions(request, env) {
+  // Validation walks the entire history node and the entire alerts map,
+  // matching them in O(n·m). The strictest rate limit in the policy sits
+  // on this endpoint for that reason.
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'validate-predictions',
+  });
+  if (!guard.ok) return guard.response;
+
   try {
     const processed = await validatePredictions(env, null);
     return new Response(JSON.stringify({ ok: true, processed }), {
@@ -1157,11 +1735,21 @@ async function handleValidatePredictions(env) {
 
 // ============ Briefing endpoint (Llama 3.2 via Workers AI) ============
 async function handleBriefing(request, env) {
+  // Briefing is a GET endpoint, but we still rate-limit it: an attacker can
+  // spam ?force=1 to force expensive Llama runs. No body to scan.
+  const guard = await _securityGuard(request, env, { endpoint: 'briefing' });
+  if (!guard.ok) return guard.response;
+
   try {
     const url = new URL(request.url);
     const force = url.searchParams.get('force') === '1';
     // Optional factory scope — when set the briefing covers only that plant.
-    const factoryParam = url.searchParams.get('factory') || null;
+    // We sanitize the factory name so a crafted query-string cannot leak
+    // through into the Llama prompt template.
+    const factoryParamRaw = url.searchParams.get('factory') || null;
+    const factoryParam = factoryParamRaw
+      ? _securitySanitizeText(factoryParamRaw, 128)
+      : null;
     const factorySlug = factoryParam ? _briefingFactorySlug(factoryParam) : null;
 
     const coreCtx = await loadCoreData(env);
@@ -1309,9 +1897,23 @@ Begin with "Good morning". Acknowledge what is going well, name the top supervis
 }
 
 // ============ Auto‑fix endpoints ============
+// Both auto-fix endpoints accept arbitrary code and arbitrary error text
+// from the caller and forward them to Llama. The guard rate-limits hits
+// (this is the most expensive endpoint family) and scans both fields for
+// prompt-injection markers. Code that contains the injection patterns is
+// blocked — by design — so an attacker cannot smuggle "ignore previous
+// instructions" through a `code` payload.
 async function handleAutoFix(request, env) {
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'auto-fix',
+    requireBody: true,
+    textFields: ['code', 'errors'],
+    maxTextLen: 32 * 1024,
+  });
+  if (!guard.ok) return guard.response;
+
   try {
-    const { code = '', errors = '' } = await request.json();
+    const { code = '', errors = '' } = guard.body;
     const prompt =
       'Fix this Dart/Flutter code using the error list. Return only the fixed source code.\n\n' +
       `Errors:\n${errors}\n\nCode:\n${code}`;
@@ -1329,11 +1931,48 @@ async function handleAutoFix(request, env) {
 }
 
 async function handleAutoFixFull(request, env) {
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'auto-fix-full',
+    requireBody: true,
+    textFields: ['errors'],
+  });
+  if (!guard.ok) return guard.response;
+
   try {
-    const { files = [], errors = '' } = await request.json();
-    const combined = Array.isArray(files)
-      ? files.map((f) => `=== ${f?.path || 'file'} ===\n${f?.content || ''}`).join('\n\n')
-      : '';
+    const { files = [], errors = '' } = guard.body;
+    // We also sweep file content for injection markers — same policy as
+    // single-file auto-fix, but applied to every file in the bundle.
+    const safeFiles = Array.isArray(files) ? files : [];
+    for (const f of safeFiles) {
+      if (!f || typeof f !== 'object') continue;
+      const content = String(f.content || '');
+      const det = _securityDetectPromptInjection(content);
+      if (det.hit) {
+        await _securityRecordAction(env, {
+          kind: 'prompt_injection_block',
+          endpoint: 'auto-fix-full',
+          field: 'files[].content',
+          path: String(f.path || ''),
+          matches: det.matches,
+        });
+        return new Response(
+          JSON.stringify({
+            fixedFiles: [],
+            error: 'input_blocked_by_security',
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
+      }
+      f.content = _securitySanitizeText(content, 32 * 1024);
+      f.path = _securitySanitizeText(String(f.path || ''), 256);
+    }
+
+    const combined = safeFiles
+      .map((f) => `=== ${f?.path || 'file'} ===\n${f?.content || ''}`)
+      .join('\n\n');
     const prompt =
       'Fix the provided project files based on the errors. Return only a JSON array of objects with path and content.\n\n' +
       `Errors:\n${errors}\n\nFiles:\n${combined}`;
@@ -3081,8 +3720,17 @@ async function processShiftEnding(env, ctx) {
 }
 
 async function handleShiftAiAction(request, env) {
+  // This endpoint runs shift evaluations and triggers Llama-based handover
+  // summary generation, so it gets full guard treatment.
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'shift-ai-action',
+    requireBody: true,
+    textFields: ['shiftId', 'action'],
+  });
+  if (!guard.ok) return guard.response;
+
   try {
-    const body = await request.json().catch(() => ({}));
+    const body = guard.body || {};
     const action = String(body?.action || 'evaluate').toLowerCase();
     const shiftId = body?.shiftId ? String(body.shiftId) : null;
     const coreCtx = await loadCoreData(env);
@@ -3197,9 +3845,19 @@ async function handleShiftAiAction(request, env) {
 
 // ============ /suggest-assignee (scoring restored) ============
 async function handleSuggestAssignee(request, env) {
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'suggest-assignee',
+  });
+  if (!guard.ok) return guard.response;
+
   try {
     const url = new URL(request.url);
-    const alertId = String(url.searchParams.get('alertId') || '').trim();
+    // We sanitize the query-string alertId so a crafted parameter cannot
+    // smuggle path-traversal tokens into the downstream Firebase REST call.
+    const alertId = _securitySanitizeText(
+      String(url.searchParams.get('alertId') || '').trim(),
+      256,
+    );
     if (!alertId) {
       return new Response(JSON.stringify({ error: 'alertId required' }), {
         status: 400,
@@ -3311,7 +3969,12 @@ function handleConfigRequest() {
 }
 
 // ============ Health monitoring helper ============
-async function _writeCronHealth(token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors }) {
+// Persists a single rolling "last cron run" snapshot under
+// workers/health/lastRun. Now also includes `securityActions` — the total
+// number of security blocks (rate-limit hits, prompt-injection rejections,
+// anomaly-triggered records) seen during the run. The developer UI subscribes
+// to this node and surfaces every counter in real time.
+async function _writeCronHealth(token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors, securityActions }) {
   if (!token || !env?.FB_DB_URL) return;
   try {
     await fetch(`${env.FB_DB_URL}workers/health/lastRun.json?auth=${token}`, {
@@ -3324,6 +3987,9 @@ async function _writeCronHealth(token, env, { runStart, assignmentsMade, collabo
         handoversGenerated,
         errors,
         durationMs: Date.now() - runStart,
+        // New: security agent telemetry. Field is always present so the
+        // Flutter side can deserialize without conditional decoding.
+        securityActions: Number(securityActions || 0),
       }),
     });
   } catch (e) {
@@ -3341,8 +4007,17 @@ export default {
         let assignmentsMade = 0;
         let collaborationsApproved = 0;
         let handoversGenerated = 0;
+        let securityActions = 0;
         let cronToken;
         let lockUrl;
+
+        // Reset the per-run security counter at the START of each tick.
+        // HTTP handlers that block requests between cron ticks will have
+        // bumped this counter; we want the *current* tick's number, so we
+        // capture the existing value and reset to zero now. The captured
+        // total still flows into the health pulse — see step 3 below.
+        const carriedOverActions = _securityGetActions();
+        _securityResetActions();
 
         // ── Step 1: acquire cron lock to prevent overlapping executions ─────────
         // Uses ETag optimistic locking on a Firebase node. If the last lock
@@ -3378,7 +4053,7 @@ export default {
         } catch (e) {
           console.error('[CRON] Failed to load core data: ' + e.message);
           healthErrors.push('loadCoreData: ' + e.message);
-          await _writeCronHealth(cronToken, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors });
+          await _writeCronHealth(cronToken, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors, securityActions: carriedOverActions });
           if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
           return;
         }
@@ -3401,8 +4076,24 @@ export default {
         try { await validatePredictions(env, coreCtx); }
         catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
 
+        // ── Step 2b: Security AI agent — anomaly scan ──────────────────────────
+        // Runs after the core data is fully loaded so it sees the same
+        // alertsMap / usersMap the rest of the pipeline saw. Returns the
+        // number of security actions it took (logged blocks). Errors here
+        // are swallowed — the security scan must never break the cron run.
+        try {
+          await _runSecurityAnomalyScan(env, coreCtx);
+        } catch (e) {
+          console.error('[CRON] securityAnomalyScan: ' + e.message);
+          healthErrors.push('securityScan: ' + e.message);
+        }
+
+        // Capture the final total: blocks accumulated from inter-cron
+        // HTTP handlers plus blocks the cron itself took inside the scan.
+        securityActions = carriedOverActions + _securityGetActions();
+
         // ── Step 3: write health pulse ────────────────────────────────────────────
-        await _writeCronHealth(coreCtx.token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors });
+        await _writeCronHealth(coreCtx.token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors, securityActions });
 
         // ── Step 4: release lock ──────────────────────────────────────────────────
         if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
@@ -3415,18 +4106,39 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
-    if (url.pathname === '/config') return handleConfigRequest();
+
+    // /config is dirt-cheap but we still apply a rate limit to keep an
+    // attacker from using it as a heartbeat probe.
+    if (url.pathname === '/config') {
+      const g = await _securityGuard(request, env, { endpoint: 'config' });
+      if (!g.ok) return g.response;
+      return handleConfigRequest();
+    }
+
+    // /security-status — read-only diagnostic endpoint used by the
+    // Developer tab in the admin app. Rate-limited because it touches RTDB.
+    if (url.pathname === '/security-status') {
+      const g = await _securityGuard(request, env, { endpoint: 'security-status' });
+      if (!g.ok) return g.response;
+      return handleSecurityStatus(env);
+    }
+
     if (url.pathname === '/ai-proxy') return handleAiProxy(request, env);
     if (url.pathname === '/ai-suggest') return handleAiSuggest(request, env);
-    if (url.pathname === '/predict') return handlePredictions(env);
+    if (url.pathname === '/predict') return handlePredictions(request, env);
     if (url.pathname === '/briefing') return handleBriefing(request, env);
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
     if (url.pathname === '/auto-fix') return handleAutoFix(request, env);
     if (url.pathname === '/auto-fix-full') return handleAutoFixFull(request, env);
     if (url.pathname === '/shift-ai-action') return handleShiftAiAction(request, env);
-    if (url.pathname === '/validate-predictions') return handleValidatePredictions(env);
+    if (url.pathname === '/validate-predictions') return handleValidatePredictions(request, env);
 
+    // /ai-retry kicks off a full AI assignment pass. Pre-rate-limit-guard
+    // is critical here — it touches Llama and writes to RTDB. Without the
+    // guard an attacker could trigger overlapping expensive runs.
     if (url.pathname === '/ai-retry') {
+      const g = await _securityGuard(request, env, { endpoint: 'ai-retry' });
+      if (!g.ok) return g.response;
       ctx.waitUntil(runAIAssignments(env, null));
       return new Response(JSON.stringify({ queued: true }), {
         status: 200,
@@ -3434,7 +4146,11 @@ export default {
       });
     }
 
+    // /notify forces a fan-out pass — capable of generating a lot of FCM
+    // traffic if abused. Guard it strictly.
     if (url.pathname === '/notify') {
+      const g = await _securityGuard(request, env, { endpoint: 'notify' });
+      if (!g.ok) return g.response;
       ctx.waitUntil(
         (async () => {
           try {
@@ -3449,7 +4165,13 @@ export default {
       });
     }
 
-    // Default trigger: AI first, then broadcast
+    // Default trigger: AI first, then broadcast. We rate-limit the unknown
+    // path catch-all under the "default" bucket so an attacker scanning the
+    // worker for endpoints cannot fall through into a free expensive run.
+    const defaultGuard = await _securityGuard(request, env, {
+      endpoint: 'default',
+    });
+    if (!defaultGuard.ok) return defaultGuard.response;
     try {
       const coreCtx = await loadCoreData(env);
       await runAIAssignments(env, coreCtx);
@@ -3490,4 +4212,5 @@ export {
   processShiftCollaborations,
   suspendAcceptedAssistantAlerts,
   _buildAssistantAlertSuspensionPatch,
+  _securityDetectPromptInjection,
 };
