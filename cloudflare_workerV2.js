@@ -973,7 +973,7 @@ const _PREDICTIVE_DAY_MS = 24 * 60 * 60 * 1000;
 
 function _predictiveDecay(ageDays, halflifeDays = _PREDICTIVE_HALFLIFE_DAYS) {
   if (!Number.isFinite(ageDays) || ageDays < 0) return 0;
-  return Math.pow(0.5, ageDays / halflifeDays);
+  return Math.exp(-Math.log(2) * ageDays / halflifeDays);
 }
 
 function _predictiveEffectiveWindowDays(
