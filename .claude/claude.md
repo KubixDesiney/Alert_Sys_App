@@ -1222,6 +1222,209 @@ Implemented a structural redesign of the Supervisors area to unify assignment op
 - Selected supervisor state is reused by both assignment chips and overlay context.
 - Theme tokens from `AppTheme` remain the single source of visual styling for light/dark consistency.
 
+---
+
+## AG. Security Agent Architecture and Threat Mitigation (May 2026)
+
+Implemented a comprehensive security AI agent in the Cloudflare Worker to protect AlertSys from external threats including DDoS, prompt injection, data flooding, enumeration attacks, replay/race attacks, and credential abuse.
+
+**Security Policy Architecture:**
+
+The security agent operates as a centralized guard across all worker endpoints, providing:
+
+1. **Per-Endpoint Rate Limiting**
+   - Sliding-window rate limits per IP fingerprint for each endpoint.
+   - Configuration via frozen `_SECURITY` object: `/ai-proxy` (20/min), `/ai-suggest` (15/min), `/predict` (15/min), `/briefing` (30/min), `/auto-fix` (10/min), `/shift-ai-action` (20/min), default trigger (50/min).
+   - Fingerprinting combines Cloudflare IP header with SHA-256(User-Agent) to prevent header-spoofing bypasses.
+   - Soft fingerprint eviction: oldest timestamp entries evicted when tracking >5000 unique fingerprints (prevents memory bloat from attacker UA spraying).
+
+2. **Prompt Injection Detection**
+   - Named regex pattern bank scanning all user-supplied text fields (message, feedback, comments, alert type/location).
+   - 10 detection patterns: ignore_previous, role_override, system_takeover, jailbreak, cred_exfil, sql_injection, path_traversal, instr_chain, firebase_url, cloudflare_token.
+   - Matches trigger immediate block with 400 response and security action record.
+
+3. **Input Sanitization**
+   - Control character removal via regex (strips NUL, BOMs, zero-width joiners, RTL marks).
+   - Text length clamping: prompt fields max 8KB, other text fields 512 chars.
+   - JSON shape validation: ensures parsed body has expected top-level keys.
+   - Content-Length header check: request body must not exceed 64KB.
+
+4. **Anomaly Detection**
+   - Runs as scheduled cron scan (post data-load) to avoid per-request overhead.
+   - Checks: alert flood (>40/min), malformed alerts (missing required fields), notification backlog (>800), auth-failure surge (>10/5min).
+   - All anomalies written to `security/logs` (observations) and trigger `securityActions` counter increment.
+
+5. **Security Logging and Audit Trail**
+   - `_securityLogEvent()`: Fire-and-forget write to `security/logs/{timestamp}.json` with fields: at, kind, count, threshold, matches, fingerprint, endpoint, reason.
+   - `_securityRecordAction()`: Fire-and-forget write to `security/actions/{timestamp}.json` with fields: at, kind, fingerprint, endpoint, reason, matched_patterns, response_code.
+   - Non-blocking: all writes initiated via Promise.resolve() without await.
+   - Queries indexed on `at`, `kind`, `fingerprint` for efficient developer-mode lookups.
+
+6. **Health Pulse Integration**
+   - `_writeCronHealth()` now accepts optional `securityActions` parameter.
+   - Tallied during cron: counter reset at start, incremented per anomaly found, final count merged into health document.
+   - Written to `workers/health/lastRun.json` with field: `securityActions` (integer count).
+
+7. **Main Guard Function**
+   - `_securityGuard(request, env, options)`: Central orchestrator called at entry of all HTTP endpoints.
+   - Sequence: rate limit → body size validation → JSON parse → text field scanning → sanitization → fire-and-forget audit log.
+   - Returns object: `{ ok: true/false, body: parsed JSON, response: Response if error }`.
+
+8. **Endpoint Integration**
+   - Guard wired into: `/ai-proxy`, `/ai-suggest`, `/predict`, `/briefing`, `/auto-fix`, `/auto-fix-full`, `/shift-ai-action`, `/suggest-assignee`, `/validate-predictions`, `/ai-retry`, `/notify`, default trigger.
+
+9. **Diagnostic Endpoint: `/security-status`**
+   - Returns JSON: `{ policy: {rate_limits, max_body_size, ...}, runtime: {tracked_fingerprints: count, pending_actions: count} }`.
+   - Allows developers to verify policy is loaded and runtime state is stable.
+   - Admin-only access.
+
+**Cron Workflow Integration:**
+
+Scheduled handler modified to support security:
+1. Acquire distributed lock.
+2. Reset _securityActionsCounter to 0.
+3. Load core data in parallel.
+4. Run _runSecurityAnomalyScan() — emits heartbeat, populates counter.
+5. Continue normal alert/escalation/assignment processing.
+6. Write cron health with securityActions field.
+7. Release lock.
+
+**Firebase Database Updates:**
+
+Added to `database.rules.json`:
+- `security/logs`: admin-only read, indexed on at/kind/fingerprint.
+- `security/actions`: admin-only read, indexed on at/kind/fingerprint.
+- `workers/health`: admin-only read.
+
+All security nodes protected by admin-only read; writes restricted to worker via IAM (not client-writable).
+
+**cloudflare_workerV2.js Changes:**
+
+- Added `_SECURITY` frozen configuration object (~line 200) with per-endpoint rate limits, max body size (64KB), max prompt chars (8KB), flood thresholds.
+- Added `_securityRateLimit()` function: in-memory Map<fingerprint, Map<endpoint, timestamps[]>> sliding-window checker with soft eviction at 5000 fingerprints.
+- Added `_securityFingerprint()` function: combines Cloudflare IP + SHA-256(User-Agent).
+- Added `_securityDetectPromptInjection()` function: regex pattern bank with 10 named patterns.
+- Added `_securitySanitizeText()` function: removes control characters and clamps text length.
+- Added `_securityParseJsonBody()` function: validates Content-Length, parses JSON, validates shape.
+- Added `_securityLogEvent()` and `_securityRecordAction()` functions: fire-and-forget writes to RTDB security nodes.
+- Added `_securityGuard()` function: main orchestrator.
+- Added `_runSecurityAnomalyScan()` function: runs during cron, checks alert floods, malformed alerts, notification backlog, auth-failure surges.
+- Added `handleSecurityStatus()` function: returns `/security-status` diagnostic endpoint.
+- Modified `scheduled()` cron handler: resets counter at start, runs scan after data load, captures counter before health write.
+- Modified `_writeCronHealth()`: now accepts optional `securityActions` parameter.
+- Wired guard into: handleAiProxy, handleAiSuggest, handleBriefing, handleAutoFix, handleAutoFixFull, handlePredictions, handleValidatePredictions, handleShiftAiAction, handleSuggestAssignee, /ai-retry, /notify, default trigger.
+
+**Deployment Notes:**
+
+- All security functions self-contained in cloudflare_workerV2.js; no external dependencies added.
+- Rate limiter and anomaly scan run with minimal overhead.
+- Security logs and actions written asynchronously; zero impact on user request latency.
+- `/security-status` endpoint provides real-time visibility into policy and runtime state.
+
+---
+
+## AH. Developer Mode and In-App Telemetry (May 2026)
+
+Implemented comprehensive developer mode tooling that surfaces worker security telemetry, health metrics, and app console logs through a new Developer tab, accessible only when enabled via authenticated settings toggle.
+
+**App-Level Logging Infrastructure:**
+
+Added `AppLogBuffer` singleton (lib/services/app_logger.dart) to capture all app logs in real time without persistence:
+
+- `AppLogEntry`: immutable DTO with fields `at` (DateTime), `level` (DEBUG/INFO/WARN/ERROR), `message` (String), `error` (String?).
+- `AppLogBuffer`: in-memory ring buffer with capacity 200 entries, newest last.
+  - `entries` getter: returns unmodifiable List<AppLogEntry>.
+  - `stream` getter: broadcast StreamController<List<AppLogEntry>> emitting full buffer snapshot on each new entry.
+  - `add(AppLogEntry)`: appends entry, evicts oldest if at capacity, emits snapshot to stream.
+  - `clear()`: empties buffer and notifies stream.
+- Modified `AppLogger._log()`: mirrors all log lines into `AppLogBuffer.instance` after debugPrint.
+- No persistence: logs die with process (design choice to avoid unbounded storage growth).
+
+**Developer Mode Lifecycle:**
+
+1. **Persistent Toggle**: `_prefDeveloperMode` SharedPreferences key in AdminDashboardScreen stores boolean state.
+2. **Settings UI**: New `_SettingsIconButton` widget (gear icon with optional "DEV" badge overlay) in admin header.
+3. **Confirmation Dialog**: `_showDeveloperModeConfirmation()` modal with gradient banner, purple emphasis, three confirmation requirements, info box.
+4. **Tab Visibility Gating**: `PillTabBar` now accepts `showDeveloperTab: bool` parameter; Developer tab (index 6) only appended if true.
+5. **Content Routing**: AdminDashboardScreen `_buildContent()` case 6 renders `AdminDeveloperTab()` if `_developerMode`, else empty.
+6. **State Management**: `_setDeveloperMode(bool)` updates SharedPreferences, bounces away from tab 6 if disabling while active.
+
+**Developer Tab Architecture:**
+
+New file: `lib/screens/admin/developer_tab.dart` (~900 lines) provides real-time telemetry dashboard with four cards:
+
+1. **Health Pulse Card**
+   - Streams from `workers/health/lastRun` RTDB node.
+   - Displays tiles: Status, Duration, AI Assignments, Collaborations, Handovers, Security Actions.
+   - Status color logic: red if errorCount > 0 or securityActions > 3; orange if securityActions > 0; green otherwise.
+   - Renders as responsive 2-column grid of stat tiles.
+
+2. **Security Actions Card**
+   - Streams from `security/actions` (last 50 entries, sorted newest first).
+   - List view of action events with colored dot indicators (red for block, orange for rate_limit, yellow for sanitize).
+   - Shows action kind chip, endpoint name, fingerprint (last 8 chars), time.
+   - Responsive 2-column layout on wide screens, 1-column on mobile.
+
+3. **Security Logs Card**
+   - Streams from `security/logs` (last 50 entries, sorted newest first).
+   - Similar list view to actions, with kind-colored indicators (red for flood, orange for malformed, yellow for auth_surge, blue for backlog).
+   - Shows count, threshold exceeded, fingerprint.
+
+4. **Console Card**
+   - Streams from `AppLogBuffer.instance.stream`.
+   - Monospace dark background, log lines rendered in level-colored text (ERROR=red, WARN=yellow, INFO=blue, DEBUG=gray).
+   - "Clear Buffer" button triggers `AppLogBuffer.instance.clear()`.
+   - Line format: `[HH:MM:SS] [LEVEL] message (error if present)`.
+
+**UI Components:**
+
+- `_AdminDeveloperTabState`: Manages 4 StreamSubscriptions, maps to DTOs, proper cleanup in dispose().
+- `_SecEvent` DTO: decodes raw security log/action Firebase maps into human-readable summaries.
+- `_DevHeader`: Gradient navy-to-purple banner with "LIVE" pulsing badge.
+- `_SectionCard`: Generic section container with gradient icon, title, subtitle, error state overlay.
+- `_HealthPulseCard`: 2x3 grid of stat tiles.
+- `_EventsCard`: Scrollable list of events with kind-colored dots.
+- `_ConsoleCard`: Monospace log viewer with clear button.
+
+**Integration Points:**
+
+- AdminDashboardScreen header now shows settings icon (`_SettingsIconButton`).
+- Settings popup menu includes single toggle: "Enable Developer Mode".
+- Confirmation dialog on toggle; confirmation triggers `_setDeveloperMode(true)`.
+- Disabling via settings closes dialog, bounces to Overview tab.
+- PillTabBar receives `showDeveloperTab` flag; conditionally renders Developer tab.
+- Developer tab visible only when `_developerMode == true`.
+
+**Design Patterns:**
+
+1. **Singleton broadcast stream**: AppLogBuffer stream allows multiple subscribers without tight coupling.
+2. **Fire-and-forget security writes**: Non-blocking Promise.resolve() pattern ensures zero latency added to user requests.
+3. **Stateful settings button**: GlobalKey maintained in `_SettingsIconButton.State` ensures popup menu can anchor without rebuilds.
+4. **Color coding**: Kind-to-color mapping provides quick visual feedback.
+5. **Responsive grid layout**: Security cards adapt 2-column (wide) → 1-column (mobile) automatically.
+6. **Lazy stream subscription**: _ensureStreamSub() pattern prevents duplicate subscriptions on rebuild.
+
+**Operational Sequence:**
+
+1. Admin enables Developer Mode via settings icon.
+2. Confirmation dialog appears with security warnings.
+3. Admin checks boxes and taps ENABLE.
+4. `_setDeveloperMode(true)` persists to SharedPreferences.
+5. AdminDashboardScreen rebuilds; PillTabBar now shows Developer tab.
+6. Admin taps Developer tab (index 6).
+7. AdminDeveloperTab initializes and subscribes to health, actions, logs, console streams.
+8. Real-time updates flow in; cards populate with data.
+9. Admin can review security blocks, worker health, app logs in one unified pane.
+
+**Data Privacy & Access Control:**
+
+- `security/logs` and `security/actions` protected by database.rules.json: admin-only read, no client writes.
+- AppLogBuffer never transmitted to server; lives entirely in-process.
+- Developer tab requires explicit per-session enable.
+- All displayed data safe for internal use; fingerprints truncated to last 8 chars in UI.
+
+---
+
 ## Quick File-to-Responsibility Index
 
 **Flutter App Core:**
@@ -1263,6 +1466,7 @@ Implemented a structural redesign of the Supervisors area to unify assignment op
 - lib/services/offline_account_cache.dart: offline role/factory caching.
 - lib/services/worker_trigger_queue.dart: resilient worker trigger queue.
 - lib/services/background_sync_service.dart: reconnection-triggered sync.
+- lib/services/app_logger.dart: logging and AppLogBuffer singleton.
 
 **Organization and Coordination:**
 - lib/services/hierarchy_service.dart: topology, assets, location validation.
@@ -1274,15 +1478,19 @@ Implemented a structural redesign of the Supervisors area to unify assignment op
 - lib/services/shift_pdf_service.dart: shift report PDF generation and export.
 - lib/screens/admin/shifts_tab.dart: shift scheduling UI (schedule, live, timeline tabs).
 - lib/screens/admin/shift_creation_dialog.dart: shift configuration with conflict detection.
+- lib/screens/admin/developer_tab.dart: developer telemetry dashboard (security, health, logs).
 - lib/widgets/shifts/: shift UI components (cards, backgrounds, logs panel).
 
 **Core Infrastructure:**
 - lib/services/service_locator.dart: dependency injection container.
 - lib/services/auth_service.dart: Firebase authentication.
-- lib/services/app_logger.dart: logging.
 - lib/services/config_service.dart: app configuration.
 - lib/services/push_notification_service.dart: platform notification wrapper.
 - lib/services/app_lifecycle_observer.dart: app foreground/background transitions.
+
+**Security:**
+- cloudflare_workerV2.js: security agent (rate limiting, injection detection, anomaly scanning, audit logging).
+- database.rules.json: Realtime Database authorization (includes security/* and workers/health nodes).
 
 **Worker (Cloudflare):**
 - cloudflare_worker.js: re-export shim to worker/index.js.
@@ -1311,7 +1519,7 @@ Implemented a structural redesign of the Supervisors area to unify assignment op
 **Database and Rules:**
 - database.rules.json: Realtime Database authorization, validation, indexes.
 - firebase.json: Firebase project configuration (hosting, functions).
-- wrangler.toml: Cloudflare Worker deployment config (points to `cloudflare_workerV2.js`, legacy).
+- wrangler.toml: Cloudflare Worker deployment config (points to `cloudflare_workerV2.js`).
 
 **Testing:**
 - test/: Flutter tests (parsers, models, utilities, widgets).
