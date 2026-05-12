@@ -371,7 +371,7 @@ AIService:
 - Calls worker /ai-suggest endpoint for resolution suggestions.
 
 Predictive stack:
-- PredictiveRepository fetches /briefing, /predict, /suggest-assignee endpoints.
+- PredictiveRepository fetches /briefing, /predict, /predict-lstm, /suggest-assignee endpoints.
 - PredictiveIntelStreamService provides live RTDB streams from ai_briefing/latest and ai_predictions/latest.
 - PredictiveIntelService is a facade that keeps API stable for screens.
 
@@ -419,8 +419,12 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 6. Process shift collaborations (auto-approve when conditions met).
 7. Process shift ending (generate handover summaries).
 8. Validate predictions (cross-check historical forecasts against realized alerts).
-9. Write cron health metrics to database.
-10. Release lock.
+9. Rebuild statistical predictive model and write ai_predictions/latest.
+10. Run batched LSTM forecast cycle and write ai_predictions/lstm.
+11. Merge LSTM probabilities into ai_predictions/latest when batch output is valid.
+12. Run security anomaly scan and aggregate security actions.
+13. Write cron health metrics to database (includes securityActions and lstmPredictions).
+14. Release lock.
 
 **HTTP Fetch Handler Endpoints:**
 
@@ -428,6 +432,7 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 - `/ai-proxy` — AI integration proxy (Gemini, Claude, Llama).
 - `/ai-suggest` — Alert resolution suggestions.
 - `/predict` — Predictive model computation.
+- `/predict-lstm` — LSTM prediction endpoint (security guarded, batched upstream call).
 - `/briefing` — Morning briefing (supports `?factory=` query parameter for scoped briefings).
 - `/suggest-assignee` — Assignee recommendation.
 - `/auto-fix` — Partial automatic remediation.
@@ -446,6 +451,24 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 - **Configuration:** wrangler.toml specifies cron trigger `* * * * *`, secrets management via `wrangler secret put`, and worker name "alert-notifier".
 - **Testing:** worker_test/ includes Jest tests for pure functions; npm test runs all tests.
 - **Package.json:** scripts for `npm test` and `npm run deploy`.
+
+**Recent Worker updates (May 2026):**
+
+- Predictive risk realism fix:
+  - Replaced fixed `/30` rate math with a 180-day, recency-weighted Poisson model.
+  - Added `_predictiveDecay()` and `_predictiveEffectiveWindowDays()`.
+  - Curves now reflect current tempo instead of staying near 100% due to stale volume.
+- Added LSTM data pipeline helpers in `cloudflare_workerV2.js`:
+  - `_buildDailyFeatures`, `_fitGlobalScaler`, `_scaleFeatures`, `_runLstmForecast`.
+- LSTM cron integration:
+  - Builds per-machine 14x8 windows.
+  - Sends one batched HF request per cron run: `{ "features": [machineCount, 14, 8] }`.
+  - Expects `{ ok: true, predictions: [...] }` and maps entries to machines by index.
+  - If batch length mismatches machine count, logs warning with both lengths and uses only aligned entries.
+- Merges LSTM output back into statistical predictions:
+  - `ai_predictions/lstm` stores raw LSTM batch output with metadata.
+  - `ai_predictions/latest` enriched with `predictions[].lstmProbabilities` and curve-level LSTM summaries.
+- Health pulse expanded with `lstmPredictions` counter.
 
 ## U. Firebase Functions Responsibilities
 
@@ -1231,7 +1254,7 @@ The security agent operates as a centralized guard across all worker endpoints, 
 
 1. **Per-Endpoint Rate Limiting**
    - Sliding-window rate limits per IP fingerprint for each endpoint.
-   - Configuration via frozen `_SECURITY` object: `/ai-proxy` (20/min), `/ai-suggest` (15/min), `/predict` (15/min), `/briefing` (30/min), `/auto-fix` (10/min), `/shift-ai-action` (20/min), default trigger (50/min).
+   - Configuration via frozen `_SECURITY` object includes per-endpoint windows (examples): `/ai-suggest` (30/min), `/ai-proxy` (20/min), `/briefing` (15/min), `/predict` (10/min), `/predict-lstm` (10/min), `/validate-predictions` (4/min), `/notify` (15/min), default trigger (20/min).
    - Fingerprinting combines Cloudflare IP header with SHA-256(User-Agent) to prevent header-spoofing bypasses.
    - Soft fingerprint eviction: oldest timestamp entries evicted when tracking >5000 unique fingerprints (prevents memory bloat from attacker UA spraying).
 
@@ -1268,7 +1291,7 @@ The security agent operates as a centralized guard across all worker endpoints, 
    - Returns object: `{ ok: true/false, body: parsed JSON, response: Response if error }`.
 
 8. **Endpoint Integration**
-   - Guard wired into: `/ai-proxy`, `/ai-suggest`, `/predict`, `/briefing`, `/auto-fix`, `/auto-fix-full`, `/shift-ai-action`, `/suggest-assignee`, `/validate-predictions`, `/ai-retry`, `/notify`, default trigger.
+   - Guard wired into: `/ai-proxy`, `/ai-suggest`, `/predict`, `/predict-lstm`, `/briefing`, `/auto-fix`, `/auto-fix-full`, `/shift-ai-action`, `/suggest-assignee`, `/validate-predictions`, `/ai-retry`, `/notify`, `/config`, `/security-status`, and default trigger.
 
 9. **Diagnostic Endpoint: `/security-status`**
    - Returns JSON: `{ policy: {rate_limits, max_body_size, ...}, runtime: {tracked_fingerprints: count, pending_actions: count} }`.
@@ -1309,7 +1332,7 @@ All security nodes protected by admin-only read; writes restricted to worker via
 - Added `handleSecurityStatus()` function: returns `/security-status` diagnostic endpoint.
 - Modified `scheduled()` cron handler: resets counter at start, runs scan after data load, captures counter before health write.
 - Modified `_writeCronHealth()`: now accepts optional `securityActions` parameter.
-- Wired guard into: handleAiProxy, handleAiSuggest, handleBriefing, handleAutoFix, handleAutoFixFull, handlePredictions, handleValidatePredictions, handleShiftAiAction, handleSuggestAssignee, /ai-retry, /notify, default trigger.
+- Wired guard into: handleAiProxy, handleAiSuggest, handlePredictions, /predict-lstm handler, handleBriefing, handleAutoFix, handleAutoFixFull, handleValidatePredictions, handleShiftAiAction, handleSuggestAssignee, /ai-retry, /notify, /config, /security-status, and default trigger.
 
 **Deployment Notes:**
 
@@ -1524,3 +1547,4 @@ New file: `lib/screens/admin/developer_tab.dart` (~900 lines) provides real-time
 - TESTING.md: testing strategy and CI expectations.
 
 This is the current architecture baseline for AlertSys (May 2026).
+

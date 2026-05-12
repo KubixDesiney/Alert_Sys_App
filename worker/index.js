@@ -94,7 +94,7 @@ export default {
     if (url.pathname === '/config') return handleConfigRequest();
     if (url.pathname === '/ai-proxy') return handleAiProxy(request, env);
     if (url.pathname === '/ai-suggest') return handleAiSuggest(request, env);
-    if (url.pathname === '/predict') return handlePredictions(env);
+    if (url.pathname === '/predict') return handlePredictions(request, env);
     if (url.pathname === '/briefing') return handleBriefing(request, env);
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);
     if (url.pathname === '/auto-fix') return handleAutoFix(request, env);

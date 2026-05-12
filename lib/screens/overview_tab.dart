@@ -85,150 +85,150 @@ class _HealthScoreCard extends StatelessWidget {
           ),
         ],
       ),
-      child: LayoutBuilder(builder: (ctx, c) {
-        final narrow = c.maxWidth < 520;
-        final gauge = SizedBox(
-          width: narrow ? 150 : 180,
-          height: narrow ? 96 : 112,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: value),
-                duration: const Duration(milliseconds: 900),
-                curve: Curves.easeOutCubic,
-                builder: (_, v, __) => CustomPaint(
-                  painter: _HealthGaugePainter(
-                    value: v,
-                    color: color,
-                    track: theme.border,
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final narrow = c.maxWidth < 520;
+          final gauge = SizedBox(
+            width: narrow ? 150 : 180,
+            height: narrow ? 96 : 112,
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: value),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, v, __) => CustomPaint(
+                    painter: _HealthGaugePainter(
+                      value: v,
+                      color: color,
+                      track: theme.border,
+                    ),
+                    size: Size.infinite,
                   ),
-                  size: Size.infinite,
                 ),
-              ),
-              Positioned(
-                bottom: 0,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TweenAnimationBuilder<double>(
-                      tween: Tween(begin: 0, end: value),
-                      duration: const Duration(milliseconds: 900),
-                      curve: Curves.easeOutCubic,
-                      builder: (_, v, __) => Text(
-                        v.toStringAsFixed(0),
-                        style: TextStyle(
-                          fontSize: narrow ? 28 : 34,
-                          fontWeight: FontWeight.w800,
-                          color: color,
-                          height: 1,
+                Positioned(
+                  bottom: 0,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: value),
+                        duration: const Duration(milliseconds: 900),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, v, __) => Text(
+                          v.toStringAsFixed(0),
+                          style: TextStyle(
+                            fontSize: narrow ? 28 : 34,
+                            fontWeight: FontWeight.w800,
+                            color: color,
+                            height: 1,
+                          ),
                         ),
                       ),
-                    ),
-                    Text(
-                      '/ 100',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.muted,
-                        fontWeight: FontWeight.w600,
+                      Text(
+                        '/ 100',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.muted,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-
-        final stats = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    _verdict().toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                      letterSpacing: 1.2,
-                    ),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Production Health',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: theme.text,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Composite of resolution rate and critical backlog.',
-              style: TextStyle(fontSize: 12, color: theme.muted),
-            ),
-            const SizedBox(height: 14),
-            _HealthMetric(
-              icon: Icons.trending_up_rounded,
-              color: theme.green,
-              label: 'Resolution',
-              value: '${resolutionRate.toStringAsFixed(0)}%',
-            ),
-            const SizedBox(height: 8),
-            _HealthMetric(
-              icon: Icons.warning_amber_rounded,
-              color: criticalCount > 0 ? theme.red : theme.muted,
-              label: 'Critical pending',
-              value: '$criticalCount',
-            ),
-            const SizedBox(height: 8),
-            _HealthMetric(
-              icon: Icons.timer_outlined,
-              color: theme.blue,
-              label: 'Avg response',
-              value: avgResponseLabel,
-            ),
-            const SizedBox(height: 8),
-            _HealthMetric(
-              icon: Icons.layers_rounded,
-              color: theme.navy,
-              label: 'Total this period',
-              value: '$totalAlerts',
-            ),
-          ],
-        );
+          );
 
-        if (narrow) {
-          return Column(
+          final stats = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      _verdict().toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Production Health',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: theme.text,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Composite of resolution rate and critical backlog.',
+                style: TextStyle(fontSize: 12, color: theme.muted),
+              ),
+              const SizedBox(height: 14),
+              _HealthMetric(
+                icon: Icons.trending_up_rounded,
+                color: theme.green,
+                label: 'Resolution',
+                value: '${resolutionRate.toStringAsFixed(0)}%',
+              ),
+              const SizedBox(height: 8),
+              _HealthMetric(
+                icon: Icons.warning_amber_rounded,
+                color: criticalCount > 0 ? theme.red : theme.muted,
+                label: 'Critical pending',
+                value: '$criticalCount',
+              ),
+              const SizedBox(height: 8),
+              _HealthMetric(
+                icon: Icons.timer_outlined,
+                color: theme.blue,
+                label: 'Avg response',
+                value: avgResponseLabel,
+              ),
+              const SizedBox(height: 8),
+              _HealthMetric(
+                icon: Icons.layers_rounded,
+                color: theme.navy,
+                label: 'Total this period',
+                value: '$totalAlerts',
+              ),
+            ],
+          );
+
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [gauge, const SizedBox(height: 14), stats],
+            );
+          }
+          return Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               gauge,
-              const SizedBox(height: 14),
-              stats,
+              const SizedBox(width: 22),
+              Expanded(child: stats),
             ],
           );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            gauge,
-            const SizedBox(width: 22),
-            Expanded(child: stats),
-          ],
-        );
-      }),
+        },
+      ),
     );
   }
 }
@@ -445,38 +445,45 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       _detectIncomingCriticalAlerts(oldWidget.allAlerts);
     });
     if (oldWidget.selectedUsine != widget.selectedUsine) {
-      _rebindBriefingStream();
+      _rebindFactoryScopedIntelStreams();
     }
   }
 
-  void _rebindBriefingStream() {
+  void _rebindFactoryScopedIntelStreams() {
     _briefSub?.cancel();
+    _predSub?.cancel();
     if (mounted) {
       setState(() {
         _briefSub = null;
+        _predSub = null;
         _briefing = null;
+        _predictions = null;
         _briefingWarmed = false;
+        _predictionsWarmed = false;
       });
     } else {
       _briefSub = null;
+      _predSub = null;
       _briefing = null;
+      _predictions = null;
       _briefingWarmed = false;
+      _predictionsWarmed = false;
     }
-    final factory = widget.selectedUsine == 'all' ? null : widget.selectedUsine;
     _briefSub = PredictiveIntelService.instance
-        .briefingStream(factory: factory)
+        .briefingStream(factory: _briefingFactory)
         .listen((b) {
-      if (mounted) {
-        setState(() => _briefing = b);
-      }
-    });
-    unawaited(() async {
-      final fresh =
-          await PredictiveIntelService.instance.fetchBriefing(factory: factory);
-      if (mounted && fresh != null) {
-        setState(() => _briefing = fresh);
-      }
-    }());
+          if (mounted) {
+            setState(() => _briefing = b);
+          }
+        });
+    _predSub = PredictiveIntelService.instance
+        .predictionsStream(factory: _briefingFactory)
+        .listen((p) {
+          if (mounted) {
+            setState(() => _predictions = p);
+          }
+        });
+    _warmPredictiveCaches();
   }
 
   void _seedKnownCriticalAlerts() {
@@ -487,8 +494,10 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   void _detectIncomingCriticalAlerts(List<AlertModel> previousAlerts) {
-    final previousIds =
-        previousAlerts.where((a) => a.isCritical).map((a) => a.id).toSet();
+    final previousIds = previousAlerts
+        .where((a) => a.isCritical)
+        .map((a) => a.id)
+        .toSet();
     final incoming = widget.allAlerts.where((a) {
       if (!a.isCritical) return false;
       if (a.status != 'disponible') return false;
@@ -531,8 +540,10 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         describe: _getAlertDisplayDescription,
       ),
       transitionBuilder: (_, anim, __, child) {
-        final curved =
-            CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutCubic,
+        );
         return FadeTransition(
           opacity: curved,
           child: ScaleTransition(
@@ -563,23 +574,29 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     _briefSub = PredictiveIntelService.instance
         .briefingStream(factory: _briefingFactory)
         .listen((b) {
-      if (mounted) setState(() => _briefing = b);
-    });
-    _predSub = PredictiveIntelService.instance.predictionsStream().listen((p) {
-      if (mounted) setState(() => _predictions = p);
-    });
+          if (mounted) setState(() => _briefing = b);
+        });
+    _predSub = PredictiveIntelService.instance
+        .predictionsStream(factory: _briefingFactory)
+        .listen((p) {
+          if (mounted) setState(() => _predictions = p);
+        });
     _accSub = PredictiveIntelService.instance.accuracyStream().listen((a) {
       if (mounted) setState(() => _accuracy = a);
     });
   }
 
   Future<void> _warmPredictiveCaches() async {
+    final requestedFactory = _briefingFactory;
     if (!_briefingWarmed) {
       _briefingWarmed = true;
       unawaited(() async {
-        final briefing = await PredictiveIntelService.instance
-            .fetchBriefing(factory: _briefingFactory);
-        if (mounted && briefing != null) {
+        final briefing = await PredictiveIntelService.instance.fetchBriefing(
+          factory: requestedFactory,
+        );
+        if (mounted &&
+            requestedFactory == _briefingFactory &&
+            briefing != null) {
           setState(() => _briefing = briefing);
         }
       }());
@@ -587,9 +604,11 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     if (!_predictionsWarmed) {
       _predictionsWarmed = true;
       unawaited(() async {
-        final predictions =
-            await PredictiveIntelService.instance.fetchPredictions();
-        if (mounted && predictions != null) {
+        final predictions = await PredictiveIntelService.instance
+            .fetchPredictions(factory: requestedFactory);
+        if (mounted &&
+            requestedFactory == _briefingFactory &&
+            predictions != null) {
           setState(() => _predictions = predictions);
         }
       }());
@@ -597,9 +616,14 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   Future<void> _refreshBriefing() async {
-    final fresh = await PredictiveIntelService.instance
-        .fetchBriefing(force: true, factory: _briefingFactory);
-    if (mounted && fresh != null) setState(() => _briefing = fresh);
+    final requestedFactory = _briefingFactory;
+    final fresh = await PredictiveIntelService.instance.fetchBriefing(
+      force: true,
+      factory: requestedFactory,
+    );
+    if (mounted && requestedFactory == _briefingFactory && fresh != null) {
+      setState(() => _briefing = fresh);
+    }
   }
 
   List<String> _convoyeurs() {
@@ -641,10 +665,12 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   List<AlertModel> get _criticalUnclaimedAlerts => widget.allAlerts
-      .where((a) =>
-          a.isCritical &&
-          a.status == 'disponible' &&
-          (widget.selectedUsine == 'all' || a.usine == widget.selectedUsine))
+      .where(
+        (a) =>
+            a.isCritical &&
+            a.status == 'disponible' &&
+            (widget.selectedUsine == 'all' || a.usine == widget.selectedUsine),
+      )
       .toList();
 
   int get _criticalUnclaimedCount => _criticalUnclaimedAlerts.length;
@@ -701,19 +727,19 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           'pending': widget.alerts
               .where((a) => a.type == k && a.status != 'validee')
               .length,
-        }
+        },
     };
   }
 
   List<String> _usines() => [
-        'all',
-        ...widget.allAlerts
-            .map((a) => a.usine)
-            .where((u) => u.isNotEmpty && u != 'all')
-            .toSet()
-            .toList()
-          ..sort(),
-      ];
+    'all',
+    ...widget.allAlerts
+        .map((a) => a.usine)
+        .where((u) => u.isNotEmpty && u != 'all')
+        .toSet()
+        .toList()
+      ..sort(),
+  ];
 
   // Factory list combining hierarchy and observed alerts so the master selector
   // surfaces every factory the PM can act on.
@@ -780,11 +806,14 @@ class _OverviewTabState extends State<AdminOverviewTab> {
 
   Duration _avgResolutionTime() {
     final solved = widget.allAlerts
-        .where((a) =>
-            a.status == 'validee' &&
-            a.elapsedTime != null &&
-            a.elapsedTime! > 0 &&
-            (widget.selectedUsine == 'all' || a.usine == widget.selectedUsine))
+        .where(
+          (a) =>
+              a.status == 'validee' &&
+              a.elapsedTime != null &&
+              a.elapsedTime! > 0 &&
+              (widget.selectedUsine == 'all' ||
+                  a.usine == widget.selectedUsine),
+        )
         .toList();
     if (solved.isEmpty) return Duration.zero;
     final totalMin = solved.fold<int>(0, (sum, a) => sum + a.elapsedTime!);
@@ -797,28 +826,13 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     return '${d.inMinutes}m';
   }
 
-  // Filter the predictive model client-side so cards reflect the master factory
-  // selector even though the model is computed globally on the edge.
-  PredictiveModel? _scopedPredictions() {
-    final m = _predictions;
-    if (m == null) return null;
-    if (widget.selectedUsine == 'all') return m;
-    return PredictiveModel(
-      curves: m.curves,
-      predictions:
-          m.predictions.where((p) => p.usine == widget.selectedUsine).toList(),
-      factoryRisk:
-          m.factoryRisk.where((f) => f.name == widget.selectedUsine).toList(),
-      generatedAt: m.generatedAt,
-    );
-  }
-
   void _exportFilteredAlerts(List<AlertModel> alertsToExport) async {
     if (alertsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('No alerts to export'),
-            backgroundColor: Colors.orange),
+          content: Text('No alerts to export'),
+          backgroundColor: Colors.orange,
+        ),
       );
       return;
     }
@@ -837,8 +851,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         'Assistant',
         'Resolution Reason',
         'Elapsed Time (min)',
-        'Critical'
-      ]
+        'Critical',
+      ],
     ];
     for (final alert in alertsToExport) {
       csvData.add([
@@ -888,8 +902,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     try {
       await AlertPdfService.exportAndShare(
         alerts: alertsToExport,
-        scopeLabel:
-            widget.selectedUsine == 'all' ? 'All Plants' : widget.selectedUsine,
+        scopeLabel: widget.selectedUsine == 'all'
+            ? 'All Plants'
+            : widget.selectedUsine,
         timeRangeLabel: widget.timeRangeLabel,
         labelType: (t) => adminTypeLabel(context, t),
       );
@@ -945,8 +960,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     final bytes = workbook.encode();
     if (bytes == null) return;
     if (kIsWeb) {
-      final blob = html.Blob([bytes],
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      final blob = html.Blob([
+        bytes,
+      ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       final url = html.Url.createObjectUrlFromBlob(blob);
       html.AnchorElement(href: url)
         ..setAttribute('download', 'alerts.xlsx')
@@ -1016,276 +1032,291 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     final claimedSpark = _last7DaysCounts((a) => a.status == 'en_cours');
     final fixedSpark = _last7DaysCounts((a) => a.status == 'validee');
     final totalSpark = _last7DaysCounts((_) => true);
-    final resolutionRate =
-        widget.total == 0 ? 0.0 : (widget.solved / widget.total) * 100.0;
-    final scopedPreds = _scopedPredictions();
+    final resolutionRate = widget.total == 0
+        ? 0.0
+        : (widget.solved / widget.total) * 100.0;
+    final scopedPreds = _predictions;
 
-    return LayoutBuilder(builder: (ctx, constraints) {
-      final wide = constraints.maxWidth >= 980;
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final wide = constraints.maxWidth >= 980;
 
-      final factoryRow = _FactoryMasterBar(
-        factories: _factoryOptions(),
-        selected: widget.selectedUsine,
-        activeCount: _activeFilterCount(),
-        timeRangeLabel: widget.timeRangeLabel,
-        onChanged: widget.onUsineChange,
-        onOpenFilters: _openFilterSheet,
-        onReset: () {
-          widget.onReset();
-          setState(() {
-            _historyFilter = null;
-            _pageIndex = 0;
-          });
-        },
-      );
-
-      final briefing = AIMorningBriefingHero(
-        briefing: _briefing,
-        timeRangeLabel: widget.timeRangeLabel,
-        timeRangeSubtitle: widget.timeRangeSubtitle,
-        onRefresh: _refreshBriefing,
-        compact: true,
-      );
-
-      final healthCard = _HealthScoreCard(
-        value: health,
-        resolutionRate: resolutionRate,
-        criticalCount: _criticalUnclaimedCount,
-        avgResponseLabel: _fmtDuration(_avgResolutionTime()),
-        totalAlerts: widget.total,
-      );
-
-      final statGrid = LayoutBuilder(builder: (gctx, gc) {
-        // The four stat cards stay in a snug 2x2 or 1x4 layout under the
-        // health gauge, never stretching wider than the alert history.
-        final twoCol = gc.maxWidth < 520;
-        final cards = [
-          _statCardReceived(theme, receivedSpark),
-          _statCardClaimed(theme, claimedSpark),
-          _statCardFixed(theme, fixedSpark),
-          _statCardTotal(theme, totalSpark),
-        ];
-        if (twoCol) {
-          return Column(children: [
-            Row(children: [
-              Expanded(child: cards[0]),
-              const SizedBox(width: 10),
-              Expanded(child: cards[1]),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(child: cards[2]),
-              const SizedBox(width: 10),
-              Expanded(child: cards[3]),
-            ]),
-          ]);
-        }
-        return Row(children: [
-          Expanded(child: cards[0]),
-          const SizedBox(width: 10),
-          Expanded(child: cards[1]),
-          const SizedBox(width: 10),
-          Expanded(child: cards[2]),
-          const SizedBox(width: 10),
-          Expanded(child: cards[3]),
-        ]);
-      });
-
-      final leftColumn = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          healthCard,
-          const SizedBox(height: 12),
-          Expanded(child: statGrid),
-        ],
-      );
-
-      final pages = _displayedAlerts;
-      final pageCount =
-          pages.isEmpty ? 1 : ((pages.length + _pageSize - 1) ~/ _pageSize);
-      final clampedPage = _pageIndex.clamp(0, pageCount - 1);
-      final start = clampedPage * _pageSize;
-      final end = math.min(start + _pageSize, pages.length);
-      final pageItems = pages.sublist(start, end);
-
-      final historyBox = _AlertHistoryBox(
-        alerts: pages,
-        pageItems: pageItems,
-        pageIndex: clampedPage,
-        pageCount: pageCount,
-        pageSize: _pageSize,
-        pageSizeOptions: _pageSizeOptions,
-        activeFilterChip: _historyFilter,
-        onClearChip: () => setState(() => _historyFilter = null),
-        onPageSizeChange: (s) => setState(() {
-          _pageSize = s;
-          _pageIndex = 0;
-        }),
-        onPrev: clampedPage > 0
-            ? () => setState(() => _pageIndex = clampedPage - 1)
-            : null,
-        onNext: clampedPage < pageCount - 1
-            ? () => setState(() => _pageIndex = clampedPage + 1)
-            : null,
-        onOpenFilters: _openFilterSheet,
-        onCsv: () => _exportFilteredAlerts(pages),
-        onPdf: () => _exportFilteredAlertsPdf(pages),
-        onExcel: () => _exportFilteredAlertsExcel(pages),
-        scope:
-            widget.selectedUsine == 'all' ? 'All Plants' : widget.selectedUsine,
-      );
-
-      final predictiveRow = LayoutBuilder(builder: (pctx, pc) {
-        final stack = pc.maxWidth < 720;
-        final failure = PredictiveFailureCard(
-          accuracy: _accuracy,
-          model: scopedPreds,
-          describeType: (type) => adminTypeLabel(context, type),
+        final factoryRow = _FactoryMasterBar(
+          factories: _factoryOptions(),
+          selected: widget.selectedUsine,
+          activeCount: _activeFilterCount(),
+          timeRangeLabel: widget.timeRangeLabel,
+          onChanged: widget.onUsineChange,
+          onOpenFilters: _openFilterSheet,
+          onReset: () {
+            widget.onReset();
+            setState(() {
+              _historyFilter = null;
+              _pageIndex = 0;
+            });
+          },
         );
-        final risk = PredictiveRiskHeatmap(
-          stats: ts,
-          model: scopedPreds,
-          activeFilter: _historyFilter,
-          onTap: _setHistoryFilter,
+
+        final briefing = AIMorningBriefingHero(
+          briefing: _briefing,
+          timeRangeLabel: widget.timeRangeLabel,
+          timeRangeSubtitle: widget.timeRangeSubtitle,
+          onRefresh: _refreshBriefing,
+          compact: true,
         );
-        if (stack) {
-          return Column(children: [
-            failure,
-            const SizedBox(height: 12),
-            risk,
-          ]);
-        }
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: failure),
-          const SizedBox(width: 12),
-          Expanded(child: risk),
-        ]);
-      });
 
-      final critical = _criticalUnclaimedCount > 0
-          ? Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: CriticalAlertsCard(
-                alerts: _criticalUnclaimedAlerts,
-                onAlertTap: (a) => _setHistoryFilter(a.type),
-                describe: _getAlertDisplayDescription,
-                maxHeight: 300,
-              ),
-            )
-          : const SizedBox.shrink();
+        final healthCard = _HealthScoreCard(
+          value: health,
+          resolutionRate: resolutionRate,
+          criticalCount: _criticalUnclaimedCount,
+          avgResponseLabel: _fmtDuration(_avgResolutionTime()),
+          totalAlerts: widget.total,
+        );
 
-      // Wide layout: production health + history side by side; predictive
-      // intelligence stacked underneath.
-      Widget body;
-      if (wide) {
-        body = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            briefing,
-            const SizedBox(height: 12),
-            factoryRow,
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 520,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        final statGrid = LayoutBuilder(
+          builder: (gctx, gc) {
+            // The four stat cards stay in a snug 2x2 or 1x4 layout under the
+            // health gauge, never stretching wider than the alert history.
+            final twoCol = gc.maxWidth < 520;
+            final cards = [
+              _statCardReceived(theme, receivedSpark),
+              _statCardClaimed(theme, claimedSpark),
+              _statCardFixed(theme, fixedSpark),
+              _statCardTotal(theme, totalSpark),
+            ];
+            if (twoCol) {
+              return Column(
                 children: [
-                  Expanded(flex: 6, child: leftColumn),
-                  const SizedBox(width: 14),
-                  Expanded(flex: 5, child: historyBox),
+                  Row(
+                    children: [
+                      Expanded(child: cards[0]),
+                      const SizedBox(width: 10),
+                      Expanded(child: cards[1]),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(child: cards[2]),
+                      const SizedBox(width: 10),
+                      Expanded(child: cards[3]),
+                    ],
+                  ),
                 ],
-              ),
-            ),
-            critical,
-            const SizedBox(height: 14),
-            predictiveRow,
-          ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: cards[0]),
+                const SizedBox(width: 10),
+                Expanded(child: cards[1]),
+                const SizedBox(width: 10),
+                Expanded(child: cards[2]),
+                const SizedBox(width: 10),
+                Expanded(child: cards[3]),
+              ],
+            );
+          },
         );
-      } else {
-        body = Column(
+
+        final leftColumn = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            briefing,
-            const SizedBox(height: 12),
-            factoryRow,
-            const SizedBox(height: 14),
             healthCard,
             const SizedBox(height: 12),
-            statGrid,
-            const SizedBox(height: 14),
-            SizedBox(height: 520, child: historyBox),
-            critical,
-            const SizedBox(height: 14),
-            predictiveRow,
+            Expanded(child: statGrid),
           ],
         );
-      }
 
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 60),
-        child: body,
-      );
-    });
+        final pages = _displayedAlerts;
+        final pageCount = pages.isEmpty
+            ? 1
+            : ((pages.length + _pageSize - 1) ~/ _pageSize);
+        final clampedPage = _pageIndex.clamp(0, pageCount - 1);
+        final start = clampedPage * _pageSize;
+        final end = math.min(start + _pageSize, pages.length);
+        final pageItems = pages.sublist(start, end);
+
+        final historyBox = _AlertHistoryBox(
+          alerts: pages,
+          pageItems: pageItems,
+          pageIndex: clampedPage,
+          pageCount: pageCount,
+          pageSize: _pageSize,
+          pageSizeOptions: _pageSizeOptions,
+          activeFilterChip: _historyFilter,
+          onClearChip: () => setState(() => _historyFilter = null),
+          onPageSizeChange: (s) => setState(() {
+            _pageSize = s;
+            _pageIndex = 0;
+          }),
+          onPrev: clampedPage > 0
+              ? () => setState(() => _pageIndex = clampedPage - 1)
+              : null,
+          onNext: clampedPage < pageCount - 1
+              ? () => setState(() => _pageIndex = clampedPage + 1)
+              : null,
+          onOpenFilters: _openFilterSheet,
+          onCsv: () => _exportFilteredAlerts(pages),
+          onPdf: () => _exportFilteredAlertsPdf(pages),
+          onExcel: () => _exportFilteredAlertsExcel(pages),
+          scope: widget.selectedUsine == 'all'
+              ? 'All Plants'
+              : widget.selectedUsine,
+        );
+
+        final predictiveRow = LayoutBuilder(
+          builder: (pctx, pc) {
+            final stack = pc.maxWidth < 720;
+            final failure = PredictiveFailureCard(
+              accuracy: _accuracy,
+              model: scopedPreds,
+              describeType: (type) => adminTypeLabel(context, type),
+            );
+            final risk = PredictiveRiskHeatmap(
+              stats: ts,
+              model: scopedPreds,
+              activeFilter: _historyFilter,
+              onTap: _setHistoryFilter,
+            );
+            if (stack) {
+              return Column(
+                children: [failure, const SizedBox(height: 12), risk],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: failure),
+                const SizedBox(width: 12),
+                Expanded(child: risk),
+              ],
+            );
+          },
+        );
+
+        final critical = _criticalUnclaimedCount > 0
+            ? Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: CriticalAlertsCard(
+                  alerts: _criticalUnclaimedAlerts,
+                  onAlertTap: (a) => _setHistoryFilter(a.type),
+                  describe: _getAlertDisplayDescription,
+                  maxHeight: 300,
+                ),
+              )
+            : const SizedBox.shrink();
+
+        // Wide layout: production health + history side by side; predictive
+        // intelligence stacked underneath.
+        Widget body;
+        if (wide) {
+          body = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              briefing,
+              const SizedBox(height: 12),
+              factoryRow,
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 520,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: 6, child: leftColumn),
+                    const SizedBox(width: 14),
+                    Expanded(flex: 5, child: historyBox),
+                  ],
+                ),
+              ),
+              critical,
+              const SizedBox(height: 14),
+              predictiveRow,
+            ],
+          );
+        } else {
+          body = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              briefing,
+              const SizedBox(height: 12),
+              factoryRow,
+              const SizedBox(height: 14),
+              healthCard,
+              const SizedBox(height: 12),
+              statGrid,
+              const SizedBox(height: 14),
+              SizedBox(height: 520, child: historyBox),
+              critical,
+              const SizedBox(height: 14),
+              predictiveRow,
+            ],
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 60),
+          child: body,
+        );
+      },
+    );
   }
 
   Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
-        label: 'Pending',
-        value: widget.pending,
-        icon: Icons.inbox_rounded,
-        color: theme.orange,
-        accentLt: theme.orangeLt,
-        spark: spark,
-        trendPct: _trendPct(spark),
-        criticalCount: _criticalUnclaimedCount,
-        isActive: _historyFilter == 'pending',
-        onTap: () => _setHistoryFilter('pending'),
-        onCriticalTap: () => _setHistoryFilter('critical'),
-      );
+    label: 'Pending',
+    value: widget.pending,
+    icon: Icons.inbox_rounded,
+    color: theme.orange,
+    accentLt: theme.orangeLt,
+    spark: spark,
+    trendPct: _trendPct(spark),
+    criticalCount: _criticalUnclaimedCount,
+    isActive: _historyFilter == 'pending',
+    onTap: () => _setHistoryFilter('pending'),
+    onCriticalTap: () => _setHistoryFilter('critical'),
+  );
 
   Widget _statCardClaimed(AppTheme theme, List<int> spark) => EliteStatCard(
-        label: 'Claimed',
-        value: widget.inProgress,
-        icon: Icons.hourglass_bottom_rounded,
-        color: theme.blue,
-        accentLt: theme.blueLt,
-        spark: spark,
-        trendPct: _trendPct(spark),
-        isActive: _historyFilter == 'en_cours',
-        onTap: () => _setHistoryFilter('en_cours'),
-      );
+    label: 'Claimed',
+    value: widget.inProgress,
+    icon: Icons.hourglass_bottom_rounded,
+    color: theme.blue,
+    accentLt: theme.blueLt,
+    spark: spark,
+    trendPct: _trendPct(spark),
+    isActive: _historyFilter == 'en_cours',
+    onTap: () => _setHistoryFilter('en_cours'),
+  );
 
   Widget _statCardFixed(AppTheme theme, List<int> spark) => EliteStatCard(
-        label: 'Fixed',
-        value: widget.solved,
-        icon: Icons.verified_rounded,
-        color: theme.green,
-        accentLt: theme.greenLt,
-        spark: spark,
-        trendPct: _trendPct(spark),
-        isActive: _historyFilter == 'validated',
-        onTap: () => _setHistoryFilter('validated'),
-      );
+    label: 'Fixed',
+    value: widget.solved,
+    icon: Icons.verified_rounded,
+    color: theme.green,
+    accentLt: theme.greenLt,
+    spark: spark,
+    trendPct: _trendPct(spark),
+    isActive: _historyFilter == 'validated',
+    onTap: () => _setHistoryFilter('validated'),
+  );
 
   Widget _statCardTotal(AppTheme theme, List<int> spark) => EliteStatCard(
-        label: 'Total',
-        value: widget.total,
-        icon: Icons.dashboard_rounded,
-        color: theme.navy,
-        accentLt: theme.navyLt,
-        spark: spark,
-        trendPct: _trendPct(spark),
-        isActive: _historyFilter == 'total',
-        onTap: () => _setHistoryFilter('total'),
-      );
+    label: 'Total',
+    value: widget.total,
+    icon: Icons.dashboard_rounded,
+    color: theme.navy,
+    accentLt: theme.navyLt,
+    spark: spark,
+    trendPct: _trendPct(spark),
+    isActive: _historyFilter == 'total',
+    onTap: () => _setHistoryFilter('total'),
+  );
 }
 
 class _CriticalArrivalDialog extends StatefulWidget {
   final AlertModel alert;
   final String Function(AlertModel) describe;
-  const _CriticalArrivalDialog({
-    required this.alert,
-    required this.describe,
-  });
+  const _CriticalArrivalDialog({required this.alert, required this.describe});
 
   @override
   State<_CriticalArrivalDialog> createState() => _CriticalArrivalDialogState();
@@ -1320,8 +1351,9 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
     setState(() {
       _loadingSuggestion = true;
     });
-    final s =
-        await PredictiveIntelService.instance.suggestAssignee(widget.alert.id);
+    final s = await PredictiveIntelService.instance.suggestAssignee(
+      widget.alert.id,
+    );
     if (!mounted) return;
     setState(() {
       _suggestion = s;
@@ -1572,8 +1604,8 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                         _assigning
                             ? 'Assigning...'
                             : (_assignedDone
-                                ? 'Assigned'
-                                : 'Assign Supervisor'),
+                                  ? 'Assigned'
+                                  : 'Assign Supervisor'),
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
@@ -1643,185 +1675,199 @@ class _FactoryMasterBar extends StatelessWidget {
                   t.navy.withValues(alpha: 0.18),
                   t.purple.withValues(alpha: 0.10),
                 ]
-              : [
-                  t.navyLt,
-                  t.purple.withValues(alpha: 0.05),
-                ],
+              : [t.navyLt, t.purple.withValues(alpha: 0.05)],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: t.navy.withValues(alpha: 0.32)),
       ),
-      child: LayoutBuilder(builder: (ctx, c) {
-        final narrow = c.maxWidth < 620;
-        final factoryPicker = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: t.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: t.border),
-          ),
-          child: Row(children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [t.navy, t.purple],
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.factory_rounded,
-                  size: 17, color: Colors.white),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final narrow = c.maxWidth < 620;
+          final factoryPicker = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.border),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'PLANT SCOPE',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.4,
-                      color: t.muted,
-                    ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [t.navy, t.purple]),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: factories.contains(selected) ? selected : 'all',
-                      isExpanded: true,
-                      isDense: true,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: t.text,
-                        fontWeight: FontWeight.w700,
+                  child: const Icon(
+                    Icons.factory_rounded,
+                    size: 17,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'PLANT SCOPE',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.4,
+                          color: t.muted,
+                        ),
                       ),
-                      dropdownColor: t.card,
-                      icon: Icon(Icons.keyboard_arrow_down_rounded,
-                          color: t.navy),
-                      items: factories
-                          .map((f) => DropdownMenuItem(
-                                value: f,
-                                child: Text(
-                                  f == 'all' ? 'All Plants' : f,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: t.text,
-                                    fontWeight: FontWeight.w700,
+                      DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: factories.contains(selected)
+                              ? selected
+                              : 'all',
+                          isExpanded: true,
+                          isDense: true,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: t.text,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          dropdownColor: t.card,
+                          icon: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: t.navy,
+                          ),
+                          items: factories
+                              .map(
+                                (f) => DropdownMenuItem(
+                                  value: f,
+                                  child: Text(
+                                    f == 'all' ? 'All Plants' : f,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: t.text,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
-                              ))
-                          .toList(),
-                      onChanged: (v) {
-                        if (v != null) onChanged(v);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ]),
-        );
-
-        final scopeChip = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isAll
-                ? t.muted.withValues(alpha: 0.14)
-                : t.green.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(99),
-            border: Border.all(
-              color: (isAll ? t.muted : t.green).withValues(alpha: 0.4),
-            ),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(
-              isAll ? Icons.public_rounded : Icons.location_on_rounded,
-              size: 13,
-              color: isAll ? t.muted : t.green,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              isAll ? 'Aggregate' : 'Scoped',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: isAll ? t.muted : t.green,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ]),
-        );
-
-        final timeChip = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: t.orange.withValues(alpha: 0.13),
-            borderRadius: BorderRadius.circular(99),
-            border: Border.all(color: t.orange.withValues(alpha: 0.35)),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.calendar_month_rounded, size: 13, color: t.orange),
-            const SizedBox(width: 5),
-            Text(
-              timeRangeLabel,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: t.orange,
-              ),
-            ),
-          ]),
-        );
-
-        final resetBtn = activeCount > 0
-            ? IconButton(
-                onPressed: onReset,
-                icon: Icon(Icons.refresh_rounded, color: t.red),
-                tooltip: 'Reset filters',
-                style: IconButton.styleFrom(
-                  backgroundColor: t.card,
-                  side: BorderSide(color: t.border),
-                  padding: const EdgeInsets.all(9),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) onChanged(v);
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              )
-            : const SizedBox.shrink();
+              ],
+            ),
+          );
 
-        if (narrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          final scopeChip = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isAll
+                  ? t.muted.withValues(alpha: 0.14)
+                  : t.green.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(
+                color: (isAll ? t.muted : t.green).withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isAll ? Icons.public_rounded : Icons.location_on_rounded,
+                  size: 13,
+                  color: isAll ? t.muted : t.green,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  isAll ? 'Aggregate' : 'Scoped',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: isAll ? t.muted : t.green,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          final timeChip = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: t.orange.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: t.orange.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.calendar_month_rounded, size: 13, color: t.orange),
+                const SizedBox(width: 5),
+                Text(
+                  timeRangeLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: t.orange,
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          final resetBtn = activeCount > 0
+              ? IconButton(
+                  onPressed: onReset,
+                  icon: Icon(Icons.refresh_rounded, color: t.red),
+                  tooltip: 'Reset filters',
+                  style: IconButton.styleFrom(
+                    backgroundColor: t.card,
+                    side: BorderSide(color: t.border),
+                    padding: const EdgeInsets.all(9),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink();
+
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                factoryPicker,
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    scopeChip,
+                    const SizedBox(width: 6),
+                    timeChip,
+                    const Spacer(),
+                    if (activeCount > 0) ...[resetBtn],
+                  ],
+                ),
+              ],
+            );
+          }
+          return Row(
             children: [
-              factoryPicker,
-              const SizedBox(height: 10),
-              Row(children: [
-                scopeChip,
-                const SizedBox(width: 6),
-                timeChip,
-                const Spacer(),
-                if (activeCount > 0) ...[
-                  resetBtn,
-                ],
-              ]),
+              Expanded(flex: 5, child: factoryPicker),
+              const SizedBox(width: 12),
+              scopeChip,
+              const SizedBox(width: 6),
+              timeChip,
+              const Spacer(),
+              if (activeCount > 0) ...[resetBtn],
             ],
           );
-        }
-        return Row(children: [
-          Expanded(flex: 5, child: factoryPicker),
-          const SizedBox(width: 12),
-          scopeChip,
-          const SizedBox(width: 6),
-          timeChip,
-          const Spacer(),
-          if (activeCount > 0) ...[
-            resetBtn,
-          ],
-        ]);
-      }),
+        },
+      ),
     );
   }
 }
@@ -1889,96 +1935,114 @@ class _AlertHistoryBox extends StatelessWidget {
           // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
-            child: Row(children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [theme.navy, theme.blue],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.history_rounded,
-                    size: 16, color: Colors.white),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Alert History',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: theme.text,
-                      ),
-                    ),
-                    Text(
-                      '${alerts.length} alert${alerts.length == 1 ? '' : 's'} · $scope',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.muted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: onOpenFilters,
-                icon: const Icon(Icons.tune_rounded, size: 14),
-                label: const Text('Filters',
-                    style:
-                        TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: theme.navy,
-                  side: BorderSide(color: theme.border),
-                  backgroundColor: theme.scaffold,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (activeFilterChip != null) ...[
+            child: Row(
+              children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
-                    color: theme.purple.withValues(alpha: 0.13),
-                    borderRadius: BorderRadius.circular(99),
-                    border: Border.all(
-                      color: theme.purple.withValues(alpha: 0.35),
+                    gradient: LinearGradient(colors: [theme.navy, theme.blue]),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.history_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Alert History',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: theme.text,
+                        ),
+                      ),
+                      Text(
+                        '${alerts.length} alert${alerts.length == 1 ? '' : 's'} · $scope',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onOpenFilters,
+                  icon: const Icon(Icons.tune_rounded, size: 14),
+                  label: const Text(
+                    'Filters',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.navy,
+                    side: BorderSide(color: theme.border),
+                    backgroundColor: theme.scaffold,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
                     ),
                   ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.filter_alt_rounded,
-                        size: 11, color: theme.purple),
-                    const SizedBox(width: 4),
-                    Text(
-                      _chipLabel(context, activeFilterChip!),
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: theme.purple,
+                ),
+                const SizedBox(width: 8),
+                if (activeFilterChip != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.purple.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(
+                        color: theme.purple.withValues(alpha: 0.35),
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: onClearChip,
-                      child: Icon(Icons.close, size: 12, color: theme.purple),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.filter_alt_rounded,
+                          size: 11,
+                          color: theme.purple,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _chipLabel(context, activeFilterChip!),
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: theme.purple,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        GestureDetector(
+                          onTap: onClearChip,
+                          child: Icon(
+                            Icons.close,
+                            size: 12,
+                            color: theme.purple,
+                          ),
+                        ),
+                      ],
                     ),
-                  ]),
-                ),
+                  ),
+                ],
               ],
-            ]),
+            ),
           ),
           Divider(color: theme.border, height: 1),
           // Scrollable list
@@ -1996,35 +2060,37 @@ class _AlertHistoryBox extends StatelessWidget {
           // Pagination controls
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-            child: Row(children: [
-              Text(
-                'Show',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.muted,
-                  fontWeight: FontWeight.w600,
+            child: Row(
+              children: [
+                Text(
+                  'Show',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: theme.scaffold,
-                  border: Border.all(color: theme.border),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    value: pageSize,
-                    isDense: true,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.text,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    dropdownColor: theme.card,
-                    items: pageSizeOptions
-                        .map((s) => DropdownMenuItem(
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: theme.scaffold,
+                    border: Border.all(color: theme.border),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: pageSize,
+                      isDense: true,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.text,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      dropdownColor: theme.card,
+                      items: pageSizeOptions
+                          .map(
+                            (s) => DropdownMenuItem(
                               value: s,
                               child: Text(
                                 '$s',
@@ -2034,60 +2100,71 @@ class _AlertHistoryBox extends StatelessWidget {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            ))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) onPageSizeChange(v);
-                    },
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) onPageSizeChange(v);
+                      },
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'per page',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.muted,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: onPrev,
-                icon: const Icon(Icons.chevron_left_rounded),
-                iconSize: 20,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                color: theme.navy,
-                disabledColor: theme.muted.withValues(alpha: 0.4),
-                tooltip: 'Previous page',
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: theme.navy.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Text(
-                  '${pageIndex + 1} / $pageCount',
+                const SizedBox(width: 4),
+                Text(
+                  'per page',
                   style: TextStyle(
                     fontSize: 11,
-                    color: theme.navy,
-                    fontWeight: FontWeight.w800,
+                    color: theme.muted,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              IconButton(
-                onPressed: onNext,
-                icon: const Icon(Icons.chevron_right_rounded),
-                iconSize: 20,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                color: theme.navy,
-                disabledColor: theme.muted.withValues(alpha: 0.4),
-                tooltip: 'Next page',
-              ),
-            ]),
+                const Spacer(),
+                IconButton(
+                  onPressed: onPrev,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                  color: theme.navy,
+                  disabledColor: theme.muted.withValues(alpha: 0.4),
+                  tooltip: 'Previous page',
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.navy.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    '${pageIndex + 1} / $pageCount',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.navy,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onNext,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                  color: theme.navy,
+                  disabledColor: theme.muted.withValues(alpha: 0.4),
+                  tooltip: 'Next page',
+                ),
+              ],
+            ),
           ),
           Divider(color: theme.border, height: 1),
           // Export footer — single dropdown button.
@@ -2144,8 +2221,11 @@ class _EmptyState extends StatelessWidget {
               color: theme.green.withValues(alpha: 0.13),
               borderRadius: BorderRadius.circular(16),
             ),
-            child:
-                Icon(Icons.check_circle_outline, size: 30, color: theme.green),
+            child: Icon(
+              Icons.check_circle_outline,
+              size: 30,
+              color: theme.green,
+            ),
           ),
           const SizedBox(height: 14),
           Text(
@@ -2211,211 +2291,259 @@ class _FilterSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.appTheme;
     return SafeArea(
-      child: LayoutBuilder(builder: (ctx, c) {
-        final maxHeight = c.maxHeight > 0 ? c.maxHeight * 0.86 : 720.0;
-        return ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 820, maxHeight: maxHeight),
-          child: Container(
-            decoration: BoxDecoration(
-              color: theme.card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: theme.border),
-            ),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 14),
-                    decoration: BoxDecoration(
-                      color: theme.border,
-                      borderRadius: BorderRadius.circular(99),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final maxHeight = c.maxHeight > 0 ? c.maxHeight * 0.86 : 720.0;
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: 820, maxHeight: maxHeight),
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: theme.border),
+              ),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: theme.border,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
                     ),
                   ),
-                ),
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.navy.withValues(alpha: 0.13),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child:
-                        Icon(Icons.tune_rounded, size: 18, color: theme.navy),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Filter alerts',
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.navy.withValues(alpha: 0.13),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.tune_rounded,
+                          size: 18,
+                          color: theme.navy,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Filter alerts',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: theme.text,
+                              ),
+                            ),
+                            Text(
+                              'Refine the history list — every selection scopes the dashboard',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: theme.muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () {
+                          onReset();
+                          Navigator.of(ctx).pop();
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 14),
+                        label: const Text(
+                          'Reset',
                           style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: theme.text,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        Text(
-                          'Refine the history list — every selection scopes the dashboard',
-                          style: TextStyle(fontSize: 11.5, color: theme.muted),
-                        ),
-                      ],
-                    ),
+                        style: TextButton.styleFrom(foregroundColor: theme.red),
+                      ),
+                    ],
                   ),
-                  TextButton.icon(
-                    onPressed: () {
-                      onReset();
-                      Navigator.of(ctx).pop();
-                    },
-                    icon: const Icon(Icons.refresh_rounded, size: 14),
-                    label: const Text('Reset',
-                        style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w700)),
-                    style: TextButton.styleFrom(foregroundColor: theme.red),
-                  ),
-                ]),
-                const SizedBox(height: 14),
-                _FilterDropdown(
-                  label: 'Plant',
-                  value: selectedUsine,
-                  items: usines
-                      .map((v) => DropdownMenuItem(
+                  const SizedBox(height: 14),
+                  _FilterDropdown(
+                    label: 'Plant',
+                    value: selectedUsine,
+                    items: usines
+                        .map(
+                          (v) => DropdownMenuItem(
                             value: v,
                             child: Text(
                               v == 'all' ? 'All Plants' : v,
                               style: const TextStyle(fontSize: 13),
                             ),
-                          ))
-                      .toList(),
-                  onChanged: onUsine,
-                ),
-                const SizedBox(height: 10),
-                _FilterDropdown(
-                  label: 'Conveyor',
-                  value: filterConvoyeur,
-                  items: convoyeurs
-                      .map((v) => DropdownMenuItem(
+                          ),
+                        )
+                        .toList(),
+                    onChanged: onUsine,
+                  ),
+                  const SizedBox(height: 10),
+                  _FilterDropdown(
+                    label: 'Conveyor',
+                    value: filterConvoyeur,
+                    items: convoyeurs
+                        .map(
+                          (v) => DropdownMenuItem(
                             value: v,
                             child: Text(
                               v == 'all' ? 'All Conveyors' : 'Conv. $v',
                               style: const TextStyle(fontSize: 13),
                             ),
-                          ))
-                      .toList(),
-                  onChanged: onConvoyeur,
-                ),
-                const SizedBox(height: 10),
-                _FilterDropdown(
-                  label: 'Post',
-                  value: filterPoste,
-                  items: postes
-                      .map((v) => DropdownMenuItem(
+                          ),
+                        )
+                        .toList(),
+                    onChanged: onConvoyeur,
+                  ),
+                  const SizedBox(height: 10),
+                  _FilterDropdown(
+                    label: 'Post',
+                    value: filterPoste,
+                    items: postes
+                        .map(
+                          (v) => DropdownMenuItem(
                             value: v,
                             child: Text(
                               v == 'all' ? 'All Posts' : 'Post $v',
                               style: const TextStyle(fontSize: 13),
                             ),
-                          ))
-                      .toList(),
-                  onChanged: onPoste,
-                ),
-                const SizedBox(height: 10),
-                _FilterDropdown(
-                  label: 'Alert Type',
-                  value: filterType,
-                  items: [
-                    const DropdownMenuItem(
+                          ),
+                        )
+                        .toList(),
+                    onChanged: onPoste,
+                  ),
+                  const SizedBox(height: 10),
+                  _FilterDropdown(
+                    label: 'Alert Type',
+                    value: filterType,
+                    items: [
+                      const DropdownMenuItem(
                         value: 'all',
-                        child:
-                            Text('All Types', style: TextStyle(fontSize: 13))),
-                    ...[
-                      'qualite',
-                      'maintenance',
-                      'defaut_produit',
-                      'manque_ressource'
-                    ].map((t) => DropdownMenuItem(
+                        child: Text(
+                          'All Types',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      ...[
+                        'qualite',
+                        'maintenance',
+                        'defaut_produit',
+                        'manque_ressource',
+                      ].map(
+                        (t) => DropdownMenuItem(
                           value: t,
-                          child: Text(adminTypeLabel(context, t),
-                              style: const TextStyle(fontSize: 13)),
-                        )),
-                  ],
-                  onChanged: onType,
-                ),
-                const SizedBox(height: 10),
-                _FilterDropdown(
-                  label: 'Status',
-                  value: filterStatus,
-                  items: const [
-                    DropdownMenuItem(
+                          child: Text(
+                            adminTypeLabel(context, t),
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: onType,
+                  ),
+                  const SizedBox(height: 10),
+                  _FilterDropdown(
+                    label: 'Status',
+                    value: filterStatus,
+                    items: const [
+                      DropdownMenuItem(
                         value: 'all',
-                        child: Text('All Statuses',
-                            style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text(
+                          'All Statuses',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      DropdownMenuItem(
                         value: 'disponible',
-                        child: Text('Pending', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text('Pending', style: TextStyle(fontSize: 13)),
+                      ),
+                      DropdownMenuItem(
                         value: 'en_cours',
-                        child: Text('Claimed', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text('Claimed', style: TextStyle(fontSize: 13)),
+                      ),
+                      DropdownMenuItem(
                         value: 'validee',
-                        child: Text('Fixed', style: TextStyle(fontSize: 13))),
-                  ],
-                  onChanged: onStatus,
-                ),
-                const SizedBox(height: 10),
-                _FilterDropdown(
-                  label: 'Time Range',
-                  value: timeRange,
-                  items: const [
-                    DropdownMenuItem(
+                        child: Text('Fixed', style: TextStyle(fontSize: 13)),
+                      ),
+                    ],
+                    onChanged: onStatus,
+                  ),
+                  const SizedBox(height: 10),
+                  _FilterDropdown(
+                    label: 'Time Range',
+                    value: timeRange,
+                    items: const [
+                      DropdownMenuItem(
                         value: 'all',
-                        child:
-                            Text('All Time', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text('All Time', style: TextStyle(fontSize: 13)),
+                      ),
+                      DropdownMenuItem(
                         value: 'today',
-                        child: Text('Today', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text('Today', style: TextStyle(fontSize: 13)),
+                      ),
+                      DropdownMenuItem(
                         value: 'week',
-                        child: Text('Last 7 Days',
-                            style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text(
+                          'Last 7 Days',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      DropdownMenuItem(
                         value: 'month',
-                        child:
-                            Text('This Month', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text(
+                          'This Month',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      DropdownMenuItem(
                         value: 'year',
-                        child:
-                            Text('This Year', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(
+                        child: Text(
+                          'This Year',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      DropdownMenuItem(
                         value: 'custom',
-                        child: Text('Custom', style: TextStyle(fontSize: 13))),
-                  ],
-                  onChanged: onTime,
-                ),
-                const SizedBox(height: 18),
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  icon: const Icon(Icons.check_rounded, size: 16),
-                  label: const Text('Apply',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: theme.navy,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                        child: Text('Custom', style: TextStyle(fontSize: 13)),
+                      ),
+                    ],
+                    onChanged: onTime,
+                  ),
+                  const SizedBox(height: 18),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    icon: const Icon(Icons.check_rounded, size: 16),
+                    label: const Text(
+                      'Apply',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.navy,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 }
@@ -2424,11 +2552,12 @@ class _FilterDropdown extends StatelessWidget {
   final String label, value;
   final List<DropdownMenuItem<String>> items;
   final void Function(String) onChanged;
-  const _FilterDropdown(
-      {required this.label,
-      required this.value,
-      required this.items,
-      required this.onChanged});
+  const _FilterDropdown({
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2521,62 +2650,74 @@ class _AlertHistoryRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: adminTypeColor(context, alert.type)
-                              .withValues(alpha: 0.13),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Text(
-                          adminTypeLabel(context, alert.type),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: adminTypeColor(context, alert.type),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      if (alert.isCritical)
+                    Row(
+                      children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
-                            color: theme.red.withValues(alpha: 0.14),
+                            color: adminTypeColor(
+                              context,
+                              alert.type,
+                            ).withValues(alpha: 0.13),
                             borderRadius: BorderRadius.circular(99),
                           ),
                           child: Text(
-                            'CRITICAL',
+                            adminTypeLabel(context, alert.type),
                             style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              color: theme.red,
-                              letterSpacing: 1,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: adminTypeColor(context, alert.type),
                             ),
                           ),
                         ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: sc.withValues(alpha: 0.13),
-                          border: Border.all(color: sc.withValues(alpha: 0.4)),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: Text(
-                          sl,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: sc,
+                        const SizedBox(width: 6),
+                        if (alert.isCritical)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.red.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Text(
+                              'CRITICAL',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                color: theme.red,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: sc.withValues(alpha: 0.13),
+                            border: Border.all(
+                              color: sc.withValues(alpha: 0.4),
+                            ),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                          child: Text(
+                            sl,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: sc,
+                            ),
                           ),
                         ),
-                      ),
-                    ]),
+                      ],
+                    ),
                     const SizedBox(height: 6),
                     // Full description, no ellipsis — wraps so PM can read all of it.
                     Text(
@@ -2600,19 +2741,27 @@ class _AlertHistoryRow extends StatelessWidget {
                     if (alert.superviseurName != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Row(children: [
-                          Icon(Icons.person_outline,
-                              size: 11, color: theme.blue),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              'Assigned: ${alert.superviseurName}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: theme.blue),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.person_outline,
+                              size: 11,
+                              color: theme.blue,
                             ),
-                          ),
-                        ]),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Assigned: ${alert.superviseurName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.blue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     if (alert.criticalNote != null &&
                         alert.criticalNote!.isNotEmpty)
@@ -2665,8 +2814,9 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
     final isDark = context.isDark;
     final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-    final borderColor =
-        isDark ? const Color(0xFF3A3A5C) : const Color(0xFFDDE1EC);
+    final borderColor = isDark
+        ? const Color(0xFF3A3A5C)
+        : const Color(0xFFDDE1EC);
 
     return SizedBox(
       width: double.infinity,
@@ -2680,8 +2830,9 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
             ),
           ),
           elevation: const WidgetStatePropertyAll(4),
-          padding:
-              const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(vertical: 4),
+          ),
         ),
         menuChildren: [
           _ExportMenuItem(
@@ -2745,71 +2896,71 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
       Icon(Icons.table_chart_outlined, size: 16, color: base);
 
   Widget _pdfIcon() => Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 18,
-            height: 20,
+    alignment: Alignment.center,
+    children: [
+      Container(
+        width: 18,
+        height: 20,
+        decoration: BoxDecoration(
+          color: _pdfRed,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(3),
+            bottomLeft: Radius.circular(3),
+            bottomRight: Radius.circular(3),
+            topRight: Radius.circular(7),
+          ),
+        ),
+      ),
+      const Positioned(
+        top: 0,
+        right: 0,
+        child: SizedBox(
+          width: 7,
+          height: 7,
+          child: DecoratedBox(
             decoration: BoxDecoration(
-              color: _pdfRed,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(3),
+              color: Color(0xFFB71C1C),
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(3),
                 bottomLeft: Radius.circular(3),
-                bottomRight: Radius.circular(3),
-                topRight: Radius.circular(7),
               ),
             ),
           ),
-          const Positioned(
-            top: 0,
-            right: 0,
-            child: SizedBox(
-              width: 7,
-              height: 7,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Color(0xFFB71C1C),
-                  borderRadius: BorderRadius.only(
-                    topRight: Radius.circular(3),
-                    bottomLeft: Radius.circular(3),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const Text(
-            'PDF',
-            style: TextStyle(
-              fontSize: 5,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ],
-      );
+        ),
+      ),
+      const Text(
+        'PDF',
+        style: TextStyle(
+          fontSize: 5,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          letterSpacing: 0.2,
+        ),
+      ),
+    ],
+  );
 
   Widget _excelIcon() => Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 18,
-            height: 20,
-            decoration: BoxDecoration(
-              color: _excelGreen,
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-          const Text(
-            'X',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      );
+    alignment: Alignment.center,
+    children: [
+      Container(
+        width: 18,
+        height: 20,
+        decoration: BoxDecoration(
+          color: _excelGreen,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+      const Text(
+        'X',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+    ],
+  );
 }
 
 class _ExportMenuItem extends StatefulWidget {

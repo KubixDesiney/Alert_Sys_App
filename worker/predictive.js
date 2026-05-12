@@ -1,7 +1,7 @@
 import { getFirebaseToken } from './auth.js';
 import { corsHeaders } from './config.js';
 import { loadCoreData } from './load_core.js';
-import { _historyKey, _toMs, aiSanitizeFactoryId } from './utils.js';
+import { _briefingFactorySlug, _historyKey, _toMs, aiSanitizeFactoryId } from './utils.js';
 
 function buildPredictiveModel(alertsMap = {}) {
   const now = Date.now();
@@ -140,24 +140,48 @@ function buildPredictiveModel(alertsMap = {}) {
 
 // ============ FCM access token and send helper ============
 
-async function handlePredictions(env) {
+function _filterAlertsMapByFactorySlug(alertsMap = {}, factorySlug = null) {
+  if (!factorySlug) return alertsMap || {};
+  return Object.fromEntries(
+    Object.entries(alertsMap || {}).filter(([, alert]) => {
+      return _briefingFactorySlug(alert?.usine || '') === factorySlug;
+    }),
+  );
+}
+
+async function handlePredictions(request, env) {
   try {
+    const url = new URL(request.url);
+    const factoryParam = url.searchParams.get('factory') || null;
+    const factorySlug = factoryParam ? _briefingFactorySlug(factoryParam) : null;
+
     const coreCtx = await loadCoreData(env);
-    const model = buildPredictiveModel(coreCtx.alertsMap || {});
+    const scopedAlertsMap = _filterAlertsMapByFactorySlug(
+      coreCtx.alertsMap || {},
+      factorySlug,
+    );
+    const model = buildPredictiveModel(scopedAlertsMap);
+    const payload = factoryParam ? { ...model, factoryScope: factoryParam } : model;
     // Snapshot to history first (fire-and-forget) so we never lose it even if
     // the latest write somehow fails afterwards.
     const histKey = _historyKey(model.generatedAt);
-    fetch(`${env.FB_DB_URL}ai_predictions/history/${histKey}.json?auth=${coreCtx.token}`, {
+    const latestPath = factorySlug
+      ? `ai_predictions/factory/${factorySlug}/latest.json`
+      : 'ai_predictions/latest.json';
+    const historyPath = factorySlug
+      ? `ai_predictions/factory/${factorySlug}/history/${histKey}.json`
+      : `ai_predictions/history/${histKey}.json`;
+    fetch(`${env.FB_DB_URL}${historyPath}?auth=${coreCtx.token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...model, validated: false }),
+      body: JSON.stringify({ ...payload, validated: false }),
     }).catch(() => {});
-    await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`, {
+    await fetch(`${env.FB_DB_URL}${latestPath}?auth=${coreCtx.token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(model),
+      body: JSON.stringify(payload),
     });
-    return new Response(JSON.stringify(model), {
+    return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

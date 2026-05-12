@@ -9,23 +9,29 @@ import 'predictive_repository.dart';
 /// stream handling are split into dedicated services.
 class PredictiveIntelService {
   PredictiveIntelService._()
-      : repository = PredictiveRepository(),
-        streams = PredictiveIntelStreamService.instance;
+    : repository = PredictiveRepository(),
+      streams = PredictiveIntelStreamService.instance;
 
   static final PredictiveIntelService instance = PredictiveIntelService._();
 
   final PredictiveRepository repository;
   final PredictiveIntelStreamService streams;
 
-  Stream<MorningBriefing?> briefingStream({String? factory}) => streams.briefingStream(factory: factory);
-  Stream<PredictiveModel?> predictionsStream() => streams.predictionsStream();
+  Stream<MorningBriefing?> briefingStream({String? factory}) =>
+      streams.briefingStream(factory: factory);
+  Stream<PredictiveModel?> predictionsStream({String? factory}) =>
+      streams.predictionsStream(factory: factory);
   Stream<PredictiveAccuracy?> accuracyStream() => streams.accuracyStream();
 
-  Future<MorningBriefing?> fetchBriefing({bool force = false, String? factory}) =>
-      repository.getBriefing(force: force, factory: factory);
+  Future<MorningBriefing?> fetchBriefing({
+    bool force = false,
+    String? factory,
+  }) => repository.getBriefing(force: force, factory: factory);
 
-  Future<PredictiveModel?> fetchPredictions({bool force = false}) =>
-      repository.getPredictions(force: force);
+  Future<PredictiveModel?> fetchPredictions({
+    bool force = false,
+    String? factory,
+  }) => repository.getPredictions(force: force, factory: factory);
 
   Future<AssigneeSuggestion?> suggestAssignee(String alertId) =>
       repository.suggestAssignee(alertId);

@@ -5,11 +5,12 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import 'predictive_models.dart';
+import 'predictive_scope.dart';
 
 class PredictiveRepository {
   PredictiveRepository({FirebaseDatabase? database, http.Client? client})
-      : _db = database ?? FirebaseDatabase.instance,
-        _client = client ?? http.Client();
+    : _db = database ?? FirebaseDatabase.instance,
+      _client = client ?? http.Client();
 
   final FirebaseDatabase _db;
   final http.Client _client;
@@ -21,22 +22,14 @@ class PredictiveRepository {
   // Per-factory cache: null key = global.
   final Map<String?, MorningBriefing?> _briefingCache = {};
   final Map<String?, DateTime> _briefingCachedAt = {};
-  PredictiveModel? _predictionsCache;
-  DateTime? _predictionsCachedAt;
+  final Map<String?, PredictiveModel?> _predictionsCache = {};
+  final Map<String?, DateTime> _predictionsCachedAt = {};
   AssigneeSuggestion? _suggestionCache;
   DateTime? _suggestionCachedAt;
 
   // Returns the Firebase path for a factory slug (null → global).
-  static String _briefingPath(String? factory) {
-    if (factory == null || factory.isEmpty || factory == 'all') {
-      return 'ai_briefing/latest';
-    }
-    final slug = factory
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'[^a-z0-9_]'), '');
-    return 'ai_briefing/factory/$slug/latest';
-  }
+  static String _briefingPath(String? factory) =>
+      predictiveBriefingPath(factory);
 
   Stream<MorningBriefing?> briefingStream({String? factory}) {
     return _db.ref(_briefingPath(factory)).onValue.map((event) {
@@ -46,30 +39,33 @@ class PredictiveRepository {
     });
   }
 
-  Stream<PredictiveModel?> predictionsStream() {
-    return _db.ref('ai_predictions/latest').onValue.map((event) {
+  Stream<PredictiveModel?> predictionsStream({String? factory}) {
+    return _db.ref(predictivePredictionsPath(factory)).onValue.map((event) {
       final value = event.snapshot.value;
       if (value is! Map) return null;
       return PredictiveModel.fromMap(Map<String, dynamic>.from(value));
     });
   }
 
-  Future<MorningBriefing?> getBriefing(
-      {bool force = false, String? factory}) async {
-    final cacheKey = (factory == null || factory.isEmpty || factory == 'all')
-        ? null
-        : factory;
+  Future<MorningBriefing?> getBriefing({
+    bool force = false,
+    String? factory,
+  }) async {
+    final cacheKey = predictiveFactorySlug(factory);
+    final factoryScope = normalizePredictiveFactory(factory);
     if (!force && _isFresh(_briefingCachedAt[cacheKey])) {
       return _briefingCache[cacheKey];
     }
-    final factoryQuery = cacheKey != null
-        ? 'factory=${Uri.encodeQueryComponent(cacheKey)}&'
+    final factoryQuery = factoryScope != null
+        ? 'factory=${Uri.encodeQueryComponent(factoryScope)}&'
         : '';
     final result = await _fetchJson(
-        '$workerBase/briefing?$factoryQuery${force ? 'force=1' : ''}');
+      '$workerBase/briefing?$factoryQuery${force ? 'force=1' : ''}',
+    );
     if (result is Map) {
-      final briefing =
-          MorningBriefing.fromMap(Map<String, dynamic>.from(result));
+      final briefing = MorningBriefing.fromMap(
+        Map<String, dynamic>.from(result),
+      );
       _briefingCache[cacheKey] = briefing;
       _briefingCachedAt[cacheKey] = DateTime.now();
       return briefing;
@@ -77,16 +73,26 @@ class PredictiveRepository {
     return _briefingCache[cacheKey];
   }
 
-  Future<PredictiveModel?> getPredictions({bool force = false}) async {
-    if (!force && _isFresh(_predictionsCachedAt)) return _predictionsCache;
-    final result = await _fetchJson('$workerBase/predict');
+  Future<PredictiveModel?> getPredictions({
+    bool force = false,
+    String? factory,
+  }) async {
+    final cacheKey = predictiveFactorySlug(factory);
+    final factoryScope = normalizePredictiveFactory(factory);
+    if (!force && _isFresh(_predictionsCachedAt[cacheKey])) {
+      return _predictionsCache[cacheKey];
+    }
+    final query = factoryScope != null
+        ? '?factory=${Uri.encodeQueryComponent(factoryScope)}'
+        : '';
+    final result = await _fetchJson('$workerBase/predict$query');
     if (result is Map) {
       final model = PredictiveModel.fromMap(Map<String, dynamic>.from(result));
-      _predictionsCache = model;
-      _predictionsCachedAt = DateTime.now();
+      _predictionsCache[cacheKey] = model;
+      _predictionsCachedAt[cacheKey] = DateTime.now();
       return model;
     }
-    return _predictionsCache;
+    return _predictionsCache[cacheKey];
   }
 
   Future<AssigneeSuggestion?> suggestAssignee(String alertId) async {
@@ -97,11 +103,13 @@ class PredictiveRepository {
       return _suggestionCache;
     }
 
-    final result =
-        await _fetchJson('$workerBase/suggest-assignee?alertId=$alertId');
+    final result = await _fetchJson(
+      '$workerBase/suggest-assignee?alertId=$alertId',
+    );
     if (result is Map) {
-      final suggestion =
-          AssigneeSuggestion.fromMap(Map<String, dynamic>.from(result));
+      final suggestion = AssigneeSuggestion.fromMap(
+        Map<String, dynamic>.from(result),
+      );
       _suggestionCache = suggestion;
       _suggestionCachedAt = DateTime.now();
       return suggestion;
@@ -112,10 +120,7 @@ class PredictiveRepository {
   Future<Object?> _fetchJson(String url) async {
     try {
       final response = await _client
-          .get(
-            Uri.parse(url),
-            headers: _workerHeaders(),
-          )
+          .get(Uri.parse(url), headers: _workerHeaders())
           .timeout(requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) return null;
       return jsonDecode(response.body);
@@ -128,9 +133,7 @@ class PredictiveRepository {
     if (AppConfig.workerSharedSecret.isEmpty) {
       return const {};
     }
-    return {
-      'x-worker-secret': AppConfig.workerSharedSecret,
-    };
+    return {'x-worker-secret': AppConfig.workerSharedSecret};
   }
 
   bool _isFresh(DateTime? cachedAt) {
