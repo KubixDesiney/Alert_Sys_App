@@ -30,7 +30,7 @@
 <!-- BADGES ROW 3 -->
 <p>
   <img src="https://img.shields.io/badge/Voice-Offline_Sherpa_ONNX-EF4444?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/AR-QR_Work_Instructions-0EA5E9?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Station_Scan-QR_History_Lookup-0EA5E9?style=for-the-badge" />
   <img src="https://img.shields.io/badge/License-Proprietary-1E293B?style=for-the-badge" />
 </p>
 
@@ -139,7 +139,7 @@ Usine (Factory)
 - Alerts are always bound to a valid node in the hierarchy
 - Asset management with machine IDs and asset history
 - Location-aware AI assignment — closer supervisors score higher
-- QR codes at each station trigger AR work instructions for that exact location
+- QR codes at each station let supervisors identify a workstation and load its alert history instantly
 
 ---
 
@@ -334,7 +334,7 @@ Firebase RTDB stream
 | **Voice Biometrics** | TFLite (conformer_tisid) | Speaker identity verification |
 | **AI Suggestions** | Claude API (via CF Worker) | Resolution recommendations |
 | **Predictive AI** | Google Generative AI | Morning briefings, risk curves |
-| **AR Scanning** | mobile_scanner | QR work instruction lookup |
+| **Station Scan** | mobile_scanner | QR workstation lookup and alert history |
 | **Notifications** | flutter_local_notifications | Full-screen lock-screen alerts |
 | **Code Push** | Shorebird | Zero-downtime OTA updates |
 | **TTS** | flutter_tts | Factory-loud voice feedback |
@@ -376,10 +376,6 @@ Voice Features
   ├── Voice Enrollment Screen (guided multi-sample)
   └── Push-to-Talk overlay
 
-AR & Work Instructions
-  ├── AR Instruction Screen (camera passthrough + QR scan)
-  └── Work Instruction Detail (steps, images, safety warnings)
-
 Supervision
   ├── Supervisor Tab (availability, workload)
   ├── Collaboration Screen (help requests, accept/refuse)
@@ -419,14 +415,14 @@ AlertSys ships with a polished **dual-mode design system**:
 
 ## Platform Support
 
-| Platform | Status | Voice | AR | Offline ASR |
+| Platform | Status | Voice | Station Scan | Offline ASR |
 |---|:---:|:---:|:---:|:---:|
 | Android | Full | Native | Yes | Yes |
 | iOS | Supported | Fallback | Yes | Partial |
 | Windows | Supported | Fallback | — | Partial |
 | Linux | Supported | Fallback | — | Partial |
 | macOS | Supported | Fallback | Yes | Partial |
-| Web | Supported | Fallback | Yes | — |
+| Web | Supported | Fallback | Manual entry | — |
 
 > **Android is the primary deployment target.** Native `VoiceLockRecorderActivity` and full offline Sherpa ONNX pipeline are Android-only. Other platforms use `speech_to_text` plugin fallback.
 
@@ -577,7 +573,7 @@ alertsysapp/
 │   │   ├── alert_model.dart
 │   │   ├── user_model.dart
 │   │   ├── collaboration_model.dart
-│   │   └── work_instruction_model.dart
+│   │   └── hierarchy_model.dart
 │   │
 │   ├── providers/                         # State management
 │   │   └── alert_provider.dart            # Central alert + supervisor state
@@ -603,7 +599,7 @@ alertsysapp/
 │   │   ├── alerts_tree_screen.dart
 │   │   ├── voice_claim_screen.dart
 │   │   ├── voice_enrollment_screen.dart
-│   │   ├── ar_instruction_screen.dart
+│   │   ├── alert_scan_screen.dart
 │   │   ├── admin_escalation_screen.dart
 │   │   ├── collaboration_screen.dart
 │   │   └── ...

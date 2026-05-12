@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/alert_model.dart';
-import '../services/work_instruction_service.dart';
+import '../services/location_alert_parser.dart';
+import '../services/location_alert_service.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
@@ -21,13 +21,13 @@ class AlertScanScreen extends StatefulWidget {
 }
 
 class _AlertScanScreenState extends State<AlertScanScreen> {
-  final WorkInstructionService _service = WorkInstructionService();
+  final LocationAlertService _service = LocationAlertService();
   final TextEditingController _qrController = TextEditingController();
   final TextEditingController _factoryController = TextEditingController();
   final TextEditingController _conveyorController = TextEditingController();
   final TextEditingController _stationController = TextEditingController();
 
-  _ScannedLocation? _location;
+  LocationAlertScanTarget? _location;
   StreamSubscription<List<AlertModel>>? _historySub;
   List<AlertModel> _history = const [];
   bool _historyLoading = false;
@@ -44,7 +44,7 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
   }
 
   void _useQrText() {
-    final loc = _ScannedLocation.tryParse(_qrController.text);
+    final loc = LocationAlertScanTarget.tryParse(_qrController.text);
     if (loc == null) {
       _showMessage('That text is not a valid station QR payload.');
       return;
@@ -61,18 +61,19 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
       return;
     }
     _selectLocation(
-      _ScannedLocation(usine: usine, convoyeur: convoyeur, poste: poste),
+      LocationAlertScanTarget(usine: usine, convoyeur: convoyeur, poste: poste),
     );
   }
 
-  void _selectLocation(_ScannedLocation loc) {
+  void _selectLocation(LocationAlertScanTarget loc) {
     setState(() => _location = loc);
     _bindHistory(loc);
     _showMessage(
-        'Station loaded: ${loc.usine} / C${loc.convoyeur} / P${loc.poste}');
+      'Station loaded: ${loc.usine} / C${loc.convoyeur} / P${loc.poste}',
+    );
   }
 
-  void _bindHistory(_ScannedLocation loc) {
+  void _bindHistory(LocationAlertScanTarget loc) {
     _historySub?.cancel();
     setState(() {
       _historyLoading = true;
@@ -81,27 +82,27 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     });
     _historySub = _service
         .historyAtLocation(
-      usine: loc.usine,
-      convoyeur: loc.convoyeur,
-      poste: loc.poste,
-      assetId: loc.assetId,
-    )
+          usine: loc.usine,
+          convoyeur: loc.convoyeur,
+          poste: loc.poste,
+          assetId: loc.assetId,
+        )
         .listen(
-      (alerts) {
-        if (!mounted) return;
-        setState(() {
-          _history = alerts;
-          _historyLoading = false;
-        });
-      },
-      onError: (e) {
-        if (!mounted) return;
-        setState(() {
-          _historyError = UserFriendlyError.message(e);
-          _historyLoading = false;
-        });
-      },
-    );
+          (alerts) {
+            if (!mounted) return;
+            setState(() {
+              _history = alerts;
+              _historyLoading = false;
+            });
+          },
+          onError: (e) {
+            if (!mounted) return;
+            setState(() {
+              _historyError = UserFriendlyError.message(e);
+              _historyLoading = false;
+            });
+          },
+        );
   }
 
   void _reset() {
@@ -159,158 +160,8 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
   }
 }
 
-class _ScannedLocation {
-  final String? assetId;
-  final String usine;
-  final int convoyeur;
-  final int poste;
-  const _ScannedLocation({
-    this.assetId,
-    required this.usine,
-    required this.convoyeur,
-    required this.poste,
-  });
-
-  static _ScannedLocation? tryParse(String raw) {
-    final text = raw.trim();
-    if (text.isEmpty) return null;
-    try {
-      final decoded = jsonDecode(text);
-      if (decoded is Map) return _fromMap(Map<Object?, Object?>.from(decoded));
-      if (decoded is String && decoded != text) return tryParse(decoded);
-    } catch (_) {}
-
-    if (text.contains(r'\"')) {
-      try {
-        final decoded = jsonDecode(text.replaceAll(r'\"', '"'));
-        if (decoded is Map)
-          return _fromMap(Map<Object?, Object?>.from(decoded));
-      } catch (_) {}
-    }
-
-    final uri = Uri.tryParse(text);
-    if (uri != null) {
-      if (uri.queryParameters.isNotEmpty) {
-        final fromQuery = _fromMap(uri.queryParameters);
-        if (fromQuery != null) return fromQuery;
-      }
-      if (uri.pathSegments.isNotEmpty) {
-        final fromPath = _fromAddress(uri.pathSegments.last);
-        if (fromPath != null) return fromPath;
-      }
-    }
-    return _fromAddress(text) ?? _fromLocationKey(text);
-  }
-
-  static _ScannedLocation? _fromMap(Map<Object?, Object?> data) {
-    final assetId = _firstString(data, const [
-      'assetId',
-      'asset_id',
-      'machineId',
-      'machine_id',
-    ]);
-    final encodedLocation = _firstString(data, const [
-      'adresse',
-      'address',
-      'locationKey',
-      'location',
-    ]);
-    if (encodedLocation != null) {
-      final loc =
-          _fromAddress(encodedLocation) ?? _fromLocationKey(encodedLocation);
-      if (loc != null) {
-        return _ScannedLocation(
-          assetId: assetId,
-          usine: loc.usine,
-          convoyeur: loc.convoyeur,
-          poste: loc.poste,
-        );
-      }
-    }
-    final usine = _firstString(data, const [
-      'usine',
-      'factory',
-      'factoryName',
-      'plant',
-      'site',
-    ]);
-    final convoyeur = _firstInt(data, const [
-      'convoyeur',
-      'conveyor',
-      'conveyorNumber',
-      'line',
-      'lineNumber',
-    ]);
-    final poste = _firstInt(data, const [
-      'poste',
-      'post',
-      'station',
-      'stationNumber',
-      'workstation',
-      'workstationNumber',
-    ]);
-    if (usine == null || convoyeur == null || poste == null) return null;
-    return _ScannedLocation(
-      assetId: assetId,
-      usine: usine,
-      convoyeur: convoyeur,
-      poste: poste,
-    );
-  }
-
-  static _ScannedLocation? _fromAddress(String raw) {
-    final address = Uri.decodeFull(raw).trim();
-    final match = RegExp(r'^(.+)_C(\d+)_P(\d+)$', caseSensitive: false)
-        .firstMatch(address);
-    if (match == null) return null;
-    return _ScannedLocation(
-      usine: match.group(1)!.replaceAll('_', ' '),
-      convoyeur: int.parse(match.group(2)!),
-      poste: int.parse(match.group(3)!),
-    );
-  }
-
-  static _ScannedLocation? _fromLocationKey(String raw) {
-    final parts = raw.split('|').map((p) => p.trim()).toList();
-    if (parts.length != 3 || parts.any((p) => p.isEmpty)) return null;
-    final convoyeur = int.tryParse(parts[1]);
-    final poste = int.tryParse(parts[2]);
-    if (convoyeur == null || poste == null) return null;
-    return _ScannedLocation(
-        usine: parts[0], convoyeur: convoyeur, poste: poste);
-  }
-
-  static String? _firstString(Map<Object?, Object?> data, List<String> keys) {
-    for (final key in keys) {
-      final text = data[key]?.toString().trim();
-      if (text != null && text.isNotEmpty) return text;
-    }
-    return null;
-  }
-
-  static int? _firstInt(Map<Object?, Object?> data, List<String> keys) {
-    for (final key in keys) {
-      final value = data[key];
-      if (value is num) return value.toInt();
-      final text = value?.toString().trim();
-      if (text == null || text.isEmpty) continue;
-      final exact = int.tryParse(text);
-      if (exact != null) return exact;
-      final embeddedNumber = RegExp(r'\d+').firstMatch(text);
-      if (embeddedNumber != null) return int.tryParse(embeddedNumber.group(0)!);
-    }
-    return null;
-  }
-
-  @override
-  String toString() {
-    final assetPrefix = assetId == null ? '' : '$assetId - ';
-    return '$assetPrefix$usine - Conveyor $convoyeur - Post $poste';
-  }
-}
-
 class _Header extends StatelessWidget {
-  final _ScannedLocation? location;
+  final LocationAlertScanTarget? location;
   final VoidCallback onRescan;
   const _Header({required this.location, required this.onRescan});
 
@@ -370,7 +221,7 @@ class _WebScanCard extends StatelessWidget {
   final TextEditingController factoryController;
   final TextEditingController conveyorController;
   final TextEditingController stationController;
-  final _ScannedLocation? location;
+  final LocationAlertScanTarget? location;
   final VoidCallback onUseQr;
   final VoidCallback onUseManual;
   final VoidCallback onReset;
@@ -518,7 +369,7 @@ class _WebScanCard extends StatelessWidget {
 }
 
 class _HistorySection extends StatelessWidget {
-  final _ScannedLocation? location;
+  final LocationAlertScanTarget? location;
   final bool loading;
   final String? error;
   final List<AlertModel> history;
@@ -534,7 +385,7 @@ class _HistorySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     if (location == null) {
-      return _PlaceholderState(
+      return const _PlaceholderState(
         icon: Icons.qr_code_scanner,
         title: 'No station loaded',
         message: 'Paste a station QR payload or enter a station manually.',
@@ -590,7 +441,7 @@ class _HistorySection extends StatelessWidget {
         ),
         Expanded(
           child: history.isEmpty
-              ? _PlaceholderState(
+              ? const _PlaceholderState(
                   icon: Icons.inbox,
                   title: 'No alerts yet',
                   message: 'No alerts have been recorded at this station.',
@@ -629,8 +480,10 @@ class _PlaceholderState extends StatelessWidget {
             Container(
               width: 64,
               height: 64,
-              decoration:
-                  BoxDecoration(color: t.navyLt, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: t.navyLt,
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, size: 28, color: t.navy),
             ),
             const SizedBox(height: 14),
@@ -671,8 +524,10 @@ class _MiniBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

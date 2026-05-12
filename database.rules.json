@@ -38,23 +38,6 @@
       }
     },
 
-    "work_instructions": {
-      ".read": "auth != null",
-      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-      "$alertType": {
-        ".read": "auth != null",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-        "steps": {
-          ".read": "auth != null",
-          ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
-          "$stepId": {
-            ".read": "auth != null",
-            ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
-          }
-        }
-      }
-    },
-
     "notifications": {
       ".read": "auth != null",
       ".write": "auth != null",
