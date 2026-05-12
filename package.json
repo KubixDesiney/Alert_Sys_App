@@ -12,5 +12,8 @@
   "devDependencies": {
     "jest": "^29.7.0",
     "wrangler": "^3.114.17"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.9.0"
   }
 }

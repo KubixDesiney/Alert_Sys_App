@@ -229,6 +229,7 @@ const _SECURITY = Object.freeze({
     'ai-proxy':            { windowSec: 60, max: 20 },
     'briefing':            { windowSec: 60, max: 15 },
     'predict':             { windowSec: 60, max: 10 },
+    'predict-lstm':        { windowSec: 60, max: 10 },
     'suggest-assignee':    { windowSec: 60, max: 20 },
     'auto-fix':            { windowSec: 60, max: 10 },
     'auto-fix-full':       { windowSec: 60, max: 6 },
@@ -792,6 +793,15 @@ function _briefingFactorySlug(factory) {
   return String(factory || '').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 }
 
+function _filterAlertsMapByFactorySlug(alertsMap = {}, factorySlug = null) {
+  if (!factorySlug) return alertsMap || {};
+  return Object.fromEntries(
+    Object.entries(alertsMap || {}).filter(([, alert]) => {
+      return _briefingFactorySlug(alert?.usine || '') === factorySlug;
+    }),
+  );
+}
+
 // Returns the top performing supervisor (by resolved alert count) in the past 7 days.
 function _topSupervisorWeek(alertsMap = {}, usersMap = {}, factoryFilter = null) {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -956,19 +966,44 @@ function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, 
 }
 
 // ============ Predictive model ============
+const _PREDICTIVE_TYPES = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
+const _PREDICTIVE_HORIZON_DAYS = 180;
+const _PREDICTIVE_HALFLIFE_DAYS = 14;
+const _PREDICTIVE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function _predictiveDecay(ageDays, halflifeDays = _PREDICTIVE_HALFLIFE_DAYS) {
+  if (!Number.isFinite(ageDays) || ageDays < 0) return 0;
+  return Math.pow(0.5, ageDays / halflifeDays);
+}
+
+function _predictiveEffectiveWindowDays(
+  horizonDays = _PREDICTIVE_HORIZON_DAYS,
+  halflifeDays = _PREDICTIVE_HALFLIFE_DAYS,
+) {
+  const decayRate = Math.LN2 / halflifeDays;
+  return (1 - Math.exp(-decayRate * horizonDays)) / decayRate;
+}
+
+function _poissonAtLeastOne(lambda) {
+  return lambda > 0 ? 1 - Math.exp(-lambda) : 0;
+}
+
 function buildPredictiveModel(alertsMap = {}) {
   const now = Date.now();
-  const horizonMs = 180 * 24 * 60 * 60 * 1000;
+  const horizonMs = _PREDICTIVE_HORIZON_DAYS * _PREDICTIVE_DAY_MS;
+  const effectiveWindowDays = _predictiveEffectiveWindowDays();
   const hodCounts = {};
   const dowCounts = {};
   const recentCounts = {};
+  const sampleCounts = {};
   const machineHistory = {};
   const factoryRisk = {};
 
-  for (const t of ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource']) {
+  for (const t of _PREDICTIVE_TYPES) {
     hodCounts[t] = new Array(24).fill(0);
     dowCounts[t] = new Array(7).fill(0);
     recentCounts[t] = 0;
+    sampleCounts[t] = 0;
   }
 
   for (const [, a] of Object.entries(alertsMap || {})) {
@@ -976,21 +1011,22 @@ function buildPredictiveModel(alertsMap = {}) {
     const tsMs = _toMs(a.timestamp);
     if (!tsMs || (now - tsMs) > horizonMs || tsMs > now) continue;
     const type = String(a.type || '');
-    if (!['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'].includes(type)) continue;
+    if (!_PREDICTIVE_TYPES.includes(type)) continue;
 
     const d = new Date(tsMs);
     const hod = d.getUTCHours();
     const dow = d.getUTCDay();
-    hodCounts[type][hod]++;
-    dowCounts[type][dow]++;
-    recentCounts[type]++;
+    const ageDays = (now - tsMs) / _PREDICTIVE_DAY_MS;
+    const decay = _predictiveDecay(ageDays);
+    hodCounts[type][hod] += decay;
+    dowCounts[type][dow] += decay;
+    recentCounts[type] += decay;
+    sampleCounts[type]++;
 
     const factoryId = aiSanitizeFactoryId(a.usine || '');
     const conv = a.convoyeur ?? 0;
     const post = a.poste ?? 0;
     const mKey = `${factoryId}|${conv}|${post}|${type}`;
-    const ageDays = (now - tsMs) / 86400000;
-    const decay = Math.exp(-ageDays / 14);
     if (!machineHistory[mKey]) {
       machineHistory[mKey] = {
         factoryId,
@@ -1018,15 +1054,15 @@ function buildPredictiveModel(alertsMap = {}) {
 
   const startHour = new Date(now).getUTCHours();
   const curves = {};
-  for (const type of ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource']) {
+  for (const type of _PREDICTIVE_TYPES) {
     const buckets = [];
     let total = 0;
     for (let i = 0; i < 12; i++) {
       const h1 = (startHour + i * 2) % 24;
       const h2 = (startHour + i * 2 + 1) % 24;
       const cnt = hodCounts[type][h1] + hodCounts[type][h2];
-      const lambda = cnt / 30;
-      const probability = lambda > 0 ? 1 - Math.exp(-lambda) : 0;
+      const lambda = cnt / effectiveWindowDays;
+      const probability = _poissonAtLeastOne(lambda);
       total += probability;
       buckets.push({
         offsetHours: i * 2,
@@ -1036,17 +1072,19 @@ function buildPredictiveModel(alertsMap = {}) {
         expected: Number(lambda.toFixed(4)),
       });
     }
-    const totalRecent = recentCounts[type];
-    const dailyAvg = totalRecent / 30;
+    const weightedRecent = recentCounts[type];
+    const dailyAvg = weightedRecent / effectiveWindowDays;
     const peak = buckets.reduce((p, c) => (c.probability > p.probability ? c : p), buckets[0]);
     curves[type] = {
       buckets,
-      total24h: Number((1 - Math.exp(-dailyAvg)).toFixed(4)),
+      total24h: Number(_poissonAtLeastOne(dailyAvg).toFixed(4)),
       hourlyRate: Number((dailyAvg / 24).toFixed(4)),
       peakHour: peak.startHour,
       peakProbability: peak.probability,
       avgProbability: Number((total / 12).toFixed(4)),
-      sampleSize: totalRecent,
+      sampleSize: sampleCounts[type],
+      weightedSampleSize: Number(weightedRecent.toFixed(4)),
+      effectiveWindowDays: Number(effectiveWindowDays.toFixed(2)),
     };
   }
 
@@ -1086,9 +1124,351 @@ function buildPredictiveModel(alertsMap = {}) {
     predictions,
     factoryRisk: factoryRanked,
     generatedAt: new Date().toISOString(),
-    horizonDays: 30,
-    halflifeDays: 14,
+    horizonDays: _PREDICTIVE_HORIZON_DAYS,
+    halflifeDays: _PREDICTIVE_HALFLIFE_DAYS,
   };
+}
+
+const _LSTM_ENDPOINT = 'https://kubixdesiney-alertsys-lstm.hf.space/predict';
+const _LSTM_DAY_MS = 24 * 60 * 60 * 1000;
+const _LSTM_TYPES = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
+const _LSTM_FEATURE_COLS = [
+  'is_qualite',
+  'is_maintenance',
+  'is_defaut_produit',
+  'is_manque_ressource',
+  'critical_count',
+  'days_since_failure',
+  'hour',
+  'dayofweek',
+];
+
+function _lstmUtcDayStartMs(tsMs) {
+  const d = new Date(tsMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function _lstmUtcDateKey(tsMs) {
+  const d = new Date(tsMs);
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function _lstmDayOfWeek(tsMs) {
+  // Mirror pandas dayofweek semantics: Monday=0, Sunday=6.
+  return (new Date(tsMs).getUTCDay() + 6) % 7;
+}
+
+function _lstmMachineKey(machine) {
+  const usine = String(machine?.usine || '').trim();
+  const convoyeur = Number(machine?.convoyeur ?? 0);
+  const poste = Number(machine?.poste ?? 0);
+  return `${usine}|${convoyeur}|${poste}`;
+}
+
+function _buildDailyFeatures(alertsMap = {}) {
+  const machines = {};
+
+  for (const alert of Object.values(alertsMap || {})) {
+    if (!alert || typeof alert !== 'object') continue;
+    const tsMs = _toMs(
+      alert.timestamp ??
+      alert.createdAt ??
+      alert.created_at ??
+      alert.date ??
+      alert.ts,
+    );
+    if (tsMs == null) continue;
+
+    const usine = String(alert.usine || alert.factoryId || '').trim();
+    const convoyeur = Number(alert.convoyeur ?? 0);
+    const poste = Number(alert.poste ?? 0);
+    const machineKey = _lstmMachineKey({ usine, convoyeur, poste });
+    const dayMs = _lstmUtcDayStartMs(tsMs);
+    const dayKey = _lstmUtcDateKey(tsMs);
+    const type = String(alert.type || '');
+
+    if (!machines[machineKey]) {
+      machines[machineKey] = {
+        usine,
+        convoyeur,
+        poste,
+        minDayMs: dayMs,
+        maxDayMs: dayMs,
+        days: {},
+      };
+    }
+    const machine = machines[machineKey];
+    if (dayMs < machine.minDayMs) machine.minDayMs = dayMs;
+    if (dayMs > machine.maxDayMs) machine.maxDayMs = dayMs;
+
+    if (!machine.days[dayKey]) {
+      machine.days[dayKey] = {
+        date: dayKey,
+        dayMs,
+        totalAlerts: 0,
+        hourSum: 0,
+        hourSamples: 0,
+        is_qualite: 0,
+        is_maintenance: 0,
+        is_defaut_produit: 0,
+        is_manque_ressource: 0,
+        critical_count: 0,
+      };
+    }
+
+    const day = machine.days[dayKey];
+    if (_LSTM_TYPES.includes(type)) {
+      day[`is_${type}`] += 1;
+    }
+    day.totalAlerts += 1;
+    if (alert.isCritical === true) day.critical_count += 1;
+    day.hourSum += new Date(tsMs).getUTCHours();
+    day.hourSamples += 1;
+  }
+
+  const rows = [];
+  for (const machine of Object.values(machines)) {
+    let dayMs = machine.minDayMs;
+    let lastFailureDayMs = null;
+
+    while (dayMs <= machine.maxDayMs) {
+      const dayKey = _lstmUtcDateKey(dayMs);
+      const day = machine.days[dayKey];
+      const hadFailure = (day?.totalAlerts || 0) > 0;
+
+      if (hadFailure) lastFailureDayMs = dayMs;
+
+      rows.push({
+        usine: machine.usine,
+        convoyeur: machine.convoyeur,
+        poste: machine.poste,
+        date: dayKey,
+        is_qualite: day?.is_qualite || 0,
+        is_maintenance: day?.is_maintenance || 0,
+        is_defaut_produit: day?.is_defaut_produit || 0,
+        is_manque_ressource: day?.is_manque_ressource || 0,
+        critical_count: day?.critical_count || 0,
+        days_since_failure: hadFailure || lastFailureDayMs == null
+          ? 0
+          : Math.round((dayMs - lastFailureDayMs) / _LSTM_DAY_MS),
+        hour: hadFailure && (day?.hourSamples || 0) > 0
+          ? Number((day.hourSum / day.hourSamples).toFixed(4))
+          : 0,
+        dayofweek: _lstmDayOfWeek(dayMs),
+      });
+
+      dayMs += _LSTM_DAY_MS;
+    }
+  }
+
+  return rows;
+}
+
+function _fitGlobalScaler(dailyRows = [], featureCols = _LSTM_FEATURE_COLS) {
+  const scaler = {};
+
+  for (const col of featureCols) {
+    scaler[col] = { min: Infinity, max: -Infinity };
+  }
+
+  for (const row of dailyRows || []) {
+    for (const col of featureCols) {
+      const value = Number(row?.[col]);
+      if (!Number.isFinite(value)) continue;
+      if (value < scaler[col].min) scaler[col].min = value;
+      if (value > scaler[col].max) scaler[col].max = value;
+    }
+  }
+
+  for (const col of featureCols) {
+    if (!Number.isFinite(scaler[col].min) || !Number.isFinite(scaler[col].max)) {
+      scaler[col] = { min: 0, max: 0 };
+    }
+  }
+
+  return scaler;
+}
+
+function _scaleFeatures(featureRows = [], scaler = {}, featureCols = Object.keys(scaler || {})) {
+  return (featureRows || []).map((row) => {
+    const scaled = {};
+    for (const col of featureCols) {
+      const bounds = scaler[col] || { min: 0, max: 0 };
+      const value = Number(row?.[col]);
+      const safeValue = Number.isFinite(value) ? value : 0;
+      scaled[col] = bounds.max === bounds.min
+        ? 0.5
+        : (safeValue - bounds.min) / (bounds.max - bounds.min);
+    }
+    return scaled;
+  });
+}
+
+function _mergeLstmIntoPredictiveModel(model = {}, lstmPayload = null) {
+  const predictions = Array.isArray(model?.predictions) ? model.predictions : [];
+  const curves = model?.curves && typeof model.curves === 'object' ? model.curves : {};
+  const lstmPredictions = Array.isArray(lstmPayload?.predictions)
+    ? lstmPayload.predictions
+    : Array.isArray(lstmPayload)
+      ? lstmPayload
+      : [];
+
+  const byMachine = {};
+  const curveAgg = {};
+  for (const type of _LSTM_TYPES) {
+    curveAgg[type] = [];
+  }
+
+  for (const pred of lstmPredictions) {
+    const key = `${aiSanitizeFactoryId(pred?.factoryId || pred?.usine || '')}|${Number(pred?.convoyeur ?? 0)}|${Number(pred?.poste ?? 0)}`;
+    byMachine[key] = pred;
+
+    const probs = pred?.lstmProbs || {};
+    for (const type of _LSTM_TYPES) {
+      const value = Number(probs[type]);
+      if (Number.isFinite(value)) curveAgg[type].push(value);
+    }
+  }
+
+  const mergedPredictions = predictions.map((pred) => {
+    const key = `${aiSanitizeFactoryId(pred?.factoryId || pred?.usine || '')}|${Number(pred?.convoyeur ?? 0)}|${Number(pred?.poste ?? 0)}`;
+    const lstm = byMachine[key];
+    if (!lstm) return pred;
+    return {
+      ...pred,
+      lstmProbabilities: lstm.lstmProbs || {},
+    };
+  });
+
+  const mergedCurves = {};
+  for (const [type, curve] of Object.entries(curves)) {
+    const values = curveAgg[type] || [];
+    const avg = values.length > 0
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : null;
+    const max = values.length > 0 ? Math.max(...values) : null;
+    mergedCurves[type] = {
+      ...curve,
+      lstmProbabilities: values.length > 0
+        ? {
+            average: Number(avg.toFixed(4)),
+            max: Number(max.toFixed(4)),
+            sampleSize: values.length,
+          }
+        : null,
+    };
+  }
+
+  return {
+    ...model,
+    curves: mergedCurves,
+    predictions: mergedPredictions,
+    lstmGeneratedAt: lstmPayload?.generatedAt || null,
+  };
+}
+
+function _normalizeLstmProbabilityEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.probabilities && typeof entry.probabilities === 'object') {
+    return entry.probabilities;
+  }
+
+  const direct = {};
+  let found = false;
+  for (const type of _LSTM_TYPES) {
+    const value = Number(entry[type]);
+    if (Number.isFinite(value)) {
+      direct[type] = value;
+      found = true;
+    }
+  }
+  if (Array.isArray(entry.top)) direct.top = entry.top;
+  return found ? direct : null;
+}
+
+async function _runLstmForecast(env, ctx) {
+  const dailyRows = _buildDailyFeatures(ctx?.alertsMap || {});
+  if (dailyRows.length === 0) return [];
+
+  const scaler = _fitGlobalScaler(dailyRows, _LSTM_FEATURE_COLS);
+  const grouped = {};
+  for (const row of dailyRows) {
+    const key = _lstmMachineKey(row);
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(row);
+  }
+
+  const machines = [];
+  for (const rows of Object.values(grouped)) {
+    rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (rows.length < 14) continue;
+
+    const windowRows = rows.slice(-14);
+    const scaledWindow = _scaleFeatures(windowRows, scaler, _LSTM_FEATURE_COLS);
+    machines.push({
+      factoryId: aiSanitizeFactoryId(rows[0].usine || ''),
+      usine: rows[0].usine,
+      convoyeur: Number(rows[0].convoyeur ?? 0),
+      poste: Number(rows[0].poste ?? 0),
+      features: scaledWindow.map((row) => _LSTM_FEATURE_COLS.map((col) => Number(row[col] ?? 0))),
+    });
+  }
+
+  if (machines.length === 0) return [];
+
+  const generatedAt = new Date().toISOString();
+  try {
+    // The live HF endpoint accepts exactly one JSON key: `features`, shaped as
+    // a 3D tensor [machineCount, 14, 8]. Alternate keys like `inputs` / `batch`
+    // and 4D nesting are rejected. Successful responses now arrive as
+    // `{ ok: true, predictions: [...] }`, where each prediction entry lines up
+    // by index with the machine metadata we pushed into the batch tensor.
+    const raw = await fetch(_LSTM_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        features: machines.map((machine) => machine.features),
+      }),
+    });
+    if (!raw.ok) {
+      console.error(`[LSTM] Forecast batch request failed: HTTP ${raw.status}`);
+      return [];
+    }
+
+    const data = await raw.json();
+    if (!data?.ok || !Array.isArray(data?.predictions)) {
+      console.error('[LSTM] Invalid batch response payload');
+      return [];
+    }
+
+    if (data.predictions.length !== machines.length) {
+      console.warn(
+        `[LSTM] Batch response length mismatch: predictions=${data.predictions.length}, machines=${machines.length}`,
+      );
+    }
+
+    const limit = Math.min(data.predictions.length, machines.length);
+    const predictions = [];
+    for (let i = 0; i < limit; i++) {
+      const probs = _normalizeLstmProbabilityEntry(data.predictions[i]);
+      if (!probs) continue;
+      predictions.push({
+        factoryId: machines[i].factoryId,
+        usine: machines[i].usine,
+        convoyeur: machines[i].convoyeur,
+        poste: machines[i].poste,
+        lstmProbs: probs,
+        generatedAt,
+      });
+    }
+    return predictions;
+  } catch (e) {
+    console.error('[LSTM] Forecast batch request failed: ' + e.message);
+    return [];
+  }
 }
 
 // ============ FCM access token and send helper ============
@@ -1536,22 +1916,40 @@ async function handlePredictions(request, env) {
   if (!guard.ok) return guard.response;
 
   try {
+    const url = new URL(request.url);
+    const factoryParamRaw = url.searchParams.get('factory') || null;
+    const factoryParam = factoryParamRaw
+      ? _securitySanitizeText(factoryParamRaw, 128)
+      : null;
+    const factorySlug = factoryParam ? _briefingFactorySlug(factoryParam) : null;
+
     const coreCtx = await loadCoreData(env);
-    const model = buildPredictiveModel(coreCtx.alertsMap || {});
+    const scopedAlertsMap = _filterAlertsMapByFactorySlug(
+      coreCtx.alertsMap || {},
+      factorySlug,
+    );
+    const model = buildPredictiveModel(scopedAlertsMap);
+    const payload = factoryParam ? { ...model, factoryScope: factoryParam } : model;
     // Snapshot to history first (fire-and-forget) so we never lose it even if
     // the latest write somehow fails afterwards.
     const histKey = _historyKey(model.generatedAt);
-    fetch(`${env.FB_DB_URL}ai_predictions/history/${histKey}.json?auth=${coreCtx.token}`, {
+    const latestPath = factorySlug
+      ? `ai_predictions/factory/${factorySlug}/latest.json`
+      : 'ai_predictions/latest.json';
+    const historyPath = factorySlug
+      ? `ai_predictions/factory/${factorySlug}/history/${histKey}.json`
+      : `ai_predictions/history/${histKey}.json`;
+    fetch(`${env.FB_DB_URL}${historyPath}?auth=${coreCtx.token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...model, validated: false }),
+      body: JSON.stringify({ ...payload, validated: false }),
     }).catch(() => {});
-    await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`, {
+    await fetch(`${env.FB_DB_URL}${latestPath}?auth=${coreCtx.token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(model),
+      body: JSON.stringify(payload),
     });
-    return new Response(JSON.stringify(model), {
+    return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -3974,7 +4372,15 @@ function handleConfigRequest() {
 // number of security blocks (rate-limit hits, prompt-injection rejections,
 // anomaly-triggered records) seen during the run. The developer UI subscribes
 // to this node and surfaces every counter in real time.
-async function _writeCronHealth(token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors, securityActions }) {
+async function _writeCronHealth(token, env, {
+  runStart,
+  assignmentsMade,
+  collaborationsApproved,
+  handoversGenerated,
+  errors,
+  securityActions,
+  lstmPredictions,
+}) {
   if (!token || !env?.FB_DB_URL) return;
   try {
     await fetch(`${env.FB_DB_URL}workers/health/lastRun.json?auth=${token}`, {
@@ -3990,6 +4396,7 @@ async function _writeCronHealth(token, env, { runStart, assignmentsMade, collabo
         // New: security agent telemetry. Field is always present so the
         // Flutter side can deserialize without conditional decoding.
         securityActions: Number(securityActions || 0),
+        lstmPredictions: Number(lstmPredictions || 0),
       }),
     });
   } catch (e) {
@@ -4008,6 +4415,7 @@ export default {
         let collaborationsApproved = 0;
         let handoversGenerated = 0;
         let securityActions = 0;
+        let lstmPredictions = 0;
         let cronToken;
         let lockUrl;
 
@@ -4053,7 +4461,15 @@ export default {
         } catch (e) {
           console.error('[CRON] Failed to load core data: ' + e.message);
           healthErrors.push('loadCoreData: ' + e.message);
-          await _writeCronHealth(cronToken, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors, securityActions: carriedOverActions });
+          await _writeCronHealth(cronToken, env, {
+            runStart,
+            assignmentsMade,
+            collaborationsApproved,
+            handoversGenerated,
+            errors: healthErrors,
+            securityActions: carriedOverActions,
+            lstmPredictions,
+          });
           if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
           return;
         }
@@ -4076,6 +4492,61 @@ export default {
         try { await validatePredictions(env, coreCtx); }
         catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
 
+        let basePredictiveModel = null;
+        try {
+          basePredictiveModel = buildPredictiveModel(coreCtx.alertsMap || {});
+          await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(basePredictiveModel),
+          });
+        } catch (e) {
+          console.error('[CRON] buildPredictiveModel: ' + e.message);
+          healthErrors.push('buildPredictiveModel: ' + e.message);
+        }
+
+        try {
+          const lstmForecasts = await _runLstmForecast(env, coreCtx);
+          lstmPredictions = lstmForecasts.length;
+          if (lstmForecasts.length > 0) {
+            await fetch(`${env.FB_DB_URL}ai_predictions/lstm.json?auth=${coreCtx.token}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                generatedAt: new Date().toISOString(),
+                predictions: lstmForecasts,
+              }),
+            });
+
+            let latestModel = basePredictiveModel;
+            try {
+              const latestRes = await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`);
+              if (latestRes.ok) {
+                const latestData = await latestRes.json();
+                if (latestData && typeof latestData === 'object') latestModel = latestData;
+              }
+            } catch (_) {}
+
+            let lstmPayload = { predictions: lstmForecasts, generatedAt: new Date().toISOString() };
+            try {
+              const lstmRes = await fetch(`${env.FB_DB_URL}ai_predictions/lstm.json?auth=${coreCtx.token}`);
+              if (lstmRes.ok) {
+                const lstmData = await lstmRes.json();
+                if (lstmData && typeof lstmData === 'object') lstmPayload = lstmData;
+              }
+            } catch (_) {}
+
+            const enriched = _mergeLstmIntoPredictiveModel(latestModel || {}, lstmPayload);
+            await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(enriched),
+            });
+          }
+        } catch (e) {
+          console.error('[LSTM] Forecast cycle failed: ' + e.message);
+        }
+
         // ── Step 2b: Security AI agent — anomaly scan ──────────────────────────
         // Runs after the core data is fully loaded so it sees the same
         // alertsMap / usersMap the rest of the pipeline saw. Returns the
@@ -4093,7 +4564,15 @@ export default {
         securityActions = carriedOverActions + _securityGetActions();
 
         // ── Step 3: write health pulse ────────────────────────────────────────────
-        await _writeCronHealth(coreCtx.token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors, securityActions });
+        await _writeCronHealth(coreCtx.token, env, {
+          runStart,
+          assignmentsMade,
+          collaborationsApproved,
+          handoversGenerated,
+          errors: healthErrors,
+          securityActions,
+          lstmPredictions,
+        });
 
         // ── Step 4: release lock ──────────────────────────────────────────────────
         if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
@@ -4105,6 +4584,34 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    // ── LSTM prediction endpoint ─────────────────────────────────────────
+    if (url.pathname === '/predict-lstm') {
+      const guard = await _securityGuard(request, env, {
+        endpoint: 'predict-lstm',
+        requireBody: true,
+      });
+      if (!guard.ok) return guard.response;
+
+      try {
+        const hfUrl = 'https://kubixdesiney-alertsys-lstm.hf.space/predict';
+        const raw = await fetch(hfUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ features: guard.body.features }),
+        });
+        const data = await raw.json();
+        return new Response(JSON.stringify(data), {
+          status: raw.ok ? 200 : raw.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ ok: false, error: 'LSTM model unreachable' }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // /config is dirt-cheap but we still apply a rate limit to keep an
@@ -4209,6 +4716,10 @@ export {
   _writeCronHealth,
   validatePredictions,
   _historyKey,
+  _buildDailyFeatures,
+  _fitGlobalScaler,
+  _scaleFeatures,
+  _runLstmForecast,
   processShiftCollaborations,
   suspendAcceptedAssistantAlerts,
   _buildAssistantAlertSuspensionPatch,
