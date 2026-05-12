@@ -20,7 +20,6 @@ class OfflineDatabaseService {
     'notifications',
     'pm_actions',
     'users',
-    'work_instructions',
     'ai_decisions',
     'ai_feedback',
     'ai_master',
@@ -48,7 +47,9 @@ class OfflineDatabaseService {
   }
 
   static Future<void> _keepSynced(
-      FirebaseDatabase database, String path) async {
+    FirebaseDatabase database,
+    String path,
+  ) async {
     try {
       await database.ref(path).keepSynced(true);
     } catch (e) {

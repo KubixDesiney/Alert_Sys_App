@@ -58,7 +58,7 @@ Top-level core files:
 Main source tree:
 - lib/models/: data entities and mapping.
 - lib/providers/: app state containers.
-- lib/screens/: UI flows (dashboard, admin, voice, AR, scanning).
+- lib/screens/: UI flows (dashboard, admin, voice, scanning).
 - lib/services/: business logic, integration logic, IO, notifications, AI/voice.
 - lib/utils/: shared helpers and error formatting.
 - lib/widgets/: reusable UI building blocks.
@@ -138,7 +138,6 @@ Other major models:
 - CollaborationRequest and related collaboration entities.
 - Hierarchy model: factory, conveyor, station structures.
 - Factory map model: layout and visualization data.
-- WorkInstructions model.
 - Predictive model set: MorningBriefing, PredictiveModel, RiskCurve, PredictedFailure, AssigneeSuggestion.
 
 ## G. Realtime Database Structure
@@ -152,7 +151,6 @@ Core paths used by app and worker:
 - supervisor_active_alerts
 - hierarchy
 - assets
-- work_instructions
 - ai_decisions
 - ai_feedback
 - ai_master
@@ -327,8 +325,7 @@ HierarchyService manages factory topology and asset mapping:
 - Maintains asset records and movement history in assets path.
 - Supports station add/update and asset assignment uniqueness cleanup.
 
-WorkInstructionService provides location-aware context:
-- Reads work instructions by alert type.
+LocationAlertService provides location-aware context:
 - Locates active alert at usine/convoyeur/poste and optional asset id.
 - Offers live streams for active and historical location alerts.
 
@@ -1470,7 +1467,7 @@ New file: `lib/screens/admin/developer_tab.dart` (~900 lines) provides real-time
 
 **Organization and Coordination:**
 - lib/services/hierarchy_service.dart: topology, assets, location validation.
-- lib/services/work_instruction_service.dart: location-aware guidance.
+- lib/services/location_alert_service.dart: station scan and location-aware alert history.
 - lib/services/collaboration_service.dart: multi-supervisor coordination and PM approval.
 
 **Shift Management:**
