@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
 
 import 'predictive_models.dart';
+import 'predictive_scope.dart';
 
 /// Aggregated accuracy of past predictive snapshots, written by the worker's
 /// validatePredictions() to ai_predictions/performance/latest.
@@ -26,7 +27,7 @@ class PredictiveAccuracy {
 
 class PredictiveIntelStreamService {
   PredictiveIntelStreamService._({FirebaseDatabase? database})
-      : _db = database ?? FirebaseDatabase.instance;
+    : _db = database ?? FirebaseDatabase.instance;
 
   static final PredictiveIntelStreamService instance =
       PredictiveIntelStreamService._();
@@ -37,17 +38,16 @@ class PredictiveIntelStreamService {
   final Map<String?, StreamController<MorningBriefing?>> _briefingControllers =
       {};
   final Map<String?, MorningBriefing?> _lastBriefings = {};
-  StreamSubscription<DatabaseEvent>? _predictionsSub;
+  final Map<String?, StreamSubscription<DatabaseEvent>> _predictionsSubs = {};
+  final Map<String?, StreamController<PredictiveModel?>>
+  _predictionsControllers = {};
+  final Map<String?, PredictiveModel?> _lastPredictions = {};
   StreamSubscription<DatabaseEvent>? _accuracySub;
-  final _predictionsController = StreamController<PredictiveModel?>.broadcast();
   final _accuracyController = StreamController<PredictiveAccuracy?>.broadcast();
-  PredictiveModel? _lastPredictions;
   PredictiveAccuracy? _lastAccuracy;
 
   Stream<MorningBriefing?> briefingStream({String? factory}) {
-    final key = (factory == null || factory.isEmpty || factory == 'all')
-        ? null
-        : factory;
+    final key = predictiveFactorySlug(factory);
     _ensureBriefingSubscription(key);
     return (() async* {
       if (_lastBriefings.containsKey(key)) {
@@ -57,13 +57,14 @@ class PredictiveIntelStreamService {
     })();
   }
 
-  Stream<PredictiveModel?> predictionsStream() {
-    _ensurePredictionsSubscription();
+  Stream<PredictiveModel?> predictionsStream({String? factory}) {
+    final key = predictiveFactorySlug(factory);
+    _ensurePredictionsSubscription(key);
     return (() async* {
-      if (_lastPredictions != null) {
-        yield _lastPredictions;
+      if (_lastPredictions.containsKey(key)) {
+        yield _lastPredictions[key];
       }
-      yield* _predictionsController.stream;
+      yield* _predictionsControllers[key]!.stream;
     })();
   }
 
@@ -79,14 +80,10 @@ class PredictiveIntelStreamService {
 
   PredictiveAccuracy? get lastAccuracy => _lastAccuracy;
 
-  static String _briefingDbPath(String? key) {
-    if (key == null) return 'ai_briefing/latest';
-    final slug = key
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), '_')
-        .replaceAll(RegExp(r'[^a-z0-9_]'), '');
-    return 'ai_briefing/factory/$slug/latest';
-  }
+  static String _briefingDbPath(String? key) => predictiveBriefingPath(key);
+
+  static String _predictionDbPath(String? key) =>
+      predictivePredictionsPath(key);
 
   void _ensureBriefingSubscription(String? key) {
     if (_briefingSubs.containsKey(key)) return;
@@ -103,32 +100,38 @@ class PredictiveIntelStreamService {
     });
   }
 
-  void _ensurePredictionsSubscription() {
-    _predictionsSub ??=
-        _db.ref('ai_predictions/latest').onValue.listen((event) {
+  void _ensurePredictionsSubscription(String? key) {
+    if (_predictionsSubs.containsKey(key)) return;
+    final ctrl = StreamController<PredictiveModel?>.broadcast();
+    _predictionsControllers[key] = ctrl;
+    _predictionsSubs[key] = _db.ref(_predictionDbPath(key)).onValue.listen((
+      event,
+    ) {
       final value = event.snapshot.value;
+      PredictiveModel? predictions;
       if (value is Map) {
-        _lastPredictions =
-            PredictiveModel.fromMap(Map<String, dynamic>.from(value));
-      } else {
-        _lastPredictions = null;
+        predictions = PredictiveModel.fromMap(Map<String, dynamic>.from(value));
       }
-      _predictionsController.add(_lastPredictions);
+      _lastPredictions[key] = predictions;
+      ctrl.add(predictions);
     });
   }
 
   void _ensureAccuracySubscription() {
-    _accuracySub ??=
-        _db.ref('ai_predictions/performance/latest').onValue.listen((event) {
-      final value = event.snapshot.value;
-      if (value is Map) {
-        _lastAccuracy =
-            PredictiveAccuracy.fromMap(Map<String, dynamic>.from(value));
-      } else {
-        _lastAccuracy = null;
-      }
-      _accuracyController.add(_lastAccuracy);
-    });
+    _accuracySub ??= _db
+        .ref('ai_predictions/performance/latest')
+        .onValue
+        .listen((event) {
+          final value = event.snapshot.value;
+          if (value is Map) {
+            _lastAccuracy = PredictiveAccuracy.fromMap(
+              Map<String, dynamic>.from(value),
+            );
+          } else {
+            _lastAccuracy = null;
+          }
+          _accuracyController.add(_lastAccuracy);
+        });
   }
 
   void dispose() {
@@ -141,9 +144,16 @@ class PredictiveIntelStreamService {
     _briefingSubs.clear();
     _briefingControllers.clear();
     _lastBriefings.clear();
-    _predictionsSub?.cancel();
+    for (final sub in _predictionsSubs.values) {
+      sub.cancel();
+    }
+    for (final ctrl in _predictionsControllers.values) {
+      ctrl.close();
+    }
+    _predictionsSubs.clear();
+    _predictionsControllers.clear();
+    _lastPredictions.clear();
     _accuracySub?.cancel();
-    _predictionsController.close();
     _accuracyController.close();
   }
 }
