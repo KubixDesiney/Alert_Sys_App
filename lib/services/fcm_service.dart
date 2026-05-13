@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -46,10 +47,11 @@ class FcmService {
   static String? _pendingAlertNavId;
   static Timer? _pendingAlertNavTimer;
 
-  // Action ID for the "Speak command" notification action. When the user
-  // taps it (works on the lock screen), Android brings the app forward and
-  // we navigate straight into VoiceClaimScreen.
+  // Action ID for the "Speak command" notification action.
   static const String voiceClaimActionId = 'voice_claim';
+
+  // Action ID for the "Claim Alert" button on new-alert buzz notifications.
+  static const String claimAlertActionId = 'claim_alert';
 
   // Provider injected once at app startup; the FCM callback runs in a
   // detached context so we can't go through `Provider.of(context)`.
@@ -64,6 +66,23 @@ class FcmService {
     playSound: true,
     enableVibration: true,
     audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
+
+  // Dedicated channel for new-alert buzz notifications. The vibration pattern
+  // is set at channel level (Android 8+ ignores per-notification patterns when
+  // a channel pattern is set, so we need a separate channel here).
+  static final AndroidNotificationChannel _buzzChannel =
+      AndroidNotificationChannel(
+    'alerts_new_buzz',
+    'New alert buzz',
+    description: 'Repeating buzz for unclaimed alerts — stops when you claim or dismiss',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+    vibrationPattern: Int64List.fromList(
+      [0, 700, 200, 700, 200, 700, 200, 900, 250, 900, 250, 900],
+    ),
   );
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
@@ -84,12 +103,21 @@ class FcmService {
     await _localNotifications.initialize(
       _initializationSettings(),
       onDidReceiveNotificationResponse: (response) {
-        // Voice claim action opens the dedicated screen above the keyguard.
+        // Voice claim action opens the dedicated screen above the lock screen.
         if (response.actionId == voiceClaimActionId) {
           _navigateToVoiceClaim(response.payload);
           return;
         }
-        // Plain notification tap opens alert detail.
+        // "Claim Alert" button on buzz notifications — navigate to alert detail.
+        if (response.actionId == claimAlertActionId) {
+          final alertId = response.payload;
+          if (alertId != null && alertId.isNotEmpty) {
+            _navigateToAlertDetailById(alertId);
+          }
+          return;
+        }
+        // "Stop Buzzing" action and plain notification tap: open alert detail
+        // if we have a payload, otherwise just bring the app to the foreground.
         final alertId = response.payload;
         if (alertId != null && alertId.isNotEmpty) {
           _navigateToAlertDetailById(alertId);
@@ -324,24 +352,155 @@ class FcmService {
   static Future<void> showVoiceActionNotificationForMessage(
     RemoteMessage message,
   ) async {
-    final alertId = message.data['alertId'];
-    if (alertId == null || alertId.toString().isEmpty) return;
+    final data      = message.data;
+    final alertId   = data['alertId']?.toString() ?? '';
+    final notifType = data['notifType']?.toString() ?? '';
+    final queueType = data['type']?.toString() ?? '';
 
-    final title =
-        message.notification?.title ?? message.data['title'] ?? 'New Alert';
+    final title = message.notification?.title ??
+        data['title'] ??
+        'New Alert';
     final body = message.notification?.body ??
-        message.data['body'] ??
+        data['body'] ??
         'Tap to view details';
-    final id = int.tryParse(message.data['notificationId']?.toString() ?? '') ??
+
+    // Prefer the deterministic ID sent by the worker; fall back to message hash.
+    final id = int.tryParse(data['notificationId']?.toString() ?? '') ??
         message.messageId?.hashCode ??
         message.hashCode;
 
+    // ── New alert: buzz the free supervisor ──────────────────────────────────
+    if (notifType == 'new_alert' && alertId.isNotEmpty) {
+      await _showBuzzNotification(
+        id: id,
+        title: title,
+        body: body,
+        alertId: alertId,
+      );
+      return;
+    }
+
+    // ── Collab / queued notifications may carry an empty alertId ────────────
+    // Show a plain high-priority notification so supervisors still see
+    // collaboration requests, help requests, and critical updates.
+    if (alertId.isEmpty) {
+      if (title.isEmpty && queueType.isEmpty) return;
+      if (!_localNotificationsInitialized) {
+        await _localNotifications.initialize(_initializationSettings());
+        _localNotificationsInitialized = true;
+      }
+      await _ensureAndroidChannel();
+      await _localNotifications.show(
+        id,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'alerts_voice_critical',
+            'Critical voice alerts',
+            importance: Importance.max,
+            priority: Priority.max,
+            icon: '@mipmap/ic_launcher',
+            visibility: NotificationVisibility.public,
+            playSound: true,
+            enableVibration: true,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // ── Standard alert notification (escalation, AI assignment, etc.) ────────
     await _showAlertNotification(
       id: id,
       title: title,
       body: body,
-      alertId: alertId.toString(),
+      alertId: alertId,
     );
+  }
+
+  // Buzzing notification for new unclaimed alerts sent to free supervisors.
+  // Vibration pattern is defined on the _buzzChannel (Android 8+).
+  // Actions:
+  //   • "Stop Buzzing"  — dismisses without opening the app.
+  //   • "Claim Alert"   — dismisses and navigates to the alert detail.
+  static Future<void> _showBuzzNotification({
+    required int id,
+    required String title,
+    required String body,
+    required String alertId,
+  }) async {
+    if (!_localNotificationsInitialized) {
+      await _localNotifications.initialize(_initializationSettings());
+      _localNotificationsInitialized = true;
+    }
+    await _ensureAndroidChannel();
+    await _localNotifications.show(
+      id,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _buzzChannel.id,
+          _buzzChannel.name,
+          channelDescription: _buzzChannel.description,
+          importance: Importance.max,
+          priority: Priority.max,
+          playSound: true,
+          enableVibration: true,
+          icon: '@mipmap/ic_launcher',
+          ticker: title,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.alarm,
+          fullScreenIntent: true,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
+          actions: <AndroidNotificationAction>[
+            const AndroidNotificationAction(
+              'stop_buzzing',
+              'Stop Buzzing',
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+            AndroidNotificationAction(
+              claimAlertActionId,
+              'Claim Alert',
+              icon: const DrawableResourceAndroidBitmap(
+                '@android:drawable/ic_menu_agenda',
+              ),
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+          ],
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          categoryIdentifier: 'alerts_voice',
+        ),
+      ),
+      payload: alertId,
+    );
+  }
+
+  // Cancel a buzzing new-alert notification by alertId. Uses the same
+  // deterministic ID algorithm as the worker (_alertNotifId in JS).
+  // Called from AlertService.takeAlert() after a successful claim so the
+  // supervisor's phone stops buzzing the moment they claim via the app.
+  static Future<void> cancelAlertBuzz(String alertId) async {
+    if (!_localNotificationsInitialized) return;
+    await _localNotifications.cancel(_alertNotifId(alertId));
+  }
+
+  // Stable 31-bit notification ID derived from alertId — mirrors the JS
+  // _alertNotifId() function in cloudflare_notify_worker.js so the ID is
+  // consistent without sharing state across Dart isolates.
+  static int _alertNotifId(String alertId) {
+    var h = 0;
+    for (final c in alertId.codeUnits) {
+      h = (h * 31 + c) % 0x7FFFFFFF;
+    }
+    return h == 0 ? 1 : h;
   }
 
   static InitializationSettings _initializationSettings() {
@@ -375,6 +534,7 @@ class FcmService {
         _localNotifications.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImpl?.createNotificationChannel(_androidChannel);
+    await androidImpl?.createNotificationChannel(_buzzChannel);
   }
 
   static Future<void> _prepareAndroidLockScreenNotifications() async {

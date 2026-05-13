@@ -52,16 +52,16 @@ class WorkerTriggerQueue {
   }
 
   Future<void> enqueueNotify() {
-    return enqueuePost(Uri.parse('${AppConfig.workerBaseUrl}/notify'));
+    return enqueuePost(Uri.parse(AppConfig.notifyEndpoint));
   }
 
   Future<void> enqueueAiRetry() {
-    return enqueuePost(Uri.parse('${AppConfig.workerBaseUrl}/ai-retry'));
+    return enqueuePost(Uri.parse(AppConfig.aiRetryEndpoint));
   }
 
   Future<void> enqueueAlertTrigger(String alertId) {
     return enqueuePost(
-      Uri.parse('${AppConfig.workerBaseUrl}/'),
+      Uri.parse(AppConfig.notifyTriggerEndpoint),
       jsonBody: {'alertId': alertId},
     );
   }

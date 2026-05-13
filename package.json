@@ -7,7 +7,10 @@
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "deploy": "wrangler deploy --config wrangler.toml"
+    "deploy": "npm run deploy:workers",
+    "deploy:ai": "wrangler deploy --config wrangler.ai.toml",
+    "deploy:notify": "wrangler deploy --config wrangler.notify.toml",
+    "deploy:workers": "npm run deploy:ai && npm run deploy:notify"
   },
   "devDependencies": {
     "jest": "^29.7.0",

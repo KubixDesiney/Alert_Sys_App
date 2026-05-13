@@ -21,6 +21,11 @@
         "description": { ".validate": "!newData.exists() || newData.isString()" },
         "status": { ".validate": "!newData.exists() || newData.isString()" },
         "push_sent": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "push_sending": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "push_sending_at": { ".validate": "!newData.exists() || newData.isString()" },
+        "push_sent_at": { ".validate": "!newData.exists() || newData.isString()" },
+        "push_last_error_at": { ".validate": "!newData.exists() || newData.isString()" },
+        "notificationSent": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "isCritical": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "aiHistory": {
           ".read": "auth != null",

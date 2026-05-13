@@ -3,9 +3,9 @@ import { processAlerts } from './alerts.js';
 import { handleAiProxy, handleAiSuggest } from './ai_suggest.js';
 import { handleAutoFix, handleAutoFixFull } from './auto_fix.js';
 import { handleBriefing } from './briefing.js';
-import { corsHeaders, handleConfigRequest } from './config.js';
+import { corsHeaders, handleConfigRequest, MAX_CRON_FANOUT, VALIDATION_CRON_INTERVAL_MIN } from './config.js';
 import { checkEscalations } from './escalation.js';
-import { fanOutPendingNotifications, getFcmTokensForFactory, notifTitle } from './fcm.js';
+import { fanOutPendingNotifications, getFcmRecipientsForFactory, getFcmTokensForFactory, notifTitle } from './fcm.js';
 import { _writeCronHealth } from './health.js';
 import { loadCoreData } from './load_core.js';
 import { buildPredictiveModel, handlePredictions, handleValidatePredictions, validatePredictions } from './predictive.js';
@@ -13,6 +13,11 @@ import { buildSupStats, countActiveSupervisorsInFactory, scoreSupervisor } from 
 import { handleShiftAiAction, processShiftCollaborations, processShiftEnding, runAIAssignments, suspendAcceptedAssistantAlerts } from './shift_commander.js';
 import { handleSuggestAssignee } from './suggest_assignee.js';
 import { _aggregateWeek, _briefingDateKey, _briefingFactorySlug, _historyKey, _shiftContainsTime, _toMs, _topSupervisorWeek, _typeName, aiResolveFactory, aiSanitizeFactoryId, pickActiveShift } from './utils.js';
+
+function _cronEvery(runStartMs, intervalMin) {
+  const minutes = Math.max(1, Number(intervalMin) || 1);
+  return Math.floor(runStartMs / 60000) % minutes === 0;
+}
 
 export default {
   async scheduled(event, env, ctx) {
@@ -76,8 +81,13 @@ export default {
         try { handoversGenerated = (await processShiftEnding(env, coreCtx)) ?? 0; }
         catch (e) { console.error('[CRON] processShiftEnding: ' + e.message); healthErrors.push('processShiftEnding: ' + e.message); }
 
-        try { await validatePredictions(env, coreCtx); }
-        catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
+        if (_cronEvery(runStart, VALIDATION_CRON_INTERVAL_MIN)) {
+          try { await validatePredictions(env, coreCtx); }
+          catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
+        }
+
+        try { await fanOutPendingNotifications(env, coreCtx, { limit: MAX_CRON_FANOUT }); }
+        catch (e) { console.error('[CRON] fanOutPendingNotifications: ' + e.message); healthErrors.push('fanOutPendingNotifications: ' + e.message); }
 
         await _writeCronHealth(coreCtx.token, env, { runStart, assignmentsMade, collaborationsApproved, handoversGenerated, errors: healthErrors });
 
@@ -127,10 +137,11 @@ export default {
 
     try {
       const coreCtx = await loadCoreData(env);
-      await runAIAssignments(env, coreCtx);
       await processAlerts(env, coreCtx);
       await checkEscalations(env, coreCtx);
+      await runAIAssignments(env, coreCtx);
       await processShiftCollaborations(env, coreCtx);
+      await fanOutPendingNotifications(env, coreCtx);
     } catch (e) {
       console.error('[MANUAL] Error: ' + e.message);
     }
@@ -147,6 +158,7 @@ export {
   buildPredictiveModel,
   notifTitle,
   base64UrlEncode,
+  getFcmRecipientsForFactory,
   getFcmTokensForFactory,
   _toMs,
   _briefingDateKey,
@@ -160,6 +172,8 @@ export {
   validatePredictions,
   _historyKey,
   runAIAssignments,
+  processAlerts,
+  checkEscalations,
   processShiftCollaborations,
   suspendAcceptedAssistantAlerts,
 };

@@ -1,6 +1,6 @@
 import { getFirebaseToken } from './auth.js';
 import { corsHeaders } from './config.js';
-import { sendFcm } from './fcm.js';
+import { fanOutPendingNotifications, sendFcm } from './fcm.js';
 import { loadCoreData } from './load_core.js';
 import { AI_ACTIVE_STATUSES, AI_COOLDOWN_MS, buildSupStats, countActiveSupervisorsInFactory, scoreSupervisor } from './scoring.js';
 import { _shiftContainsTime, _toMs, aiResolveFactory, aiSanitizeFactoryId, pickActiveShift } from './utils.js';
@@ -1328,6 +1328,9 @@ async function handleShiftAiAction(request, env) {
       // Re-run AI assignment + collaboration approval immediately.
       const assignedCount = await runAIAssignments(env, actionCtx);
       const collaborationCount = await processShiftCollaborations(env, actionCtx);
+      if (collaborationCount > 0) {
+        await fanOutPendingNotifications(env, actionCtx);
+      }
       if (targetShiftId && assignedCount === 0 && collaborationCount === 0) {
         await writeShiftAiLog(env, coreCtx.token, targetShiftId, {
           kind: 'idle',

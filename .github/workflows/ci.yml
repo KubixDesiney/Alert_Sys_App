@@ -172,11 +172,11 @@ jobs:
 
       - name: Build Android APK (debug)
         if: steps.tests.outcome == 'success'
-        run: flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_WORKER_URL=${{ vars.WORKER_URL }}
+        run: flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
       - name: Build Web release
         if: steps.tests.outcome == 'success'
-        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev
+        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
       - name: Upload web build artefact
         if: steps.tests.outcome == 'success'
@@ -188,7 +188,7 @@ jobs:
           retention-days: 7
 
   worker:
-    name: Cloudflare Worker (Jest + deploy)
+    name: Cloudflare Workers (Jest + deploy)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -203,7 +203,7 @@ jobs:
 
       - run: npm test
 
-      - name: Deploy worker (only on non‑AI‑fix pushes to main)
+      - name: Deploy workers (only on non‑AI‑fix pushes to main)
         if: >
           github.event_name == 'push' &&
           github.ref == 'refs/heads/main' &&
@@ -211,4 +211,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy --config wrangler.toml
+        run: |
+          npx wrangler deploy --config wrangler.ai.toml
+          npx wrangler deploy --config wrangler.notify.toml
