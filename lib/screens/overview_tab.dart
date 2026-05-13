@@ -414,11 +414,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   bool _briefingWarmed = false;
   bool _predictionsWarmed = false;
 
-  // Pagination state for the alert history list.
-  int _pageSize = 10;
-  int _pageIndex = 0;
-
-  static const _pageSizeOptions = [5, 10, 25, 50, 100];
 
   @override
   void initState() {
@@ -675,38 +670,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
 
   int get _criticalUnclaimedCount => _criticalUnclaimedAlerts.length;
 
-  List<AlertModel> get _displayedAlerts {
-    if (_historyFilter == null) return widget.alerts;
-    switch (_historyFilter) {
-      case 'total':
-        return widget.alerts;
-      case 'validated':
-        return widget.alerts.where((a) => a.status == 'validee').toList();
-      case 'en_cours':
-        return widget.alerts.where((a) => a.status == 'en_cours').toList();
-      case 'pending':
-        return widget.alerts.where((a) => a.status == 'disponible').toList();
-      case 'qualite':
-        return widget.alerts.where((a) => a.type == 'qualite').toList();
-      case 'critical':
-        return widget.alerts.where((a) => a.isCritical).toList();
-      case 'maintenance':
-        return widget.alerts.where((a) => a.type == 'maintenance').toList();
-      case 'defaut_produit':
-        return widget.alerts.where((a) => a.type == 'defaut_produit').toList();
-      case 'manque_ressource':
-        return widget.alerts
-            .where((a) => a.type == 'manque_ressource')
-            .toList();
-      default:
-        return widget.alerts;
-    }
-  }
-
   void _setHistoryFilter(String? filter) {
     setState(() {
       _historyFilter = (_historyFilter == filter) ? null : filter;
-      _pageIndex = 0;
     });
   }
 
@@ -1003,7 +969,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
             widget.onReset();
             setState(() {
               _historyFilter = null;
-              _pageIndex = 0;
             });
           },
         ),
@@ -1019,7 +984,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     if (widget.filterPoste != 'all') n++;
     if (widget.filterType != 'all') n++;
     if (widget.filterStatus != 'all') n++;
-    if (_historyFilter != null) n++;
     return n;
   }
 
@@ -1052,7 +1016,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
             widget.onReset();
             setState(() {
               _historyFilter = null;
-              _pageIndex = 0;
             });
           },
         );
@@ -1128,41 +1091,17 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           ],
         );
 
-        final pages = _displayedAlerts;
-        final pageCount = pages.isEmpty
-            ? 1
-            : ((pages.length + _pageSize - 1) ~/ _pageSize);
-        final clampedPage = _pageIndex.clamp(0, pageCount - 1);
-        final start = clampedPage * _pageSize;
-        final end = math.min(start + _pageSize, pages.length);
-        final pageItems = pages.sublist(start, end);
-
         final historyBox = _AlertHistoryBox(
-          alerts: pages,
-          pageItems: pageItems,
-          pageIndex: clampedPage,
-          pageCount: pageCount,
-          pageSize: _pageSize,
-          pageSizeOptions: _pageSizeOptions,
-          activeFilterChip: _historyFilter,
-          onClearChip: () => setState(() => _historyFilter = null),
-          onPageSizeChange: (s) => setState(() {
-            _pageSize = s;
-            _pageIndex = 0;
-          }),
-          onPrev: clampedPage > 0
-              ? () => setState(() => _pageIndex = clampedPage - 1)
-              : null,
-          onNext: clampedPage < pageCount - 1
-              ? () => setState(() => _pageIndex = clampedPage + 1)
-              : null,
-          onOpenFilters: _openFilterSheet,
-          onCsv: () => _exportFilteredAlerts(pages),
-          onPdf: () => _exportFilteredAlertsPdf(pages),
-          onExcel: () => _exportFilteredAlertsExcel(pages),
+          allAlerts: widget.allAlerts,
+          quickFilter: _historyFilter,
+          onClearQuickFilter: () => setState(() => _historyFilter = null),
+          factories: _factories,
           scope: widget.selectedUsine == 'all'
               ? 'All Plants'
               : widget.selectedUsine,
+          onExportCsv: _exportFilteredAlerts,
+          onExportPdf: _exportFilteredAlertsPdf,
+          onExportExcel: _exportFilteredAlertsExcel,
         );
 
         final predictiveRow = LayoutBuilder(
@@ -1873,49 +1812,675 @@ class _FactoryMasterBar extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ALERT HISTORY BOX — scrollable list with filter icon, paging, exports.
+// HISTORY FILTERS — data class holding local filter state for the history box
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _AlertHistoryBox extends StatelessWidget {
-  final List<AlertModel> alerts;
-  final List<AlertModel> pageItems;
-  final int pageIndex;
-  final int pageCount;
-  final int pageSize;
-  final List<int> pageSizeOptions;
-  final String? activeFilterChip;
-  final VoidCallback onClearChip;
-  final void Function(int) onPageSizeChange;
-  final VoidCallback? onPrev;
-  final VoidCallback? onNext;
-  final VoidCallback onOpenFilters;
-  final VoidCallback onCsv;
-  final VoidCallback onPdf;
-  final VoidCallback onExcel;
-  final String scope;
-
-  const _AlertHistoryBox({
-    required this.alerts,
-    required this.pageItems,
-    required this.pageIndex,
-    required this.pageCount,
-    required this.pageSize,
-    required this.pageSizeOptions,
-    required this.activeFilterChip,
-    required this.onClearChip,
-    required this.onPageSizeChange,
-    required this.onPrev,
-    required this.onNext,
-    required this.onOpenFilters,
-    required this.onCsv,
-    required this.onPdf,
-    required this.onExcel,
-    required this.scope,
+class _HistoryFilters {
+  final String factory, conveyeur, poste, type, status, critical, timeRange;
+  const _HistoryFilters({
+    required this.factory,
+    required this.conveyeur,
+    required this.poste,
+    required this.type,
+    required this.status,
+    required this.critical,
+    required this.timeRange,
   });
+
+  bool get hasActive =>
+      factory != 'all' ||
+      conveyeur != 'all' ||
+      poste != 'all' ||
+      type != 'all' ||
+      status != 'all' ||
+      critical != 'all' ||
+      timeRange != 'all';
+
+  int get activeCount =>
+      [factory, conveyeur, poste, type, status, critical, timeRange]
+          .where((v) => v != 'all')
+          .length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HISTORY FILTER SHEET — self-contained StatefulWidget dialog
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _HistoryFilterSheet extends StatefulWidget {
+  final _HistoryFilters current;
+  final List<String> factories;
+  final List<Factory> rawFactories;
+  final List<AlertModel> allAlerts;
+
+  const _HistoryFilterSheet({
+    required this.current,
+    required this.factories,
+    required this.rawFactories,
+    required this.allAlerts,
+  });
+
+  @override
+  State<_HistoryFilterSheet> createState() => _HistoryFilterSheetState();
+}
+
+class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
+  late String _factory;
+  late String _conveyeur;
+  late String _poste;
+  late String _type;
+  late String _status;
+  late String _critical;
+  late String _timeRange;
+
+  @override
+  void initState() {
+    super.initState();
+    _factory = widget.current.factory;
+    _conveyeur = widget.current.conveyeur;
+    _poste = widget.current.poste;
+    _type = widget.current.type;
+    _status = widget.current.status;
+    _critical = widget.current.critical;
+    _timeRange = widget.current.timeRange;
+  }
+
+  List<String> _conveyeurOptions() {
+    if (_factory == 'all') {
+      final vals = <String>{};
+      for (final a in widget.allAlerts) {
+        final cv = a.convoyeur.toString();
+        if (cv.isNotEmpty && cv != '0') vals.add(cv);
+      }
+      return ['all', ...vals.toList()..sort()];
+    }
+    Factory? fac;
+    for (final f in widget.rawFactories) {
+      if (f.name == _factory) {
+        fac = f;
+        break;
+      }
+    }
+    if (fac == null) return ['all'];
+    return ['all', ...fac.conveyors.values.map((c) => c.number.toString())];
+  }
+
+  List<String> _posteOptions() {
+    if (_conveyeur == 'all') return ['all'];
+    if (_factory != 'all') {
+      Factory? fac;
+      for (final f in widget.rawFactories) {
+        if (f.name == _factory) {
+          fac = f;
+          break;
+        }
+      }
+      if (fac != null) {
+        Conveyor? conv;
+        for (final c in fac.conveyors.values) {
+          if (c.number.toString() == _conveyeur) {
+            conv = c;
+            break;
+          }
+        }
+        if (conv != null) {
+          return [
+            'all',
+            ...conv.stations.values.map((s) => s.id.replaceAll('station_', '')),
+          ];
+        }
+      }
+    }
+    // Fallback: build from alerts for that conveyor
+    final vals = <String>{};
+    for (final a in widget.allAlerts) {
+      if (a.convoyeur.toString() == _conveyeur) {
+        final p = a.poste.toString();
+        if (p.isNotEmpty && p != '0') vals.add(p);
+      }
+    }
+    return ['all', ...vals.toList()..sort()];
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
+    final conveyeurOpts = _conveyeurOptions();
+    final posteOpts = _posteOptions();
+
+    // Ensure current values are valid given the options
+    final safeConveyeur = conveyeurOpts.contains(_conveyeur) ? _conveyeur : 'all';
+    final safePoste = posteOpts.contains(_poste) ? _poste : 'all';
+
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final maxHeight = c.maxHeight > 0 ? c.maxHeight * 0.92 : 780.0;
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 820, maxHeight: maxHeight),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.card,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: theme.border),
+                ),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+                  shrinkWrap: true,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: theme.border,
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: theme.navy.withValues(alpha: 0.13),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.tune_rounded,
+                            size: 18,
+                            color: theme.navy,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'History Filters',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  color: theme.text,
+                                ),
+                              ),
+                              Text(
+                                'Refine alert history only — dashboard stats are unaffected',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: theme.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _factory = 'all';
+                              _conveyeur = 'all';
+                              _poste = 'all';
+                              _type = 'all';
+                              _status = 'all';
+                              _critical = 'all';
+                              _timeRange = 'all';
+                            });
+                          },
+                          icon: const Icon(Icons.refresh_rounded, size: 14),
+                          label: const Text(
+                            'Reset',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: theme.red,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    // Plant
+                    _FilterDropdown(
+                      label: 'Plant',
+                      value: _factory,
+                      items: widget.factories
+                          .map(
+                            (v) => DropdownMenuItem(
+                              value: v,
+                              child: Text(
+                                v == 'all' ? 'All Plants' : v,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        setState(() {
+                          _factory = v;
+                          _conveyeur = 'all';
+                          _poste = 'all';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    // Conveyor
+                    _FilterDropdown(
+                      label: 'Conveyor',
+                      value: safeConveyeur,
+                      items: conveyeurOpts
+                          .map(
+                            (v) => DropdownMenuItem(
+                              value: v,
+                              child: Text(
+                                v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        setState(() {
+                          _conveyeur = v;
+                          _poste = 'all';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    // Workstation
+                    _FilterDropdown(
+                      label: 'Workstation',
+                      value: safePoste,
+                      items: posteOpts
+                          .map(
+                            (v) => DropdownMenuItem(
+                              value: v,
+                              child: Text(
+                                v == 'all' ? 'All Workstations' : 'WS $v',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _poste = v),
+                    ),
+                    const SizedBox(height: 10),
+                    // Alert Type
+                    _FilterDropdown(
+                      label: 'Alert Type',
+                      value: _type,
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text(
+                            'All Types',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        ...[
+                          'qualite',
+                          'maintenance',
+                          'defaut_produit',
+                          'manque_ressource',
+                        ].map(
+                          (t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(
+                              adminTypeLabel(context, t),
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) => setState(() => _type = v),
+                    ),
+                    const SizedBox(height: 10),
+                    // Status
+                    _FilterDropdown(
+                      label: 'Status',
+                      value: _status,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text(
+                            'All Statuses',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'disponible',
+                          child: Text(
+                            'Pending',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'en_cours',
+                          child: Text(
+                            'Claimed',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'validee',
+                          child: Text(
+                            'Fixed',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) => setState(() => _status = v),
+                    ),
+                    const SizedBox(height: 10),
+                    // Criticality — toggle chips
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CRITICALITY',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: theme.muted,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            for (final opt in [
+                              ('all', 'All'),
+                              ('critical', 'Critical Only'),
+                              ('normal', 'Normal Only'),
+                            ]) ...[
+                              ChoiceChip(
+                                label: Text(
+                                  opt.$2,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: _critical == opt.$1
+                                        ? Colors.white
+                                        : theme.text,
+                                  ),
+                                ),
+                                selected: _critical == opt.$1,
+                                selectedColor: theme.navy,
+                                backgroundColor: theme.scaffold,
+                                side: BorderSide(
+                                  color: _critical == opt.$1
+                                      ? theme.navy
+                                      : theme.border,
+                                ),
+                                onSelected: (_) =>
+                                    setState(() => _critical = opt.$1),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Time Range
+                    _FilterDropdown(
+                      label: 'Time Range',
+                      value: _timeRange,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all',
+                          child: Text(
+                            'All Time',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'today',
+                          child: Text('Today', style: TextStyle(fontSize: 13)),
+                        ),
+                        DropdownMenuItem(
+                          value: 'week',
+                          child: Text(
+                            'Last 7 Days',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'month',
+                          child: Text(
+                            'This Month',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        DropdownMenuItem(
+                          value: 'year',
+                          child: Text(
+                            'This Year',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ],
+                      onChanged: (v) => setState(() => _timeRange = v),
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop(
+                          _HistoryFilters(
+                            factory: _factory,
+                            conveyeur: safeConveyeur,
+                            poste: safePoste,
+                            type: _type,
+                            status: _status,
+                            critical: _critical,
+                            timeRange: _timeRange,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.check_rounded, size: 16),
+                      label: const Text(
+                        'Apply',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.navy,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ALERT HISTORY BOX — self-contained StatefulWidget with own filter state
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _AlertHistoryBox extends StatefulWidget {
+  final List<AlertModel> allAlerts;
+  final String? quickFilter;
+  final VoidCallback onClearQuickFilter;
+  final List<Factory> factories;
+  final String scope;
+  final void Function(List<AlertModel>) onExportCsv;
+  final void Function(List<AlertModel>) onExportPdf;
+  final void Function(List<AlertModel>) onExportExcel;
+
+  const _AlertHistoryBox({
+    required this.allAlerts,
+    required this.quickFilter,
+    required this.onClearQuickFilter,
+    required this.factories,
+    required this.scope,
+    required this.onExportCsv,
+    required this.onExportPdf,
+    required this.onExportExcel,
+  });
+
+  @override
+  State<_AlertHistoryBox> createState() => _AlertHistoryBoxState();
+}
+
+class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
+  String _factory = 'all';
+  String _conveyeur = 'all';
+  String _poste = 'all';
+  String _type = 'all';
+  String _status = 'all';
+  String _critical = 'all';
+  String _timeRange = 'all';
+  int _pageIndex = 0;
+  int _pageSize = 10;
+  static const _pageSizeOptions = [5, 10, 25, 50, 100];
+
+  List<String> _factoryOptions() {
+    final names = <String>{};
+    for (final f in widget.factories) {
+      if (f.name.isNotEmpty) names.add(f.name);
+    }
+    for (final a in widget.allAlerts) {
+      if (a.usine.isNotEmpty && a.usine != 'all') names.add(a.usine);
+    }
+    return ['all', ...names.toList()..sort()];
+  }
+
+  List<AlertModel> get _filteredAlerts {
+    final now = DateTime.now();
+    return widget.allAlerts.where((a) {
+      if (_factory != 'all' && a.usine != _factory) return false;
+      if (_conveyeur != 'all' && a.convoyeur.toString() != _conveyeur) {
+        return false;
+      }
+      if (_poste != 'all' && a.poste.toString() != _poste) return false;
+      if (_type != 'all' && a.type != _type) return false;
+      if (_status != 'all' && a.status != _status) return false;
+      if (_critical == 'critical' && !a.isCritical) return false;
+      if (_critical == 'normal' && a.isCritical) return false;
+      switch (_timeRange) {
+        case 'today':
+          if (!(a.timestamp.year == now.year &&
+              a.timestamp.month == now.month &&
+              a.timestamp.day == now.day)) { return false; }
+        case 'week':
+          if (now.difference(a.timestamp).inDays > 7) { return false; }
+        case 'month':
+          if (!(a.timestamp.year == now.year &&
+              a.timestamp.month == now.month)) { return false; }
+        case 'year':
+          if (a.timestamp.year != now.year) { return false; }
+      }
+      if (widget.quickFilter != null) {
+        switch (widget.quickFilter) {
+          case 'pending':
+            if (a.status != 'disponible') return false;
+          case 'en_cours':
+            if (a.status != 'en_cours') return false;
+          case 'validated':
+            if (a.status != 'validee') return false;
+          case 'critical':
+            if (!a.isCritical) return false;
+          case 'qualite':
+            if (a.type != 'qualite') return false;
+          case 'maintenance':
+            if (a.type != 'maintenance') return false;
+          case 'defaut_produit':
+            if (a.type != 'defaut_produit') return false;
+          case 'manque_ressource':
+            if (a.type != 'manque_ressource') return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
+  int get _activeAdvancedFilterCount =>
+      [_factory, _conveyeur, _poste, _type, _status, _critical, _timeRange]
+          .where((v) => v != 'all')
+          .length;
+
+  void _openFilterSheet() {
+    showDialog<_HistoryFilters>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: _HistoryFilterSheet(
+          current: _HistoryFilters(
+            factory: _factory,
+            conveyeur: _conveyeur,
+            poste: _poste,
+            type: _type,
+            status: _status,
+            critical: _critical,
+            timeRange: _timeRange,
+          ),
+          factories: _factoryOptions(),
+          rawFactories: widget.factories,
+          allAlerts: widget.allAlerts,
+        ),
+      ),
+    ).then((result) {
+      if (result != null && mounted) {
+        setState(() {
+          _factory = result.factory;
+          _conveyeur = result.conveyeur;
+          _poste = result.poste;
+          _type = result.type;
+          _status = result.status;
+          _critical = result.critical;
+          _timeRange = result.timeRange;
+          _pageIndex = 0;
+        });
+      }
+    });
+  }
+
+  String _chipLabel(BuildContext ctx, String key) {
+    switch (key) {
+      case 'pending':
+        return 'PENDING';
+      case 'en_cours':
+        return 'CLAIMED';
+      case 'validated':
+        return 'FIXED';
+      case 'critical':
+        return 'CRITICAL';
+      case 'total':
+        return 'TOTAL';
+      default:
+        return adminTypeLabel(ctx, key).toUpperCase();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    final filtered = _filteredAlerts;
+    final pageCount =
+        filtered.isEmpty ? 1 : ((filtered.length + _pageSize - 1) ~/ _pageSize);
+    final clampedPage = _pageIndex.clamp(0, pageCount - 1);
+    final start = clampedPage * _pageSize;
+    final end = math.min(start + _pageSize, filtered.length);
+    final pageItems = filtered.sublist(start, end);
+    final advCount = _activeAdvancedFilterCount;
+
     return Container(
       decoration: BoxDecoration(
         color: theme.card,
@@ -1965,7 +2530,7 @@ class _AlertHistoryBox extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${alerts.length} alert${alerts.length == 1 ? '' : 's'} · $scope',
+                        '${filtered.length} alert${filtered.length == 1 ? '' : 's'} · ${widget.scope}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -1977,28 +2542,64 @@ class _AlertHistoryBox extends StatelessWidget {
                     ],
                   ),
                 ),
-                OutlinedButton.icon(
-                  onPressed: onOpenFilters,
-                  icon: const Icon(Icons.tune_rounded, size: 14),
-                  label: const Text(
-                    'Filters',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.navy,
-                    side: BorderSide(color: theme.border),
-                    backgroundColor: theme.scaffold,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+                // Filter button with active count badge
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _openFilterSheet,
+                      icon: const Icon(Icons.tune_rounded, size: 14),
+                      label: const Text(
+                        'Filters',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: advCount > 0 ? theme.navy : theme.navy,
+                        side: BorderSide(
+                          color: advCount > 0 ? theme.navy : theme.border,
+                          width: advCount > 0 ? 1.5 : 1.0,
+                        ),
+                        backgroundColor: theme.scaffold,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                  ),
+                    if (advCount > 0)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: theme.navy,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '$advCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(width: 8),
-                if (activeFilterChip != null) ...[
+                // Quick filter chip from stat card click
+                if (widget.quickFilter != null) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -2021,7 +2622,7 @@ class _AlertHistoryBox extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          _chipLabel(context, activeFilterChip!),
+                          _chipLabel(context, widget.quickFilter!),
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.w800,
@@ -2030,7 +2631,7 @@ class _AlertHistoryBox extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         GestureDetector(
-                          onTap: onClearChip,
+                          onTap: widget.onClearQuickFilter,
                           child: Icon(
                             Icons.close,
                             size: 12,
@@ -2080,7 +2681,7 @@ class _AlertHistoryBox extends StatelessWidget {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<int>(
-                      value: pageSize,
+                      value: _pageSize,
                       isDense: true,
                       style: TextStyle(
                         fontSize: 12,
@@ -2088,7 +2689,7 @@ class _AlertHistoryBox extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                       dropdownColor: theme.card,
-                      items: pageSizeOptions
+                      items: _pageSizeOptions
                           .map(
                             (s) => DropdownMenuItem(
                               value: s,
@@ -2104,7 +2705,12 @@ class _AlertHistoryBox extends StatelessWidget {
                           )
                           .toList(),
                       onChanged: (v) {
-                        if (v != null) onPageSizeChange(v);
+                        if (v != null) {
+                          setState(() {
+                            _pageSize = v;
+                            _pageIndex = 0;
+                          });
+                        }
                       },
                     ),
                   ),
@@ -2120,7 +2726,9 @@ class _AlertHistoryBox extends StatelessWidget {
                 ),
                 const Spacer(),
                 IconButton(
-                  onPressed: onPrev,
+                  onPressed: clampedPage > 0
+                      ? () => setState(() => _pageIndex = clampedPage - 1)
+                      : null,
                   icon: const Icon(Icons.chevron_left_rounded),
                   iconSize: 20,
                   padding: EdgeInsets.zero,
@@ -2142,7 +2750,7 @@ class _AlertHistoryBox extends StatelessWidget {
                     borderRadius: BorderRadius.circular(7),
                   ),
                   child: Text(
-                    '${pageIndex + 1} / $pageCount',
+                    '${clampedPage + 1} / $pageCount',
                     style: TextStyle(
                       fontSize: 11,
                       color: theme.navy,
@@ -2151,7 +2759,9 @@ class _AlertHistoryBox extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  onPressed: onNext,
+                  onPressed: clampedPage < pageCount - 1
+                      ? () => setState(() => _pageIndex = clampedPage + 1)
+                      : null,
                   icon: const Icon(Icons.chevron_right_rounded),
                   iconSize: 20,
                   padding: EdgeInsets.zero,
@@ -2171,31 +2781,14 @@ class _AlertHistoryBox extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
             child: _ExportMenuButton(
-              onCsv: onCsv,
-              onPdf: onPdf,
-              onExcel: onExcel,
+              onCsv: () => widget.onExportCsv(filtered),
+              onPdf: () => widget.onExportPdf(filtered),
+              onExcel: () => widget.onExportExcel(filtered),
             ),
           ),
         ],
       ),
     );
-  }
-
-  String _chipLabel(BuildContext ctx, String key) {
-    switch (key) {
-      case 'pending':
-        return 'PENDING';
-      case 'en_cours':
-        return 'CLAIMED';
-      case 'validated':
-        return 'FIXED';
-      case 'critical':
-        return 'CRITICAL';
-      case 'total':
-        return 'TOTAL';
-      default:
-        return adminTypeLabel(ctx, key).toUpperCase();
-    }
   }
 }
 
@@ -2788,7 +3381,7 @@ class _AlertHistoryRow extends StatelessWidget {
 // Each option shows its brand color on hover; default background is white.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _ExportMenuButton extends StatefulWidget {
+class _ExportMenuButton extends StatelessWidget {
   final VoidCallback onCsv;
   final VoidCallback onPdf;
   final VoidCallback onExcel;
@@ -2798,86 +3391,34 @@ class _ExportMenuButton extends StatefulWidget {
     required this.onExcel,
   });
 
-  @override
-  State<_ExportMenuButton> createState() => _ExportMenuButtonState();
-}
-
-class _ExportMenuButtonState extends State<_ExportMenuButton> {
-  // Brand colours
   static const _excelGreen = Color(0xFF1D6F42);
   static const _pdfRed = Color(0xFFEC1C24);
   static const _csvBlue = Color(0xFF0072C6);
 
   @override
   Widget build(BuildContext context) {
-    final theme = context.appTheme;
     final isDark = context.isDark;
-    final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
     final borderColor = isDark
         ? const Color(0xFF3A3A5C)
         : const Color(0xFFDDE1EC);
 
-    return SizedBox(
-      width: double.infinity,
-      child: MenuAnchor(
-        style: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(baseBg),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-              side: BorderSide(color: borderColor),
+    OutlinedButton makeBtn({
+      required Widget icon,
+      required String label,
+      required Color color,
+      required VoidCallback onTap,
+    }) =>
+        OutlinedButton.icon(
+          onPressed: onTap,
+          icon: icon,
+          label: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
-          ),
-          elevation: const WidgetStatePropertyAll(4),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(vertical: 4),
-          ),
-        ),
-        menuChildren: [
-          _ExportMenuItem(
-            icon: _csvIcon(baseText),
-            label: 'CSV',
-            hoverColor: _csvBlue,
-            onTap: widget.onCsv,
-            baseBg: baseBg,
-            baseText: baseText,
-          ),
-          _ExportMenuItem(
-            icon: _pdfIcon(),
-            label: 'PDF',
-            hoverColor: _pdfRed,
-            onTap: widget.onPdf,
-            baseBg: baseBg,
-            baseText: baseText,
-          ),
-          _ExportMenuItem(
-            icon: _excelIcon(),
-            label: 'Excel',
-            hoverColor: _excelGreen,
-            onTap: widget.onExcel,
-            baseBg: baseBg,
-            baseText: baseText,
-          ),
-        ],
-        builder: (context, controller, _) => OutlinedButton.icon(
-          onPressed: () =>
-              controller.isOpen ? controller.close() : controller.open(),
-          icon: Icon(Icons.download_outlined, size: 15, color: theme.navy),
-          label: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Export',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: theme.navy,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.arrow_drop_down, size: 16, color: theme.navy),
-            ],
           ),
           style: OutlinedButton.styleFrom(
             backgroundColor: baseBg,
@@ -2887,144 +3428,38 @@ class _ExportMenuButtonState extends State<_ExportMenuButton> {
               borderRadius: BorderRadius.circular(9),
             ),
           ),
+        );
+
+    return Row(
+      children: [
+        Expanded(
+          child: makeBtn(
+            icon: const Icon(Icons.table_chart_outlined, size: 15, color: _csvBlue),
+            label: 'CSV',
+            color: _csvBlue,
+            onTap: onCsv,
+          ),
         ),
-      ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: makeBtn(
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15, color: _pdfRed),
+            label: 'PDF',
+            color: _pdfRed,
+            onTap: onPdf,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: makeBtn(
+            icon: const Icon(Icons.grid_on_outlined, size: 15, color: _excelGreen),
+            label: 'Excel',
+            color: _excelGreen,
+            onTap: onExcel,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _csvIcon(Color base) =>
-      Icon(Icons.table_chart_outlined, size: 16, color: base);
-
-  Widget _pdfIcon() => Stack(
-    alignment: Alignment.center,
-    children: [
-      Container(
-        width: 18,
-        height: 20,
-        decoration: BoxDecoration(
-          color: _pdfRed,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(3),
-            bottomLeft: Radius.circular(3),
-            bottomRight: Radius.circular(3),
-            topRight: Radius.circular(7),
-          ),
-        ),
-      ),
-      const Positioned(
-        top: 0,
-        right: 0,
-        child: SizedBox(
-          width: 7,
-          height: 7,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Color(0xFFB71C1C),
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(3),
-                bottomLeft: Radius.circular(3),
-              ),
-            ),
-          ),
-        ),
-      ),
-      const Text(
-        'PDF',
-        style: TextStyle(
-          fontSize: 5,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-          letterSpacing: 0.2,
-        ),
-      ),
-    ],
-  );
-
-  Widget _excelIcon() => Stack(
-    alignment: Alignment.center,
-    children: [
-      Container(
-        width: 18,
-        height: 20,
-        decoration: BoxDecoration(
-          color: _excelGreen,
-          borderRadius: BorderRadius.circular(3),
-        ),
-      ),
-      const Text(
-        'X',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-        ),
-      ),
-    ],
-  );
-}
-
-class _ExportMenuItem extends StatefulWidget {
-  final Widget icon;
-  final String label;
-  final Color hoverColor;
-  final VoidCallback onTap;
-  final Color baseBg;
-  final Color baseText;
-
-  const _ExportMenuItem({
-    required this.icon,
-    required this.label,
-    required this.hoverColor,
-    required this.onTap,
-    required this.baseBg,
-    required this.baseText,
-  });
-
-  @override
-  State<_ExportMenuItem> createState() => _ExportMenuItemState();
-}
-
-class _ExportMenuItemState extends State<_ExportMenuItem> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: _hover
-                ? widget.hoverColor.withValues(alpha: 0.12)
-                : widget.baseBg,
-            border: Border(
-              left: BorderSide(
-                color: _hover ? widget.hoverColor : Colors.transparent,
-                width: 3,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              widget.icon,
-              const SizedBox(width: 10),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _hover ? widget.hoverColor : widget.baseText,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
