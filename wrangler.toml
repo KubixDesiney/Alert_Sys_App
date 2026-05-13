@@ -1,4 +1,5 @@
-# Cloudflare Worker configuration for AlertSys.
+# Deprecated fallback Wrangler config for the old monolithic AlertSys Worker.
+# Use wrangler.ai.toml and wrangler.notify.toml for active deployments.
 #
 # This file is consumed by `wrangler deploy` (locally and from CI). Customise
 # `name` to match the worker you provisioned in your Cloudflare account, then

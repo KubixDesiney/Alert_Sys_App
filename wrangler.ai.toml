@@ -1,0 +1,9 @@
+name = "alert-notifier"
+main = "cloudflare_ai_worker.js"
+compatibility_date = "2025-01-01"
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["* * * * *"]

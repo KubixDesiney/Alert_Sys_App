@@ -1,7 +1,5 @@
-// Cloudflare Worker – AlertSys (full scoring, predictions, briefing, no auth)
-// DEPRECATED FALLBACK: monolithic AlertSys worker.
-// Active deployments use cloudflare_ai_worker.js and cloudflare_notify_worker.js.
-// Cron schedule: "* * * * *" (every minute)
+// Cloudflare Worker - AlertSys AI & Security Worker
+// Cron schedule: "* * * * *" (every minute). Notification fan-out lives in cloudflare_notify_worker.js.
 // Required env vars: FB_DB_URL, FB_API_KEY, FIREBASE_SERVICE_ACCOUNT, optional GEMINI_API_KEY
 // Optional: enable Workers AI binding (env.AI) for Llama 3.2 3B
 
@@ -1804,66 +1802,6 @@ async function finishAlertPush(alertUrl, sent) {
 }
 
 // ============ New‑alert FCM push ============
-async function processAlerts(env, ctx) {
-  const { token, alertsMap, usersMap, supervisorActiveAlertsMap } = ctx;
-  // Filter directly from the already-loaded alertsMap – avoids a second
-  // Firebase REST round-trip and removes the dependency on a Firebase
-  // ".indexOn: push_sent" rule (missing index returns 400 → silent failure).
-  const unsent = Object.entries(alertsMap || {})
-    .filter(([, a]) => a && a.status === 'disponible' && a.push_sent === false && !_pushLockIsFresh(a))
-    .slice(0, MAX_ALERTS_TO_PUSH)
-    .map(([id]) => id);
-  if (!unsent.length) return;
-  for (const alertId of unsent) {
-    const claimed = await claimAlertPush(env, token, alertId);
-    if (!claimed) continue;
-    const { alertUrl, alert } = claimed;
-    // New-alert buzz: only active free supervisors in the alert factory.
-    const recipients = getFcmRecipientsForFactory(alert.factoryId || alert.usine, usersMap, alertsMap, {
-      allSupervisors: false,
-      includeAdmins: false,
-      requireActiveSupervisors: true,
-      supervisorActiveAlertsMap,
-    });
-    if (recipients.length === 0) {
-      await finishAlertPush(alertUrl, false);
-      continue;
-    }
-    const alertTitle = `🚨 New Alert: ${alert.type || 'Alert'}`;
-    const alertBody  = `${alert.usine || ''} — ${alert.description || ''}`;
-    let sentCount = 0;
-    let retryableFailure = false;
-    for (const recipient of recipients) {
-      const result = await sendFcmDetailed(
-        recipient.token,
-        alertTitle,
-        alertBody,
-        {
-          alertId:        alert.id,
-          recipientId:    recipient.uid,
-          type:           alert.type || 'Alert',
-          usine:          alert.usine || '',
-          factoryId:      String(alert.factoryId || ''),
-          notifType:      'new_alert',
-          notificationId: String(_alertNotifId(alert.id)),
-        },
-        env,
-        { firebaseAuthToken: token, uid: recipient.uid },
-      );
-      if (result.ok) {
-        sentCount++;
-      } else if (result.unregistered) {
-        if (usersMap?.[recipient.uid]?.fcmToken === recipient.token) {
-          usersMap[recipient.uid].fcmToken = null;
-        }
-      } else {
-        retryableFailure = true;
-      }
-    }
-    await finishAlertPush(alertUrl, sentCount > 0 || !retryableFailure);
-  }
-}
-
 // ============ Escalation check ============
 async function checkEscalations(env, ctx) {
   const { token, alertsMap, usersMap } = ctx;
@@ -2685,97 +2623,6 @@ function notifTitle(type) {
     default: return 'AlertSys';
   }
 }
-
-async function fanOutPendingNotifications(env, ctx, options = {}) {
-  const { token, usersMap, alertsMap, supervisorActiveAlertsMap } = ctx;
-  const limit = Math.max(0, Number(options.limit ?? MAX_FANOUT) || 0);
-  if (limit <= 0) return;
-  const nowIso = new Date().toISOString();
-  const busySupervisors = engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
-  const notifRes = await fetch(`${env.FB_DB_URL}notifications.json?auth=${token}`);
-  if (!notifRes.ok) return;
-  const allNotifs = (await notifRes.json()) || {};
-  let processed = 0;
-  outer: for (const [uid, bucket] of Object.entries(allNotifs)) {
-    if (processed >= limit) break;
-    const user = usersMap[uid];
-    const fcmToken = user?.fcmToken;
-    if (!fcmToken) continue;
-    const userRole = String(user?.role || '');
-    const isSupervisor = userRole === 'supervisor';
-    const isAdmin = userRole === 'admin';
-    const isBusySupervisor = isSupervisor && busySupervisors.has(uid);
-    const userFactoryId = aiResolveFactory(user || null);
-    for (const [notifId, notif] of Object.entries(bucket || {})) {
-      if (processed >= limit) break outer;
-      if (!notif || notif.pushSent === true || notif.pushSending === true) continue;
-      const notifType = String(notif.type || '');
-      const isCollabNotification = COLLAB_NOTIF_TYPES.has(notifType);
-      if (isBusySupervisor && !isCollabNotification) continue;
-      if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) continue;
-      if (isSupervisor && !isCollabNotification) {
-        const targetFactoryId = notificationTargetFactory(notif, alertsMap);
-        if (targetFactoryId && targetFactoryId !== userFactoryId) {
-          continue;
-        }
-      }
-      const url = `${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${token}`;
-      const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
-      if (!getRes.ok) continue;
-      const etag = getRes.headers.get('ETag');
-      const current = await getRes.json();
-      if (!current || current.pushSent === true || current.pushSending === true) continue;
-      const currentType = String(current.type || '');
-      const currentIsCollab = COLLAB_NOTIF_TYPES.has(currentType);
-      if (ADMIN_ONLY_NOTIF_TYPES.has(currentType) && !isAdmin) continue;
-      if (isSupervisor && !currentIsCollab) {
-        const targetFactoryId = notificationTargetFactory(current, alertsMap);
-        if (targetFactoryId && targetFactoryId !== userFactoryId) {
-          continue;
-        }
-      }
-      const claimRes = await fetch(url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'if-match': etag },
-        body: JSON.stringify({ ...current, pushSending: true }),
-      });
-      if (claimRes.status === 412 || !claimRes.ok) continue;
-      const title = notifTitle(current.type);
-      const body = String(current.message || current.type || 'AlertSys notification');
-      const result = await sendFcmDetailed(
-        fcmToken,
-        title,
-        body,
-        {
-          notificationId: notifId,
-          recipientId: uid,
-          alertId: String(current.alertId || ''),
-          collabRequestId: String(current.collabRequestId || ''),
-          type: currentType,
-          usine: String(current.usine || current.alertUsine || ''),
-        },
-        env,
-        { firebaseAuthToken: token, uid },
-      );
-      const sent = result.ok;
-      if (result.unregistered && user?.fcmToken === fcmToken) {
-        user.fcmToken = null;
-      }
-      await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          sent
-            ? { pushSent: true, pushSentAt: nowIso, pushSending: null }
-            : { pushSending: null, pushLastErrorAt: nowIso },
-        ),
-      });
-      processed++;
-      if (result.unregistered) break;
-    }
-  }
-}
-
 // ============ AI Assignment Engine (FULL SCORING) ============
 const AI_COOLDOWN_MS = 10 * 60 * 1000;
 const AI_ACTIVE_STATUSES = new Set(['active', 'available']);
@@ -4396,9 +4243,6 @@ async function handleShiftAiAction(request, env) {
       // Re-run AI assignment + collaboration approval immediately.
       const assignedCount = await runAIAssignments(env, actionCtx);
       const collaborationCount = await processShiftCollaborations(env, actionCtx);
-      if (collaborationCount > 0) {
-        await fanOutPendingNotifications(env, actionCtx);
-      }
       if (targetShiftId && assignedCount === 0 && collaborationCount === 0) {
         await writeShiftAiLog(env, coreCtx.token, targetShiftId, {
           kind: 'idle',
@@ -4680,7 +4524,7 @@ export default {
         // timestamp is < 55 s old, another execution is still in flight — skip.
         try {
           cronToken = await getFirebaseToken(env);
-          lockUrl = `${env.FB_DB_URL}cron_lock/latest.json?auth=${cronToken}`;
+          lockUrl = `${env.FB_DB_URL}cron_lock/ai.json?auth=${cronToken}`;
           const lockGet = await fetch(lockUrl, { headers: { 'X-Firebase-ETag': 'true' } });
           const lockEtag = lockGet.ok ? lockGet.headers.get('ETag') : null;
           const lockData = lockGet.ok ? (await lockGet.json()) : null;
@@ -4727,9 +4571,6 @@ export default {
         const runLstm = LSTM_CRON_ENABLED && runPredictive && _cronEvery(runStart, LSTM_CRON_INTERVAL_MIN);
         const runSecurityScan = _cronEvery(runStart, SECURITY_SCAN_INTERVAL_MIN);
 
-        try { await processAlerts(env, coreCtx); }
-        catch (e) { console.error('[CRON] processAlerts: ' + e.message); healthErrors.push('processAlerts: ' + e.message); }
-
         try { await checkEscalations(env, coreCtx); }
         catch (e) { console.error('[CRON] checkEscalations: ' + e.message); healthErrors.push('checkEscalations: ' + e.message); }
 
@@ -4746,12 +4587,6 @@ export default {
           try { await validatePredictions(env, coreCtx); }
           catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
         }
-
-        // Fan-out pending queued notifications (collab, help, assistance, etc.)
-        // every cron tick so they are delivered even when the Flutter app is
-        // backgrounded and cannot trigger the /notify endpoint itself.
-        try { await fanOutPendingNotifications(env, coreCtx, { limit: MAX_CRON_FANOUT }); }
-        catch (e) { console.error('[CRON] fanOutPendingNotifications: ' + e.message); healthErrors.push('fanOutPendingNotifications: ' + e.message); }
 
         let basePredictiveModel = null;
         if (runPredictive) {
@@ -4920,41 +4755,16 @@ export default {
       });
     }
 
-    // /notify forces a fan-out pass — capable of generating a lot of FCM
-    // traffic if abused. Guard it strictly.
-    if (url.pathname === '/notify') {
-      const g = await _securityGuard(request, env, { endpoint: 'notify' });
-      if (!g.ok) return g.response;
-      ctx.waitUntil(
-        (async () => {
-          try {
-            const coreCtx = await loadCoreData(env);
-            await fanOutPendingNotifications(env, coreCtx);
-          } catch (e) {}
-        })(),
-      );
-      return new Response(JSON.stringify({ queued: true }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Default trigger: broadcast new-alert buzz first, then AI may assign.
-    // AI assignment marks push_sent=true, so running it first suppresses the
-    // new-alert fan-out that wakes free supervisors.
-    // path catch-all under the "default" bucket so an attacker scanning the
-    // worker for endpoints cannot fall through into a free expensive run.
+    // Default trigger: run AI/security work only. Notification fan-out is handled by cloudflare_notify_worker.js.
     const defaultGuard = await _securityGuard(request, env, {
       endpoint: 'default',
     });
     if (!defaultGuard.ok) return defaultGuard.response;
     try {
       const coreCtx = await loadCoreData(env);
-      await processAlerts(env, coreCtx);
       await checkEscalations(env, coreCtx);
       await runAIAssignments(env, coreCtx);
       await processShiftCollaborations(env, coreCtx);
-      await fanOutPendingNotifications(env, coreCtx);
     } catch (e) {
       console.error('[MANUAL] Error: ' + e.message);
     }
@@ -4971,7 +4781,6 @@ export {
   inferFactoryLocation,
   haversineDistance,
   runAIAssignments,
-  processAlerts,
   checkEscalations,
   buildPredictiveModel,
   notifTitle,
