@@ -13,20 +13,19 @@ class PillTabBar extends StatelessWidget {
   final int tab;
   final void Function(int) onSelect;
   final bool showDeveloperTab;
+  final Map<int, int> badgeCounts;
 
   const PillTabBar({
     super.key,
     required this.tab,
     required this.onSelect,
     this.showDeveloperTab = false,
+    this.badgeCounts = const {},
   });
 
   @override
   Widget build(BuildContext context) {
-    final l10n = Localizations.of<AppLocalizations>(
-      context,
-      AppLocalizations,
-    );
+    final l10n = Localizations.of<AppLocalizations>(context, AppLocalizations);
     final tabs = <Map<String, Object>>[
       {'icon': Icons.bar_chart, 'label': l10n?.adminTabOverview ?? 'Overview'},
       {
@@ -47,10 +46,7 @@ class PillTabBar extends StatelessWidget {
         'label': l10n?.adminTabHierarchy ?? 'Hierarchy',
       },
       if (showDeveloperTab)
-        {
-          'icon': Icons.build_circle_outlined,
-          'label': 'Developer',
-        },
+        {'icon': Icons.build_circle_outlined, 'label': 'Developer'},
     ];
     final t = context.appTheme;
     return Container(
@@ -74,47 +70,99 @@ class PillTabBar extends StatelessWidget {
                 final inactiveBorder = isDev
                     ? t.purple.withValues(alpha: 0.35)
                     : t.border;
-                final inactiveText = isDev
-                    ? t.purple
-                    : t.muted;
+                final inactiveText = isDev ? t.purple : t.muted;
+                final badgeCount = badgeCounts[i] ?? 0;
                 return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () => onSelect(i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: sel ? activeColor : t.scaffold,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: sel ? activeColor : inactiveBorder,
-                        ),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(
-                          item['icon'] as IconData,
-                          size: 15,
-                          color: sel ? Colors.white : inactiveText,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          item['label'] as String,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: sel ? Colors.white : inactiveText,
+                  padding: const EdgeInsets.only(right: 10, top: 4),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      GestureDetector(
+                        onTap: () => onSelect(i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: sel ? activeColor : t.scaffold,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: sel ? activeColor : inactiveBorder,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                item['icon'] as IconData,
+                                size: 15,
+                                color: sel ? Colors.white : inactiveText,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                item['label'] as String,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: sel ? Colors.white : inactiveText,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ]),
-                    ),
+                      ),
+                      if (badgeCount > 0)
+                        Positioned(
+                          top: -8,
+                          right: -7,
+                          child: _TabCountBadge(count: badgeCount),
+                        ),
+                    ],
                   ),
                 );
               }),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TabCountBadge extends StatelessWidget {
+  final int count;
+
+  const _TabCountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: t.red,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: t.card, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: t.red.withValues(alpha: 0.26),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            height: 1,
           ),
         ),
       ),

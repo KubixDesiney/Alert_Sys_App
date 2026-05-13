@@ -79,12 +79,17 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
   String _searchQuery = '';
   int _tabIndex = 0;
   int _previousTabIndex = 0;
+  late final Stream _pendingCollaborationRequestsStream;
 
   @override
   void initState() {
     super.initState();
     _sub = TabController(length: 2, vsync: this);
     _sub.addListener(_handleSubTabChanged);
+    _pendingCollaborationRequestsStream = ServiceLocator
+        .instance
+        .collaborationService
+        .getPendingCollaborationRequests();
     _loadFactories();
   }
 
@@ -98,8 +103,9 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
 
   void _loadFactories() {
     _factoriesSubscription?.cancel();
-    _factoriesSubscription =
-        _hierarchyService.getFactories().listen((factories) {
+    _factoriesSubscription = _hierarchyService.getFactories().listen((
+      factories,
+    ) {
       if (!mounted) return;
       setState(() {
         _factories = factories;
@@ -122,36 +128,48 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
     final filteredSupervisors = q.isEmpty
         ? widget.supervisors
         : widget.supervisors
-            .where((s) => s.fullName.toLowerCase().contains(q))
-            .toList();
+              .where((s) => s.fullName.toLowerCase().contains(q))
+              .toList();
 
-    return Column(children: [
-      Container(
-        color: context.appTheme.card,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-        child: Container(
-          decoration: BoxDecoration(
+    return Column(
+      children: [
+        Container(
+          color: context.appTheme.card,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Container(
+            decoration: BoxDecoration(
               color: context.appTheme.scaffold,
-              borderRadius: BorderRadius.circular(20)),
-          padding: const EdgeInsets.all(3),
-          child: Row(
-            children: [
-              _SubPill(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              children: [
+                _SubPill(
                   label: 'Management',
                   icon: Icons.people,
                   index: 0,
-                  ctrl: _sub),
-              _SubPill(
-                  label: 'Collaborations',
-                  icon: Icons.shield,
-                  index: 1,
-                  ctrl: _sub),
-            ],
+                  ctrl: _sub,
+                ),
+                StreamBuilder(
+                  stream: _pendingCollaborationRequestsStream,
+                  builder: (context, snapshot) {
+                    final requests = snapshot.data as List?;
+                    return _SubPill(
+                      label: 'Collaborations',
+                      icon: Icons.shield,
+                      index: 1,
+                      ctrl: _sub,
+                      badgeCount: requests?.length ?? 0,
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-      Expanded(child: _buildAnimatedSubTab(filteredSupervisors)),
-    ]);
+        Expanded(child: _buildAnimatedSubTab(filteredSupervisors)),
+      ],
+    );
   }
 
   Widget _buildAnimatedSubTab(List<UserModel> filteredSupervisors) {
@@ -201,11 +219,14 @@ class _SubPill extends StatefulWidget {
   final IconData icon;
   final int index;
   final TabController ctrl;
-  const _SubPill(
-      {required this.label,
-      required this.icon,
-      required this.index,
-      required this.ctrl});
+  final int badgeCount;
+  const _SubPill({
+    required this.label,
+    required this.icon,
+    required this.index,
+    required this.ctrl,
+    this.badgeCount = 0,
+  });
   @override
   State<_SubPill> createState() => _SubPillState();
 }
@@ -225,29 +246,87 @@ class _SubPillState extends State<_SubPill> {
     return Expanded(
       child: GestureDetector(
         onTap: () => widget.ctrl.animateTo(widget.index),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          decoration: BoxDecoration(
-              color: sel ? _white : Colors.transparent,
-              borderRadius: BorderRadius.circular(17),
-              boxShadow: sel
-                  ? [
-                      const BoxShadow(
-                          color: Color(0x18000000),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: BoxDecoration(
+                color: sel ? context.appTheme.card : Colors.transparent,
+                borderRadius: BorderRadius.circular(17),
+                boxShadow: sel
+                    ? [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .10),
                           blurRadius: 4,
-                          offset: Offset(0, 1))
-                    ]
-                  : []),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(widget.icon, size: 14, color: sel ? _navy : _muted),
-            const SizedBox(width: 5),
-            Text(widget.label,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: sel ? _navy : _muted)),
-          ]),
+                          offset: const Offset(0, 1),
+                        ),
+                      ]
+                    : [],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, size: 14, color: sel ? _navy : _muted),
+                  const SizedBox(width: 5),
+                  Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: sel ? _navy : _muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (widget.badgeCount > 0)
+              Positioned(
+                top: -8,
+                right: 14,
+                child: _SubPillBadge(count: widget.badgeCount),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubPillBadge extends StatelessWidget {
+  final int count;
+
+  const _SubPillBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: t.red,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: t.scaffold, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: t.red.withValues(alpha: 0.24),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
       ),
     );
@@ -266,19 +345,20 @@ class _ManagementSubTab extends StatefulWidget {
   final TextEditingController searchCtrl;
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
-  const _ManagementSubTab(
-      {super.key,
-      required this.supervisors,
-      required this.allSupervisors,
-      required this.alerts,
-      required this.factories,
-      required this.onAdd,
-      required this.onDelete,
-      required this.onRefresh,
-      required this.totalSupervisors,
-      required this.searchCtrl,
-      required this.searchQuery,
-      required this.onSearchChanged});
+  const _ManagementSubTab({
+    super.key,
+    required this.supervisors,
+    required this.allSupervisors,
+    required this.alerts,
+    required this.factories,
+    required this.onAdd,
+    required this.onDelete,
+    required this.onRefresh,
+    required this.totalSupervisors,
+    required this.searchCtrl,
+    required this.searchQuery,
+    required this.onSearchChanged,
+  });
 
   @override
   State<_ManagementSubTab> createState() => _ManagementSubTabState();
@@ -369,10 +449,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     if (_performanceOverlayEntry == null) {
       final overlay = Overlay.of(context, rootOverlay: true);
       _performanceOverlayEntry = OverlayEntry(
-        builder: (overlayContext) => _buildGlobalPerformancePanel(
-          overlayContext,
-          _selectedSupervisor!,
-        ),
+        builder: (overlayContext) =>
+            _buildGlobalPerformancePanel(overlayContext, _selectedSupervisor!),
       );
       overlay.insert(_performanceOverlayEntry!);
       return;
@@ -420,9 +498,15 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     setState(() {
       _performancePanelOffset = Offset(
         _clampPanelValue(
-            current.dx + delta.dx, 8, bounds.width - panelSize.width - 8),
+          current.dx + delta.dx,
+          8,
+          bounds.width - panelSize.width - 8,
+        ),
         _clampPanelValue(
-            current.dy + delta.dy, 8, bounds.height - panelSize.height - 8),
+          current.dy + delta.dy,
+          8,
+          bounds.height - panelSize.height - 8,
+        ),
       );
     });
     _refreshPerformanceOverlay();
@@ -482,10 +566,12 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   }
 
   List<AlertModel> _alertsFor(UserModel sup) => widget.alerts
-      .where((a) =>
-          a.superviseurId == sup.id ||
-          a.assistantId == sup.id ||
-          a.assistedBySupervisorId == sup.id)
+      .where(
+        (a) =>
+            a.superviseurId == sup.id ||
+            a.assistantId == sup.id ||
+            a.assistedBySupervisorId == sup.id,
+      )
       .toList();
 
   List<AlertModel> _solvedFor(UserModel sup) =>
@@ -514,7 +600,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   }
 
   int _rankFor(UserModel sup) {
-    final ranked = [...widget.allSupervisors]..sort((a, b) {
+    final ranked = [...widget.allSupervisors]
+      ..sort((a, b) {
         final score = _impactScore(b).compareTo(_impactScore(a));
         if (score != 0) return score;
         return _solvedFor(b).length.compareTo(_solvedFor(a).length);
@@ -534,8 +621,11 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final solved = _solvedFor(sup);
     final now = DateTime.now();
     return List.generate(days, (i) {
-      final day = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: days - 1 - i));
+      final day = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: days - 1 - i));
       final next = day.add(const Duration(days: 1));
       final count = solved
           .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
@@ -548,8 +638,11 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final solved = _solvedFor(sup);
     final now = DateTime.now();
     return List.generate(days, (i) {
-      final day = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: days - 1 - i));
+      final day = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: days - 1 - i));
       final next = day.add(const Duration(days: 1));
       return solved
           .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
@@ -561,8 +654,11 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final solved = widget.alerts.where((a) => a.status == 'validee').toList();
     final now = DateTime.now();
     return List.generate(7, (i) {
-      final day = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: 6 - i));
+      final day = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: 6 - i));
       final next = day.add(const Duration(days: 1));
       return solved
           .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
@@ -573,7 +669,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   Map<String, int> _teamTypeDistribution() {
     final map = <String, int>{};
     for (final alert in widget.alerts) {
-      final involved = alert.superviseurId != null ||
+      final involved =
+          alert.superviseurId != null ||
           alert.assistantId != null ||
           alert.assistedBySupervisorId != null;
       if (!involved) continue;
@@ -583,13 +680,14 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   }
 
   List<_LeaderboardEntry> _leaderboard() {
-    final entries = widget.allSupervisors
-        .map((sup) => _LeaderboardEntry(
-              supervisor: sup,
-              score: _impactScore(sup),
-            ))
-        .toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
+    final entries =
+        widget.allSupervisors
+            .map(
+              (sup) =>
+                  _LeaderboardEntry(supervisor: sup, score: _impactScore(sup)),
+            )
+            .toList()
+          ..sort((a, b) => b.score.compareTo(a.score));
     return entries.take(5).toList();
   }
 
@@ -604,9 +702,11 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       final segments = <_FactoryWorkloadSegment>[];
       for (final sup in widget.allSupervisors) {
         final count = widget.alerts
-            .where((a) =>
-                a.usine == factory &&
-                (a.superviseurId == sup.id || a.assistantId == sup.id))
+            .where(
+              (a) =>
+                  a.usine == factory &&
+                  (a.superviseurId == sup.id || a.assistantId == sup.id),
+            )
             .length;
         if (count == 0) continue;
         segments.add(_FactoryWorkloadSegment(supervisor: sup, count: count));
@@ -661,17 +761,16 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           notValidated: involved
               .where((a) => a.type == type && a.status != 'validee')
               .length,
-        )
+        ),
     };
   }
 
   Map<String, List<UserModel>> _groupByFactory() {
     final map = <String, List<UserModel>>{};
     for (final factory in widget.factories) {
-      map[factory.name] = widget.allSupervisors
-          .where((s) => s.usine == factory.name)
-          .toList()
-        ..sort((a, b) => a.fullName.compareTo(b.fullName));
+      map[factory.name] =
+          widget.allSupervisors.where((s) => s.usine == factory.name).toList()
+            ..sort((a, b) => a.fullName.compareTo(b.fullName));
     }
     return map;
   }
@@ -703,18 +802,24 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         usine: newFactory,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(newFactory.isEmpty
-            ? '${sup.fullName} unassigned'
-            : '${sup.fullName} moved to $newFactory'),
-        backgroundColor: context.appTheme.green,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newFactory.isEmpty
+                ? '${sup.fullName} unassigned'
+                : '${sup.fullName} moved to $newFactory',
+          ),
+          backgroundColor: context.appTheme.green,
+        ),
+      );
       await widget.onRefresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Update failed: ${UserFriendlyError.message(e)}'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Update failed: ${UserFriendlyError.message(e)}'),
+        ),
+      );
     }
   }
 
@@ -724,32 +829,44 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: context.appTheme.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: _red.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+        title: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: _red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.warning_outlined, color: _red, size: 24),
             ),
-            child: const Icon(Icons.warning_outlined, color: _red, size: 24),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Delete Supervisor',
-                  style: TextStyle(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Delete Supervisor',
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
-                      color: context.appTheme.text)),
-              const SizedBox(height: 2),
-              Text(sup.fullName,
-                  style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w700, color: _red)),
-            ]),
-          ),
-        ]),
+                      color: context.appTheme.text,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    sup.fullName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _red,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         content: Text(
           'This permanently removes ${sup.fullName} from ${sup.usine.isEmpty ? 'the roster' : sup.usine}.',
           style: TextStyle(fontSize: 13, color: context.appTheme.muted),
@@ -770,7 +887,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               backgroundColor: _red,
               foregroundColor: _white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           ),
         ],
@@ -786,8 +904,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final usineChoices = <String>{
       if (sup.usine.isNotEmpty) sup.usine,
       ...widget.factories.map((f) => f.name),
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     var selectedUsine = sup.usine;
     var saving = false;
 
@@ -859,8 +976,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           isDense: true,
                         ),
                         items: usineChoices
-                            .map((u) =>
-                                DropdownMenuItem(value: u, child: Text(u)))
+                            .map(
+                              (u) => DropdownMenuItem(value: u, child: Text(u)),
+                            )
                             .toList(),
                         onChanged: saving
                             ? null
@@ -889,15 +1007,18 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           if (first.isEmpty || last.isEmpty || email.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text(
-                                      'First name, last name, and email are required')),
+                                content: Text(
+                                  'First name, last name, and email are required',
+                                ),
+                              ),
                             );
                             return;
                           }
                           if (!email.contains('@')) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('Please enter a valid email')),
+                                content: Text('Please enter a valid email'),
+                              ),
                             );
                             return;
                           }
@@ -916,8 +1037,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                             Navigator.pop(dialogCtx);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content:
-                                    Text('Supervisor updated successfully'),
+                                content: Text(
+                                  'Supervisor updated successfully',
+                                ),
                                 backgroundColor: _green,
                               ),
                             );
@@ -926,8 +1048,10 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                             setDialogState(() => saving = false);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                  content: Text(
-                                      'Update failed: ${UserFriendlyError.message(e)}')),
+                                content: Text(
+                                  'Update failed: ${UserFriendlyError.message(e)}',
+                                ),
+                              ),
                             );
                           }
                         },
@@ -956,26 +1080,30 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   Widget build(BuildContext context) {
     final t = context.appTheme;
     final selected = _selectedSupervisor;
-    return Column(children: [
-      _buildCommandHeader(t),
-      Expanded(
-        child: RefreshIndicator(
-          color: t.navy,
-          backgroundColor: t.card,
-          notificationPredicate: (_) => true,
-          onRefresh: _refreshManagement,
-          child: widget.totalSupervisors == 0
-              ? _emptySups()
-              : LayoutBuilder(builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 920;
-                  if (compact) {
-                    return _buildCompact(t, selected);
-                  }
-                  return _buildWide(t, selected);
-                }),
+    return Column(
+      children: [
+        _buildCommandHeader(t),
+        Expanded(
+          child: RefreshIndicator(
+            color: t.navy,
+            backgroundColor: t.card,
+            notificationPredicate: (_) => true,
+            onRefresh: _refreshManagement,
+            child: widget.totalSupervisors == 0
+                ? _emptySups()
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < 920;
+                      if (compact) {
+                        return _buildCompact(t, selected);
+                      }
+                      return _buildWide(t, selected);
+                    },
+                  ),
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 
   Widget _buildCommandHeader(AppTheme t) {
@@ -1002,62 +1130,77 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           ),
         ],
       ),
-      child: LayoutBuilder(builder: (context, constraints) {
-        final compact = constraints.maxWidth < 720;
-        final titleBlock = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Supervisors',
-                style: TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w900, color: t.text)),
-            const SizedBox(height: 3),
-            Text('Roster, plant assignments, and on-demand performance.',
-                style: TextStyle(
-                    fontSize: 12, color: t.muted, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              _Chip('$active active', t.green),
-              _Chip('$absent absent', t.orange),
-              _Chip('$assignedPlants plants', t.blue),
-            ]),
-          ],
-        );
-
-        final action = ElevatedButton.icon(
-          onPressed: widget.onAdd,
-          icon: const Icon(Icons.person_add, size: 17),
-          label: const Text('Add Supervisor',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: t.navy,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
-
-        if (compact) {
-          return Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+          final titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              titleBlock,
-              const SizedBox(height: 14),
+              Text(
+                'Supervisors',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  color: t.text,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Roster, plant assignments, and on-demand performance.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: t.muted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _Chip('$active active', t.green),
+                  _Chip('$absent absent', t.orange),
+                  _Chip('$assignedPlants plants', t.blue),
+                ],
+              ),
+            ],
+          );
+
+          final action = ElevatedButton.icon(
+            onPressed: widget.onAdd,
+            icon: const Icon(Icons.person_add, size: 17),
+            label: const Text(
+              'Add Supervisor',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.navy,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [titleBlock, const SizedBox(height: 14), action],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: titleBlock),
+              const SizedBox(width: 16),
               action,
             ],
           );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: titleBlock),
-            const SizedBox(width: 16),
-            action,
-          ],
-        );
-      }),
+        },
+      ),
     );
   }
 
@@ -1112,65 +1255,80 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       ),
     ];
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final columns = constraints.maxWidth > 1180
-          ? 3
-          : constraints.maxWidth > 760
-              ? 2
-              : 1;
-      final gap = 12.0;
-      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: List.generate(cards.length, (index) {
-          return SizedBox(
-            width: width,
-            child: _StaggeredEntrance(
-              delay: Duration(milliseconds: 60 * index),
-              child: cards[index],
-            ),
-          );
-        }),
-      );
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth > 1180
+            ? 3
+            : constraints.maxWidth > 760
+            ? 2
+            : 1;
+        final gap = 12.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: List.generate(cards.length, (index) {
+            return SizedBox(
+              width: width,
+              child: _StaggeredEntrance(
+                delay: Duration(milliseconds: 60 * index),
+                child: cards[index],
+              ),
+            );
+          }),
+        );
+      },
+    );
   }
 
   Widget _buildWide(AppTheme t, UserModel? selected) {
     final railWidth = MediaQuery.sizeOf(context).width >= 1600 ? 310.0 : 326.0;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SizedBox(width: railWidth, child: _buildRail(t)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildDetailScroller(t, selected)),
-      ]),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(width: railWidth, child: _buildRail(t)),
+          const SizedBox(width: 12),
+          Expanded(child: _buildDetailScroller(t, selected)),
+        ],
+      ),
     );
   }
 
   Widget _buildCompact(AppTheme t, UserModel? selected) {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-      child: Column(children: [
-        _buildRail(t, compact: true),
-        const SizedBox(height: 14),
-        _buildDetailContent(t, selected),
-      ]),
+      child: Column(
+        children: [
+          _buildRail(t, compact: true),
+          const SizedBox(height: 14),
+          _buildDetailContent(t, selected),
+        ],
+      ),
     );
   }
 
   Widget _buildGlobalPerformancePanel(
-      BuildContext overlayContext, UserModel sup) {
+    BuildContext overlayContext,
+    UserModel sup,
+  ) {
     final t = overlayContext.appTheme;
     final bounds = MediaQuery.sizeOf(overlayContext);
     final availableWidth = math.max(280.0, bounds.width - 16);
     final availableHeight = math.max(320.0, bounds.height - 16);
     final minWidth = math.min(_panelMinWidth, availableWidth);
     final minHeight = math.min(_panelMinHeight, availableHeight);
-    final width =
-        _clampPanelValue(_performancePanelWidth, minWidth, availableWidth);
-    final height =
-        _clampPanelValue(_performancePanelHeight, minHeight, availableHeight);
+    final width = _clampPanelValue(
+      _performancePanelWidth,
+      minWidth,
+      availableWidth,
+    );
+    final height = _clampPanelValue(
+      _performancePanelHeight,
+      minHeight,
+      availableHeight,
+    );
     final panelSize = Size(width, height);
     final fallback = Offset(
       _clampPanelValue(bounds.width - width - 24, 8, bounds.width - width - 8),
@@ -1184,191 +1342,246 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final statusColor = sup.isActive ? t.green : t.red;
 
     return SizedBox.expand(
-      child: Stack(children: [
-        Positioned(
-          left: offset.dx,
-          top: offset.dy,
-          width: width,
-          height: height,
-          child: Material(
-            color: Colors.transparent,
-            elevation: 18,
-            borderRadius: BorderRadius.circular(18),
-            child: Stack(children: [
-              Container(
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: t.card.withValues(alpha: t.isDark ? 0.98 : 0.96),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: t.navy.withValues(alpha: 0.22)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black
-                          .withValues(alpha: t.isDark ? 0.42 : 0.18),
-                      blurRadius: 34,
-                      offset: const Offset(0, 18),
-                    ),
-                  ],
-                ),
-                child: Column(children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanUpdate: (details) => _movePerformancePanel(
-                      delta: details.delta,
-                      bounds: bounds,
-                      panelSize: panelSize,
-                      fallback: fallback,
-                    ),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.move,
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              t.navy.withValues(alpha: t.isDark ? 0.32 : 0.10),
-                              t.green.withValues(alpha: t.isDark ? 0.18 : 0.07),
-                            ],
+      child: Stack(
+        children: [
+          Positioned(
+            left: offset.dx,
+            top: offset.dy,
+            width: width,
+            height: height,
+            child: Material(
+              color: Colors.transparent,
+              elevation: 18,
+              borderRadius: BorderRadius.circular(18),
+              child: Stack(
+                children: [
+                  Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: t.card.withValues(alpha: t.isDark ? 0.98 : 0.96),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: t.navy.withValues(alpha: 0.22)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: t.isDark ? 0.42 : 0.18,
                           ),
-                          border: Border(bottom: BorderSide(color: t.border)),
+                          blurRadius: 34,
+                          offset: const Offset(0, 18),
                         ),
-                        child: Row(children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [t.navy, t.green],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Center(
-                              child: Text(_initials(sup),
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w900)),
-                            ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onPanUpdate: (details) => _movePerformancePanel(
+                            delta: details.delta,
+                            bounds: bounds,
+                            panelSize: panelSize,
+                            fallback: fallback,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                          child: MouseRegion(
+                            cursor: SystemMouseCursors.move,
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(
+                                14,
+                                12,
+                                10,
+                                12,
+                              ),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    t.navy.withValues(
+                                      alpha: t.isDark ? 0.32 : 0.10,
+                                    ),
+                                    t.green.withValues(
+                                      alpha: t.isDark ? 0.18 : 0.07,
+                                    ),
+                                  ],
+                                ),
+                                border: Border(
+                                  bottom: BorderSide(color: t.border),
+                                ),
+                              ),
+                              child: Row(
                                 children: [
-                                  Text('Performance',
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: 0.5,
-                                          color: t.muted)),
-                                  const SizedBox(height: 2),
-                                  Text(sup.fullName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900,
-                                          color: t.text)),
-                                  const SizedBox(height: 4),
-                                  Row(children: [
-                                    _LivePulseDot(
-                                        color: statusColor,
-                                        pulse: sup.isActive),
-                                    const SizedBox(width: 5),
-                                    Expanded(
+                                  Container(
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [t.navy, t.green],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Center(
                                       child: Text(
-                                        sup.usine.isEmpty
-                                            ? 'Unassigned'
-                                            : sup.usine,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                            fontSize: 11, color: t.muted),
+                                        _initials(sup),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w900,
+                                        ),
                                       ),
                                     ),
-                                  ]),
-                                ]),
-                          ),
-                          Tooltip(
-                            message: 'Resize panel',
-                            child: Icon(Icons.drag_indicator,
-                                color: t.muted, size: 20),
-                          ),
-                          Tooltip(
-                            message: 'Toggle size',
-                            child: IconButton(
-                              onPressed: () =>
-                                  _togglePerformancePanelSize(bounds, fallback),
-                              icon: Icon(Icons.open_in_full,
-                                  color: t.navy, size: 18),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Performance',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.5,
+                                            color: t.muted,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          sup.fullName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w900,
+                                            color: t.text,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            _LivePulseDot(
+                                              color: statusColor,
+                                              pulse: sup.isActive,
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Expanded(
+                                              child: Text(
+                                                sup.usine.isEmpty
+                                                    ? 'Unassigned'
+                                                    : sup.usine,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: t.muted,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Tooltip(
+                                    message: 'Resize panel',
+                                    child: Icon(
+                                      Icons.drag_indicator,
+                                      color: t.muted,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  Tooltip(
+                                    message: 'Toggle size',
+                                    child: IconButton(
+                                      onPressed: () =>
+                                          _togglePerformancePanelSize(
+                                            bounds,
+                                            fallback,
+                                          ),
+                                      icon: Icon(
+                                        Icons.open_in_full,
+                                        color: t.navy,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                  Tooltip(
+                                    message: 'Close',
+                                    child: IconButton(
+                                      onPressed: _closePerformancePanel,
+                                      icon: Icon(
+                                        Icons.close,
+                                        color: t.red,
+                                        size: 19,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          Tooltip(
-                            message: 'Close',
-                            child: IconButton(
-                              onPressed: _closePerformancePanel,
-                              icon: Icon(Icons.close, color: t.red, size: 19),
-                            ),
-                          ),
-                        ]),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildMetricGrid(t, sup),
-                            const SizedBox(height: 12),
-                            _buildPerformanceCard(t, sup),
-                            const SizedBox(height: 12),
-                            _buildTypeBreakdown(t, sup),
-                            const SizedBox(height: 12),
-                            _buildValidatedList(t, sup),
-                            const SizedBox(height: 18),
-                          ]),
-                    ),
-                  ),
-                ]),
-              ),
-              Positioned(
-                right: 2,
-                bottom: 2,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanUpdate: (details) => _resizePerformancePanel(
-                    delta: details.delta,
-                    bounds: bounds,
-                    fallback: fallback,
-                  ),
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.resizeUpLeftDownRight,
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: t.navy.withValues(alpha: 0.10),
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(14),
-                          bottomRight: Radius.circular(16),
                         ),
-                        border:
-                            Border.all(color: t.navy.withValues(alpha: 0.16)),
-                      ),
-                      child: Icon(Icons.open_in_full, size: 15, color: t.navy),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildMetricGrid(t, sup),
+                                const SizedBox(height: 12),
+                                _buildPerformanceCard(t, sup),
+                                const SizedBox(height: 12),
+                                _buildTypeBreakdown(t, sup),
+                                const SizedBox(height: 12),
+                                _buildValidatedList(t, sup),
+                                const SizedBox(height: 18),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanUpdate: (details) => _resizePerformancePanel(
+                        delta: details.delta,
+                        bounds: bounds,
+                        fallback: fallback,
+                      ),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeUpLeftDownRight,
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: t.navy.withValues(alpha: 0.10),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(14),
+                              bottomRight: Radius.circular(16),
+                            ),
+                            border: Border.all(
+                              color: t.navy.withValues(alpha: 0.16),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.open_in_full,
+                            size: 15,
+                            color: t.navy,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ]),
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1380,34 +1593,44 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         border: Border.all(color: t.border),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x08000000), blurRadius: 12, offset: Offset(0, 6))
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
         ],
       ),
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-          child: Row(children: [
-            Icon(Icons.manage_accounts_outlined, size: 18, color: t.navy),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text('Roster',
-                  style: TextStyle(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+            child: Row(
+              children: [
+                Icon(Icons.manage_accounts_outlined, size: 18, color: t.navy),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Roster',
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: t.text)),
+                      color: t.text,
+                    ),
+                  ),
+                ),
+                _Chip('${widget.allSupervisors.length}', t.navy),
+              ],
             ),
-            _Chip('${widget.allSupervisors.length}', t.navy),
-          ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-          child: _buildSearchField(t),
-        ),
-        if (compact)
-          SizedBox(height: 154, child: _buildRosterList(t, compact: true))
-        else
-          Expanded(child: _buildRosterList(t)),
-      ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: _buildSearchField(t),
+          ),
+          if (compact)
+            SizedBox(height: 154, child: _buildRosterList(t, compact: true))
+          else
+            Expanded(child: _buildRosterList(t)),
+        ],
+      ),
     );
   }
 
@@ -1431,8 +1654,10 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               ),
         filled: true,
         fillColor: t.scaffold,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 11,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: t.border),
@@ -1454,9 +1679,11 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(18),
-          child: Text('No supervisors match "${widget.searchQuery}"',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: t.muted)),
+          child: Text(
+            'No supervisors match "${widget.searchQuery}"',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: t.muted),
+          ),
         ),
       );
     }
@@ -1513,9 +1740,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   }
 
   Widget _buildDetailScroller(AppTheme t, UserModel? selected) {
-    return SingleChildScrollView(
-      child: _buildDetailContent(t, selected),
-    );
+    return SingleChildScrollView(child: _buildDetailContent(t, selected));
   }
 
   Widget _buildDetailContent(AppTheme t, UserModel? selected) {
@@ -1534,8 +1759,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final unassigned = _unassigned().length;
     final active = widget.allSupervisors.where((s) => s.isActive).length;
     final assigned = math.max(0, widget.allSupervisors.length - unassigned);
-    final staffedFactories =
-        grouped.values.where((sups) => sups.isNotEmpty).length;
+    final staffedFactories = grouped.values
+        .where((sups) => sups.isNotEmpty)
+        .length;
 
     Widget signal({
       required IconData icon,
@@ -1551,36 +1777,45 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.20)),
         ),
-        child: Row(children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 17),
             ),
-            child: Icon(icon, color: color, size: 17),
-          ),
-          const SizedBox(width: 9),
-          Expanded(
+            const SizedBox(width: 9),
+            Expanded(
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(value,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: t.text,
-                        height: 1)),
-                const SizedBox(height: 4),
-                Text(label,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: t.text,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10, color: t.muted)),
-              ])),
-        ]),
+                    style: TextStyle(fontSize: 10, color: t.muted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -1607,104 +1842,148 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           ),
         ],
       ),
-      child: Stack(children: [
-        Positioned.fill(
-          child: CustomPaint(
-            painter: _CommandGridPainter(color: t.navy.withValues(alpha: 0.06)),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: t.navy.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: t.navy.withValues(alpha: 0.18)),
-                ),
-                child:
-                    Icon(Icons.account_tree_outlined, color: t.navy, size: 24),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _CommandGridPainter(
+                color: t.navy.withValues(alpha: 0.06),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Factory Assignments',
-                          style: TextStyle(
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: t.navy.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: t.navy.withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.account_tree_outlined,
+                        color: t.navy,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Factory Assignments',
+                            style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
                               color: t.text,
-                              height: 1.05)),
-                      const SizedBox(height: 5),
-                      Text('Live supervisor placement by plant.',
-                          style: TextStyle(
+                              height: 1.05,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            'Live supervisor placement by plant.',
+                            style: TextStyle(
                               fontSize: 12,
                               color: t.muted,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-              ),
-              if (selected != null && _performancePanelOpen)
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  constraints: const BoxConstraints(maxWidth: 230),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: t.navy.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(99),
-                    border: Border.all(color: t.navy.withValues(alpha: 0.18)),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.analytics_outlined, size: 14, color: t.navy),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(selected.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: t.navy)),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ]),
+                    if (selected != null && _performancePanelOpen)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        constraints: const BoxConstraints(maxWidth: 230),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: t.navy.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: t.navy.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.analytics_outlined,
+                              size: 14,
+                              color: t.navy,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                selected.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: t.navy,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-            ]),
-            const SizedBox(height: 16),
-            Wrap(spacing: 10, runSpacing: 10, children: [
-              signal(
-                  icon: Icons.factory_outlined,
-                  label: 'plant lanes',
-                  value: '${widget.factories.length}',
-                  color: t.navy),
-              signal(
-                  icon: Icons.groups_2_outlined,
-                  label: 'assigned',
-                  value: '$assigned',
-                  color: t.green),
-              signal(
-                  icon: Icons.pending_actions_outlined,
-                  label: 'unassigned',
-                  value: '$unassigned',
-                  color: t.orange),
-              signal(
-                  icon: Icons.sensors_outlined,
-                  label: 'active',
-                  value: '$active',
-                  color: t.blue),
-              signal(
-                  icon: Icons.domain_verification_outlined,
-                  label: 'staffed plants',
-                  value: '$staffedFactories',
-                  color: t.purple),
-            ]),
-          ]),
-        ),
-      ]),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    signal(
+                      icon: Icons.factory_outlined,
+                      label: 'plant lanes',
+                      value: '${widget.factories.length}',
+                      color: t.navy,
+                    ),
+                    signal(
+                      icon: Icons.groups_2_outlined,
+                      label: 'assigned',
+                      value: '$assigned',
+                      color: t.green,
+                    ),
+                    signal(
+                      icon: Icons.pending_actions_outlined,
+                      label: 'unassigned',
+                      value: '$unassigned',
+                      color: t.orange,
+                    ),
+                    signal(
+                      icon: Icons.sensors_outlined,
+                      label: 'active',
+                      value: '$active',
+                      color: t.blue,
+                    ),
+                    signal(
+                      icon: Icons.domain_verification_outlined,
+                      label: 'staffed plants',
+                      value: '$staffedFactories',
+                      color: t.purple,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1729,115 +2008,146 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         ),
         border: Border.all(color: t.border),
       ),
-      child: Stack(children: [
-        Positioned.fill(
-          child: CustomPaint(
-            painter: _CommandGridPainter(color: t.navy.withValues(alpha: 0.06)),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(14),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [t.navy, t.green],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                      color: t.navy.withValues(alpha: 0.25),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Text(_initials(sup),
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white)),
-                ),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _CommandGridPainter(
+                color: t.navy.withValues(alpha: 0.06),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(sup.fullName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [t.navy, t.green],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: t.navy.withValues(alpha: 0.25),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          _initials(sup),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            sup.fullName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
                               color: t.text,
-                              height: 1.05)),
-                      const SizedBox(height: 6),
-                      Wrap(spacing: 8, runSpacing: 8, children: [
-                        _StatusPill(
-                            color: statusColor,
-                            label: sup.isActive ? 'Active' : 'Absent',
-                            icon: Icons.circle,
-                            pulse: sup.isActive),
-                        _StatusPill(
-                            color: t.blue,
-                            label: sup.usine.isEmpty ? 'Unassigned' : sup.usine,
-                            icon: Icons.factory_outlined),
-                        _AnimatedRankPill(rank: rank, color: t.purple),
-                      ]),
-                    ]),
-              ),
-              IconButton(
-                onPressed: () => _showModifyDialog(sup),
-                icon: Icon(Icons.edit, color: t.navy),
-                tooltip: 'Modify Supervisor',
-              ),
-              IconButton(
-                onPressed: () => _showDeleteConfirmDialog(sup),
-                icon: Icon(Icons.delete_outline, color: t.red),
-                tooltip: 'Delete Supervisor',
-              ),
-            ]),
-            const SizedBox(height: 12),
-            Wrap(spacing: 10, runSpacing: 10, children: [
-              _FloatingHeroSignal(
-                delay: const Duration(milliseconds: 0),
-                child: _HeroSignal(
-                    label: 'Resolved',
-                    value: '${solved.length}',
-                    color: t.green,
-                    icon: Icons.check_circle_outline),
-              ),
-              _FloatingHeroSignal(
-                delay: const Duration(milliseconds: 90),
-                child: _HeroSignal(
-                    label: 'Avg Time',
-                    value: avg == null ? '-' : _fmtMin(avg),
-                    color: t.orange,
-                    icon: Icons.timer_outlined),
-              ),
-              if (dist.isNotEmpty)
-                _FloatingHeroSignal(
-                  delay: const Duration(milliseconds: 180),
-                  child: _HeroSignal(
-                      label: 'Top Plant',
-                      value: dist.entries
-                          .reduce((a, b) => a.value >= b.value ? a : b)
-                          .key,
-                      color: t.purple,
-                      icon: Icons.hub_outlined),
+                              height: 1.05,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _StatusPill(
+                                color: statusColor,
+                                label: sup.isActive ? 'Active' : 'Absent',
+                                icon: Icons.circle,
+                                pulse: sup.isActive,
+                              ),
+                              _StatusPill(
+                                color: t.blue,
+                                label: sup.usine.isEmpty
+                                    ? 'Unassigned'
+                                    : sup.usine,
+                                icon: Icons.factory_outlined,
+                              ),
+                              _AnimatedRankPill(rank: rank, color: t.purple),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _showModifyDialog(sup),
+                      icon: Icon(Icons.edit, color: t.navy),
+                      tooltip: 'Modify Supervisor',
+                    ),
+                    IconButton(
+                      onPressed: () => _showDeleteConfirmDialog(sup),
+                      icon: Icon(Icons.delete_outline, color: t.red),
+                      tooltip: 'Delete Supervisor',
+                    ),
+                  ],
                 ),
-            ]),
-          ]),
-        ),
-      ]),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    _FloatingHeroSignal(
+                      delay: const Duration(milliseconds: 0),
+                      child: _HeroSignal(
+                        label: 'Resolved',
+                        value: '${solved.length}',
+                        color: t.green,
+                        icon: Icons.check_circle_outline,
+                      ),
+                    ),
+                    _FloatingHeroSignal(
+                      delay: const Duration(milliseconds: 90),
+                      child: _HeroSignal(
+                        label: 'Avg Time',
+                        value: avg == null ? '-' : _fmtMin(avg),
+                        color: t.orange,
+                        icon: Icons.timer_outlined,
+                      ),
+                    ),
+                    if (dist.isNotEmpty)
+                      _FloatingHeroSignal(
+                        delay: const Duration(milliseconds: 180),
+                        child: _HeroSignal(
+                          label: 'Top Plant',
+                          value: dist.entries
+                              .reduce((a, b) => a.value >= b.value ? a : b)
+                              .key,
+                          color: t.purple,
+                          icon: Icons.hub_outlined,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1850,47 +2160,55 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final rate = (_validationRate(sup) * 100).round();
     final tiles = [
       _CommandMetric(
-          icon: Icons.done_all,
-          label: 'Resolved Alerts',
-          value: '${solved.length}',
-          tone: t.green),
+        icon: Icons.done_all,
+        label: 'Resolved Alerts',
+        value: '${solved.length}',
+        tone: t.green,
+      ),
       _CommandMetric(
-          icon: Icons.speed,
-          label: 'Average Resolution',
-          value: avg == null ? '-' : _fmtMin(avg),
-          tone: t.orange),
+        icon: Icons.speed,
+        label: 'Average Resolution',
+        value: avg == null ? '-' : _fmtMin(avg),
+        tone: t.orange,
+      ),
       _CommandMetric(
-          icon: Icons.verified_outlined,
-          label: 'Validation Rate',
-          value: '$rate%',
-          tone: t.blue),
+        icon: Icons.verified_outlined,
+        label: 'Validation Rate',
+        value: '$rate%',
+        tone: t.blue,
+      ),
       _CommandMetric(
-          icon: Icons.psychology_alt_outlined,
-          label: 'AI Assigned',
-          value: '$ai',
-          tone: t.purple),
+        icon: Icons.psychology_alt_outlined,
+        label: 'AI Assigned',
+        value: '$ai',
+        tone: t.purple,
+      ),
       _CommandMetric(
-          icon: Icons.warning_amber_rounded,
-          label: 'Critical Load',
-          value: '$critical',
-          tone: t.red),
+        icon: Icons.warning_amber_rounded,
+        label: 'Critical Load',
+        value: '$critical',
+        tone: t.red,
+      ),
     ];
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final columns = constraints.maxWidth > 980
-          ? 5
-          : constraints.maxWidth > 720
-              ? 3
-              : 2;
-      final gap = 10.0;
-      final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children:
-            tiles.map((tile) => SizedBox(width: width, child: tile)).toList(),
-      );
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth > 980
+            ? 5
+            : constraints.maxWidth > 720
+            ? 3
+            : 2;
+        final gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: tiles
+              .map((tile) => SizedBox(width: width, child: tile))
+              .toList(),
+        );
+      },
+    );
   }
 
   Widget _buildPerformanceCard(AppTheme t, UserModel sup) {
@@ -1906,33 +2224,42 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         value: _chartRange,
         onChanged: (v) => setState(() => _chartRange = v),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(
-          height: 190,
-          child: TweenAnimationBuilder<double>(
-            key: key,
-            tween: Tween(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 850),
-            curve: Curves.easeOutCubic,
-            builder: (context, progress, _) => _LineChart(
-              points: points,
-              progress: progress,
-              color: t.navy,
-              fillColor: t.green,
-              gridColor: t.border,
-              labelColor: t.muted,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 190,
+            child: TweenAnimationBuilder<double>(
+              key: key,
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 850),
+              curve: Curves.easeOutCubic,
+              builder: (context, progress, _) => _LineChart(
+                points: points,
+                progress: progress,
+                color: t.navy,
+                fillColor: t.green,
+                gridColor: t.border,
+                labelColor: t.muted,
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(width: 30, height: 3, color: t.navy),
-          const SizedBox(width: 7),
-          Icon(Icons.circle, size: 8, color: t.green),
-          const SizedBox(width: 7),
-          Text('Validations', style: TextStyle(fontSize: 11, color: t.muted)),
-        ]),
-      ]),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(width: 30, height: 3, color: t.navy),
+              const SizedBox(width: 7),
+              Icon(Icons.circle, size: 8, color: t.green),
+              const SizedBox(width: 7),
+              Text(
+                'Validations',
+                style: TextStyle(fontSize: 11, color: t.muted),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -1950,15 +2277,17 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final grouped = _groupByFactory();
     final unassigned = _unassigned();
     final cards = <Widget>[
-      ...grouped.entries.map((entry) => _buildFactoryDropCard(
-            t,
-            factoryName: entry.key,
-            location: _locationFor(entry.key),
-            supervisors: entry.value,
-            accent: t.navy,
-            emptyLabel: 'Open slot',
-            onAccept: (sup) => _reassign(sup, entry.key),
-          )),
+      ...grouped.entries.map(
+        (entry) => _buildFactoryDropCard(
+          t,
+          factoryName: entry.key,
+          location: _locationFor(entry.key),
+          supervisors: entry.value,
+          accent: t.navy,
+          emptyLabel: 'Open slot',
+          onAccept: (sup) => _reassign(sup, entry.key),
+        ),
+      ),
       if (unassigned.isNotEmpty || grouped.isEmpty)
         _buildFactoryDropCard(
           t,
@@ -1977,21 +2306,24 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       icon: Icons.account_tree_outlined,
       title: 'Assignment Board',
       subtitle: 'Roster source, factory lanes, and unassigned pool',
-      child: LayoutBuilder(builder: (context, constraints) {
-        final columns = constraints.maxWidth > 980
-            ? 3
-            : constraints.maxWidth > 640
-                ? 2
-                : 1;
-        final gap = 12.0;
-        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children:
-              cards.map((card) => SizedBox(width: width, child: card)).toList(),
-        );
-      }),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = constraints.maxWidth > 980
+              ? 3
+              : constraints.maxWidth > 640
+              ? 2
+              : 1;
+          final gap = 12.0;
+          final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: cards
+                .map((card) => SizedBox(width: width, child: card))
+                .toList(),
+          );
+        },
+      ),
     );
   }
 
@@ -2026,83 +2358,109 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               width: hovering ? 1.8 : 1,
             ),
           ),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.factory_outlined, color: accent, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(factoryName,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.factory_outlined,
+                      color: accent,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          factoryName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              color: t.text)),
-                      if (location != null && location.isNotEmpty)
-                        Text(location,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: t.text,
+                          ),
+                        ),
+                        if (location != null && location.isNotEmpty)
+                          Text(
+                            location,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11, color: t.muted)),
-                    ]),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: Text('${supervisors.length}',
-                    style: TextStyle(
+                            style: TextStyle(fontSize: 11, color: t.muted),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '${supervisors.length}',
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
-                        color: accent)),
+                        color: accent,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ]),
-            const SizedBox(height: 12),
-            if (supervisors.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color:
-                          hovering ? accent.withValues(alpha: 0.45) : t.border),
-                ),
-                child: Text(hovering ? 'Release to assign' : emptyLabel,
+              const SizedBox(height: 12),
+              if (supervisors.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: hovering
+                          ? accent.withValues(alpha: 0.45)
+                          : t.border,
+                    ),
+                  ),
+                  child: Text(
+                    hovering ? 'Release to assign' : emptyLabel,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 12,
-                        fontWeight:
-                            hovering ? FontWeight.w800 : FontWeight.w500,
-                        color: hovering ? accent : t.muted)),
-              )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: supervisors
-                    .map((sup) => _SupChip(
+                      fontSize: 12,
+                      fontWeight: hovering ? FontWeight.w800 : FontWeight.w500,
+                      color: hovering ? accent : t.muted,
+                    ),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: supervisors
+                      .map(
+                        (sup) => _SupChip(
                           sup: sup,
                           selected: sup.id == _selectedId,
                           onTap: () => _openPerformancePanel(sup),
                           onRemove: removable ? () => _reassign(sup, '') : null,
-                        ))
-                    .toList(),
-              ),
-          ]),
+                        ),
+                      )
+                      .toList(),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -2120,8 +2478,10 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 28),
               alignment: Alignment.center,
-              child: Text('No validated alerts yet',
-                  style: TextStyle(fontSize: 13, color: t.muted)),
+              child: Text(
+                'No validated alerts yet',
+                style: TextStyle(fontSize: 13, color: t.muted),
+              ),
             )
           : Column(
               children: solved
@@ -2200,9 +2560,10 @@ class _StaggeredEntranceState extends State<_StaggeredEntrance>
       duration: const Duration(milliseconds: 460),
     );
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    _offset = Tween(begin: const Offset(0, 0.035), end: Offset.zero).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _offset = Tween(
+      begin: const Offset(0, 0.035),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _timer = Timer(widget.delay, () {
       if (mounted) _controller.forward();
     });
@@ -2248,17 +2609,17 @@ class _WeeklyResolutionHeatmap extends StatelessWidget {
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) => FlLine(
-              color: t.border.withValues(alpha: 0.52),
-              strokeWidth: 1,
-            ),
+            getDrawingHorizontalLine: (_) =>
+                FlLine(color: t.border.withValues(alpha: 0.52), strokeWidth: 1),
           ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -2283,9 +2644,10 @@ class _WeeklyResolutionHeatmap extends StatelessWidget {
                     child: Text(
                       _weekdayShort(days[index].weekday),
                       style: TextStyle(
-                          fontSize: 10,
-                          color: t.muted,
-                          fontWeight: FontWeight.w700),
+                        fontSize: 10,
+                        color: t.muted,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   );
                 },
@@ -2316,10 +2678,7 @@ class _WeeklyResolutionHeatmap extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
-                    colors: [
-                      t.green.withValues(alpha: 0.55),
-                      t.green,
-                    ],
+                    colors: [t.green.withValues(alpha: 0.55), t.green],
                   ),
                 ),
               ],
@@ -2351,86 +2710,94 @@ class _AlertTypeDonut extends StatelessWidget {
       duration: const Duration(milliseconds: 900),
       curve: Curves.easeOutCubic,
       builder: (context, progress, _) {
-        return Row(children: [
-          SizedBox(
-            width: 150,
-            height: 150,
-            child: PieChart(
-              PieChartData(
-                centerSpaceRadius: 42,
-                sectionsSpace: 2,
-                startDegreeOffset: -90,
-                sections: List.generate(entries.length, (i) {
-                  final visible =
-                      ((progress * entries.length) - i).clamp(0.0, 1.0);
-                  final entry = entries[i];
+        return Row(
+          children: [
+            SizedBox(
+              width: 150,
+              height: 150,
+              child: PieChart(
+                PieChartData(
+                  centerSpaceRadius: 42,
+                  sectionsSpace: 2,
+                  startDegreeOffset: -90,
+                  sections: List.generate(entries.length, (i) {
+                    final visible = ((progress * entries.length) - i).clamp(
+                      0.0,
+                      1.0,
+                    );
+                    final entry = entries[i];
+                    final color = typeMeta(entry.key, t).color;
+                    return PieChartSectionData(
+                      value: entry.value * visible,
+                      title: visible > 0.85
+                          ? '${(entry.value / total * 100).round()}%'
+                          : '',
+                      color: color,
+                      radius: 34 + visible * 12,
+                      titleStyle: TextStyle(
+                        color: t.card,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    );
+                  }),
+                ),
+                duration: const Duration(milliseconds: 250),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: entries.map((entry) {
                   final color = typeMeta(entry.key, t).color;
-                  return PieChartSectionData(
-                    value: entry.value * visible,
-                    title: visible > 0.85
-                        ? '${(entry.value / total * 100).round()}%'
-                        : '',
-                    color: color,
-                    radius: 34 + visible * 12,
-                    titleStyle: TextStyle(
-                      color: t.card,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: color.withValues(alpha: 0.28),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            typeMeta(entry.key, t).label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: t.text,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          entry.value.toString(),
+                          style: TextStyle(
+                            color: t.muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
                   );
-                }),
+                }).toList(),
               ),
-              duration: const Duration(milliseconds: 250),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: entries.map((entry) {
-                final color = typeMeta(entry.key, t).color;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(children: [
-                    Container(
-                      width: 9,
-                      height: 9,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: color.withValues(alpha: 0.28),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        typeMeta(entry.key, t).label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: t.text,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    Text(
-                      entry.value.toString(),
-                      style: TextStyle(
-                          color: t.muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800),
-                    ),
-                  ]),
-                );
-              }).toList(),
-            ),
-          ),
-        ]);
+          ],
+        );
       },
     );
   }
@@ -2458,55 +2825,61 @@ class _SupervisorLeaderboardChart extends StatelessWidget {
           builder: (context, progress, _) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: Row(children: [
-                SizedBox(
-                  width: 92,
-                  child: Text(
-                    entry.supervisor.fullName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 92,
+                    child: Text(
+                      entry.supervisor.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         color: t.text,
                         fontSize: 11,
-                        fontWeight: FontWeight.w800),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: Stack(children: [
-                      Container(height: 12, color: t.scaffold),
-                      FractionallySizedBox(
-                        widthFactor: (entry.score / maxScore) * progress,
-                        child: Container(
-                          height: 12,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                color.withValues(alpha: 0.55),
-                                color,
-                              ],
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: Stack(
+                        children: [
+                          Container(height: 12, color: t.scaffold),
+                          FractionallySizedBox(
+                            widthFactor: (entry.score / maxScore) * progress,
+                            child: Container(
+                              height: 12,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    color.withValues(alpha: 0.55),
+                                    color,
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ]),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 34,
-                  child: Text(
-                    '${(entry.score * progress).round()}',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: 34,
+                    child: Text(
+                      '${(entry.score * progress).round()}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
                         color: color,
                         fontSize: 12,
-                        fontWeight: FontWeight.w900),
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
             );
           },
         );
@@ -2565,8 +2938,10 @@ class _FactoryWorkloadChart extends StatelessWidget {
     return Column(
       children: List.generate(entries.length, (index) {
         final entry = entries[index];
-        final total =
-            entry.value.fold<int>(0, (sum, segment) => sum + segment.count);
+        final total = entry.value.fold<int>(
+          0,
+          (sum, segment) => sum + segment.count,
+        );
         return TweenAnimationBuilder<double>(
           tween: Tween(begin: 0, end: 1),
           duration: Duration(milliseconds: 620 + index * 80),
@@ -2574,52 +2949,60 @@ class _FactoryWorkloadChart extends StatelessWidget {
           builder: (context, progress, _) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Row(children: [
-                SizedBox(
-                  width: 86,
-                  child: Text(
-                    entry.key,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 86,
+                    child: Text(
+                      entry.key,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         fontSize: 11,
                         color: t.text,
-                        fontWeight: FontWeight.w800),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: SizedBox(
-                      height: 16,
-                      child: Row(children: [
-                        for (var i = 0; i < entry.value.length; i++)
-                          Flexible(
-                            flex: math.max(
-                                1, (entry.value[i].count * progress).round()),
-                            child: Container(
-                              color: palette[i % palette.length],
-                            ),
-                          ),
-                        if (total < maxTotal)
-                          Flexible(
-                            flex: math.max(1, maxTotal - total),
-                            child: Container(color: t.scaffold),
-                          ),
-                      ]),
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  total.toString(),
-                  style: TextStyle(
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: SizedBox(
+                        height: 16,
+                        child: Row(
+                          children: [
+                            for (var i = 0; i < entry.value.length; i++)
+                              Flexible(
+                                flex: math.max(
+                                  1,
+                                  (entry.value[i].count * progress).round(),
+                                ),
+                                child: Container(
+                                  color: palette[i % palette.length],
+                                ),
+                              ),
+                            if (total < maxTotal)
+                              Flexible(
+                                flex: math.max(1, maxTotal - total),
+                                child: Container(color: t.scaffold),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    total.toString(),
+                    style: TextStyle(
                       color: t.muted,
                       fontSize: 11,
-                      fontWeight: FontWeight.w800),
-                ),
-              ]),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         );
@@ -2641,23 +3024,28 @@ class _SupervisorTypeDonutChartState extends State<_SupervisorTypeDonutChart> {
   int _activeIndex = -1;
 
   List<_TypeDonutDatum> get _data {
-    final items = widget.stats.entries
-        .where((entry) =>
-            entry.value.validated > 0 || entry.value.notValidated > 0)
-        .map((entry) => _TypeDonutDatum(
-              type: entry.key,
-              validated: entry.value.validated,
-              notValidated: entry.value.notValidated,
-              color: _typeColor(entry.key),
-            ))
-        .toList()
-      ..sort((a, b) {
-        final byValidated = b.validated.compareTo(a.validated);
-        if (byValidated != 0) {
-          return byValidated;
-        }
-        return _typeLabel(a.type).compareTo(_typeLabel(b.type));
-      });
+    final items =
+        widget.stats.entries
+            .where(
+              (entry) =>
+                  entry.value.validated > 0 || entry.value.notValidated > 0,
+            )
+            .map(
+              (entry) => _TypeDonutDatum(
+                type: entry.key,
+                validated: entry.value.validated,
+                notValidated: entry.value.notValidated,
+                color: _typeColor(entry.key),
+              ),
+            )
+            .toList()
+          ..sort((a, b) {
+            final byValidated = b.validated.compareTo(a.validated);
+            if (byValidated != 0) {
+              return byValidated;
+            }
+            return _typeLabel(a.type).compareTo(_typeLabel(b.type));
+          });
     return items;
   }
 
@@ -2665,8 +3053,10 @@ class _SupervisorTypeDonutChartState extends State<_SupervisorTypeDonutChart> {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     final data = _data;
-    final totalValidated =
-        data.fold<int>(0, (sum, item) => sum + item.validated);
+    final totalValidated = data.fold<int>(
+      0,
+      (sum, item) => sum + item.validated,
+    );
     if (data.isEmpty || totalValidated == 0) {
       return const _EmptyChartState(label: 'No validated alerts yet');
     }
@@ -2675,276 +3065,301 @@ class _SupervisorTypeDonutChartState extends State<_SupervisorTypeDonutChart> {
         ? data[_activeIndex]
         : data.first;
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final compact = constraints.maxWidth < 760;
-      final chart = TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 900),
-        curve: Curves.easeOutCubic,
-        builder: (context, progress, _) {
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                width: compact ? 220 : 250,
-                height: compact ? 220 : 250,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      selected.color.withValues(alpha: 0.22),
-                      selected.color.withValues(alpha: 0.02),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: compact ? 220 : 250,
-                height: compact ? 220 : 250,
-                child: PieChart(
-                  PieChartData(
-                    startDegreeOffset: -90,
-                    sectionsSpace: 4,
-                    centerSpaceRadius: compact ? 54 : 62,
-                    pieTouchData: PieTouchData(
-                      enabled: true,
-                      touchCallback: (event, response) {
-                        final touched =
-                            response?.touchedSection?.touchedSectionIndex ?? -1;
-                        if (!event.isInterestedForInteractions || touched < 0) {
-                          if (_activeIndex != -1) {
-                            setState(() => _activeIndex = -1);
-                          }
-                          return;
-                        }
-                        if (_activeIndex != touched) {
-                          setState(() => _activeIndex = touched);
-                        }
-                      },
-                    ),
-                    sections: List.generate(data.length, (index) {
-                      final item = data[index];
-                      final selectedSlice = index == _activeIndex;
-                      return PieChartSectionData(
-                        color: item.color,
-                        value: math.max(
-                            (item.validated * progress).toDouble(), 0.001),
-                        title: '',
-                        radius: selectedSlice ? 78 : 68,
-                        borderSide: BorderSide(
-                          color: t.card
-                              .withValues(alpha: selectedSlice ? 0.96 : 0.74),
-                          width: selectedSlice ? 4 : 2,
-                        ),
-                      );
-                    }),
-                  ),
-                ),
-              ),
-              IgnorePointer(
-                child: Container(
-                  width: compact ? 108 : 122,
-                  height: compact ? 108 : 122,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 760;
+        final chart = TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 900),
+          curve: Curves.easeOutCubic,
+          builder: (context, progress, _) {
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  width: compact ? 220 : 250,
+                  height: compact ? 220 : 250,
                   decoration: BoxDecoration(
-                    color: t.card.withValues(alpha: t.isDark ? 0.92 : 0.96),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selected.color.withValues(alpha: 0.24),
+                    gradient: RadialGradient(
+                      colors: [
+                        selected.color.withValues(alpha: 0.22),
+                        selected.color.withValues(alpha: 0.02),
+                        Colors.transparent,
+                      ],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black
-                            .withValues(alpha: t.isDark ? 0.18 : 0.05),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
                   ),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    child: Column(
-                      key: ValueKey(selected.type),
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('${selected.validated}',
+                ),
+                SizedBox(
+                  width: compact ? 220 : 250,
+                  height: compact ? 220 : 250,
+                  child: PieChart(
+                    PieChartData(
+                      startDegreeOffset: -90,
+                      sectionsSpace: 4,
+                      centerSpaceRadius: compact ? 54 : 62,
+                      pieTouchData: PieTouchData(
+                        enabled: true,
+                        touchCallback: (event, response) {
+                          final touched =
+                              response?.touchedSection?.touchedSectionIndex ??
+                              -1;
+                          if (!event.isInterestedForInteractions ||
+                              touched < 0) {
+                            if (_activeIndex != -1) {
+                              setState(() => _activeIndex = -1);
+                            }
+                            return;
+                          }
+                          if (_activeIndex != touched) {
+                            setState(() => _activeIndex = touched);
+                          }
+                        },
+                      ),
+                      sections: List.generate(data.length, (index) {
+                        final item = data[index];
+                        final selectedSlice = index == _activeIndex;
+                        return PieChartSectionData(
+                          color: item.color,
+                          value: math.max(
+                            (item.validated * progress).toDouble(),
+                            0.001,
+                          ),
+                          title: '',
+                          radius: selectedSlice ? 78 : 68,
+                          borderSide: BorderSide(
+                            color: t.card.withValues(
+                              alpha: selectedSlice ? 0.96 : 0.74,
+                            ),
+                            width: selectedSlice ? 4 : 2,
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+                IgnorePointer(
+                  child: Container(
+                    width: compact ? 108 : 122,
+                    height: compact ? 108 : 122,
+                    decoration: BoxDecoration(
+                      color: t.card.withValues(alpha: t.isDark ? 0.92 : 0.96),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected.color.withValues(alpha: 0.24),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: t.isDark ? 0.18 : 0.05,
+                          ),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: Column(
+                        key: ValueKey(selected.type),
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            '${selected.validated}',
                             style: TextStyle(
-                                fontSize: compact ? 28 : 32,
-                                fontWeight: FontWeight.w900,
-                                color: selected.color,
-                                height: 1)),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Text(_typeLabel(selected.type),
+                              fontSize: compact ? 28 : 32,
+                              fontWeight: FontWeight.w900,
+                              color: selected.color,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              _typeLabel(selected.type),
                               maxLines: 2,
                               textAlign: TextAlign.center,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: t.text,
-                                  height: 1.15)),
-                        ),
-                        const SizedBox(height: 3),
-                        Text('validated',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: t.text,
+                                height: 1.15,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'validated',
                             style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: t.muted,
-                                letterSpacing: 0.2)),
-                      ],
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: t.muted,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-
-      final details = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: selected.color.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: selected.color.withValues(alpha: 0.22)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  margin: const EdgeInsets.only(top: 2),
-                  decoration: BoxDecoration(
-                    color: selected.color,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: selected.color.withValues(alpha: 0.35),
-                        blurRadius: 12,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_typeLabel(selected.type),
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                              color: t.text)),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${selected.validated} validated • ${selected.share(totalValidated)}% of validated alerts',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: selected.color),
-                      ),
-                      if (selected.notValidated > 0) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '${selected.notValidated} open / returned in this class',
-                          style: TextStyle(fontSize: 11, color: t.muted),
-                        ),
-                      ],
-                    ],
                   ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...List.generate(data.length, (index) {
-            final item = data[index];
-            final highlighted =
-                index == _activeIndex || (_activeIndex < 0 && index == 0);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: MouseRegion(
-                onEnter: (_) => setState(() => _activeIndex = index),
-                onExit: (_) => setState(() => _activeIndex = -1),
-                child: GestureDetector(
-                  onTap: () => setState(() => _activeIndex = index),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+            );
+          },
+        );
+
+        final details = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: selected.color.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected.color.withValues(alpha: 0.22),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    margin: const EdgeInsets.only(top: 2),
                     decoration: BoxDecoration(
-                      color: highlighted
-                          ? item.color.withValues(alpha: 0.08)
-                          : t.scaffold.withValues(alpha: t.isDark ? 0.45 : 1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: highlighted
-                            ? item.color.withValues(alpha: 0.36)
-                            : t.border,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: item.color,
-                            shape: BoxShape.circle,
-                          ),
+                      color: selected.color,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: selected.color.withValues(alpha: 0.35),
+                          blurRadius: 12,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(_typeLabel(item.type),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: t.text)),
-                        ),
-                        Text('${item.validated}',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w900,
-                                color: item.color)),
                       ],
                     ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _typeLabel(selected.type),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: t.text,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${selected.validated} validated • ${selected.share(totalValidated)}% of validated alerts',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: selected.color,
+                          ),
+                        ),
+                        if (selected.notValidated > 0) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '${selected.notValidated} open / returned in this class',
+                            style: TextStyle(fontSize: 11, color: t.muted),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            );
-          }),
-        ],
-      );
-
-      if (compact) {
-        return Column(
-          children: [
-            chart,
-            const SizedBox(height: 16),
-            details,
+            ),
+            const SizedBox(height: 12),
+            ...List.generate(data.length, (index) {
+              final item = data[index];
+              final highlighted =
+                  index == _activeIndex || (_activeIndex < 0 && index == 0);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: MouseRegion(
+                  onEnter: (_) => setState(() => _activeIndex = index),
+                  onExit: (_) => setState(() => _activeIndex = -1),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _activeIndex = index),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: highlighted
+                            ? item.color.withValues(alpha: 0.08)
+                            : t.scaffold.withValues(alpha: t.isDark ? 0.45 : 1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: highlighted
+                              ? item.color.withValues(alpha: 0.36)
+                              : t.border,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: item.color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _typeLabel(item.type),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: t.text,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${item.validated}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: item.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
           ],
         );
-      }
 
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(child: Center(child: chart)),
-          const SizedBox(width: 20),
-          SizedBox(width: 280, child: details),
-        ],
-      );
-    });
+        if (compact) {
+          return Column(children: [chart, const SizedBox(height: 16), details]);
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(child: Center(child: chart)),
+            const SizedBox(width: 20),
+            SizedBox(width: 280, child: details),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -2984,10 +3399,7 @@ class _EmptyChartState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: t.border),
       ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 12, color: t.muted),
-      ),
+      child: Text(label, style: TextStyle(fontSize: 12, color: t.muted)),
     );
   }
 }
@@ -3044,7 +3456,8 @@ class _HeartbeatPainter extends CustomPainter {
     final shift = progress * step;
     Offset point(int i) {
       final x = i * step - shift;
-      final y = size.height -
+      final y =
+          size.height -
           14 -
           (samples[i] / maxVal) * math.max(1, size.height - 28);
       return Offset(x, y);
@@ -3159,8 +3572,10 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
               )
             : null,
         borderRadius: BorderRadius.circular(14),
-        border:
-            Border.all(color: borderColor, width: widget.selected ? 1.4 : 1),
+        border: Border.all(
+          color: borderColor,
+          width: widget.selected ? 1.4 : 1,
+        ),
         boxShadow: widget.selected || _hovering
             ? [
                 BoxShadow(
@@ -3183,123 +3598,151 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
         child: AnimatedSize(
           duration: const Duration(milliseconds: 260),
           curve: Curves.easeOutCubic,
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: widget.selected ? t.navy : t.scaffold,
-                  borderRadius: BorderRadius.circular(13),
-                  border:
-                      Border.all(color: widget.selected ? t.navy : t.border),
-                ),
-                child: Center(
-                  child: Text(_initials(widget.supervisor),
-                      style: TextStyle(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: widget.selected ? t.navy : t.scaffold,
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(
+                        color: widget.selected ? t.navy : t.border,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _initials(widget.supervisor),
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
-                          color: widget.selected ? Colors.white : t.navy)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.supervisor.fullName,
+                          color: widget.selected ? Colors.white : t.navy,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.supervisor.fullName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: t.text)),
-                      const SizedBox(height: 3),
-                      Row(children: [
-                        _LivePulseDot(
-                          color: status,
-                          pulse: widget.supervisor.isActive,
-                        ),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            widget.supervisor.usine.isEmpty
-                                ? 'Unassigned'
-                                : widget.supervisor.usine,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11, color: t.muted),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            color: t.text,
                           ),
                         ),
-                      ]),
-                    ]),
-              ),
-              Icon(Icons.drag_indicator, size: 18, color: t.muted),
-            ]),
-            const SizedBox(height: 11),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              _AnimatedMiniChip(
-                  icon: Icons.check_circle_outline,
-                  value: widget.solved,
-                  suffix: ' fixed',
-                  color: t.green),
-              _AnimatedMiniChip(
-                  icon: Icons.timer_outlined,
-                  value: widget.claimed,
-                  suffix: ' live',
-                  color: t.blue),
-            ]),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 30,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 760),
-                curve: Curves.easeOutCubic,
-                builder: (context, progress, _) => CustomPaint(
-                  painter: _MiniSparklinePainter(
-                    data: widget.spark,
-                    color: widget.selected ? t.navy : t.green,
-                    gridColor: t.border,
-                    progress: progress,
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            _LivePulseDot(
+                              color: status,
+                              pulse: widget.supervisor.isActive,
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                widget.supervisor.usine.isEmpty
+                                    ? 'Unassigned'
+                                    : widget.supervisor.usine,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11, color: t.muted),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  size: Size.infinite,
-                ),
+                  Icon(Icons.drag_indicator, size: 18, color: t.muted),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(
-                child: Text(widget.supervisor.email,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10, color: t.muted)),
-              ),
-              Tooltip(
-                message: 'Modify Supervisor',
-                child: InkWell(
-                  onTap: widget.onEdit,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.all(5),
-                    child: Icon(Icons.edit, size: 16, color: t.navy),
+              const SizedBox(height: 11),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _AnimatedMiniChip(
+                    icon: Icons.check_circle_outline,
+                    value: widget.solved,
+                    suffix: ' fixed',
+                    color: t.green,
                   ),
-                ),
+                  _AnimatedMiniChip(
+                    icon: Icons.timer_outlined,
+                    value: widget.claimed,
+                    suffix: ' live',
+                    color: t.blue,
+                  ),
+                ],
               ),
-              Tooltip(
-                message: 'Delete Supervisor',
-                child: InkWell(
-                  onTap: widget.onDelete,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.all(5),
-                    child: Icon(Icons.delete_outline, size: 16, color: t.red),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 30,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 760),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, progress, _) => CustomPaint(
+                    painter: _MiniSparklinePainter(
+                      data: widget.spark,
+                      color: widget.selected ? t.navy : t.green,
+                      gridColor: t.border,
+                      progress: progress,
+                    ),
+                    size: Size.infinite,
                   ),
                 ),
               ),
-            ]),
-          ]),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.supervisor.email,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10, color: t.muted),
+                    ),
+                  ),
+                  Tooltip(
+                    message: 'Modify Supervisor',
+                    child: InkWell(
+                      onTap: widget.onEdit,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Icon(Icons.edit, size: 16, color: t.navy),
+                      ),
+                    ),
+                  ),
+                  Tooltip(
+                    message: 'Delete Supervisor',
+                    child: InkWell(
+                      onTap: widget.onDelete,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Icon(
+                          Icons.delete_outline,
+                          size: 16,
+                          color: t.red,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -3325,19 +3768,24 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
                 ),
               ],
             ),
-            child: Row(children: [
-              const Icon(Icons.person_outline, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(widget.supervisor.fullName,
+            child: Row(
+              children: [
+                const Icon(Icons.person_outline, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.supervisor.fullName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800)),
-              ),
-            ]),
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         childWhenDragging: Opacity(opacity: 0.35, child: tile),
@@ -3423,32 +3871,37 @@ class _LivePulseDotState extends State<_LivePulseDot>
         return SizedBox(
           width: 14,
           height: 14,
-          child: Stack(alignment: Alignment.center, children: [
-            Container(
-              width: 12 + v * 3,
-              height: 12 + v * 3,
-              decoration: BoxDecoration(
-                color:
-                    widget.color.withValues(alpha: widget.pulse ? 0.18 : 0.10),
-                shape: BoxShape.circle,
-              ),
-            ),
-            Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                color: widget.color,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.color
-                        .withValues(alpha: widget.pulse ? 0.48 : 0.22),
-                    blurRadius: widget.pulse ? 5 + v * 5 : 3,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 12 + v * 3,
+                height: 12 + v * 3,
+                decoration: BoxDecoration(
+                  color: widget.color.withValues(
+                    alpha: widget.pulse ? 0.18 : 0.10,
                   ),
-                ],
+                  shape: BoxShape.circle,
+                ),
               ),
-            ),
-          ]),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: widget.color,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(
+                        alpha: widget.pulse ? 0.48 : 0.22,
+                      ),
+                      blurRadius: widget.pulse ? 5 + v * 5 : 3,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -3472,8 +3925,10 @@ class _MiniSparklinePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty || size.isEmpty) return;
     final maxVal = math.max(1, data.reduce(math.max)).toDouble();
-    final visibleCount =
-        (data.length * progress).clamp(1.0, data.length.toDouble());
+    final visibleCount = (data.length * progress).clamp(
+      1.0,
+      data.length.toDouble(),
+    );
     final n = visibleCount.ceil();
     final stepX = data.length > 1 ? size.width / (data.length - 1) : size.width;
 
@@ -3520,10 +3975,7 @@ class _MiniSparklinePainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            color.withValues(alpha: 0.24),
-            color.withValues(alpha: 0.0),
-          ],
+          colors: [color.withValues(alpha: 0.24), color.withValues(alpha: 0.0)],
         ).createShader(Offset.zero & size),
     );
     canvas.drawPath(
@@ -3552,22 +4004,28 @@ class _GlassChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.13),
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.13),
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 13, color: color),
-          const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white)),
-        ]),
-      );
+      ],
+    ),
+  );
 }
 
 class _StatusPill extends StatelessWidget {
@@ -3591,13 +4049,21 @@ class _StatusPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(99),
         border: Border.all(color: color.withValues(alpha: 0.34)),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: icon == Icons.circle ? 8 : 14, color: color),
-        const SizedBox(width: 6),
-        Text(label,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: icon == Icons.circle ? 8 : 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
             style: TextStyle(
-                fontSize: 11, fontWeight: FontWeight.w800, color: color)),
-      ]),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
     if (!pulse) return pill;
     return _PulsingRing(color: color, child: pill);
@@ -3752,36 +4218,45 @@ class _HeroSignal extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
-      child: Row(children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 16),
           ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
                     color: t.text,
-                    height: 1)),
-            const SizedBox(height: 3),
-            Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 9, color: t.muted)),
-          ]),
-        ),
-      ]),
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 9, color: t.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3826,37 +4301,47 @@ class _CommandMetricState extends State<_CommandMetric> {
               color: widget.tone.withValues(alpha: _hovering ? 0.16 : 0.06),
               blurRadius: _hovering ? 18 : 10,
               offset: Offset(0, _hovering ? 9 : 5),
-            )
+            ),
           ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(widget.icon, size: 16, color: widget.tone),
-            const Spacer(),
-            Container(
-              width: 22,
-              height: 3,
-              decoration: BoxDecoration(
-                color: widget.tone.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(99),
-              ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(widget.icon, size: 16, color: widget.tone),
+                const Spacer(),
+                Container(
+                  width: 22,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: widget.tone.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ],
             ),
-          ]),
-          const Spacer(),
-          Text(widget.value,
+            const Spacer(),
+            Text(
+              widget.value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: t.text,
-                  height: 1)),
-          const SizedBox(height: 4),
-          Text(widget.label,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: t.text,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 9, color: t.muted)),
-        ]),
+              style: TextStyle(fontSize: 9, color: t.muted),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -3888,38 +4373,54 @@ class _SectionShell extends StatelessWidget {
         border: Border.all(color: t.border),
         boxShadow: const [
           BoxShadow(
-              color: Color(0x06000000), blurRadius: 12, offset: Offset(0, 6))
+            color: Color(0x06000000),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
         ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: t.navyLt,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 17, color: t.navy),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: t.navyLt,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 17, color: t.navy),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: t.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 10, color: t.muted),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title,
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                      color: t.text)),
-              const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(fontSize: 10, color: t.muted)),
-            ]),
-          ),
-          if (trailing != null) trailing!,
-        ]),
-        const SizedBox(height: 12),
-        child,
-      ]),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
     );
   }
 }
@@ -3941,55 +4442,59 @@ class _RangeToggle extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: t.border),
       ),
-      child: LayoutBuilder(builder: (context, constraints) {
-        final itemW = constraints.maxWidth / 2;
-        final selectedIndex = value == '30days' ? 1 : 0;
-        Widget item(String id, String label) {
-          final selected = value == id;
-          return Expanded(
-            child: InkWell(
-              onTap: () => onChanged(id),
-              borderRadius: BorderRadius.circular(9),
-              child: Center(
-                child: AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 180),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: selected ? Colors.white : t.muted,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemW = constraints.maxWidth / 2;
+          final selectedIndex = value == '30days' ? 1 : 0;
+          Widget item(String id, String label) {
+            final selected = value == id;
+            return Expanded(
+              child: InkWell(
+                onTap: () => onChanged(id),
+                borderRadius: BorderRadius.circular(9),
+                child: Center(
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 180),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: selected ? Colors.white : t.muted,
+                    ),
+                    child: Text(label),
                   ),
-                  child: Text(label),
                 ),
               ),
-            ),
-          );
-        }
+            );
+          }
 
-        return Stack(children: [
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            left: itemW * selectedIndex,
-            top: 0,
-            bottom: 0,
-            width: itemW,
-            child: Container(
-              decoration: BoxDecoration(
-                color: t.navy,
-                borderRadius: BorderRadius.circular(9),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.navy.withValues(alpha: 0.24),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
+          return Stack(
+            children: [
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                left: itemW * selectedIndex,
+                top: 0,
+                bottom: 0,
+                width: itemW,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: t.navy,
+                    borderRadius: BorderRadius.circular(9),
+                    boxShadow: [
+                      BoxShadow(
+                        color: t.navy.withValues(alpha: 0.24),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-          Row(children: [item('7days', '7D'), item('30days', '30D')]),
-        ]);
-      }),
+              Row(children: [item('7days', '7D'), item('30days', '30D')]),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -4006,7 +4511,10 @@ class _CommandGridPainter extends CustomPainter {
     const step = 28.0;
     for (double x = 0; x < size.width; x += step) {
       canvas.drawLine(
-          Offset(x, 0), Offset(x + size.height * 0.35, size.height), paint);
+        Offset(x, 0),
+        Offset(x + size.height * 0.35, size.height),
+        paint,
+      );
     }
     for (double y = 0; y < size.height; y += step) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
@@ -4033,10 +4541,12 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
   List<AlertModel> get _supAlerts => _selected == null
       ? []
       : widget.alerts
-          .where((a) =>
-              a.superviseurId == _selected!.id ||
-              a.assistantId == _selected!.id)
-          .toList();
+            .where(
+              (a) =>
+                  a.superviseurId == _selected!.id ||
+                  a.assistantId == _selected!.id,
+            )
+            .toList();
 
   List<AlertModel> get _solved =>
       _supAlerts.where((a) => a.status == 'validee').toList();
@@ -4051,8 +4561,11 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
     final days = _chartRange == '7days' ? 7 : 30;
     final now = DateTime.now();
     return List.generate(days, (i) {
-      final day = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: days - 1 - i));
+      final day = DateTime(
+        now.year,
+        now.month,
+        now.day,
+      ).subtract(Duration(days: days - 1 - i));
       final next = day.add(const Duration(days: 1));
       final count = _solved
           .where((a) => a.timestamp.isAfter(day) && a.timestamp.isBefore(next))
@@ -4074,7 +4587,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
       'qualite',
       'maintenance',
       'defaut_produit',
-      'manque_ressource'
+      'manque_ressource',
     ];
     return {
       for (var t in types)
@@ -4085,7 +4598,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
           notValidated: _supAlerts
               .where((a) => a.type == t && a.status != 'validee')
               .length,
-        )
+        ),
     };
   }
 
@@ -4094,387 +4607,550 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
     final t = context.appTheme;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Supervisor Performance',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Supervisor Performance',
             style: TextStyle(
-                fontSize: 19, fontWeight: FontWeight.w800, color: t.text)),
-        const SizedBox(height: 2),
-        Text('Analyse alert validations per supervisor',
-            style: TextStyle(fontSize: 13, color: t.muted)),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: t.text,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Analyse alert validations per supervisor',
+            style: TextStyle(fontSize: 13, color: t.muted),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
               color: t.card,
               border: Border.all(color: t.border),
-              borderRadius: BorderRadius.circular(12)),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Select a supervisor',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: t.text)),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                  color: t.scaffold,
-                  border: Border.all(color: t.border),
-                  borderRadius: BorderRadius.circular(9)),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<UserModel>(
-                  isExpanded: true,
-                  value: _selected,
-                  hint: Text('Choose a supervisor…',
-                      style: TextStyle(color: t.muted, fontSize: 14)),
-                  dropdownColor: t.card,
-                  items: widget.supervisors
-                      .map((s) => DropdownMenuItem(
-                            value: s,
-                            child: Row(children: [
-                              Icon(Icons.person_outline,
-                                  size: 16, color: t.navy),
-                              const SizedBox(width: 8),
-                              Text(s.fullName,
-                                  style:
-                                      TextStyle(fontSize: 14, color: t.text)),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                    color: t.navyLt,
-                                    borderRadius: BorderRadius.circular(99)),
-                                child: Text(s.usine,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Select a supervisor',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: t.text,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: t.scaffold,
+                    border: Border.all(color: t.border),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<UserModel>(
+                      isExpanded: true,
+                      value: _selected,
+                      hint: Text(
+                        'Choose a supervisor…',
+                        style: TextStyle(color: t.muted, fontSize: 14),
+                      ),
+                      dropdownColor: t.card,
+                      items: widget.supervisors
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.person_outline,
+                                    size: 16,
+                                    color: t.navy,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    s.fullName,
                                     style: TextStyle(
+                                      fontSize: 14,
+                                      color: t.text,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: t.navyLt,
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Text(
+                                      s.usine,
+                                      style: TextStyle(
                                         fontSize: 11,
                                         color: t.navy,
-                                        fontWeight: FontWeight.w600)),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ]),
-                          ))
-                      .toList(),
-                  onChanged: (v) => setState(() => _selected = v),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _selected = v),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ]),
-        ),
-        const SizedBox(height: 16),
-        if (_selected == null)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 60),
-            alignment: Alignment.center,
-            child: Column(children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration:
-                    BoxDecoration(color: t.scaffold, shape: BoxShape.circle),
-                child: Icon(Icons.person_search, size: 32, color: t.muted),
-              ),
-              const SizedBox(height: 14),
-              Text('Choose a supervisor',
-                  style: TextStyle(
+          ),
+          const SizedBox(height: 16),
+          if (_selected == null)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 60),
+              alignment: Alignment.center,
+              child: Column(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: t.scaffold,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.person_search, size: 32, color: t.muted),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Choose a supervisor',
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: t.muted)),
-              const SizedBox(height: 4),
-              Text('Select a supervisor above to see their statistics',
-                  style: TextStyle(fontSize: 12, color: t.muted)),
-            ]),
-          ),
-        if (_selected != null) ...[
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-              flex: 2,
-              child: Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                    color: t.card,
-                    border: Border.all(color: t.border),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [
-                      BoxShadow(
+                      color: t.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Select a supervisor above to see their statistics',
+                    style: TextStyle(fontSize: 12, color: t.muted),
+                  ),
+                ],
+              ),
+            ),
+          if (_selected != null) ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: t.card,
+                      border: Border.all(color: t.border),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(
                           color: Color(0x06000000),
                           blurRadius: 4,
-                          offset: Offset(0, 2))
-                    ]),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Fixed Alerts',
-                          style: TextStyle(fontSize: 12, color: t.muted)),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        Text('${_solved.length}',
-                            style: TextStyle(
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Fixed Alerts',
+                          style: TextStyle(fontSize: 12, color: t.muted),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Text(
+                              '${_solved.length}',
+                              style: TextStyle(
                                 fontSize: 40,
                                 fontWeight: FontWeight.w800,
                                 color: t.navy,
-                                height: 1)),
-                        const Spacer(),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                              color: t.blueLt, shape: BoxShape.circle),
-                          child: Icon(Icons.check_circle_outline,
-                              color: t.blue, size: 24),
+                                height: 1,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: t.blueLt,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.check_circle_outline,
+                                color: t.blue,
+                                size: 24,
+                              ),
+                            ),
+                          ],
                         ),
-                      ]),
-                      Divider(height: 20, color: t.border),
-                      Text('Distribution by Factory:',
-                          style: TextStyle(fontSize: 11, color: t.muted)),
-                      const SizedBox(height: 8),
-                      Wrap(
+                        Divider(height: 20, color: t.border),
+                        Text(
+                          'Distribution by Factory:',
+                          style: TextStyle(fontSize: 11, color: t.muted),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: _factoryDist()
-                              .entries
-                              .map((e) => Container(
-                                    padding:
-                                        const EdgeInsets.fromLTRB(10, 7, 14, 7),
-                                    decoration: BoxDecoration(
-                                        color: t.navyLt,
-                                        border: Border.all(
-                                            color: t.navy.withOpacity(0.3)),
-                                        borderRadius: BorderRadius.circular(8)),
-                                    child: Row(
-                                        mainAxisSize: MainAxisSize.min,
+                          children: _factoryDist().entries
+                              .map(
+                                (e) => Container(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    10,
+                                    7,
+                                    14,
+                                    7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: t.navyLt,
+                                    border: Border.all(
+                                      color: t.navy.withOpacity(0.3),
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.bar_chart,
+                                        size: 14,
+                                        color: t.navy,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          Icon(Icons.bar_chart,
-                                              size: 14, color: t.navy),
-                                          const SizedBox(width: 6),
-                                          Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(e.key,
-                                                    style: TextStyle(
-                                                        fontSize: 11,
-                                                        color: t.navy,
-                                                        fontWeight:
-                                                            FontWeight.w600)),
-                                                Text('${e.value}',
-                                                    style: TextStyle(
-                                                        fontSize: 16,
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        color: t.navy)),
-                                              ]),
-                                        ]),
-                                  ))
-                              .toList()),
-                    ]),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                    color: t.card,
-                    border: Border.all(color: t.border),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [
-                      BoxShadow(
+                                          Text(
+                                            e.key,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: t.navy,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          Text(
+                                            '${e.value}',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                              color: t.navy,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: t.card,
+                      border: Border.all(color: t.border),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(
                           color: Color(0x06000000),
                           blurRadius: 4,
-                          offset: Offset(0, 2))
-                    ]),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Average Time',
-                          style: TextStyle(fontSize: 12, color: t.muted)),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        Expanded(
-                          child: Text(_avgMin == null ? '—' : _fmtMin(_avgMin!),
-                              style: TextStyle(
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Average Time',
+                          style: TextStyle(fontSize: 12, color: t.muted),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _avgMin == null ? '—' : _fmtMin(_avgMin!),
+                                style: TextStyle(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w800,
                                   color: t.green,
-                                  height: 1)),
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: t.greenLt,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.timer,
+                                color: t.green,
+                                size: 24,
+                              ),
+                            ),
+                          ],
                         ),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                              color: t.greenLt, shape: BoxShape.circle),
-                          child: Icon(Icons.timer, color: t.green, size: 24),
-                        ),
-                      ]),
-                    ]),
-              ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ]),
-          const SizedBox(height: 16),
-          Row(
-              children: [
-            'qualite',
-            'maintenance',
-            'defaut_produit',
-            'manque_ressource'
-          ].map((tp) {
-            final ts = _typeStats()[tp]!;
-            final clr = _typeColor(tp);
-            final tot = ts.validated + ts.notValidated;
-            final pct = tot == 0 ? 0 : (ts.validated / tot * 100).round();
-            return Expanded(
-                child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                    color: t.card,
-                    border: Border.all(color: clr.withValues(alpha: .25)),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: const [
-                      BoxShadow(
-                          color: Color(0x06000000),
-                          blurRadius: 3,
-                          offset: Offset(0, 2))
-                    ]),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Expanded(
-                            child: Text(_typeLabel(tp),
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: clr))),
-                        Container(
-                          width: 30,
-                          height: 30,
+            const SizedBox(height: 16),
+            Row(
+              children:
+                  [
+                    'qualite',
+                    'maintenance',
+                    'defaut_produit',
+                    'manque_ressource',
+                  ].map((tp) {
+                    final ts = _typeStats()[tp]!;
+                    final clr = _typeColor(tp);
+                    final tot = ts.validated + ts.notValidated;
+                    final pct = tot == 0
+                        ? 0
+                        : (ts.validated / tot * 100).round();
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                              color: clr.withOpacity(.1),
-                              shape: BoxShape.circle),
-                          child: Icon(Icons.check_circle_outline,
-                              color: clr, size: 16),
+                            color: t.card,
+                            border: Border.all(
+                              color: clr.withValues(alpha: .25),
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x06000000),
+                                blurRadius: 3,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _typeLabel(tp),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: clr,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: 30,
+                                    height: 30,
+                                    decoration: BoxDecoration(
+                                      color: clr.withOpacity(.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.check_circle_outline,
+                                      color: clr,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '$tot',
+                                style: TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w800,
+                                  color: clr,
+                                  height: 1,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _PerfStatRow(
+                                label: 'Validated',
+                                value: ts.validated,
+                                color: _green,
+                              ),
+                              const SizedBox(height: 3),
+                              _PerfStatRow(
+                                label: 'Not validated',
+                                value: ts.notValidated,
+                                color: _orange,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '$pct% validated',
+                                style: TextStyle(fontSize: 10, color: t.muted),
+                              ),
+                            ],
+                          ),
                         ),
-                      ]),
-                      const SizedBox(height: 6),
-                      Text('$tot',
-                          style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: clr,
-                              height: 1)),
-                      const SizedBox(height: 10),
-                      _PerfStatRow(
-                          label: 'Validated',
-                          value: ts.validated,
-                          color: _green),
-                      const SizedBox(height: 3),
-                      _PerfStatRow(
-                          label: 'Not validated',
-                          value: ts.notValidated,
-                          color: _orange),
-                      const SizedBox(height: 6),
-                      Text('$pct% validated',
-                          style: TextStyle(fontSize: 10, color: t.muted)),
-                    ]),
-              ),
-            ));
-          }).toList()),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
+                      ),
+                    );
+                  }).toList(),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
                 color: t.card,
                 border: Border.all(color: t.border),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: const [
                   BoxShadow(
-                      color: Color(0x06000000),
-                      blurRadius: 4,
-                      offset: Offset(0, 2))
-                ]),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Icon(Icons.calendar_today, size: 15, color: t.navy),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text('Evolution of Validations',
-                          style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: t.text)),
-                      Text('Number of alerts validated per day',
-                          style: TextStyle(fontSize: 11, color: t.muted)),
-                    ])),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                      color: t.scaffold,
-                      border: Border.all(color: t.border),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _chartRange,
-                      style: TextStyle(fontSize: 12, color: t.text),
-                      dropdownColor: t.card,
-                      items: [
-                        DropdownMenuItem(
-                            value: '7days',
-                            child: Text('Last 7 days',
-                                style: TextStyle(color: t.text))),
-                        DropdownMenuItem(
-                            value: '30days',
-                            child: Text('Last 30 days',
-                                style: TextStyle(color: t.text))),
-                      ],
-                      onChanged: (v) => setState(() => _chartRange = v!),
-                    ),
+                    color: Color(0x06000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 15, color: t.navy),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Evolution of Validations',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: t.text,
+                              ),
+                            ),
+                            Text(
+                              'Number of alerts validated per day',
+                              style: TextStyle(fontSize: 11, color: t.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: t.scaffold,
+                          border: Border.all(color: t.border),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _chartRange,
+                            style: TextStyle(fontSize: 12, color: t.text),
+                            dropdownColor: t.card,
+                            items: [
+                              DropdownMenuItem(
+                                value: '7days',
+                                child: Text(
+                                  'Last 7 days',
+                                  style: TextStyle(color: t.text),
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: '30days',
+                                child: Text(
+                                  'Last 30 days',
+                                  style: TextStyle(color: t.text),
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) => setState(() => _chartRange = v!),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: 200,
+                    child: _LineChart(points: _buildChartPoints()),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(width: 28, height: 2, color: t.navy),
+                      const SizedBox(width: 6),
+                      Icon(Icons.circle, size: 7, color: t.navy),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Validations',
+                        style: TextStyle(fontSize: 11, color: t.muted),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Icon(Icons.check_circle_outline, size: 16, color: t.green),
+                const SizedBox(width: 6),
+                Text(
+                  'Validated Alerts (${_solved.length})',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: t.text,
                   ),
                 ),
-              ]),
-              const SizedBox(height: 20),
-              SizedBox(
-                height: 200,
-                child: _LineChart(points: _buildChartPoints()),
-              ),
-              const SizedBox(height: 12),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Container(width: 28, height: 2, color: t.navy),
-                const SizedBox(width: 6),
-                Icon(Icons.circle, size: 7, color: t.navy),
-                const SizedBox(width: 6),
-                Text('Validations',
-                    style: TextStyle(fontSize: 11, color: t.muted)),
-              ]),
-            ]),
-          ),
-          const SizedBox(height: 20),
-          Row(children: [
-            Icon(Icons.check_circle_outline, size: 16, color: t.green),
-            const SizedBox(width: 6),
-            Text('Validated Alerts (${_solved.length})',
-                style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: t.text)),
-          ]),
-          const SizedBox(height: 2),
-          Text('Detailed list of alerts validated by ${_selected!.fullName}',
-              style: TextStyle(fontSize: 12, color: t.muted)),
-          const SizedBox(height: 12),
-          if (_solved.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 30),
-              alignment: Alignment.center,
-              child: Text('No validated alerts yet',
-                  style: TextStyle(fontSize: 14, color: t.muted)),
-            )
-          else
-            ..._solved.map((a) => _ValidatedAlertRow(alert: a)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Detailed list of alerts validated by ${_selected!.fullName}',
+              style: TextStyle(fontSize: 12, color: t.muted),
+            ),
+            const SizedBox(height: 12),
+            if (_solved.isEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 30),
+                alignment: Alignment.center,
+                child: Text(
+                  'No validated alerts yet',
+                  style: TextStyle(fontSize: 14, color: t.muted),
+                ),
+              )
+            else
+              ..._solved.map((a) => _ValidatedAlertRow(alert: a)),
+          ],
         ],
-      ]),
+      ),
     );
   }
 }
@@ -4483,17 +5159,27 @@ class _PerfStatRow extends StatelessWidget {
   final String label;
   final int value;
   final Color color;
-  const _PerfStatRow(
-      {required this.label, required this.value, required this.color});
+  const _PerfStatRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
   @override
-  Widget build(BuildContext context) => Row(children: [
-        Expanded(
-            child: Text(label,
-                style: const TextStyle(fontSize: 10, color: _muted))),
-        Text('$value',
-            style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w700, color: color)),
-      ]);
+  Widget build(BuildContext context) => Row(
+    children: [
+      Expanded(
+        child: Text(label, style: const TextStyle(fontSize: 10, color: _muted)),
+      ),
+      Text(
+        '$value',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    ],
+  );
 }
 
 class _TypeStats {
@@ -4513,33 +5199,51 @@ class _ValidatedAlertRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-          color: t.card,
-          border: Border.all(color: t.border),
-          borderRadius: BorderRadius.circular(10)),
-      child: Row(children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
+        color: t.card,
+        border: Border.all(color: t.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
               color: clr.withValues(alpha: .1),
-              borderRadius: BorderRadius.circular(6)),
-          child: Text(_typeLabel(alert.type),
-              style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: clr)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Text(
-                '${alert.usine} — C${alert.convoyeur} — P${alert.poste}',
-                style: TextStyle(fontSize: 12, color: t.text))),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-              color: t.greenLt, borderRadius: BorderRadius.circular(99)),
-          child: Text('Validated',
+              _typeLabel(alert.type),
               style: TextStyle(
-                  fontSize: 10, fontWeight: FontWeight.w700, color: t.green)),
-        ),
-      ]),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: clr,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${alert.usine} — C${alert.convoyeur} — P${alert.poste}',
+              style: TextStyle(fontSize: 12, color: t.text),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: t.greenLt,
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              'Validated',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: t.green,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4587,40 +5291,48 @@ class _LineChartState extends State<_LineChart> {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    return LayoutBuilder(builder: (context, constraints) {
-      final width = constraints.maxWidth;
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (details) {
-          setState(() {
-            _selectedIndex = _nearestPoint(
-              Size(width, constraints.maxHeight),
-              details.localPosition,
-            );
-          });
-        },
-        child: Stack(children: [
-          CustomPaint(
-            painter: _LineChartPainter(
-              points: widget.points,
-              progress: widget.progress,
-              color: widget.color ?? t.navy,
-              fillColor: widget.fillColor ?? t.navy,
-              gridColor: widget.gridColor ?? t.border,
-              labelColor: widget.labelColor ?? t.muted,
-              dotBorderColor: t.card,
-              selectedIndex: _selectedIndex,
-            ),
-            size: const Size(double.infinity, 200),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) {
+            setState(() {
+              _selectedIndex = _nearestPoint(
+                Size(width, constraints.maxHeight),
+                details.localPosition,
+              );
+            });
+          },
+          child: Stack(
+            children: [
+              CustomPaint(
+                painter: _LineChartPainter(
+                  points: widget.points,
+                  progress: widget.progress,
+                  color: widget.color ?? t.navy,
+                  fillColor: widget.fillColor ?? t.navy,
+                  gridColor: widget.gridColor ?? t.border,
+                  labelColor: widget.labelColor ?? t.muted,
+                  dotBorderColor: t.card,
+                  selectedIndex: _selectedIndex,
+                ),
+                size: const Size(double.infinity, 200),
+              ),
+              if (_selectedIndex != null && widget.points.isNotEmpty)
+                _LineChartTooltip(
+                  point: widget.points[_selectedIndex!],
+                  left: _tooltipLeft(
+                    width,
+                    _selectedIndex!,
+                    widget.points.length,
+                  ),
+                ),
+            ],
           ),
-          if (_selectedIndex != null && widget.points.isNotEmpty)
-            _LineChartTooltip(
-              point: widget.points[_selectedIndex!],
-              left: _tooltipLeft(width, _selectedIndex!, widget.points.length),
-            ),
-        ]),
-      );
-    });
+        );
+      },
+    );
   }
 
   double _tooltipLeft(double width, int index, int count) {
@@ -4677,11 +5389,15 @@ class _LineChartPainter extends CustomPainter {
     for (int i = 0; i <= 4; i++) {
       final y = topPad + chartH * (1 - i / 4);
       canvas.drawLine(
-          Offset(leftPad, y), Offset(leftPad + chartW, y), gridPaint);
+        Offset(leftPad, y),
+        Offset(leftPad + chartW, y),
+        gridPaint,
+      );
       final textPainter = TextPainter(
         text: TextSpan(
-            text: (yMax * i / 4).toStringAsFixed(0),
-            style: TextStyle(fontSize: 9, color: labelColor)),
+          text: (yMax * i / 4).toStringAsFixed(0),
+          style: TextStyle(fontSize: 9, color: labelColor),
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
       textPainter.paint(canvas, Offset(0, y - textPainter.height / 2));
@@ -4702,16 +5418,17 @@ class _LineChartPainter extends CustomPainter {
     fillPath.close();
 
     canvas.drawPath(
-        fillPath,
-        Paint()
-          ..shader = LinearGradient(
-            colors: [
-              fillColor.withValues(alpha: .18),
-              color.withValues(alpha: .015)
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ).createShader(Rect.fromLTWH(0, topPad, size.width, chartH)));
+      fillPath,
+      Paint()
+        ..shader = LinearGradient(
+          colors: [
+            fillColor.withValues(alpha: .18),
+            color.withValues(alpha: .015),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ).createShader(Rect.fromLTWH(0, topPad, size.width, chartH)),
+    );
 
     final linePaint = Paint()
       ..color = color
@@ -4751,7 +5468,9 @@ class _LineChartPainter extends CustomPainter {
         final label = '${d.day} ${_monthAbbr(d.month)}';
         final tp = TextPainter(
           text: TextSpan(
-              text: label, style: TextStyle(fontSize: 9, color: labelColor)),
+            text: label,
+            style: TextStyle(fontSize: 9, color: labelColor),
+          ),
           textDirection: TextDirection.ltr,
         )..layout();
         tp.paint(canvas, Offset(p.dx - tp.width / 2, topPad + chartH + 6));
@@ -4773,7 +5492,7 @@ class _LineChartPainter extends CustomPainter {
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
     return abbr[m];
   }
@@ -4825,17 +5544,28 @@ class _LineChartTooltip extends StatelessWidget {
               ),
             ],
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('${point.value.toInt()} resolved',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${point.value.toInt()} resolved',
                 style: TextStyle(
-                    color: t.card, fontSize: 12, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 2),
-            Text('${point.day.day}/${point.day.month}/${point.day.year}',
+                  color: t.card,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${point.day.day}/${point.day.month}/${point.day.year}',
                 style: TextStyle(
-                    color: t.card.withValues(alpha: 0.74),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700)),
-          ]),
+                  color: t.card.withValues(alpha: 0.74),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -4845,8 +5575,11 @@ class _LineChartTooltip extends StatelessWidget {
 class _AssignmentsSubTab extends StatefulWidget {
   final List<UserModel> supervisors;
   final Future<void> Function()? onRefresh;
-  const _AssignmentsSubTab(
-      {super.key, required this.supervisors, this.onRefresh});
+  const _AssignmentsSubTab({
+    super.key,
+    required this.supervisors,
+    this.onRefresh,
+  });
 
   @override
   State<_AssignmentsSubTab> createState() => _AssignmentsSubTabState();
@@ -4863,13 +5596,13 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
     _factoriesSub = ServiceLocator.instance.hierarchyService
         .getFactories()
         .listen((factories) {
-      if (mounted) {
-        setState(() {
-          _factories = factories;
-          _loading = false;
+          if (mounted) {
+            setState(() {
+              _factories = factories;
+              _loading = false;
+            });
+          }
         });
-      }
-    });
   }
 
   @override
@@ -4881,8 +5614,9 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
   Map<String, List<UserModel>> _groupByFactory() {
     final map = <String, List<UserModel>>{};
     for (var factory in _factories) {
-      map[factory.name] =
-          widget.supervisors.where((s) => s.usine == factory.name).toList();
+      map[factory.name] = widget.supervisors
+          .where((s) => s.usine == factory.name)
+          .toList();
     }
     return map;
   }
@@ -4914,18 +5648,22 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
       );
       if (!mounted) return;
       final t = context.appTheme;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(newFactory.isEmpty
-            ? '${sup.fullName} unassigned'
-            : '${sup.fullName} moved to $newFactory'),
-        backgroundColor: t.green,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newFactory.isEmpty
+                ? '${sup.fullName} unassigned'
+                : '${sup.fullName} moved to $newFactory',
+          ),
+          backgroundColor: t.green,
+        ),
+      );
       widget.onRefresh?.call();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Failed: ${UserFriendlyError.message(e)}'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: ${UserFriendlyError.message(e)}')),
+      );
     }
   }
 
@@ -4939,51 +5677,77 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Supervisor Assignments',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Supervisor Assignments',
             style: TextStyle(
-                fontSize: 19, fontWeight: FontWeight.w800, color: t.text)),
-        const SizedBox(height: 2),
-        Text('Drag supervisors between plants · tap × to unassign',
-            style: TextStyle(fontSize: 13, color: t.muted)),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: t.text,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Drag supervisors between plants · tap × to unassign',
+            style: TextStyle(fontSize: 13, color: t.muted),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
               color: t.card,
               border: Border.all(color: t.border),
               borderRadius: BorderRadius.circular(14),
               boxShadow: const [
                 BoxShadow(
-                    color: Color(0x06000000),
-                    blurRadius: 4,
-                    offset: Offset(0, 2))
-              ]),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(Icons.bar_chart, size: 16, color: t.navy),
-              const SizedBox(width: 8),
-              Text('Assignments by Plant',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: t.text)),
-            ]),
-            const SizedBox(height: 4),
-            Text('Drag a supervisor to a different plant to reassign',
-                style: TextStyle(fontSize: 12, color: t.muted)),
-            const SizedBox(height: 16),
-            ...grouped.entries.map((e) => _buildFactoryCard(t, e.key, e.value)),
-            if (unassigned.isNotEmpty) _buildUnassignedCard(t, unassigned),
-          ]),
-        ),
-      ]),
+                  color: Color(0x06000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.bar_chart, size: 16, color: t.navy),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Assignments by Plant',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: t.text,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Drag a supervisor to a different plant to reassign',
+                  style: TextStyle(fontSize: 12, color: t.muted),
+                ),
+                const SizedBox(height: 16),
+                ...grouped.entries.map(
+                  (e) => _buildFactoryCard(t, e.key, e.value),
+                ),
+                if (unassigned.isNotEmpty) _buildUnassignedCard(t, unassigned),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildFactoryCard(
-      AppTheme t, String factoryName, List<UserModel> sups) {
+    AppTheme t,
+    String factoryName,
+    List<UserModel> sups,
+  ) {
     final location = _locationFor(factoryName);
     return DragTarget<UserModel>(
       onWillAcceptWithDetails: (d) => d.data.usine != factoryName,
@@ -4995,74 +5759,100 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-              color: hovering ? t.navy.withValues(alpha: .08) : t.scaffold,
-              border: Border.all(
-                  color: hovering ? t.navy : t.border, width: hovering ? 2 : 1),
-              borderRadius: BorderRadius.circular(10)),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(
-                  child: Column(
+            color: hovering ? t.navy.withValues(alpha: .08) : t.scaffold,
+            border: Border.all(
+              color: hovering ? t.navy : t.border,
+              width: hovering ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text(factoryName,
-                        style: TextStyle(
+                        Text(
+                          factoryName,
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
-                            color: t.text)),
-                    if (location != null && location.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(location,
-                          style: TextStyle(fontSize: 12, color: t.muted)),
-                    ],
-                  ])),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                decoration: BoxDecoration(
-                    color: sups.isEmpty ? t.scaffold : t.navyLt,
-                    borderRadius: BorderRadius.circular(99)),
-                child: Text(
-                    sups.isEmpty
-                        ? '0 supervisors'
-                        : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
-                    style: TextStyle(
+                            color: t.text,
+                          ),
+                        ),
+                        if (location != null && location.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            location,
+                            style: TextStyle(fontSize: 12, color: t.muted),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: sups.isEmpty ? t.scaffold : t.navyLt,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      sups.isEmpty
+                          ? '0 supervisors'
+                          : '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: sups.isEmpty ? t.muted : t.navy)),
+                        color: sups.isEmpty ? t.muted : t.navy,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ]),
-            const SizedBox(height: 10),
-            if (sups.isEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
+              const SizedBox(height: 10),
+              if (sups.isEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
                     border: Border.all(
-                        color:
-                            hovering ? t.navy.withValues(alpha: .4) : t.border),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Center(
-                  child: Text(
+                      color: hovering ? t.navy.withValues(alpha: .4) : t.border,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Center(
+                    child: Text(
                       hovering
                           ? 'Drop here to assign'
                           : 'No supervisor assigned',
                       style: TextStyle(
-                          fontSize: 12,
-                          color: hovering ? t.navy : t.muted,
-                          fontStyle:
-                              hovering ? FontStyle.normal : FontStyle.italic)),
-                ),
-              )
-            else
-              Wrap(
+                        fontSize: 12,
+                        color: hovering ? t.navy : t.muted,
+                        fontStyle: hovering
+                            ? FontStyle.normal
+                            : FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: sups
-                      .map((s) =>
-                          _SupChip(sup: s, onRemove: () => _reassign(s, '')))
-                      .toList()),
-          ]),
+                      .map(
+                        (s) =>
+                            _SupChip(sup: s, onRemove: () => _reassign(s, '')),
+                      )
+                      .toList(),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -5079,48 +5869,68 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-              color: hovering
-                  ? t.orange.withValues(alpha: .08)
-                  : t.orangeLt.withValues(alpha: .5),
-              border: Border.all(
-                  color: hovering ? t.orange : t.orange.withValues(alpha: .35),
-                  width: hovering ? 2 : 1),
-              borderRadius: BorderRadius.circular(10)),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(
-                  child: Column(
+            color: hovering
+                ? t.orange.withValues(alpha: .08)
+                : t.orangeLt.withValues(alpha: .5),
+            border: Border.all(
+              color: hovering ? t.orange : t.orange.withValues(alpha: .35),
+              width: hovering ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text('Unassigned',
-                        style: TextStyle(
+                        Text(
+                          'Unassigned',
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
-                            color: t.orange)),
-                    const SizedBox(height: 2),
-                    Text('Not assigned to any plant',
-                        style: TextStyle(fontSize: 12, color: t.muted)),
-                  ])),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                decoration: BoxDecoration(
-                    color: t.orangeLt, borderRadius: BorderRadius.circular(99)),
-                child: Text(
-                    '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
-                    style: TextStyle(
+                            color: t.orange,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Not assigned to any plant',
+                          style: TextStyle(fontSize: 12, color: t.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: t.orangeLt,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(
+                      '${sups.length} supervisor${sups.length > 1 ? 's' : ''}',
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: t.orange)),
+                        color: t.orange,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ]),
-            const SizedBox(height: 10),
-            Wrap(
+              const SizedBox(height: 10),
+              Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: sups.map((s) => _SupChip(sup: s)).toList()),
-          ]),
+                children: sups.map((s) => _SupChip(sup: s)).toList(),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -5150,7 +5960,11 @@ class _SupChip extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           padding: EdgeInsets.only(
-              left: 10, right: onRemove != null ? 6 : 12, top: 6, bottom: 6),
+            left: 10,
+            right: onRemove != null ? 6 : 12,
+            top: 6,
+            bottom: 6,
+          ),
           decoration: BoxDecoration(
             color: selected ? t.navy : t.navyLt,
             borderRadius: BorderRadius.circular(20),
@@ -5158,31 +5972,45 @@ class _SupChip extends StatelessWidget {
               color: selected ? t.navy : t.navy.withValues(alpha: 0.12),
             ),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.person_outline,
-                size: 13, color: selected ? Colors.white : t.navy),
-            const SizedBox(width: 6),
-            Text(sup.fullName,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.person_outline,
+                size: 13,
+                color: selected ? Colors.white : t.navy,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                sup.fullName,
                 style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? Colors.white : t.navy)),
-            if (onRemove != null) ...[
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: onRemove,
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                      color: (selected ? Colors.white : t.navy)
-                          .withValues(alpha: .15),
-                      shape: BoxShape.circle),
-                  child: Icon(Icons.close,
-                      size: 11, color: selected ? Colors.white : t.navy),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : t.navy,
                 ),
               ),
+              if (onRemove != null) ...[
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: onRemove,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: (selected ? Colors.white : t.navy).withValues(
+                        alpha: .15,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.close,
+                      size: 11,
+                      color: selected ? Colors.white : t.navy,
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ]),
+          ),
         ),
       ),
     );
@@ -5194,23 +6022,31 @@ class _SupChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-              color: t.navy,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                    color: t.navy.withValues(alpha: .35),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3))
-              ]),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.person_outline, size: 13, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(sup.fullName,
+            color: t.navy,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: t.navy.withValues(alpha: .35),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.person_outline, size: 13, color: Colors.white),
+              const SizedBox(width: 6),
+              Text(
+                sup.fullName,
                 style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white)),
-          ]),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: chip),
@@ -5220,18 +6056,27 @@ class _SupChip extends StatelessWidget {
 }
 
 Widget _emptySups() => Center(
-        child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-          Icon(Icons.people_outline, size: 52, color: _muted),
-          SizedBox(height: 12),
-          Text('No supervisors yet',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w600, color: _muted)),
-          SizedBox(height: 6),
-          Text('Tap "Add Supervisor" to create an account',
-              style: TextStyle(fontSize: 12, color: _muted)),
-        ]));
+  child: Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: const [
+      Icon(Icons.people_outline, size: 52, color: _muted),
+      SizedBox(height: 12),
+      Text(
+        'No supervisors yet',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: _muted,
+        ),
+      ),
+      SizedBox(height: 6),
+      Text(
+        'Tap "Add Supervisor" to create an account',
+        style: TextStyle(fontSize: 12, color: _muted),
+      ),
+    ],
+  ),
+);
 
 class _SupervisorCard extends StatefulWidget {
   final UserModel supervisor;
@@ -5239,12 +6084,13 @@ class _SupervisorCard extends StatefulWidget {
   final List<Factory> factories;
   final Future<void> Function() onRefresh;
   final VoidCallback onDelete;
-  const _SupervisorCard(
-      {required this.supervisor,
-      required this.alerts,
-      required this.factories,
-      required this.onDelete,
-      required this.onRefresh});
+  const _SupervisorCard({
+    required this.supervisor,
+    required this.alerts,
+    required this.factories,
+    required this.onDelete,
+    required this.onRefresh,
+  });
   @override
   State<_SupervisorCard> createState() => _SupervisorCardState();
 }
@@ -5270,8 +6116,11 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   color: _red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child:
-                    const Icon(Icons.warning_outlined, color: _red, size: 24),
+                child: const Icon(
+                  Icons.warning_outlined,
+                  color: _red,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -5382,7 +6231,8 @@ class _SupervisorCardState extends State<_SupervisorCard> {
               foregroundColor: _white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
           ),
         ],
@@ -5399,8 +6249,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
     final usineChoices = <String>{
       sup.usine,
       ...widget.factories.map((f) => f.name),
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     var selectedUsine = sup.usine;
     var saving = false;
 
@@ -5469,8 +6318,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           isDense: true,
                         ),
                         items: usineChoices
-                            .map((u) =>
-                                DropdownMenuItem(value: u, child: Text(u)))
+                            .map(
+                              (u) => DropdownMenuItem(value: u, child: Text(u)),
+                            )
                             .toList(),
                         onChanged: saving
                             ? null
@@ -5499,15 +6349,18 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           if (first.isEmpty || last.isEmpty || email.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text(
-                                      'First name, last name, and email are required')),
+                                content: Text(
+                                  'First name, last name, and email are required',
+                                ),
+                              ),
                             );
                             return;
                           }
                           if (!email.contains('@')) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text('Please enter a valid email')),
+                                content: Text('Please enter a valid email'),
+                              ),
                             );
                             return;
                           }
@@ -5526,8 +6379,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             Navigator.pop(dialogCtx);
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content:
-                                    Text('Supervisor updated successfully'),
+                                content: Text(
+                                  'Supervisor updated successfully',
+                                ),
                                 backgroundColor: _green,
                               ),
                             );
@@ -5536,8 +6390,10 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             setDialogState(() => saving = false);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                  content: Text(
-                                      'Update failed: ${UserFriendlyError.message(e)}')),
+                                content: Text(
+                                  'Update failed: ${UserFriendlyError.message(e)}',
+                                ),
+                              ),
                             );
                           }
                         },
@@ -5566,9 +6422,11 @@ class _SupervisorCardState extends State<_SupervisorCard> {
   Widget build(BuildContext context) {
     final sup = widget.supervisor;
     final solved = widget.alerts
-        .where((a) =>
-            a.status == 'validee' &&
-            (a.superviseurId == sup.id || a.assistantId == sup.id))
+        .where(
+          (a) =>
+              a.status == 'validee' &&
+              (a.superviseurId == sup.id || a.assistantId == sup.id),
+        )
         .toList();
     final inProg = widget.alerts
         .where((a) => a.status == 'en_cours' && a.superviseurId == sup.id)
@@ -5577,198 +6435,295 @@ class _SupervisorCardState extends State<_SupervisorCard> {
     final avgMin = withTime.isEmpty
         ? null
         : withTime.fold(0, (s, a) => s + (a.elapsedTime ?? 0)) ~/
-            withTime.length;
+              withTime.length;
     final sc = sup.isActive ? _green : _red;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-          color: context.appTheme.card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: context.appTheme.border),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1))
-          ]),
-      child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Stack(children: [
-              Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                      color: _navyLt, borderRadius: BorderRadius.circular(12)),
-                  child:
-                      const Center(child: Icon(Icons.engineering, size: 24))),
-              Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                          color: sc,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: _white, width: 2)))),
-            ]),
-            const SizedBox(width: 12),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Row(children: [
-                    Expanded(
-                        child: Text(sup.fullName,
-                            style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: _navy))),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: sc.withOpacity(.1),
-                          border: Border.all(color: sc),
-                          borderRadius: BorderRadius.circular(99)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Container(
-                            width: 5,
-                            height: 5,
-                            decoration: BoxDecoration(
-                                color: sc, shape: BoxShape.circle)),
-                        const SizedBox(width: 4),
-                        Text(sup.isActive ? 'Active' : 'Absent',
-                            style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: sc)),
-                      ]),
-                    ),
-                  ]),
-                  const SizedBox(height: 2),
-                  Text(sup.email,
-                      style: const TextStyle(fontSize: 11, color: _muted)),
-                  Row(children: [
-                    const Icon(Icons.phone, size: 12, color: _muted),
-                    const SizedBox(width: 3),
-                    Text(sup.phone.isEmpty ? 'No phone' : sup.phone,
-                        style: const TextStyle(fontSize: 11, color: _muted)),
-                    const SizedBox(width: 10),
-                    const Icon(Icons.factory, size: 12, color: _muted),
-                    const SizedBox(width: 3),
-                    Text(sup.usine,
-                        style: const TextStyle(fontSize: 11, color: _muted)),
-                  ]),
-                  if (sup.hiredDate != null)
-                    Row(children: [
-                      const Icon(Icons.calendar_today, size: 12, color: _muted),
-                      const SizedBox(width: 3),
-                      Text('Hired: ${_fmtDate(sup.hiredDate!)}',
-                          style: const TextStyle(fontSize: 11, color: _muted)),
-                    ]),
-                  const SizedBox(height: 8),
-                  Wrap(spacing: 8, runSpacing: 6, children: [
-                    _MiniChip(Icons.check_circle_outline,
-                        '${solved.length} fixed', _green),
-                    _MiniChip(Icons.timer, '$inProg claimed', _blue),
-                    if (avgMin != null)
-                      _MiniChip(
-                          Icons.av_timer, 'Avg ${_fmtMin(avgMin)}', _orange),
-                  ]),
-                ])),
-            Column(children: [
-              if (solved.isNotEmpty)
-                IconButton(
-                  onPressed: () => setState(() => _expanded = !_expanded),
-                  icon: Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
-                      color: _navy),
-                ),
-              IconButton(
-                onPressed: () => _showModifyDialog(context),
-                icon: const Icon(Icons.edit, color: _navy, size: 20),
-                tooltip: 'Modify Supervisor',
-              ),
-              IconButton(
-                onPressed: () => _showDeleteConfirmDialog(context),
-                icon: const Icon(Icons.delete_outline, color: _red, size: 20),
-                tooltip: 'Delete Supervisor',
-              ),
-            ]),
-          ]),
-        ),
-        if (_expanded && solved.isNotEmpty) ...[
-          Divider(height: 1, color: _border),
+        color: context.appTheme.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.appTheme.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: Column(
+            padding: const EdgeInsets.all(14),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('FIXED CASES HISTORY',
+                Stack(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _navyLt,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.engineering, size: 24),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: sc,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: _white, width: 2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              sup.fullName,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: _navy,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: sc.withOpacity(.1),
+                              border: Border.all(color: sc),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 5,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    color: sc,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  sup.isActive ? 'Active' : 'Absent',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: sc,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        sup.email,
+                        style: const TextStyle(fontSize: 11, color: _muted),
+                      ),
+                      Row(
+                        children: [
+                          const Icon(Icons.phone, size: 12, color: _muted),
+                          const SizedBox(width: 3),
+                          Text(
+                            sup.phone.isEmpty ? 'No phone' : sup.phone,
+                            style: const TextStyle(fontSize: 11, color: _muted),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(Icons.factory, size: 12, color: _muted),
+                          const SizedBox(width: 3),
+                          Text(
+                            sup.usine,
+                            style: const TextStyle(fontSize: 11, color: _muted),
+                          ),
+                        ],
+                      ),
+                      if (sup.hiredDate != null)
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.calendar_today,
+                              size: 12,
+                              color: _muted,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Hired: ${_fmtDate(sup.hiredDate!)}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _muted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          _MiniChip(
+                            Icons.check_circle_outline,
+                            '${solved.length} fixed',
+                            _green,
+                          ),
+                          _MiniChip(Icons.timer, '$inProg claimed', _blue),
+                          if (avgMin != null)
+                            _MiniChip(
+                              Icons.av_timer,
+                              'Avg ${_fmtMin(avgMin)}',
+                              _orange,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: [
+                    if (solved.isNotEmpty)
+                      IconButton(
+                        onPressed: () => setState(() => _expanded = !_expanded),
+                        icon: Icon(
+                          _expanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: _navy,
+                        ),
+                      ),
+                    IconButton(
+                      onPressed: () => _showModifyDialog(context),
+                      icon: const Icon(Icons.edit, color: _navy, size: 20),
+                      tooltip: 'Modify Supervisor',
+                    ),
+                    IconButton(
+                      onPressed: () => _showDeleteConfirmDialog(context),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: _red,
+                        size: 20,
+                      ),
+                      tooltip: 'Delete Supervisor',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (_expanded && solved.isNotEmpty) ...[
+            Divider(height: 1, color: _border),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'FIXED CASES HISTORY',
                     style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: _muted,
-                        letterSpacing: 1.2)),
-                const SizedBox(height: 10),
-                ...solved.map((a) => Container(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: _muted,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ...solved.map(
+                    (a) => Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                          color: const Color(0xFFF0FDF4),
-                          border: Border.all(color: const Color(0xFFBBF7D0)),
-                          borderRadius: BorderRadius.circular(8)),
-                      child: Row(children: [
-                        Container(
+                        color: const Color(0xFFF0FDF4),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
                             width: 8,
                             height: 8,
                             decoration: BoxDecoration(
-                                color: _typeColor(a.type),
-                                shape: BoxShape.circle)),
-                        const SizedBox(width: 8),
-                        Expanded(
+                              color: _typeColor(a.type),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
                             child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                              Text('${_typeLabel(a.type)} — ${a.description}',
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${_typeLabel(a.type)} — ${a.description}',
                                   style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: _navy),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _navy,
+                                  ),
                                   maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                              Text(
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
                                   '${a.usine} · Line ${a.convoyeur} · Post ${a.poste}',
                                   style: const TextStyle(
-                                      fontSize: 10, color: _muted)),
-                            ])),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
+                                    fontSize: 10,
+                                    color: _muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
                               color: const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(6)),
-                          child: Text(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
                               a.elapsedTime != null
                                   ? _fmtMin(a.elapsedTime!)
                                   : '-',
                               style: const TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: _green)),
-                        ),
-                      ]),
-                    )),
-              ],
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _green,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
-      ]),
+      ),
     );
   }
 }
@@ -5779,22 +6734,32 @@ class _Chip extends StatelessWidget {
   const _Chip(this.label, this.color);
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-            color: color.withOpacity(.1),
-            border: Border.all(color: color),
-            borderRadius: BorderRadius.circular(99)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 5),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-        ]),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withOpacity(.1),
+      border: Border.all(color: color),
+      borderRadius: BorderRadius.circular(99),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _MiniChip extends StatelessWidget {
@@ -5804,19 +6769,28 @@ class _MiniChip extends StatelessWidget {
   const _MiniChip(this.icon, this.label, this.color);
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-            color: color.withOpacity(.08),
-            border: Border.all(color: color.withOpacity(.4)),
-            borderRadius: BorderRadius.circular(6)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-        ]),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withOpacity(.08),
+      border: Border.all(color: color.withOpacity(.4)),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class SheetField extends StatelessWidget {
@@ -5824,40 +6798,50 @@ class SheetField extends StatelessWidget {
   final TextEditingController ctrl;
   final bool obscure;
   final TextInputType keyboard;
-  const SheetField(this.label, this.ctrl, this.hint,
-      {this.obscure = false, this.keyboard = TextInputType.text});
+  const SheetField(
+    this.label,
+    this.ctrl,
+    this.hint, {
+    this.obscure = false,
+    this.keyboard = TextInputType.text,
+  });
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SheetLabel(label),
-          TextField(
-            controller: ctrl,
-            obscureText: obscure,
-            keyboardType: keyboard,
-            style: const TextStyle(fontSize: 14),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: _muted),
-              filled: true,
-              fillColor: context.appTheme.scaffold,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(9),
-                  borderSide: const BorderSide(color: _border)),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(9),
-                  borderSide: const BorderSide(color: _border)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(9),
-                  borderSide: const BorderSide(color: _navy, width: 1.5)),
-            ),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SheetLabel(label),
+      TextField(
+        controller: ctrl,
+        obscureText: obscure,
+        keyboardType: keyboard,
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: _muted),
+          filled: true,
+          fillColor: context.appTheme.scaffold,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 12,
           ),
-          const SizedBox(height: 14),
-        ],
-      );
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: _border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: _border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(9),
+            borderSide: const BorderSide(color: _navy, width: 1.5),
+          ),
+        ),
+      ),
+      const SizedBox(height: 14),
+    ],
+  );
 }
 
 class SheetLabel extends StatelessWidget {
@@ -5865,12 +6849,15 @@ class SheetLabel extends StatelessWidget {
   const SheetLabel(this.text);
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: _muted,
-                letterSpacing: 1.3)),
-      );
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        color: _muted,
+        letterSpacing: 1.3,
+      ),
+    ),
+  );
 }
