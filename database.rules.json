@@ -43,6 +43,15 @@
       }
     },
 
+    "collaboration_alerts": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$supervisorId": {
+        ".read": "auth != null && (auth.uid === $supervisorId || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'"
+      }
+    },
+
     "notifications": {
       ".read": "auth != null",
       ".write": "auth != null",
@@ -238,6 +247,11 @@
         ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
         ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
       }
+    },
+
+    "cron_lock": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "factories": {

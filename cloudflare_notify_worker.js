@@ -326,7 +326,18 @@ async function sendFcmDetailed(token, title, body, data, env, options = {}) {
           android: { priority: 'high' },
           apns: {
             headers: { 'apns-priority': '10' },
-            payload: { aps: { 'content-available': 1 } },
+            payload: { aps: { 'content-available': 1, sound: 'default' } },
+          },
+          webpush: {
+            headers: { Urgency: 'high' },
+            notification: {
+              title,
+              body,
+              icon: '/icons/icon-192.png',
+              badge: '/icons/icon-192.png',
+              vibrate: [200, 100, 200, 100, 200],
+              requireInteraction: false,
+            },
           },
         },
       }),
@@ -522,11 +533,13 @@ async function processAlerts(env, ctx) {
     const recipients = getFcmRecipientsForFactory(alert.factoryId || alert.usine, usersMap, alertsMap, {
       allSupervisors: false,
       includeAdmins: false,
-      requireActiveSupervisors: true,
+      requireActiveSupervisors: false,
       supervisorActiveAlertsMap,
     });
     if (recipients.length === 0) {
-      await skipAlertPush(alertUrl, 'no_eligible_recipients');
+      // Release the push-lock but leave push_sent:false so the next cron can retry
+      // (don't permanently skip — supervisors may become available or get FCM tokens later)
+      await finishAlertPush(alertUrl, false);
       continue;
     }
 
@@ -755,6 +768,106 @@ async function writeNotifyHealth(env, token, data) {
   }
 }
 
+// Fast-path: push one specific alert by ID.
+// • Users + active-claims fetches run IN PARALLEL with the claim retries so
+//   the slowest of {claim, users, claims} sets the wall time, not the sum.
+// • FCM fan-out runs in parallel (Promise.all) — 10 recipients ≈ same wall
+//   time as 1.
+// • Busy supervisors (those with any entry in supervisor_active_alerts) are
+//   excluded so they do not buzz while already handling another alert.
+//   Collab notifications take a different path (fanOutPendingNotifications)
+//   which intentionally bypasses this filter.
+async function pushSingleAlert(env, alertId) {
+  if (!alertId) return false;
+  const token = await getFirebaseToken(env);
+
+  // Speculatively start the users + active-claims fetches now; they almost
+  // always finish before the claim loop does, so we pay zero extra wall time.
+  const usersP = fetch(`${_fbUrl(env, 'users.json')}?auth=${token}`)
+    .then(r => r.ok ? readJsonResponse(r, 'users.json') : null)
+    .then(v => v || {})
+    .catch(() => ({}));
+  const claimsP = fetch(`${_fbUrl(env, 'supervisor_active_alerts.json')}?auth=${token}`)
+    .then(r => r.ok ? readJsonResponse(r, 'supervisor_active_alerts.json') : null)
+    .then(v => v || {})
+    .catch(() => ({}));
+
+  let claimed = null;
+  for (let attempt = 0; attempt < 3 && !claimed; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 400));
+    claimed = await claimAlertPush(env, token, alertId);
+  }
+  if (!claimed) return false;
+
+  const { alertUrl, alert } = claimed;
+  const usersMap = await usersP;
+  const supervisorActiveAlertsMap = await claimsP;
+
+  // A supervisor is "busy" iff they have any entry in supervisor_active_alerts
+  // (the entry is created on claim and removed when the alert is finished or
+  // returned). engagedSupervisorIds needs a full alertsMap to cross-reference;
+  // the fast path doesn't load that, so we compute busy directly here.
+  const busySupervisorUids = new Set();
+  for (const [uid, claim] of Object.entries(supervisorActiveAlertsMap || {})) {
+    if (!claim) continue;
+    const claimAlertId = typeof claim === 'string'
+      ? claim
+      : String(claim.alertId || claim.id || '').trim();
+    if (claimAlertId) busySupervisorUids.add(String(uid));
+  }
+
+  // allSupervisors:true bypasses the built-in engagedSupervisorIds filter (we
+  // apply our own busy filter below). Factory filter still applies.
+  const allRecipients = getFcmRecipientsForFactory(
+    alert.factoryId || alert.usine,
+    usersMap,
+    { [alertId]: alert },
+    { allSupervisors: true, includeAdmins: false, requireActiveSupervisors: false, supervisorActiveAlertsMap },
+  );
+  const recipients = allRecipients.filter(r => !busySupervisorUids.has(r.uid));
+
+  if (recipients.length === 0) {
+    await finishAlertPush(alertUrl, false);
+    return false;
+  }
+
+  const title = `New Alert: ${alert.type || 'Alert'}`;
+  const body = `${alert.usine || ''} - ${alert.description || ''}`;
+  const data = {
+    alertId,
+    type: alert.type || 'Alert',
+    usine: alert.usine || '',
+    factoryId: String(alert.factoryId || ''),
+    notifType: 'new_alert',
+    notificationId: String(_alertNotifId(alertId)),
+  };
+
+  const results = await Promise.all(recipients.map(recipient =>
+    sendFcmDetailed(
+      recipient.token, title, body,
+      { ...data, recipientId: recipient.uid },
+      env,
+      { firebaseAuthToken: token, uid: recipient.uid },
+    )
+  ));
+
+  let sentCount = 0;
+  let retryableFailure = false;
+  results.forEach((result, i) => {
+    if (result.ok) {
+      sentCount++;
+    } else if (result.unregistered) {
+      const uid = recipients[i].uid;
+      if (usersMap?.[uid]?.fcmToken === recipients[i].token) usersMap[uid].fcmToken = null;
+    } else {
+      retryableFailure = true;
+    }
+  });
+
+  await finishAlertPush(alertUrl, sentCount > 0 || !retryableFailure);
+  return sentCount > 0;
+}
+
 async function runNotificationCycle(env, options = {}) {
   const runStart = Date.now();
   const ctx = await loadCoreData(env);
@@ -784,7 +897,7 @@ async function acquireNotifyLock(env, token) {
   const lockGet = await fetch(lockUrl, { headers: { 'X-Firebase-ETag': 'true' } });
   const lockEtag = lockGet.ok ? lockGet.headers.get('ETag') : null;
   const lockData = lockGet.ok ? (await readJsonResponse(lockGet, 'cron_lock/notify.json')) : null;
-  if (lockData && typeof lockData.ts === 'number' && Date.now() - lockData.ts < 55000) {
+  if (lockData && typeof lockData.ts === 'number' && Date.now() - lockData.ts < 45000) {
     return null;
   }
   const lockPut = await fetch(lockUrl, {
@@ -805,13 +918,18 @@ export default {
         try {
           token = await getFirebaseToken(env);
           lockUrl = await acquireNotifyLock(env, token);
-          if (!lockUrl) return;
+          if (!lockUrl) {
+            await writeNotifyHealth(env, token, { skipped: true, reason: 'lock_held' });
+            return;
+          }
           await runNotificationCycle(env, { limit: MAX_CRON_FANOUT });
         } catch (e) {
           console.error('[NOTIFY CRON] ' + e.message);
           if (token) await writeNotifyHealth(env, token, { error: e.message });
         } finally {
-          if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
+          if (lockUrl) {
+            try { await fetch(lockUrl, { method: 'DELETE' }); } catch (_) {}
+          }
         }
       })(),
     );
@@ -844,8 +962,17 @@ export default {
     }
 
     if (url.pathname === '/notify' || url.pathname === '/') {
+      let alertId = null;
+      if (request.method === 'POST') {
+        try { const b = await request.clone().json(); alertId = b?.alertId || null; } catch (_) {}
+      }
       ctx.waitUntil(
-        runNotificationCycle(env, { limit: MAX_FANOUT }).catch(async (e) => {
+        (alertId
+          ? pushSingleAlert(env, alertId).then(sent => {
+              if (!sent) return runNotificationCycle(env, { limit: MAX_FANOUT });
+            })
+          : runNotificationCycle(env, { limit: MAX_FANOUT })
+        ).catch(async (e) => {
           console.error('[NOTIFY MANUAL] ' + e.message);
           await recordNotifyError(env, e);
         }),

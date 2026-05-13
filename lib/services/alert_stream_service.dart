@@ -10,8 +10,8 @@ class AlertStreamService {
   AlertStreamService({
     required AlertService alertService,
     required AppLogger logger,
-  })  : _alertService = alertService,
-        _logger = logger;
+  }) : _alertService = alertService,
+       _logger = logger;
 
   final AlertService _alertService;
   final AppLogger _logger;
@@ -52,44 +52,63 @@ class AlertStreamService {
       return;
     }
 
-    final assistantStream =
-        _alertService.getAlertsWhereAssistant(currentUserId, limit: pageSize);
-    final supervisorStream =
-        _alertService.getAlertsWhereSupervisor(currentUserId, limit: pageSize);
+    final assistantStream = _alertService.getAlertsWhereAssistant(
+      currentUserId,
+      limit: pageSize,
+    );
+    final supervisorStream = _alertService.getAlertsWhereSupervisor(
+      currentUserId,
+      limit: pageSize,
+    );
+    final collaboratorStream = _alertService.getAlertsForCollaborator(
+      currentUserId,
+    );
 
     _start(
-      source: Rx.combineLatest3<List<AlertModel>, List<AlertModel>,
-          List<AlertModel>, List<AlertModel>>(
-        usineStream,
-        assistantStream,
-        supervisorStream,
-        (usineAlerts, assistantAlerts, supervisorAlerts) {
-          final combined = [
-            ...usineAlerts,
-            ...assistantAlerts,
-            ...supervisorAlerts,
-          ];
-          final seen = <String>{};
-          return combined.where((a) => seen.add(a.id)).toList()
-            ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        },
-      ),
+      source:
+          Rx.combineLatest4<
+            List<AlertModel>,
+            List<AlertModel>,
+            List<AlertModel>,
+            List<AlertModel>,
+            List<AlertModel>
+          >(
+            usineStream,
+            assistantStream,
+            supervisorStream,
+            collaboratorStream,
+            (
+              usineAlerts,
+              assistantAlerts,
+              supervisorAlerts,
+              collaboratorAlerts,
+            ) {
+              final combined = [
+                ...usineAlerts,
+                ...assistantAlerts,
+                ...supervisorAlerts,
+                ...collaboratorAlerts,
+              ];
+              final seen = <String>{};
+              return combined.where((a) => seen.add(a.id)).toList()
+                ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+            },
+          ),
       onAlerts: onAlerts,
       onLoading: onLoading,
       fallback: () => _alertService.getAlertsForUsine(usine, limit: pageSize),
     );
   }
 
-  Future<List<AlertModel>> loadOlderAlerts(List<AlertModel> currentAlerts) async {
+  Future<List<AlertModel>> loadOlderAlerts(
+    List<AlertModel> currentAlerts,
+  ) async {
     if (currentAlerts.isEmpty) {
       return const [];
     }
     final oldest = currentAlerts.last.timestamp;
     if (_currentUsine == null) {
-      return _alertService.fetchOlderAlerts(
-        before: oldest,
-        limit: _pageSize,
-      );
+      return _alertService.fetchOlderAlerts(before: oldest, limit: _pageSize);
     }
     return _alertService.fetchOlderAlertsForUsine(
       usine: _currentUsine!,

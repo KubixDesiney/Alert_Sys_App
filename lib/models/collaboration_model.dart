@@ -28,6 +28,8 @@ class CollaborationRequest {
   final int? poste;
   final String? alertType;
   final String? alertDescription;
+  final List<String> pmAddedSupervisorIds;
+  final List<String> pmAddedSupervisorNames;
 
   /// Per-supervisor decision map: uid → 'pending' | 'accepted' | 'refused'
   final Map<String, String> assistantDecisions;
@@ -62,6 +64,8 @@ class CollaborationRequest {
     this.poste,
     this.alertType,
     this.alertDescription,
+    this.pmAddedSupervisorIds = const [],
+    this.pmAddedSupervisorNames = const [],
     this.assistantDecisions = const {},
     this.assistantDecisionTimestamps = const {},
   });
@@ -73,8 +77,9 @@ class CollaborationRequest {
       requesterId: map['requesterId'] ?? '',
       requesterName: map['requesterName'] ?? '',
       targetSupervisorIds: List<String>.from(map['targetSupervisorIds'] ?? []),
-      targetSupervisorNames:
-          List<String>.from(map['targetSupervisorNames'] ?? []),
+      targetSupervisorNames: List<String>.from(
+        map['targetSupervisorNames'] ?? [],
+      ),
       message: map['message'] ?? '',
       status: map['status'] ?? 'pending',
       assistantDecision: map['assistantDecision'] ?? 'pending',
@@ -83,14 +88,17 @@ class CollaborationRequest {
       assistantRespondedAt: map['assistantRespondedAt'] != null
           ? DateTime.parse(map['assistantRespondedAt'])
           : null,
-      timestamp:
-          DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
+      timestamp: DateTime.parse(
+        map['timestamp'] ?? DateTime.now().toIso8601String(),
+      ),
       approvedBy: map['approvedBy'],
-      approvedAt:
-          map['approvedAt'] != null ? DateTime.parse(map['approvedAt']) : null,
+      approvedAt: map['approvedAt'] != null
+          ? DateTime.parse(map['approvedAt'])
+          : null,
       rejectedBy: map['rejectedBy'],
-      rejectedAt:
-          map['rejectedAt'] != null ? DateTime.parse(map['rejectedAt']) : null,
+      rejectedAt: map['rejectedAt'] != null
+          ? DateTime.parse(map['rejectedAt'])
+          : null,
       rejectionReason: map['rejectionReason'],
       aiDecision: map['aiDecision'],
       aiReason: map['aiReason'],
@@ -102,9 +110,18 @@ class CollaborationRequest {
       poste: map['poste'],
       alertType: map['alertType'],
       alertDescription: map['alertDescription'],
+      pmAddedSupervisorIds: List<String>.from(
+        map['pmAddedSupervisorIds'] ?? const [],
+      ),
+      pmAddedSupervisorNames: List<String>.from(
+        map['pmAddedSupervisorNames'] ?? const [],
+      ),
       assistantDecisions: map['assistantDecisions'] != null
-          ? Map<String, String>.from((map['assistantDecisions'] as Map)
-              .map((k, v) => MapEntry(k.toString(), v.toString())))
+          ? Map<String, String>.from(
+              (map['assistantDecisions'] as Map).map(
+                (k, v) => MapEntry(k.toString(), v.toString()),
+              ),
+            )
           : {},
       assistantDecisionTimestamps: map['assistantDecisionTimestamps'] != null
           ? Map<String, DateTime>.from(
@@ -145,9 +162,12 @@ class CollaborationRequest {
       'poste': poste,
       'alertType': alertType,
       'alertDescription': alertDescription,
+      'pmAddedSupervisorIds': pmAddedSupervisorIds,
+      'pmAddedSupervisorNames': pmAddedSupervisorNames,
       'assistantDecisions': assistantDecisions,
-      'assistantDecisionTimestamps': assistantDecisionTimestamps
-          .map((key, value) => MapEntry(key, value.toIso8601String())),
+      'assistantDecisionTimestamps': assistantDecisionTimestamps.map(
+        (key, value) => MapEntry(key, value.toIso8601String()),
+      ),
     };
   }
 }
@@ -161,8 +181,9 @@ class EscalationSettings {
     final thresholds = <String, EscalationThreshold>{};
     map.forEach((key, value) {
       if (value is Map) {
-        thresholds[key] =
-            EscalationThreshold.fromMap(Map<String, dynamic>.from(value));
+        thresholds[key] = EscalationThreshold.fromMap(
+          Map<String, dynamic>.from(value),
+        );
       }
     });
     return EscalationSettings(thresholds: thresholds);
