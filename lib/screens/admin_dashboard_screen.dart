@@ -677,7 +677,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
     try {
       await http.post(
-        Uri.parse(AppConfig.workerBaseUrl),
+        Uri.parse(AppConfig.notifyTriggerEndpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'type': type,

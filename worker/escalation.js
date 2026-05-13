@@ -1,5 +1,5 @@
 import { MAX_ESCALATION_CHECKS } from './config.js';
-import { getFcmTokensForFactory, sendFcm } from './fcm.js';
+import { getFcmRecipientsForFactory, sendFcmDetailed } from './fcm.js';
 
 async function checkEscalations(env, ctx) {
   const { token, alertsMap, usersMap } = ctx;
@@ -83,16 +83,47 @@ async function checkEscalations(env, ctx) {
 
       const escalMsg = `⚠️ Alert Escalated: ${alert.type}`;
       const escalBody = `${alert.usine} — ${alert.description}\n${reason}`;
-      const escalData = { alertId, type: alert.type || '', usine: alert.usine || '', escalated: 'true' };
-      const fcmTokens = getFcmTokensForFactory(alert.usine || '', usersMap, alertsMap);
-      for (const tok of fcmTokens) {
-        await sendFcm(tok, escalMsg, escalBody, escalData, env);
+      const escalData = {
+        alertId,
+        type: alert.type || '',
+        usine: alert.usine || '',
+        factoryId: String(alert.factoryId || ''),
+        escalated: 'true',
+        notifType: 'escalation',
+      };
+      const recipients = getFcmRecipientsForFactory(alert.factoryId || alert.usine || '', usersMap, alertsMap, {
+        allSupervisors: true,
+        allFactories: true,
+        includeAdmins: true,
+        requireActiveSupervisors: false,
+      });
+      const notifiedTokens = new Set();
+      for (const recipient of recipients) {
+        notifiedTokens.add(recipient.token);
+        const result = await sendFcmDetailed(
+          recipient.token,
+          escalMsg,
+          escalBody,
+          { ...escalData, recipientId: recipient.uid },
+          env,
+          { firebaseAuthToken: token, uid: recipient.uid },
+        );
+        if (result.unregistered && usersMap?.[recipient.uid]?.fcmToken === recipient.token) {
+          usersMap[recipient.uid].fcmToken = null;
+        }
       }
       if (alert.status === 'en_cours' && alert.superviseurId) {
         const claimant = usersMap[alert.superviseurId];
         const claimantToken = claimant?.fcmToken;
-        if (claimantToken && !fcmTokens.includes(claimantToken)) {
-          await sendFcm(claimantToken, escalMsg, escalBody, escalData, env);
+        if (claimantToken && !notifiedTokens.has(claimantToken)) {
+          await sendFcmDetailed(
+            claimantToken,
+            escalMsg,
+            escalBody,
+            { ...escalData, recipientId: alert.superviseurId },
+            env,
+            { firebaseAuthToken: token, uid: alert.superviseurId },
+          );
         }
       }
       console.log(`[ESCALATION] Escalated alert ${alertId} (${alert.type}) reason=${reason}`);

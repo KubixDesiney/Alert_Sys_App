@@ -1,11 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../config/app_config.dart';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
 import 'app_logger.dart';
+import 'fcm_service.dart';
 
 String _defaultDescription(String type) => switch (type) {
       'qualite' => 'Quality control issue detected on the line.',
@@ -173,7 +175,7 @@ class AlertService {
     // Trigger the Cloudflare Worker to send notifications immediately
     try {
       await http.post(
-        Uri.parse('${AppConfig.workerBaseUrl}/'),
+        Uri.parse(AppConfig.notifyTriggerEndpoint),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'alertId': alertId}),
       );
@@ -202,6 +204,30 @@ class AlertService {
     // alert was resolved/returned without properly clearing the node (crash,
     // network failure, or a worker-assigned alert that bypassed this path).
     await _cleanupStaleActiveClaim(superviseurId);
+
+    // Block assistants: if this user is currently the assistantId on any
+    // active (en_cours) alert they cannot claim a new one. assistantId is
+    // indexed in database.rules.json so this query is efficient.
+    final assistingSnap = await _db
+        .child('alerts')
+        .orderByChild('assistantId')
+        .equalTo(superviseurId)
+        .get();
+    if (assistingSnap.exists && assistingSnap.value != null) {
+      final raw = assistingSnap.value;
+      if (raw is Map) {
+        final isActiveAssistant = raw.values.any((v) {
+          if (v is! Map) return false;
+          return v['status']?.toString() == 'en_cours';
+        });
+        if (isActiveAssistant) {
+          throw Exception(
+            'You are currently assisting an active alert. '
+            'Please complete or leave that assignment before claiming a new one.',
+          );
+        }
+      }
+    }
 
     final nowIso = DateTime.now().toIso8601String();
     final activeClaimRef = _db.child('supervisor_active_alerts/$superviseurId');
@@ -254,6 +280,10 @@ class AlertService {
       await _clearSupervisorActiveAlert(superviseurId, alertId);
       throw Exception('This alert was already claimed by someone else.');
     }
+
+    // Stop any active buzz notification on this device so the supervisor's
+    // phone stops vibrating the moment they claim the alert through the app.
+    unawaited(FcmService.cancelAlertBuzz(alertId).catchError((_) {}));
   }
 
   /// Modify existing returnToQueue
@@ -495,8 +525,9 @@ class AlertService {
   Future<void> sendNewAlertNotification(
       String alertId, String alertType, String description) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
-    if (alertSnap.exists && alertSnap.child('notificationSent').value == true)
+    if (alertSnap.exists && alertSnap.child('notificationSent').value == true) {
       return;
+    }
 
     final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
     await _db.child('alerts/$alertId').update({'notificationSent': true});
