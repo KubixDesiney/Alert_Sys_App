@@ -1578,18 +1578,105 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
           const SizedBox(height: 12),
 
           // Assistants with optional remove buttons
-          Row(
+          Text(
+            'Requesting collaboration with:',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: t.muted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: [
-              Expanded(
-                child: Text(
-                  'Requesting collaboration with:',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: t.muted,
+              ...List.generate(r.targetSupervisorIds.length, (i) {
+                final id = r.targetSupervisorIds[i];
+                final name = r.targetSupervisorNames[i];
+                final decision = r.assistantDecisions[id] ?? 'pending';
+                final isRemoving = _removing.contains(id);
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
                   ),
-                ),
-              ),
+                  decoration: BoxDecoration(
+                    color: decision == 'accepted'
+                        ? _green.withValues(alpha: 0.12)
+                        : decision == 'refused'
+                        ? _red.withValues(alpha: 0.1)
+                        : _purple.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: decision == 'accepted'
+                          ? _green.withValues(alpha: 0.4)
+                          : decision == 'refused'
+                          ? _red.withValues(alpha: 0.4)
+                          : _purple.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        decision == 'accepted'
+                            ? Icons.check_circle
+                            : decision == 'refused'
+                            ? Icons.cancel
+                            : Icons.pending,
+                        size: 13,
+                        color: decision == 'accepted'
+                            ? _green
+                            : decision == 'refused'
+                            ? _red
+                            : _purple,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        '@$name',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: decision == 'accepted'
+                              ? _green
+                              : decision == 'refused'
+                              ? _red
+                              : _purple,
+                        ),
+                      ),
+                      // PM remove button — only if multiple assistants
+                      if (activeCollaboratorCount > 1 &&
+                          decision != 'refused') ...[
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: 'Remove collaborator',
+                          child: GestureDetector(
+                            onTap: isRemoving
+                                ? null
+                                : () => _removeAssistant(id, name),
+                            child: isRemoving
+                                ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.red,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.close,
+                                    size: 13,
+                                    color: Colors.red,
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }),
               Tooltip(
                 message: 'Add collaborators',
                 child: InkWell(
@@ -1608,97 +1695,6 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: List.generate(r.targetSupervisorIds.length, (i) {
-              final id = r.targetSupervisorIds[i];
-              final name = r.targetSupervisorNames[i];
-              final decision = r.assistantDecisions[id] ?? 'pending';
-              final isRemoving = _removing.contains(id);
-
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: decision == 'accepted'
-                      ? _green.withValues(alpha: 0.12)
-                      : decision == 'refused'
-                      ? _red.withValues(alpha: 0.1)
-                      : _purple.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: decision == 'accepted'
-                        ? _green.withValues(alpha: 0.4)
-                        : decision == 'refused'
-                        ? _red.withValues(alpha: 0.4)
-                        : _purple.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      decision == 'accepted'
-                          ? Icons.check_circle
-                          : decision == 'refused'
-                          ? Icons.cancel
-                          : Icons.pending,
-                      size: 13,
-                      color: decision == 'accepted'
-                          ? _green
-                          : decision == 'refused'
-                          ? _red
-                          : _purple,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '@$name',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: decision == 'accepted'
-                            ? _green
-                            : decision == 'refused'
-                            ? _red
-                            : _purple,
-                      ),
-                    ),
-                    // PM remove button — only if multiple assistants
-                    if (activeCollaboratorCount > 1 &&
-                        decision != 'refused') ...[
-                      const SizedBox(width: 4),
-                      Tooltip(
-                        message: 'Remove collaborator',
-                        child: GestureDetector(
-                          onTap: isRemoving
-                              ? null
-                              : () => _removeAssistant(id, name),
-                          child: isRemoving
-                              ? const SizedBox(
-                                  width: 12,
-                                  height: 12,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.red,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.close,
-                                  size: 13,
-                                  color: Colors.red,
-                                ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
-            }),
           ),
           const SizedBox(height: 12),
 

@@ -2723,7 +2723,7 @@ class _AlertRow extends StatelessWidget {
                           alert.isCritical
                               ? Icons.warning_rounded
                               : Icons.warning_amber,
-                          color: alert.isCritical ? Colors.red : Colors.orange,
+                          color: Colors.red,
                           size: 20),
                       tooltip: alert.isCritical
                           ? 'Remove critical flag'
