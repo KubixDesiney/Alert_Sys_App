@@ -346,9 +346,6 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
     _tabController = TabController(length: 2, vsync: this);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      _db.child('notifications/$uid').remove();
-      _db.child('pm_actions/$uid').remove();
-
       _notifSubscription =
           _db.child('notifications/$uid').onValue.listen(_handleNotifications);
       /*

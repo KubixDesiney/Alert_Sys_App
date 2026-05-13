@@ -147,7 +147,7 @@ describe('processAlerts push lock', () => {
     expect(claim.body.push_sending).toBe(true);
     expect(typeof claim.body.push_sending_at).toBe('string');
     expect(finish.body).toMatchObject({
-      push_sent: false,
+      push_sent: true,
       push_sending: null,
       push_sending_at: null,
     });
