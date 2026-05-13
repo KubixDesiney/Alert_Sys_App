@@ -21,10 +21,7 @@ class CollaborationApprovalCandidate {
 }
 
 class CollaborationClaimedAlert {
-  const CollaborationClaimedAlert({
-    required this.alertId,
-    required this.usine,
-  });
+  const CollaborationClaimedAlert({required this.alertId, required this.usine});
 
   final String alertId;
   final String usine;
@@ -40,7 +37,8 @@ class CollaborationApprovalPlan {
   final List<Map<String, String>> existingClaimedAlerts;
 
   bool get requiresTransferConfirmation => crossFactoryTransfers.isNotEmpty;
-  bool get requiresOriginalAlertConfirmation => existingClaimedAlerts.isNotEmpty;
+  bool get requiresOriginalAlertConfirmation =>
+      existingClaimedAlerts.isNotEmpty;
 }
 
 class CollaborationApprovalDecision {
@@ -56,11 +54,9 @@ class CollaborationApprovalDecision {
 }
 
 class CollaborationService {
-  CollaborationService({
-    AppLogger? logger,
-    DatabaseReference? database,
-  })  : _logger = logger ?? const AppLogger(),
-        _db = database ?? FirebaseDatabase.instance.ref();
+  CollaborationService({AppLogger? logger, DatabaseReference? database})
+    : _logger = logger ?? const AppLogger(),
+      _db = database ?? FirebaseDatabase.instance.ref();
 
   final DatabaseReference _db;
   final AppLogger _logger;
@@ -98,10 +94,10 @@ class CollaborationService {
   /// Build an approval plan for a collaboration request by fetching necessary
   /// metadata (supervisor usine and their claimed alerts) from the database.
   Future<CollaborationApprovalPlan> buildApprovalPlanForRequest(
-      CollaborationRequest request) async {
+    CollaborationRequest request,
+  ) async {
     // Fetch alert to determine its usine
-    final alertSnap =
-        await _db.child('alerts/${request.alertId}').get();
+    final alertSnap = await _db.child('alerts/${request.alertId}').get();
     final alertUsine = alertSnap.exists
         ? (alertSnap.child('usine').value as String? ?? '')
         : '';
@@ -128,23 +124,90 @@ class CollaborationService {
         for (final entry in alertsMap.entries) {
           final a = Map<String, dynamic>.from(entry.value);
           if (a['status'] == 'en_cours') {
-            claimed.add(CollaborationClaimedAlert(
-              alertId: entry.key,
-              usine: a['usine'] as String? ?? 'Unknown',
-            ));
+            claimed.add(
+              CollaborationClaimedAlert(
+                alertId: entry.key,
+                usine: a['usine'] as String? ?? 'Unknown',
+              ),
+            );
           }
         }
       }
 
-      candidates.add(CollaborationApprovalCandidate(
-        supervisorId: supId,
-        supervisorName: supName,
-        supervisorUsine: supUsine,
-        claimedAlerts: claimed,
-      ));
+      candidates.add(
+        CollaborationApprovalCandidate(
+          supervisorId: supId,
+          supervisorName: supName,
+          supervisorUsine: supUsine,
+          claimedAlerts: claimed,
+        ),
+      );
     }
 
     return buildApprovalPlan(alertUsine: alertUsine, candidates: candidates);
+  }
+
+  Future<CollaborationApprovalPlan> buildApprovalPlanForSupervisorIds({
+    required String alertId,
+    required List<String> supervisorIds,
+    required List<String> supervisorNames,
+  }) async {
+    final alertSnap = await _db.child('alerts/$alertId').get();
+    final alertUsine = alertSnap.exists
+        ? (alertSnap.child('usine').value as String? ?? '')
+        : '';
+
+    final candidates = <CollaborationApprovalCandidate>[];
+    for (int i = 0; i < supervisorIds.length; i++) {
+      candidates.add(
+        await _approvalCandidateForSupervisor(
+          supervisorId: supervisorIds[i],
+          supervisorName: i < supervisorNames.length
+              ? supervisorNames[i]
+              : 'Supervisor',
+        ),
+      );
+    }
+
+    return buildApprovalPlan(alertUsine: alertUsine, candidates: candidates);
+  }
+
+  Future<CollaborationApprovalCandidate> _approvalCandidateForSupervisor({
+    required String supervisorId,
+    required String supervisorName,
+  }) async {
+    final supSnap = await _db.child('users/$supervisorId').get();
+    final supUsine = supSnap.exists
+        ? (supSnap.child('usine').value as String? ?? '')
+        : '';
+
+    final claimed = <CollaborationClaimedAlert>[];
+    final snap = await _db
+        .child('alerts')
+        .orderByChild('superviseurId')
+        .equalTo(supervisorId)
+        .once();
+    if (snap.snapshot.exists && snap.snapshot.value != null) {
+      final alertsMap = Map<String, dynamic>.from(snap.snapshot.value as Map);
+      for (final entry in alertsMap.entries) {
+        final a = Map<String, dynamic>.from(entry.value);
+        if (a['status'] == 'en_cours') {
+          claimed.add(
+            CollaborationClaimedAlert(
+              alertId: entry.key,
+              usine: a['usine'] as String? ?? 'Unknown',
+            ),
+          );
+        }
+      }
+    }
+
+    return CollaborationApprovalCandidate(
+      supervisorId: supervisorId,
+      supervisorName: supervisorName,
+      supervisorUsine: supUsine,
+      claimedAlerts: claimed,
+    );
   }
 
   Future<CollaborationApprovalDecision?> requestApprovalDecision({
@@ -168,6 +231,7 @@ class CollaborationService {
     }
 
     if (plan.requiresOriginalAlertConfirmation) {
+      if (!context.mounted) return null;
       final confirmed = await _showCancelOriginalDialog(
         context,
         plan.existingClaimedAlerts,
@@ -275,7 +339,9 @@ class CollaborationService {
   }
 
   Future<void> cancelCollaborationRequest(
-      String requestId, String alertId) async {
+    String requestId,
+    String alertId,
+  ) async {
     await _db.child('collaboration_requests/$requestId').remove();
     await _db.child('alerts/$alertId').update({'collaborationRequestId': null});
   }
@@ -287,8 +353,12 @@ class CollaborationService {
       if (data == null) return <CollaborationRequest>[];
       final map = Map<String, dynamic>.from(data as Map);
       return map.entries
-          .map((e) => CollaborationRequest.fromMap(
-              e.key, Map<String, dynamic>.from(e.value)))
+          .map(
+            (e) => CollaborationRequest.fromMap(
+              e.key,
+              Map<String, dynamic>.from(e.value),
+            ),
+          )
           .toList()
         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     });
@@ -297,11 +367,13 @@ class CollaborationService {
   // Get pending collaboration requests (for admin)
   // At least one assistant accepted is enough to surface the request to PM.
   Stream<List<CollaborationRequest>> getPendingCollaborationRequests() {
-    return getAllCollaborationRequests().map((requests) => requests.where((r) {
-          return r.pmApproved == false &&
-              r.status != 'rejected' &&
-              r.assistantDecision == 'accepted';
-        }).toList());
+    return getAllCollaborationRequests().map(
+      (requests) => requests.where((r) {
+        return r.pmApproved == false &&
+            r.status != 'rejected' &&
+            r.assistantDecision == 'accepted';
+      }).toList(),
+    );
   }
 
   Future<void> respondToCollaborationRequest({
@@ -335,11 +407,13 @@ class CollaborationService {
     // Record this supervisor's individual decision.
     await _db
         .child(
-            'collaboration_requests/$requestId/assistantDecisions/$responderId')
+          'collaboration_requests/$requestId/assistantDecisions/$responderId',
+        )
         .set(accepted ? 'accepted' : 'refused');
     await _db
         .child(
-            'collaboration_requests/$requestId/assistantDecisionTimestamps/$responderId')
+          'collaboration_requests/$requestId/assistantDecisionTimestamps/$responderId',
+        )
         .set(nowIso);
 
     if (accepted) {
@@ -364,28 +438,30 @@ class CollaborationService {
           'pushSent': false,
         });
 
-        await _notifyAdminsAboutCollabRequest(CollaborationRequest(
-          id: request.id,
-          alertId: request.alertId,
-          requesterId: request.requesterId,
-          requesterName: request.requesterName,
-          targetSupervisorIds: request.targetSupervisorIds,
-          targetSupervisorNames: request.targetSupervisorNames,
-          message: request.message,
-          status: request.status,
-          assistantDecision: 'accepted',
-          assistantId: responderId,
-          assistantName: responderName,
-          assistantRespondedAt: DateTime.parse(nowIso),
-          timestamp: request.timestamp,
-          requiresPMApproval: request.requiresPMApproval,
-          pmApproved: request.pmApproved,
-          usine: request.usine,
-          convoyeur: request.convoyeur,
-          poste: request.poste,
-          alertType: request.alertType,
-          alertDescription: request.alertDescription,
-        ));
+        await _notifyAdminsAboutCollabRequest(
+          CollaborationRequest(
+            id: request.id,
+            alertId: request.alertId,
+            requesterId: request.requesterId,
+            requesterName: request.requesterName,
+            targetSupervisorIds: request.targetSupervisorIds,
+            targetSupervisorNames: request.targetSupervisorNames,
+            message: request.message,
+            status: request.status,
+            assistantDecision: 'accepted',
+            assistantId: responderId,
+            assistantName: responderName,
+            assistantRespondedAt: DateTime.parse(nowIso),
+            timestamp: request.timestamp,
+            requiresPMApproval: request.requiresPMApproval,
+            pmApproved: request.pmApproved,
+            usine: request.usine,
+            convoyeur: request.convoyeur,
+            poste: request.poste,
+            alertType: request.alertType,
+            alertDescription: request.alertDescription,
+          ),
+        );
       }
     } else {
       // Declined — notify the requester.
@@ -401,11 +477,12 @@ class CollaborationService {
       });
 
       // If every targeted supervisor has now refused, mark request as rejected.
-      final updatedDecisions =
-          Map<String, String>.from(request.assistantDecisions)
-            ..[responderId] = 'refused';
-      final allRefused = request.targetSupervisorIds
-          .every((id) => updatedDecisions[id] == 'refused');
+      final updatedDecisions = Map<String, String>.from(
+        request.assistantDecisions,
+      )..[responderId] = 'refused';
+      final allRefused = request.targetSupervisorIds.every(
+        (id) => updatedDecisions[id] == 'refused',
+      );
       if (allRefused) {
         await _db.child('collaboration_requests/$requestId').update({
           'assistantDecision': 'refused',
@@ -436,10 +513,28 @@ class CollaborationService {
       Map<String, dynamic>.from(snapshot.value as Map),
     );
 
-    final newIds = List<String>.from(request.targetSupervisorIds)
-      ..remove(assistantId);
-    final newNames = List<String>.from(request.targetSupervisorNames)
-      ..remove(assistantName);
+    final activeCollaboratorCount = request.targetSupervisorIds.where((id) {
+      return (request.assistantDecisions[id] ?? 'pending') != 'refused';
+    }).length;
+    if (activeCollaboratorCount <= 1) {
+      throw Exception('At least one collaborator must remain on the request.');
+    }
+
+    final newIds = <String>[];
+    final newNames = <String>[];
+    for (int i = 0; i < request.targetSupervisorIds.length; i++) {
+      final id = request.targetSupervisorIds[i];
+      if (id == assistantId) continue;
+      newIds.add(id);
+      newNames.add(
+        i < request.targetSupervisorNames.length
+            ? request.targetSupervisorNames[i]
+            : 'Supervisor',
+      );
+    }
+    if (newIds.isEmpty) {
+      throw Exception('At least one collaborator must remain on the request.');
+    }
 
     final updates = <String, dynamic>{
       'targetSupervisorIds': newIds,
@@ -480,6 +575,119 @@ class CollaborationService {
       'status': 'pending',
       'pushSent': false,
     });
+    await WorkerTriggerQueue.instance.enqueueNotify();
+  }
+
+  Future<void> addSupervisorsToRequest({
+    required String requestId,
+    required List<String> supervisorIds,
+    required List<String> supervisorNames,
+    required String addedByName,
+    bool confirmCancelOriginal = false,
+    List<String>? cancelExistingAlertIds,
+  }) async {
+    final snapshot = await _db.child('collaboration_requests/$requestId').get();
+    if (!snapshot.exists) {
+      throw Exception('Collaboration request not found');
+    }
+    final request = CollaborationRequest.fromMap(
+      requestId,
+      Map<String, dynamic>.from(snapshot.value as Map),
+    );
+    if (request.status == 'rejected') {
+      throw Exception('This collaboration request has already been rejected');
+    }
+    if (request.pmApproved) {
+      throw Exception('This collaboration request has already been approved');
+    }
+
+    final newIds = <String>[];
+    final newNames = <String>[];
+    for (int i = 0; i < supervisorIds.length; i++) {
+      final id = supervisorIds[i];
+      if (id == request.requesterId ||
+          request.targetSupervisorIds.contains(id)) {
+        continue;
+      }
+      newIds.add(id);
+      newNames.add(
+        i < supervisorNames.length ? supervisorNames[i] : 'Supervisor',
+      );
+    }
+    if (newIds.isEmpty) return;
+
+    if (confirmCancelOriginal &&
+        cancelExistingAlertIds != null &&
+        cancelExistingAlertIds.isNotEmpty) {
+      for (final alertId in cancelExistingAlertIds) {
+        await _db.child('alerts/$alertId').update({
+          'status': 'disponible',
+          'superviseurId': null,
+          'superviseurName': null,
+          'assistantId': null,
+          'assistantName': null,
+          'takenAtTimestamp': null,
+        });
+      }
+    }
+
+    final nowIso = DateTime.now().toIso8601String();
+    final updatedIds = [...request.targetSupervisorIds, ...newIds];
+    final updatedNames = [...request.targetSupervisorNames, ...newNames];
+    final pmAddedIds = <String>{
+      ...request.pmAddedSupervisorIds,
+      ...newIds,
+    }.toList();
+    final pmAddedNames = <String>{
+      ...request.pmAddedSupervisorNames,
+      ...newNames,
+    }.toList();
+
+    final updates = <String, dynamic>{
+      'targetSupervisorIds': updatedIds,
+      'targetSupervisorNames': updatedNames,
+      'pmAddedSupervisorIds': pmAddedIds,
+      'pmAddedSupervisorNames': pmAddedNames,
+    };
+    for (int i = 0; i < newIds.length; i++) {
+      updates['assistantDecisions/${newIds[i]}'] = 'accepted';
+      updates['assistantDecisionTimestamps/${newIds[i]}'] = nowIso;
+    }
+    if (request.assistantDecision != 'accepted') {
+      updates['assistantDecision'] = 'accepted';
+      updates['assistantId'] = newIds.first;
+      updates['assistantName'] = newNames.first;
+      updates['assistantRespondedAt'] = nowIso;
+    }
+
+    await _db.child('collaboration_requests/$requestId').update(updates);
+
+    await _db.child('notifications/${request.requesterId}').push().set({
+      'type': 'collaboration_assistant_accepted',
+      'collabRequestId': requestId,
+      'alertId': request.alertId,
+      'message':
+          '$addedByName added ${newNames.join(", ")} to your collaboration request.',
+      'timestamp': nowIso,
+      'status': 'pending',
+      'pushSent': false,
+    });
+
+    for (int i = 0; i < newIds.length; i++) {
+      await _db.child('notifications/${newIds[i]}').push().set({
+        'type': 'collaboration_request',
+        'collabRequestId': requestId,
+        'alertId': request.alertId,
+        'requesterName': request.requesterName,
+        'message':
+            '$addedByName added you to a collaboration on alert: ${request.alertType ?? request.alertId}.',
+        'timestamp': nowIso,
+        'status': 'pending',
+        'pushSent': false,
+      });
+    }
+
+    await WorkerTriggerQueue.instance.enqueueNotify();
   }
 
   /// Returns true if the given supervisor already has a pending/active outgoing request.
@@ -497,12 +705,17 @@ class CollaborationService {
 
   // Get collaboration requests for a specific supervisor
   Stream<List<CollaborationRequest>> getCollaborationRequestsForSupervisor(
-      String supervisorId) {
-    return getAllCollaborationRequests().map((requests) => requests
-        .where((r) =>
-            r.targetSupervisorIds.contains(supervisorId) ||
-            r.requesterId == supervisorId)
-        .toList());
+    String supervisorId,
+  ) {
+    return getAllCollaborationRequests().map(
+      (requests) => requests
+          .where(
+            (r) =>
+                r.targetSupervisorIds.contains(supervisorId) ||
+                r.requesterId == supervisorId,
+          )
+          .toList(),
+    );
   }
 
   // Approve collaboration request (supervisor or admin)
@@ -533,12 +746,14 @@ class CollaborationService {
       });
 
       // Notify requester
+      final addedNames = request.pmAddedSupervisorNames;
       final notification = {
         'type': 'collaboration_approved',
         'collabRequestId': requestId,
         'alertId': request.alertId,
-        'message':
-            'Your collaboration request has been approved by Production Manager',
+        'message': addedNames.isEmpty
+            ? 'Your collaboration request has been approved by Production Manager'
+            : 'Your collaboration request has been approved by Production Manager with added collaborators: ${addedNames.join(", ")}',
         'timestamp': DateTime.now().toIso8601String(),
         'status': 'pending',
         'pushSent': false,
@@ -562,6 +777,7 @@ class CollaborationService {
         };
         await _db.child('notifications/$targetId').push().set(notif);
       }
+      await WorkerTriggerQueue.instance.enqueueNotify();
 
       // If cancels original alert, cancel it
       if (request.cancelsOriginalAlert) {
@@ -595,11 +811,13 @@ class CollaborationService {
         throw Exception('Assistant must accept before PM approval');
       }
       // 1. Assign assistant to the collaboration alert (original behaviour)
-      final assistantId = request.assistantId ??
+      final assistantId =
+          request.assistantId ??
           (request.targetSupervisorIds.isNotEmpty
               ? request.targetSupervisorIds.first
               : null);
-      final assistantName = request.assistantName ??
+      final assistantName =
+          request.assistantName ??
           (request.targetSupervisorNames.isNotEmpty
               ? request.targetSupervisorNames.first
               : null);
@@ -614,6 +832,11 @@ class CollaborationService {
           collaboratorsList.add({'id': id, 'name': name});
         }
       }
+      if (collaboratorsList.isEmpty &&
+          assistantId != null &&
+          assistantName != null) {
+        collaboratorsList.add({'id': assistantId, 'name': assistantName});
+      }
 
       final alertUpdates = <String, dynamic>{
         'collaborators': collaboratorsList,
@@ -624,6 +847,10 @@ class CollaborationService {
       }
 
       await _db.child('alerts/${request.alertId}').update(alertUpdates);
+      await _indexCollaborationAlertForCollaborators(
+        alertId: request.alertId,
+        collaborators: collaboratorsList,
+      );
 
       // 2. Return assistant's existing alerts to unclaimed
       if (confirmCancelOriginal &&
@@ -650,12 +877,14 @@ class CollaborationService {
       });
 
       // 4. Send notifications (existing code unchanged) – abbreviated below
+      final addedNames = request.pmAddedSupervisorNames;
       final notification = {
         'type': 'collaboration_approved',
         'collabRequestId': requestId,
         'alertId': request.alertId,
-        'message':
-            'Your collaboration request has been approved by Production Manager',
+        'message': addedNames.isEmpty
+            ? 'Your collaboration request has been approved by Production Manager'
+            : 'Your collaboration request has been approved by Production Manager with added collaborators: ${addedNames.join(", ")}',
         'timestamp': DateTime.now().toIso8601String(),
         'status': 'pending',
         'pushSent': false,
@@ -665,7 +894,9 @@ class CollaborationService {
           .push()
           .set(notification);
 
-      for (final targetId in request.targetSupervisorIds) {
+      for (final collaborator in collaboratorsList) {
+        final targetId = collaborator['id'];
+        if (targetId == null || targetId.isEmpty) continue;
         final notif = {
           'type': 'collaboration_approved',
           'collabRequestId': requestId,
@@ -678,6 +909,7 @@ class CollaborationService {
         };
         await _db.child('notifications/$targetId').push().set(notif);
       }
+      await WorkerTriggerQueue.instance.enqueueNotify();
     } else {
       // Supervisor approval (not PM) – keep simple
       await _db.child('collaboration_requests/$requestId').update({
@@ -686,6 +918,22 @@ class CollaborationService {
         'assistantName': approverName,
         'assistantRespondedAt': DateTime.now().toIso8601String(),
       });
+    }
+  }
+
+  Future<void> _indexCollaborationAlertForCollaborators({
+    required String alertId,
+    required List<Map<String, String>> collaborators,
+  }) async {
+    if (collaborators.isEmpty) return;
+    final updates = <String, dynamic>{};
+    for (final collaborator in collaborators) {
+      final id = collaborator['id'];
+      if (id == null || id.trim().isEmpty) continue;
+      updates['collaboration_alerts/$id/$alertId'] = true;
+    }
+    if (updates.isNotEmpty) {
+      await _db.update(updates);
     }
   }
 
@@ -739,62 +987,67 @@ class CollaborationService {
                 style: TextStyle(fontSize: 13, color: t.muted),
               ),
               const SizedBox(height: 16),
-              ...transfers.map((transfer) => Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: t.orangeLt,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: t.orange.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          color: t.orange,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                transfer['name']!,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: t.navy,
-                                ),
+              ...transfers.map(
+                (transfer) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: t.orangeLt,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: t.orange.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: t.orange,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              transfer['name']!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: t.navy,
                               ),
-                              const SizedBox(height: 2),
-                              Text.rich(
-                                TextSpan(
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: t.navy,
+                            ),
+                            const SizedBox(height: 2),
+                            Text.rich(
+                              TextSpan(
+                                style: TextStyle(fontSize: 12, color: t.navy),
+                                children: [
+                                  const TextSpan(
+                                    text: 'Will be transferred from ',
                                   ),
-                                  children: [
-                                    const TextSpan(text: 'Will be transferred from '),
-                                    TextSpan(
-                                      text: transfer['fromUsine']!,
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                  TextSpan(
+                                    text: transfer['fromUsine']!,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    const TextSpan(text: ' to '),
-                                    TextSpan(
-                                      text: toUsine,
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  const TextSpan(text: ' to '),
+                                  TextSpan(
+                                    text: toUsine,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  )),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               Text(
                 'Do you confirm this transfer?',
@@ -897,7 +1150,11 @@ class CollaborationService {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.warning_amber_rounded, color: t.orange, size: 16),
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: t.orange,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -1018,7 +1275,8 @@ class CollaborationService {
       return EscalationSettings.defaultSettings();
     }
     return EscalationSettings.fromMap(
-        Map<String, dynamic>.from(snapshot.value as Map));
+      Map<String, dynamic>.from(snapshot.value as Map),
+    );
   }
 
   // Stream escalation settings
@@ -1028,7 +1286,8 @@ class CollaborationService {
         return EscalationSettings.defaultSettings();
       }
       return EscalationSettings.fromMap(
-          Map<String, dynamic>.from(event.snapshot.value as Map));
+        Map<String, dynamic>.from(event.snapshot.value as Map),
+      );
     });
   }
 
@@ -1063,7 +1322,8 @@ class CollaborationService {
   }
 
   Future<void> _notifyAdminsAboutCollabRequest(
-      CollaborationRequest request) async {
+    CollaborationRequest request,
+  ) async {
     final users = await _getAllUsers();
     for (var entry in users.entries) {
       final role = entry.value['role'] ?? 'supervisor';
@@ -1092,7 +1352,8 @@ class CollaborationService {
 
   // Get collaboration request by ID
   Future<CollaborationRequest?> getCollaborationRequest(
-      String requestId) async {
+    String requestId,
+  ) async {
     final snapshot = await _db.child('collaboration_requests/$requestId').get();
     if (!snapshot.exists) return null;
     return CollaborationRequest.fromMap(

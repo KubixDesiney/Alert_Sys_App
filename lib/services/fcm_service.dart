@@ -73,9 +73,9 @@ class FcmService {
   // a channel pattern is set, so we need a separate channel here).
   static final AndroidNotificationChannel _buzzChannel =
       AndroidNotificationChannel(
-    'alerts_new_buzz',
+    'alerts_new_buzz_v3',
     'New alert buzz',
-    description: 'Repeating buzz for unclaimed alerts — stops when you claim or dismiss',
+    description: 'Strong buzz for unclaimed alerts when you are available',
     importance: Importance.max,
     playSound: true,
     enableVibration: true,

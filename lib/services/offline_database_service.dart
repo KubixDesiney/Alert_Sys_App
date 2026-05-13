@@ -12,6 +12,7 @@ class OfflineDatabaseService {
     'alertCounter',
     'assets',
     'assetCounter',
+    'collaboration_alerts',
     'collaboration_requests',
     'escalation_settings',
     'factories',

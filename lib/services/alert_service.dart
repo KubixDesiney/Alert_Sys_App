@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
+import 'package:rxdart/rxdart.dart';
 import '../config/app_config.dart';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
@@ -10,12 +11,12 @@ import 'app_logger.dart';
 import 'fcm_service.dart';
 
 String _defaultDescription(String type) => switch (type) {
-      'qualite' => 'Quality control issue detected on the line.',
-      'maintenance' => 'Equipment requires maintenance intervention.',
-      'defaut_produit' => 'Product defect identified at workstation.',
-      'manque_ressource' => 'Resource shortage reported at production post.',
-      _ => 'Alert raised — awaiting supervisor assessment.',
-    };
+  'qualite' => 'Quality control issue detected on the line.',
+  'maintenance' => 'Equipment requires maintenance intervention.',
+  'defaut_produit' => 'Product defect identified at workstation.',
+  'manque_ressource' => 'Resource shortage reported at production post.',
+  _ => 'Alert raised — awaiting supervisor assessment.',
+};
 
 class AlertService {
   final DatabaseReference _db;
@@ -26,9 +27,9 @@ class AlertService {
     DatabaseReference? database,
     HierarchyService? hierarchyService,
     AppLogger logger = const AppLogger(),
-  })  : _db = database ?? FirebaseDatabase.instance.ref(),
-        _hierarchyService = hierarchyService,
-        _logger = logger;
+  }) : _db = database ?? FirebaseDatabase.instance.ref(),
+       _hierarchyService = hierarchyService,
+       _logger = logger;
 
   /// Get hierarchy service (may be null if not injected)
   HierarchyService? get hierarchyService => _hierarchyService;
@@ -49,8 +50,10 @@ class AlertService {
         .map((event) => _toAlertList(event.snapshot));
   }
 
-  Stream<List<AlertModel>> getAlertsWhereAssistant(String assistantId,
-      {int? limit}) {
+  Stream<List<AlertModel>> getAlertsWhereAssistant(
+    String assistantId, {
+    int? limit,
+  }) {
     return _db
         .child('alerts')
         .orderByChild('assistantId')
@@ -59,14 +62,46 @@ class AlertService {
         .map((event) => _toAlertList(event.snapshot));
   }
 
-  Stream<List<AlertModel>> getAlertsWhereSupervisor(String supervisorId,
-      {int? limit}) {
+  Stream<List<AlertModel>> getAlertsWhereSupervisor(
+    String supervisorId, {
+    int? limit,
+  }) {
     return _db
         .child('alerts')
         .orderByChild('superviseurId')
         .equalTo(supervisorId)
         .onValue
         .map((event) => _toAlertList(event.snapshot));
+  }
+
+  Stream<List<AlertModel>> getAlertsForCollaborator(String supervisorId) {
+    return _db.child('collaboration_alerts/$supervisorId').onValue.switchMap((
+      event,
+    ) {
+      final raw = event.snapshot.value;
+      if (raw == null) return Stream.value(<AlertModel>[]);
+      final ids = <String>[];
+      if (raw is Map) {
+        for (final entry in raw.entries) {
+          if (entry.value == true) ids.add(entry.key.toString());
+        }
+      }
+      if (ids.isEmpty) return Stream.value(<AlertModel>[]);
+
+      final streams = ids.map((id) {
+        return _db.child('alerts/$id').onValue.map<AlertModel?>((event) {
+          final value = event.snapshot.value;
+          if (value is! Map) return null;
+          return AlertModel.fromMap(id, Map<String, dynamic>.from(value));
+        });
+      }).toList();
+
+      return Rx.combineLatestList<AlertModel?>(streams).map((items) {
+        final alerts = items.whereType<AlertModel>().toList()
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        return alerts;
+      });
+    });
   }
 
   /// Fetch older alerts before a given timestamp
@@ -95,8 +130,11 @@ class AlertService {
     int limit = 50,
   }) async {
     try {
-      final snapshot =
-          await _db.child('alerts').orderByChild('usine').equalTo(usine).get();
+      final snapshot = await _db
+          .child('alerts')
+          .orderByChild('usine')
+          .equalTo(usine)
+          .get();
 
       final alerts = _toAlertList(snapshot);
       final older = alerts.where((a) => a.timestamp.isBefore(before)).toList()
@@ -120,8 +158,9 @@ class AlertService {
     if (data == null) return [];
     final map = Map<String, dynamic>.from(data as Map);
     return map.entries
-        .map((e) =>
-            AlertModel.fromMap(e.key, Map<String, dynamic>.from(e.value)))
+        .map(
+          (e) => AlertModel.fromMap(e.key, Map<String, dynamic>.from(e.value)),
+        )
         .toList();
   }
 
@@ -136,11 +175,15 @@ class AlertService {
   }) async {
     // Validate against the hierarchy (use injected or create temp)
     final hierarchyService = _hierarchyService ?? HierarchyService();
-    final isValid =
-        await hierarchyService.validateLocation(usine, convoyeur, poste);
+    final isValid = await hierarchyService.validateLocation(
+      usine,
+      convoyeur,
+      poste,
+    );
     if (!isValid) {
       throw Exception(
-          'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.');
+        'Invalid location: Factory "$usine", Conveyor $convoyeur, Station $poste does not exist in hierarchy.',
+      );
     }
 
     final alertNumber = await _reserveNextAlertNumber();
@@ -157,8 +200,9 @@ class AlertService {
       'alertNumber': alertNumber,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
       'timestamp': now.toIso8601String(),
-      'description':
-          description.trim().isEmpty ? _defaultDescription(type) : description,
+      'description': description.trim().isEmpty
+          ? _defaultDescription(type)
+          : description,
       'status': 'disponible',
       'comments': [],
       'isCritical': isCritical,
@@ -181,7 +225,8 @@ class AlertService {
       );
     } catch (e) {
       debugPrint(
-          'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e');
+        'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e',
+      );
     }
     return alertId;
   }
@@ -199,7 +244,10 @@ class AlertService {
   }
 
   Future<void> takeAlert(
-      String alertId, String superviseurId, String superviseurName) async {
+    String alertId,
+    String superviseurId,
+    String superviseurName,
+  ) async {
     // Auto-clean stale supervisor_active_alerts entries. This happens when an
     // alert was resolved/returned without properly clearing the node (crash,
     // network failure, or a worker-assigned alert that bypassed this path).
@@ -233,10 +281,7 @@ class AlertService {
     final activeClaimRef = _db.child('supervisor_active_alerts/$superviseurId');
     final activeClaimResult = await activeClaimRef.runTransaction((current) {
       if (current == null) {
-        return Transaction.success({
-          'alertId': alertId,
-          'claimedAt': nowIso,
-        });
+        return Transaction.success({'alertId': alertId, 'claimedAt': nowIso});
       }
 
       final currentMap = current is Map
@@ -256,8 +301,9 @@ class AlertService {
       );
     }
 
-    final alertResult =
-        await _db.child('alerts/$alertId').runTransaction((current) {
+    final alertResult = await _db.child('alerts/$alertId').runTransaction((
+      current,
+    ) {
       if (current == null) return Transaction.abort();
       final currentMap = current is Map
           ? Map<String, dynamic>.from(current)
@@ -290,8 +336,9 @@ class AlertService {
   Future<void> returnToQueue(String alertId, {String? reason}) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
     final alertData = alertSnap.value;
-    final superviseurId =
-        alertData is Map ? (alertData['superviseurId']?.toString()) : null;
+    final superviseurId = alertData is Map
+        ? (alertData['superviseurId']?.toString())
+        : null;
     final updates = {
       'status': 'disponible',
       'superviseurId': null,
@@ -307,7 +354,10 @@ class AlertService {
 
   // Add this new method
   Future<void> notifyAdminsAboutSuspend(
-      String alertId, String supervisorName, String? reason) async {
+    String alertId,
+    String supervisorName,
+    String? reason,
+  ) async {
     final users = await getAllUsers();
     for (var entry in users.entries) {
       final role = entry.value['role'] ?? 'supervisor';
@@ -328,12 +378,18 @@ class AlertService {
     }
   }
 
-  Future<void> resolveAlert(String alertId, String reason, int elapsedMinutes,
-      {String? assistingSupervisorId, String? assistingSupervisorName}) async {
+  Future<void> resolveAlert(
+    String alertId,
+    String reason,
+    int elapsedMinutes, {
+    String? assistingSupervisorId,
+    String? assistingSupervisorName,
+  }) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
     final alertData = alertSnap.value;
-    final superviseurId =
-        alertData is Map ? (alertData['superviseurId']?.toString()) : null;
+    final superviseurId = alertData is Map
+        ? (alertData['superviseurId']?.toString())
+        : null;
     final Map<String, dynamic> updates = {
       'status': 'validee',
       'elapsedTime': elapsedMinutes,
@@ -367,18 +423,18 @@ class AlertService {
     String alertId,
   ) async {
     if (supervisorId == null || supervisorId.isEmpty) return;
-    await _db.child('supervisor_active_alerts/$supervisorId').runTransaction(
-      (current) {
-        if (current == null) return Transaction.abort();
-        final currentMap = current is Map
-            ? Map<String, dynamic>.from(current)
-            : <String, dynamic>{};
-        if (currentMap['alertId']?.toString() != alertId) {
-          return Transaction.abort();
-        }
-        return Transaction.success(null);
-      },
-    );
+    await _db.child('supervisor_active_alerts/$supervisorId').runTransaction((
+      current,
+    ) {
+      if (current == null) return Transaction.abort();
+      final currentMap = current is Map
+          ? Map<String, dynamic>.from(current)
+          : <String, dynamic>{};
+      if (currentMap['alertId']?.toString() != alertId) {
+        return Transaction.abort();
+      }
+      return Transaction.success(null);
+    });
   }
 
   // Removes a stale supervisor_active_alerts entry before a new claim attempt.
@@ -386,8 +442,9 @@ class AlertService {
   // the app crashed before the cleanup write completed.
   Future<void> _cleanupStaleActiveClaim(String supervisorId) async {
     if (supervisorId.isEmpty) return;
-    final snap =
-        await _db.child('supervisor_active_alerts/$supervisorId').get();
+    final snap = await _db
+        .child('supervisor_active_alerts/$supervisorId')
+        .get();
     if (!snap.exists || snap.value == null) return;
 
     final data = snap.value is Map
@@ -428,14 +485,20 @@ class AlertService {
   }
 
   Future<void> sendHelpRequest(
-      String targetUserId, Map<String, dynamic> request) async {
+    String targetUserId,
+    Map<String, dynamic> request,
+  ) async {
     final notification = Map<String, dynamic>.from(request)
       ..putIfAbsent('pushSent', () => false);
     await _db.child('notifications/$targetUserId').push().set(notification);
   }
 
-  Future<void> createHelpRequest(String alertId, String requesterId,
-      String requesterName, String targetSupervisorId) async {
+  Future<void> createHelpRequest(
+    String alertId,
+    String requesterId,
+    String requesterName,
+    String targetSupervisorId,
+  ) async {
     final requestId = _db.child('help_requests').push().key!;
     final helpRequest = {
       'alertId': alertId,
@@ -461,8 +524,12 @@ class AlertService {
         .set(notification);
   }
 
-  Future<void> acceptHelpRequest(String alertId, String requestId,
-      String assistantId, String assistantName) async {
+  Future<void> acceptHelpRequest(
+    String alertId,
+    String requestId,
+    String assistantId,
+    String assistantName,
+  ) async {
     _logger.debug(
       'acceptHelpRequest: alertId=$alertId, requestId=$requestId, '
       'assistantId=$assistantId, assistantName=$assistantName',
@@ -473,9 +540,9 @@ class AlertService {
       'helpRequestId': null,
     });
     if (requestId.isNotEmpty) {
-      await _db
-          .child('help_requests/$requestId')
-          .update({'status': 'accepted'});
+      await _db.child('help_requests/$requestId').update({
+        'status': 'accepted',
+      });
       final helpRequestSnap = await _db.child('help_requests/$requestId').get();
       final requesterId = helpRequestSnap.child('requesterId').value as String;
       final notification = {
@@ -523,7 +590,10 @@ class AlertService {
   /// Creates in-app notifications for all supervisors and admins.
   /// OneSignal pushes are now handled by the Cloudflare Worker.
   Future<void> sendNewAlertNotification(
-      String alertId, String alertType, String description) async {
+    String alertId,
+    String alertType,
+    String description,
+  ) async {
     final alertSnap = await _db.child('alerts/$alertId').get();
     if (alertSnap.exists && alertSnap.child('notificationSent').value == true) {
       return;
