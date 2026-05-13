@@ -22,11 +22,23 @@ const RATE_LIMIT_MAX = 60;
 
 const _rateBuckets = new Map();
 
+function _safeTrimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function _json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function _fbBaseUrl(env) {
+  return `${String(env?.FB_DB_URL || '').trim().replace(/\/+$/, '')}/`;
+}
+
+function _fbUrl(env, path) {
+  return `${_fbBaseUrl(env)}${String(path || '').replace(/^\/+/, '')}`;
 }
 
 function _securityGuard(request, endpoint = 'default') {
@@ -62,6 +74,42 @@ function base64UrlEncode(input) {
   let binary = '';
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function parseJsonSecret(raw, label) {
+  if (raw && typeof raw === 'object') return raw;
+  let text = _safeTrimString(raw);
+  if (!text) throw new Error(`${label} is empty`);
+
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    text = text.slice(firstBrace, lastBrace + 1);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (firstError) {
+    try {
+      const unwrapped = JSON.parse(text);
+      if (typeof unwrapped === 'string') {
+        return JSON.parse(unwrapped);
+      }
+      return unwrapped;
+    } catch (_) {
+      throw new Error(`${label} parse failed: ${firstError.message}`);
+    }
+  }
+}
+
+async function readJsonResponse(res, label) {
+  const text = await res.text();
+  if (!text || !text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${label}: ${e.message}`);
+  }
 }
 
 async function importPrivateKey(pem) {
@@ -108,7 +156,7 @@ async function getFirebaseToken(env) {
   if (_fbToken && now < _fbTokenExpMs) return _fbToken;
 
   if (env?.FIREBASE_SERVICE_ACCOUNT) {
-    const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+    const sa = parseJsonSecret(env.FIREBASE_SERVICE_ACCOUNT, 'FIREBASE_SERVICE_ACCOUNT');
     const jwt = await createFirebaseAuthJWT(sa.client_email, sa.private_key);
     const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${env.FB_API_KEY}`;
     const res = await fetch(url, {
@@ -117,7 +165,7 @@ async function getFirebaseToken(env) {
       body: JSON.stringify({ token: jwt, returnSecureToken: true }),
     });
     if (!res.ok) throw new Error(`Firebase auth failed: ${res.status}`);
-    const data = await res.json();
+    const data = await readJsonResponse(res, 'Firebase auth response');
     _fbToken = data.idToken;
     _fbTokenExpMs = now + 50 * 60 * 1000;
     return _fbToken;
@@ -129,7 +177,7 @@ async function getFirebaseToken(env) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ returnSecureToken: true }),
   });
-  const data = await res.json();
+  const data = await readJsonResponse(res, 'Firebase anonymous auth response');
   _fbToken = data.idToken;
   _fbTokenExpMs = now + 50 * 60 * 1000;
   return _fbToken;
@@ -138,7 +186,7 @@ async function getFirebaseToken(env) {
 async function getFcmAccessToken(env) {
   const now = Date.now();
   if (_fcmToken && now < _fcmTokenExpMs) return _fcmToken;
-  const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+  const sa = parseJsonSecret(env.FIREBASE_SERVICE_ACCOUNT, 'FIREBASE_SERVICE_ACCOUNT');
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: sa.client_email,
@@ -162,7 +210,7 @@ async function getFcmAccessToken(env) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
   });
-  const data = await res.json();
+  const data = await readJsonResponse(res, 'FCM access token response');
   if (!data.access_token) throw new Error(`FCM token failed: ${JSON.stringify(data)}`);
   _fcmToken = data.access_token;
   _fcmTokenExpMs = now + Math.max(60, Number(data.expires_in || 3600) - 60) * 1000;
@@ -196,15 +244,15 @@ function aiResolveFactory(obj) {
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
   const [alertsRes, usersRes, activeClaimsRes] = await Promise.all([
-    fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
-    fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
-    fetch(`${env.FB_DB_URL}supervisor_active_alerts.json?auth=${token}`),
+    fetch(`${_fbUrl(env, 'alerts.json')}?auth=${token}`),
+    fetch(`${_fbUrl(env, 'users.json')}?auth=${token}`),
+    fetch(`${_fbUrl(env, 'supervisor_active_alerts.json')}?auth=${token}`),
   ]);
   return {
     token,
-    alertsMap: alertsRes.ok ? ((await alertsRes.json()) || {}) : {},
-    usersMap: usersRes.ok ? ((await usersRes.json()) || {}) : {},
-    supervisorActiveAlertsMap: activeClaimsRes.ok ? ((await activeClaimsRes.json()) || {}) : {},
+    alertsMap: alertsRes.ok ? ((await readJsonResponse(alertsRes, 'alerts.json')) || {}) : {},
+    usersMap: usersRes.ok ? ((await readJsonResponse(usersRes, 'users.json')) || {}) : {},
+    supervisorActiveAlertsMap: activeClaimsRes.ok ? ((await readJsonResponse(activeClaimsRes, 'supervisor_active_alerts.json')) || {}) : {},
   };
 }
 
@@ -233,12 +281,12 @@ function parseFcmFailure(status, text) {
 
 async function clearUnregisteredFcmToken(env, firebaseAuthToken, uid, staleToken) {
   if (!env?.FB_DB_URL || !firebaseAuthToken || !uid || !staleToken) return false;
-  const tokenUrl = `${env.FB_DB_URL}users/${uid}/fcmToken.json?auth=${firebaseAuthToken}`;
+  const tokenUrl = `${_fbUrl(env, `users/${uid}/fcmToken.json`)}?auth=${firebaseAuthToken}`;
   try {
     const currentRes = await fetch(tokenUrl, { headers: { 'X-Firebase-ETag': 'true' } });
     if (!currentRes.ok) return false;
     const etag = currentRes.headers.get('ETag');
-    const current = await currentRes.json();
+    const current = await readJsonResponse(currentRes, `users/${uid}/fcmToken.json`);
     if (current !== staleToken) return false;
     const clearRes = await fetch(tokenUrl, {
       method: 'PUT',
@@ -263,7 +311,7 @@ function normalizeFcmData(data, title, body) {
 async function sendFcmDetailed(token, title, body, data, env, options = {}) {
   try {
     const accessToken = await getFcmAccessToken(env);
-    const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+    const sa = parseJsonSecret(env.FIREBASE_SERVICE_ACCOUNT, 'FIREBASE_SERVICE_ACCOUNT');
     const url = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
     const res = await fetch(url, {
       method: 'POST',
@@ -394,11 +442,11 @@ function _pushLockIsFresh(alert) {
 }
 
 async function claimAlertPush(env, token, alertId) {
-  const alertUrl = `${env.FB_DB_URL}alerts/${alertId}.json?auth=${token}`;
+  const alertUrl = `${_fbUrl(env, `alerts/${alertId}.json`)}?auth=${token}`;
   const getRes = await fetch(alertUrl, { headers: { 'X-Firebase-ETag': 'true' } });
   if (!getRes.ok) return null;
   const etag = getRes.headers.get('ETag');
-  const current = await getRes.json();
+  const current = await readJsonResponse(getRes, `alerts/${alertId}.json`);
   if (!current || current.push_sent !== false || current.status !== 'disponible') return null;
   if (_pushLockIsFresh(current)) return null;
 
@@ -440,16 +488,34 @@ async function finishAlertPush(alertUrl, sent) {
   });
 }
 
+async function skipAlertPush(alertUrl, reason) {
+  const nowIso = new Date().toISOString();
+  await fetch(alertUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      push_sent: true,
+      push_sent_at: nowIso,
+      push_sending: null,
+      push_sending_at: null,
+      push_last_error_at: null,
+      push_skip_reason: String(reason || 'skipped'),
+    }),
+  });
+}
+
 async function processAlerts(env, ctx) {
   const { token, alertsMap, usersMap, supervisorActiveAlertsMap } = ctx;
   const unsent = Object.entries(alertsMap || {})
     .filter(([, a]) => a && a.status === 'disponible' && a.push_sent === false && !_pushLockIsFresh(a))
-    .slice(0, MAX_ALERTS_TO_PUSH)
+    .sort((a, b) => (_toMs(b[1]?.timestamp) ?? 0) - (_toMs(a[1]?.timestamp) ?? 0))
+    .slice(0, Math.max(MAX_ALERTS_TO_PUSH, 5))
     .map(([id]) => id);
   if (!unsent.length) return 0;
 
   let processed = 0;
   for (const alertId of unsent) {
+    if (processed >= MAX_ALERTS_TO_PUSH) break;
     const claimed = await claimAlertPush(env, token, alertId);
     if (!claimed) continue;
     const { alertUrl, alert } = claimed;
@@ -460,7 +526,7 @@ async function processAlerts(env, ctx) {
       supervisorActiveAlertsMap,
     });
     if (recipients.length === 0) {
-      await finishAlertPush(alertUrl, false);
+      await skipAlertPush(alertUrl, 'no_eligible_recipients');
       continue;
     }
 
@@ -523,6 +589,8 @@ const ADMIN_ONLY_NOTIF_TYPES = new Set([
   'ai_cross_factory_recommendation',
 ]);
 
+const LEGACY_SKIPPED_NOTIF_TYPES = new Set(['', 'new_alert']);
+
 function notificationTargetFactory(notif, alertsMap = {}) {
   const directFactory =
     notif?.usine || notif?.alertUsine || notif?.factoryName || notif?.factoryId || '';
@@ -562,16 +630,14 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
   if (limit <= 0) return 0;
   const nowIso = new Date().toISOString();
   const busySupervisors = engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
-  const notifRes = await fetch(`${env.FB_DB_URL}notifications.json?auth=${token}`);
+  const notifRes = await fetch(`${_fbUrl(env, 'notifications.json')}?auth=${token}`);
   if (!notifRes.ok) return 0;
-  const allNotifs = (await notifRes.json()) || {};
-  let processed = 0;
+  const allNotifs = (await readJsonResponse(notifRes, 'notifications.json')) || {};
+  const candidates = [];
 
-  outer: for (const [uid, bucket] of Object.entries(allNotifs)) {
-    if (processed >= limit) break;
+  for (const [uid, bucket] of Object.entries(allNotifs)) {
     const user = usersMap[uid];
     const fcmToken = user?.fcmToken;
-    if (!fcmToken) continue;
     const userRole = String(user?.role || '');
     const isSupervisor = userRole === 'supervisor';
     const isAdmin = userRole === 'admin';
@@ -579,9 +645,10 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
     const userFactoryId = aiResolveFactory(user || null);
 
     for (const [notifId, notif] of Object.entries(bucket || {})) {
-      if (processed >= limit) break outer;
       if (!notif || notif.pushSent === true || notif.pushSending === true) continue;
       const notifType = String(notif.type || '');
+      if (LEGACY_SKIPPED_NOTIF_TYPES.has(notifType)) continue;
+      if (!user || !fcmToken || uid === 'undefined') continue;
       const isCollabNotification = COLLAB_NOTIF_TYPES.has(notifType);
       if (isBusySupervisor && !isCollabNotification) continue;
       if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) continue;
@@ -589,14 +656,38 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
         const targetFactoryId = notificationTargetFactory(notif, alertsMap);
         if (targetFactoryId && targetFactoryId !== userFactoryId) continue;
       }
+      candidates.push({
+        uid,
+        notifId,
+        notif,
+        user,
+        fcmToken,
+        isAdmin,
+        isSupervisor,
+        userFactoryId,
+      });
+    }
+  }
 
-      const url = `${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${token}`;
+  candidates.sort((a, b) => {
+    const aMs = _toMs(a.notif?.timestamp) ?? 0;
+    const bMs = _toMs(b.notif?.timestamp) ?? 0;
+    return bMs - aMs;
+  });
+
+  let processed = 0;
+  for (const candidate of candidates) {
+    if (processed >= limit) break;
+      const { uid, notifId, user, fcmToken, isAdmin, isSupervisor, userFactoryId } = candidate;
+    try {
+      const url = `${_fbUrl(env, `notifications/${uid}/${notifId}.json`)}?auth=${token}`;
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
       if (!getRes.ok) continue;
       const etag = getRes.headers.get('ETag');
-      const current = await getRes.json();
+      const current = await readJsonResponse(getRes, `notifications/${uid}/${notifId}.json`);
       if (!current || current.pushSent === true || current.pushSending === true) continue;
       const currentType = String(current.type || '');
+      if (LEGACY_SKIPPED_NOTIF_TYPES.has(currentType)) continue;
       const currentIsCollab = COLLAB_NOTIF_TYPES.has(currentType);
       if (ADMIN_ONLY_NOTIF_TYPES.has(currentType) && !isAdmin) continue;
       if (isSupervisor && !currentIsCollab) {
@@ -641,6 +732,8 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
       });
       processed++;
       if (result.unregistered) break;
+    } catch (e) {
+      console.error(`[NOTIFY] Fan-out candidate ${uid}/${notifId} failed: ${e.message}`);
     }
   }
   return processed;
@@ -649,7 +742,7 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
 async function writeNotifyHealth(env, token, data) {
   if (!env?.FB_DB_URL || !token) return;
   try {
-    await fetch(`${env.FB_DB_URL}workers/health/notifyLastRun.json?auth=${token}`, {
+    await fetch(`${_fbUrl(env, 'workers/health/notifyLastRun.json')}?auth=${token}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -677,11 +770,20 @@ async function runNotificationCycle(env, options = {}) {
   return { alertsProcessed, notificationsProcessed };
 }
 
+async function recordNotifyError(env, error) {
+  try {
+    const token = await getFirebaseToken(env);
+    await writeNotifyHealth(env, token, { error: String(error?.message || error) });
+  } catch (_) {
+    // Ignore secondary diagnostics failures.
+  }
+}
+
 async function acquireNotifyLock(env, token) {
-  const lockUrl = `${env.FB_DB_URL}cron_lock/notify.json?auth=${token}`;
+  const lockUrl = `${_fbUrl(env, 'cron_lock/notify.json')}?auth=${token}`;
   const lockGet = await fetch(lockUrl, { headers: { 'X-Firebase-ETag': 'true' } });
   const lockEtag = lockGet.ok ? lockGet.headers.get('ETag') : null;
-  const lockData = lockGet.ok ? (await lockGet.json()) : null;
+  const lockData = lockGet.ok ? (await readJsonResponse(lockGet, 'cron_lock/notify.json')) : null;
   if (lockData && typeof lockData.ts === 'number' && Date.now() - lockData.ts < 55000) {
     return null;
   }
@@ -731,10 +833,21 @@ export default {
       });
     }
 
+    if (url.pathname === '/notify-sync' || (url.pathname === '/notify' && url.searchParams.get('sync') === '1')) {
+      try {
+        const result = await runNotificationCycle(env, { limit: MAX_FANOUT });
+        return _json({ ok: true, ...result });
+      } catch (e) {
+        await recordNotifyError(env, e);
+        return _json({ ok: false, error: String(e?.message || e) }, 500);
+      }
+    }
+
     if (url.pathname === '/notify' || url.pathname === '/') {
       ctx.waitUntil(
-        runNotificationCycle(env, { limit: MAX_FANOUT }).catch((e) => {
+        runNotificationCycle(env, { limit: MAX_FANOUT }).catch(async (e) => {
           console.error('[NOTIFY MANUAL] ' + e.message);
+          await recordNotifyError(env, e);
         }),
       );
       return _json({ queued: true });

@@ -1675,7 +1675,6 @@ class _HeaderState extends State<_Header> {
     _db = FirebaseDatabase.instance.ref();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      _db.child('notifications/$uid').remove();
       _notifSub = _db.child('notifications/$uid').onValue.listen(
         (event) {
           final data = event.snapshot.value;
