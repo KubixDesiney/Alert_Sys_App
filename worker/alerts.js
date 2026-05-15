@@ -63,6 +63,22 @@ async function finishAlertPush(alertUrl, sent) {
   });
 }
 
+async function skipAlertPush(alertUrl, reason) {
+  const nowIso = new Date().toISOString();
+  await fetch(alertUrl, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      push_sent: true,
+      push_sent_at: nowIso,
+      push_sending: null,
+      push_sending_at: null,
+      push_last_error_at: null,
+      push_skip_reason: String(reason || 'skipped'),
+    }),
+  });
+}
+
 async function processAlerts(env, ctx) {
   const { token, alertsMap, usersMap, supervisorActiveAlertsMap } = ctx;
   const unsent = Object.entries(alertsMap || {})
@@ -82,7 +98,7 @@ async function processAlerts(env, ctx) {
       supervisorActiveAlertsMap,
     });
     if (recipients.length === 0) {
-      await finishAlertPush(alertUrl, false);
+      await skipAlertPush(alertUrl, 'no_recipients');
       continue;
     }
 
@@ -119,4 +135,4 @@ async function processAlerts(env, ctx) {
   }
 }
 
-export { processAlerts, claimAlertPush, finishAlertPush };
+export { processAlerts, claimAlertPush, finishAlertPush, skipAlertPush };
