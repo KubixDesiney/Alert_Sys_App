@@ -537,9 +537,9 @@ async function processAlerts(env, ctx) {
       supervisorActiveAlertsMap,
     });
     if (recipients.length === 0) {
-      // Release the push-lock but leave push_sent:false so the next cron can retry
-      // (don't permanently skip — supervisors may become available or get FCM tokens later)
-      await finishAlertPush(alertUrl, false);
+      // No send was attempted, so close the alert push cycle without treating it
+      // as a retryable FCM failure.
+      await skipAlertPush(alertUrl, 'no_recipients');
       continue;
     }
 
@@ -827,7 +827,7 @@ async function pushSingleAlert(env, alertId) {
   const recipients = allRecipients.filter(r => !busySupervisorUids.has(r.uid));
 
   if (recipients.length === 0) {
-    await finishAlertPush(alertUrl, false);
+    await skipAlertPush(alertUrl, 'no_recipients');
     return false;
   }
 

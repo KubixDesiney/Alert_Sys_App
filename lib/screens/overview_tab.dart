@@ -3381,7 +3381,7 @@ class _AlertHistoryRow extends StatelessWidget {
 // Each option shows its brand color on hover; default background is white.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _ExportMenuButton extends StatelessWidget {
+class _ExportMenuButton extends StatefulWidget {
   final VoidCallback onCsv;
   final VoidCallback onPdf;
   final VoidCallback onExcel;
@@ -3391,75 +3391,237 @@ class _ExportMenuButton extends StatelessWidget {
     required this.onExcel,
   });
 
+  @override
+  State<_ExportMenuButton> createState() => _ExportMenuButtonState();
+}
+
+class _ExportMenuButtonState extends State<_ExportMenuButton> {
   static const _excelGreen = Color(0xFF1D6F42);
   static const _pdfRed = Color(0xFFEC1C24);
   static const _csvBlue = Color(0xFF0072C6);
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.appTheme;
     final isDark = context.isDark;
+    final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
     final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
     final borderColor = isDark
         ? const Color(0xFF3A3A5C)
         : const Color(0xFFDDE1EC);
 
-    OutlinedButton makeBtn({
-      required Widget icon,
-      required String label,
-      required Color color,
-      required VoidCallback onTap,
-    }) =>
-        OutlinedButton.icon(
-          onPressed: onTap,
-          icon: icon,
-          label: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: color,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final menuWidth = constraints.maxWidth;
+        return SizedBox(
+          width: menuWidth,
+          child: MenuAnchor(
+            style: MenuStyle(
+              backgroundColor: WidgetStatePropertyAll(baseBg),
+              minimumSize: WidgetStatePropertyAll(Size(menuWidth, 0)),
+              maximumSize: WidgetStatePropertyAll(Size(menuWidth, double.infinity)),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: borderColor),
+                ),
+              ),
+              elevation: const WidgetStatePropertyAll(4),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(vertical: 4),
+              ),
             ),
-          ),
-          style: OutlinedButton.styleFrom(
-            backgroundColor: baseBg,
-            side: BorderSide(color: borderColor),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(9),
+            menuChildren: [
+              _ExportMenuItem(
+                icon: Icon(Icons.table_chart_outlined, size: 16, color: baseText),
+                label: 'CSV',
+                hoverColor: _csvBlue,
+                onTap: widget.onCsv,
+                baseBg: baseBg,
+                baseText: baseText,
+              ),
+              _ExportMenuItem(
+                icon: _pdfIcon(),
+                label: 'PDF',
+                hoverColor: _pdfRed,
+                onTap: widget.onPdf,
+                baseBg: baseBg,
+                baseText: baseText,
+              ),
+              _ExportMenuItem(
+                icon: _excelIcon(),
+                label: 'Excel',
+                hoverColor: _excelGreen,
+                onTap: widget.onExcel,
+                baseBg: baseBg,
+                baseText: baseText,
+              ),
+            ],
+            builder: (context, controller, _) => OutlinedButton.icon(
+              onPressed: () =>
+                  controller.isOpen ? controller.close() : controller.open(),
+              icon: Icon(Icons.download_outlined, size: 15, color: theme.navy),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Export',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: theme.navy,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.arrow_drop_down, size: 16, color: theme.navy),
+                ],
+              ),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: baseBg,
+                side: BorderSide(color: borderColor),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              ),
             ),
           ),
         );
-
-    return Row(
-      children: [
-        Expanded(
-          child: makeBtn(
-            icon: const Icon(Icons.table_chart_outlined, size: 15, color: _csvBlue),
-            label: 'CSV',
-            color: _csvBlue,
-            onTap: onCsv,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: makeBtn(
-            icon: const Icon(Icons.picture_as_pdf_outlined, size: 15, color: _pdfRed),
-            label: 'PDF',
-            color: _pdfRed,
-            onTap: onPdf,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: makeBtn(
-            icon: const Icon(Icons.grid_on_outlined, size: 15, color: _excelGreen),
-            label: 'Excel',
-            color: _excelGreen,
-            onTap: onExcel,
-          ),
-        ),
-      ],
+      },
     );
   }
 
+  Widget _pdfIcon() => Stack(
+    alignment: Alignment.center,
+    children: [
+      Container(
+        width: 18,
+        height: 20,
+        decoration: const BoxDecoration(
+          color: _pdfRed,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(3),
+            bottomLeft: Radius.circular(3),
+            bottomRight: Radius.circular(3),
+            topRight: Radius.circular(7),
+          ),
+        ),
+      ),
+      const Positioned(
+        top: 0,
+        right: 0,
+        child: SizedBox(
+          width: 7,
+          height: 7,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Color(0xFFB71C1C),
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(3),
+                bottomLeft: Radius.circular(3),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const Text(
+        'PDF',
+        style: TextStyle(
+          fontSize: 5,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          letterSpacing: 0.2,
+        ),
+      ),
+    ],
+  );
+
+  Widget _excelIcon() => Stack(
+    alignment: Alignment.center,
+    children: [
+      Container(
+        width: 18,
+        height: 20,
+        decoration: BoxDecoration(
+          color: _excelGreen,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+      const Text(
+        'X',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+    ],
+  );
+}
+
+class _ExportMenuItem extends StatefulWidget {
+  final Widget icon;
+  final String label;
+  final Color hoverColor;
+  final VoidCallback onTap;
+  final Color baseBg;
+  final Color baseText;
+
+  const _ExportMenuItem({
+    required this.icon,
+    required this.label,
+    required this.hoverColor,
+    required this.onTap,
+    required this.baseBg,
+    required this.baseText,
+  });
+
+  @override
+  State<_ExportMenuItem> createState() => _ExportMenuItemState();
+}
+
+class _ExportMenuItemState extends State<_ExportMenuItem> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: _hover
+                ? widget.hoverColor.withValues(alpha: 0.12)
+                : widget.baseBg,
+            border: Border(
+              left: BorderSide(
+                color: _hover ? widget.hoverColor : Colors.transparent,
+                width: 3,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              widget.icon,
+              const SizedBox(width: 10),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _hover ? widget.hoverColor : widget.baseText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
