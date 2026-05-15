@@ -25,6 +25,7 @@
         "push_sending_at": { ".validate": "!newData.exists() || newData.isString()" },
         "push_sent_at": { ".validate": "!newData.exists() || newData.isString()" },
         "push_last_error_at": { ".validate": "!newData.exists() || newData.isString()" },
+        "push_skip_reason": { ".validate": "!newData.exists() || newData.isString()" },
         "notificationSent": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "isCritical": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "aiHistory": {
