@@ -43,6 +43,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   bool _handleCollaborations = false;
   bool _handleCrossFactoryTransfer = false;
   bool _fullControl = false;
+  final _crossFactoryMaxDistanceCtrl = TextEditingController();
 
   String _searchQuery = '';
   final Set<String> _selectedIds = <String>{};
@@ -77,6 +78,11 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
       _handleCollaborations = s.handleCollaborations;
       _handleCrossFactoryTransfer = s.handleCrossFactoryTransfer;
       _fullControl = s.fullControl;
+      if (s.crossFactoryMaxDistanceKm != null &&
+          s.crossFactoryMaxDistanceKm! > 0) {
+        _crossFactoryMaxDistanceCtrl.text =
+            _formatDistance(s.crossFactoryMaxDistanceKm!);
+      }
       _selectedIds.addAll(s.supervisors.map((e) => e.id));
     }
 
@@ -87,7 +93,21 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   void dispose() {
     _entryCtrl.dispose();
     _nameCtrl.dispose();
+    _crossFactoryMaxDistanceCtrl.dispose();
     super.dispose();
+  }
+
+  static String _formatDistance(double km) {
+    if (km == km.truncateToDouble()) return km.toStringAsFixed(0);
+    return km.toStringAsFixed(1);
+  }
+
+  double? _parseCrossFactoryDistance() {
+    final raw = _crossFactoryMaxDistanceCtrl.text.trim();
+    if (raw.isEmpty) return null;
+    final v = double.tryParse(raw.replaceAll(',', '.'));
+    if (v == null || v <= 0) return null;
+    return v;
   }
 
   Future<void> _loadSupervisors() async {
@@ -212,6 +232,10 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         handleCrossFactoryTransfer: _handleCrossFactoryTransfer,
         fullControl: _fullControl,
         randomize: _randomize,
+        crossFactoryMaxDistanceKm:
+            (_handleCrossFactoryTransfer || _fullControl)
+                ? _parseCrossFactoryDistance()
+                : null,
         createdAt: widget.existing?.createdAt ?? DateTime.now(),
       );
       if (widget.existing == null) {
@@ -371,6 +395,10 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                               _setHandleCrossFactoryTransfer,
                           fullControl: _fullControl,
                           onFullControlChanged: _setFullControl,
+                          crossFactoryMaxDistanceCtrl:
+                              _crossFactoryMaxDistanceCtrl,
+                          onCrossFactoryDistanceChanged: (_) =>
+                              setState(() {}),
                         ),
                         const SizedBox(height: 14),
                         _RandomizeToggleCard(
@@ -649,6 +677,8 @@ class _AiToggleCard extends StatelessWidget {
   final ValueChanged<bool> onHandleCrossFactoryTransferChanged;
   final bool fullControl;
   final ValueChanged<bool> onFullControlChanged;
+  final TextEditingController crossFactoryMaxDistanceCtrl;
+  final ValueChanged<String> onCrossFactoryDistanceChanged;
 
   const _AiToggleCard({
     required this.enabled,
@@ -663,6 +693,8 @@ class _AiToggleCard extends StatelessWidget {
     required this.onHandleCrossFactoryTransferChanged,
     required this.fullControl,
     required this.onFullControlChanged,
+    required this.crossFactoryMaxDistanceCtrl,
+    required this.onCrossFactoryDistanceChanged,
   });
 
   @override
@@ -794,6 +826,21 @@ class _AiToggleCard extends StatelessWidget {
                     enabled: !fullControl,
                     onChanged: onHandleCrossFactoryTransferChanged,
                   ),
+                  AnimatedCrossFade(
+                    duration: const Duration(milliseconds: 220),
+                    crossFadeState:
+                        (handleCrossFactoryTransfer || fullControl)
+                            ? CrossFadeState.showSecond
+                            : CrossFadeState.showFirst,
+                    firstChild: const SizedBox(width: double.infinity),
+                    secondChild: Padding(
+                      padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
+                      child: _CrossFactoryDistanceField(
+                        controller: crossFactoryMaxDistanceCtrl,
+                        onChanged: onCrossFactoryDistanceChanged,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   _CommanderTaskTile(
                     label: 'Full control',
@@ -889,6 +936,102 @@ class _CommanderTaskTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _CrossFactoryDistanceField extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _CrossFactoryDistanceField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: t.scaffold,
+        border: Border.all(color: t.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(Icons.social_distance, size: 18, color: t.navy),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Max cross-factory distance',
+                  style: TextStyle(
+                    color: t.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Skip rostered supervisors whose home factory is farther '
+                  'than this from the alert factory. Leave empty for no limit.',
+                  style: TextStyle(
+                    color: t.muted,
+                    fontSize: 10.5,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 90,
+            child: TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true, signed: false),
+              textAlign: TextAlign.end,
+              onChanged: onChanged,
+              style: TextStyle(
+                color: t.text,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                hintText: 'e.g. 50',
+                hintStyle: TextStyle(color: t.muted, fontSize: 12),
+                suffixText: 'km',
+                suffixStyle: TextStyle(
+                  color: t.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: t.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: t.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: t.navy),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

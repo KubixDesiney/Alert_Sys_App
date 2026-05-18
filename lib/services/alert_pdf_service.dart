@@ -823,7 +823,7 @@ class AlertPdfService {
       case 'defaut_produit':
         return PdfPalette.green;
       case 'manque_ressource':
-        return PdfPalette.orange;
+        return PdfPalette.yellow;
       default:
         return PdfPalette.muted;
     }

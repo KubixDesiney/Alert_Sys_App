@@ -47,8 +47,8 @@ AlertMeta typeMeta(String type, AppTheme t) {
       return AlertMeta(
         label: 'Resource Deficiency',
         icon: Icons.inventory_2_outlined,
-        color: t.orange,
-        bg: t.orangeLt,
+        color: t.yellow,
+        bg: t.yellowLt,
       );
     default:
       return AlertMeta(

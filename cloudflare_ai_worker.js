@@ -3021,6 +3021,11 @@ async function runAIAssignments(env, ctx) {
       ? Object.keys(activeShift.supervisors)
       : []),
   );
+  const crossFactoryMaxDistanceKm =
+    activeShift && Number.isFinite(Number(activeShift.crossFactoryMaxDistanceKm)) &&
+    Number(activeShift.crossFactoryMaxDistanceKm) > 0
+      ? Number(activeShift.crossFactoryMaxDistanceKm)
+      : null;
   if (aiCommander && !capabilities.handleAssignments) {
     await writeShiftAiLog(env, token, activeShift?.id, {
       kind: 'skipped',
@@ -3166,6 +3171,39 @@ async function runAIAssignments(env, ctx) {
               alertFactoryLocation.lat,
               alertFactoryLocation.lng,
             );
+          }
+
+          // PM-configured shift threshold: reject cross-factory candidates whose
+          // distance to the alert factory exceeds the limit. Missing distance
+          // (no factory anchor or no GPS) is treated as a fail when the PM has
+          // explicitly opted into a cap.
+          if (crossFactoryMaxDistanceKm != null) {
+            if (typeof distanceKm !== 'number' || !Number.isFinite(distanceKm)) {
+              await logCrossFactoryBlocked(
+                'gate_4_distance_threshold',
+                {
+                  supervisorId: uid,
+                  donorFactory: userFactory,
+                  maxDistanceKm: crossFactoryMaxDistanceKm,
+                  reason: 'distance_unavailable',
+                },
+                `Cross-factory transfer blocked: cannot measure distance for ${u.fullName || uid} and shift requires <= ${crossFactoryMaxDistanceKm.toFixed(1)} km.`,
+              );
+              continue;
+            }
+            if (distanceKm > crossFactoryMaxDistanceKm) {
+              await logCrossFactoryBlocked(
+                'gate_4_distance_threshold',
+                {
+                  supervisorId: uid,
+                  donorFactory: userFactory,
+                  distanceKm,
+                  maxDistanceKm: crossFactoryMaxDistanceKm,
+                },
+                `Cross-factory transfer blocked: ${u.fullName || uid} is ${distanceKm.toFixed(1)} km away (shift limit ${crossFactoryMaxDistanceKm.toFixed(1)} km).`,
+              );
+              continue;
+            }
           }
         }
       } else {

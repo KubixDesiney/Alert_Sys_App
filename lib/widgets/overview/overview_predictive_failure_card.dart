@@ -117,35 +117,13 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Predictive Failure Alerts',
-                            style: TextStyle(
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w800,
-                              color: theme.text,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: theme.purple.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                            child: Text(
-                              'BETA',
-                              style: TextStyle(
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w900,
-                                color: theme.purple,
-                                letterSpacing: 1.1,
-                              ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Predictive Failure Alerts',
+                        style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w800,
+                          color: theme.text,
+                        ),
                       ),
                       Text(
                         widget.model == null

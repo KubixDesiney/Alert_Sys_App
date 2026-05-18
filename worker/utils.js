@@ -165,6 +165,55 @@ function aiResolveFactory(obj) {
   return usine ? aiSanitizeFactoryId(usine) : null;
 }
 
+// Great-circle distance in kilometres between two {lat,lng} pairs.
+// Returns null when either coordinate is missing or non-numeric.
+function haversineKm(a, b) {
+  if (!a || !b) return null;
+  const lat1 = Number(a.lat);
+  const lng1 = Number(a.lng);
+  const lat2 = Number(b.lat);
+  const lng2 = Number(b.lng);
+  if (!Number.isFinite(lat1) || !Number.isFinite(lng1)) return null;
+  if (!Number.isFinite(lat2) || !Number.isFinite(lng2)) return null;
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const s1 = Math.sin(dLat / 2);
+  const s2 = Math.sin(dLng / 2);
+  const x = s1 * s1 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * s2 * s2;
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// Read factory locations once, keyed by sanitized factory id.
+// Sourced from `hierarchy/factories/{id}/location` first, falling back to
+// the worker-managed `factories/{id}/location` mirror used elsewhere.
+async function loadFactoryLocations(env, token) {
+  const out = {};
+  const merge = (raw) => {
+    if (!raw || typeof raw !== 'object') return;
+    for (const [key, value] of Object.entries(raw)) {
+      if (!value || typeof value !== 'object') continue;
+      const loc = value.location;
+      if (!loc || typeof loc !== 'object') continue;
+      const lat = Number(loc.lat);
+      const lng = Number(loc.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const id = aiSanitizeFactoryId(key);
+      if (!out[id]) out[id] = { lat, lng };
+    }
+  };
+  try {
+    const [hRes, fRes] = await Promise.all([
+      fetch(`${env.FB_DB_URL}hierarchy/factories.json?auth=${token}`),
+      fetch(`${env.FB_DB_URL}factories.json?auth=${token}`),
+    ]);
+    if (hRes.ok) merge(await hRes.json());
+    if (fRes.ok) merge(await fRes.json());
+  } catch (_) {}
+  return out;
+}
+
 export {
   _briefingDateKey,
   _typeName,
@@ -179,4 +228,6 @@ export {
   _historyKey,
   aiSanitizeFactoryId,
   aiResolveFactory,
+  haversineKm,
+  loadFactoryLocations,
 };

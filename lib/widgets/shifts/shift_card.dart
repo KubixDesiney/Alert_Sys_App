@@ -129,6 +129,14 @@ class _ShiftCardState extends State<ShiftCard> with SingleTickerProviderStateMix
                                   const SizedBox(width: 6),
                                   _AiBadge(),
                                 ],
+                                if (s.aiCommander &&
+                                    s.handleCrossFactoryTransfer &&
+                                    s.crossFactoryMaxDistanceKm != null &&
+                                    s.crossFactoryMaxDistanceKm! > 0) ...[
+                                  const SizedBox(width: 6),
+                                  _DistanceLimitBadge(
+                                      km: s.crossFactoryMaxDistanceKm!),
+                                ],
                               ],
                             ),
                           ),
@@ -475,6 +483,48 @@ class _AvatarChip extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DistanceLimitBadge extends StatelessWidget {
+  final double km;
+  const _DistanceLimitBadge({required this.km});
+
+  String _format(double v) {
+    if (v == v.truncateToDouble()) return v.toStringAsFixed(0);
+    return v.toStringAsFixed(1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message:
+          'AI Commander cross-factory range capped at ${_format(km)} km from the alert factory.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.18),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.social_distance,
+                size: 11, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(
+              '≤ ${_format(km)} km',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
       ),
     );

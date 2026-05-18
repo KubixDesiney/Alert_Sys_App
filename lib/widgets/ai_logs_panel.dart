@@ -848,6 +848,25 @@ class _AIDetailsDialogState extends State<_AIDetailsDialog> {
                           if (entry.rejectionReason != null)
                             _section(
                                 t, 'Rejection reason', entry.rejectionReason!),
+                          if (entry.reason.trim().isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _heading(t, 'AI summary'),
+                            const SizedBox(height: 6),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: t.scaffold,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: t.border),
+                              ),
+                              child: SelectableText(
+                                entry.reason,
+                                style: TextStyle(
+                                    fontSize: 12, color: t.text, height: 1.4),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 14),
                           if (_reasonBreakdown.isNotEmpty) ...[
                             _heading(t, 'Why this supervisor'),

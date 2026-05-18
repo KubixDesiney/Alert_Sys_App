@@ -56,7 +56,7 @@ class AppTheme {
   Color get orangeLt => isDark ? const Color(0xFF431407) : const Color(0xFFFFF7ED);
   Color get blue     => isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
   Color get blueLt   => isDark ? const Color(0xFF0C1A3D) : const Color(0xFFEFF6FF);
-  Color get yellow   => isDark ? const Color(0xFFFACC15) : const Color(0xFFD97706);
+  Color get yellow   => isDark ? const Color(0xFFFACC15) : const Color(0xFFFBBF24);
   Color get yellowLt => isDark ? const Color(0xFF422006) : const Color(0xFFFEF3C7);
   Color get purple   => isDark ? const Color(0xFFC084FC) : const Color(0xFF9333EA);
 
