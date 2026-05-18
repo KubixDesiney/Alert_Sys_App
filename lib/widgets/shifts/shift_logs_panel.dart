@@ -494,6 +494,34 @@ class _ShiftLogTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => _ShiftLogDetailsDialog(entry: entry),
+                    ),
+                    icon: Icon(Icons.info_outline, size: 14, color: t.navy),
+                    label: Text(
+                      'Details',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: t.navy,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 6, horizontal: 10),
+                      side: BorderSide(color: t.border),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
+                      minimumSize: const Size(0, 30),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -530,6 +558,168 @@ class _ShiftLogTile extends StatelessWidget {
         'updated' => 'SHIFT UPDATED',
         'evaluate' => 'EVALUATE',
         _ => kind.toUpperCase(),
+      };
+}
+
+class _ShiftLogDetailsDialog extends StatelessWidget {
+  final ShiftLogEntry entry;
+  const _ShiftLogDetailsDialog({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final time = DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.at);
+    return Dialog(
+      backgroundColor: t.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 600),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome, size: 22, color: t.navy),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI Commander Action',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: t.text,
+                          ),
+                        ),
+                        Text(
+                          _kindLabel(entry.kind),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: t.muted,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, size: 20),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _section(t, 'When', time),
+                    _section(t, 'Action ID', entry.id),
+                    _section(t, 'Shift ID', entry.shiftId),
+                    if (entry.alertLabel != null)
+                      _section(t, 'Alert', entry.alertLabel!),
+                    if (entry.supervisorName != null)
+                      _section(t, 'Supervisor',
+                          '${entry.supervisorName!}${entry.supervisorId != null ? ' (${entry.supervisorId})' : ''}'),
+                    if (entry.factory != null)
+                      _section(t, 'Factory', entry.factory!),
+                    if (entry.confidence > 0)
+                      _section(t, 'Confidence',
+                          '${(entry.confidence * 100).round()}%'),
+                    if (entry.reason.trim().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'REASON',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: t.muted,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: t.scaffold,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: t.border),
+                        ),
+                        child: SelectableText(
+                          entry.reason,
+                          style: TextStyle(
+                              fontSize: 12, color: t.text, height: 1.45),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: t.scaffold,
+                border: Border(top: BorderSide(color: t.border)),
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(14),
+                  bottomRight: Radius.circular(14),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _section(AppTheme t, String label, String value) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: RichText(
+          text: TextSpan(children: [
+            TextSpan(
+              text: '$label: ',
+              style: TextStyle(
+                  fontSize: 12, color: t.muted, fontWeight: FontWeight.w600),
+            ),
+            TextSpan(
+              text: value,
+              style: TextStyle(
+                  fontSize: 12, color: t.text, fontWeight: FontWeight.w700),
+            ),
+          ]),
+        ),
+      );
+
+  String _kindLabel(String kind) => switch (kind) {
+        'assigned' => 'Assigned',
+        'skipped' => 'Skipped',
+        'handover' => 'Handover',
+        'created' => 'Shift created',
+        'updated' => 'Shift updated',
+        'evaluate' => 'Evaluate',
+        'transfer' => 'Cross-factory transfer',
+        'cross_factory_blocked' => 'Cross-factory blocked',
+        _ => kind,
       };
 }
 

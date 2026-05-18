@@ -3,7 +3,7 @@ import { corsHeaders } from './config.js';
 import { fanOutPendingNotifications, sendFcm } from './fcm.js';
 import { loadCoreData } from './load_core.js';
 import { AI_ACTIVE_STATUSES, AI_COOLDOWN_MS, buildSupStats, countActiveSupervisorsInFactory, scoreSupervisor } from './scoring.js';
-import { _shiftContainsTime, _toMs, aiResolveFactory, aiSanitizeFactoryId, pickActiveShift } from './utils.js';
+import { _shiftContainsTime, _toMs, aiResolveFactory, aiSanitizeFactoryId, haversineKm, loadFactoryLocations, pickActiveShift } from './utils.js';
 
 function commanderCapabilities(shift) {
   const aiCommander = !!(shift && shift.aiCommander === true);
@@ -214,6 +214,22 @@ async function runAIAssignments(env, ctx) {
       ? Object.keys(activeShift.supervisors)
       : []),
   );
+  const crossFactoryMaxDistanceKm =
+    activeShift && Number.isFinite(Number(activeShift.crossFactoryMaxDistanceKm)) &&
+    Number(activeShift.crossFactoryMaxDistanceKm) > 0
+      ? Number(activeShift.crossFactoryMaxDistanceKm)
+      : null;
+  // Only load factory coordinates when a distance threshold is configured and
+  // cross-factory transfers are allowed — avoids an extra RTDB round-trip in
+  // the common case.
+  let factoryLocations = {};
+  if (
+    aiCommander &&
+    capabilities.handleCrossFactoryTransfer &&
+    crossFactoryMaxDistanceKm != null
+  ) {
+    factoryLocations = await loadFactoryLocations(env, token);
+  }
   if (aiCommander && !capabilities.handleAssignments) {
     await writeShiftAiLog(env, token, activeShift?.id, {
       kind: 'skipped',
@@ -298,6 +314,32 @@ async function runAIAssignments(env, ctx) {
         if (!userFactory) continue;
         if (userFactory !== factoryId && !allowCrossFactoryCandidates) {
           continue;
+        }
+        // Cross-factory distance gate: skip supervisors whose home factory is
+        // farther than the PM-configured threshold from the alert factory.
+        if (
+          userFactory !== factoryId &&
+          allowCrossFactoryCandidates &&
+          crossFactoryMaxDistanceKm != null
+        ) {
+          const dist = haversineKm(
+            factoryLocations[factoryId],
+            factoryLocations[userFactory],
+          );
+          if (dist == null || dist > crossFactoryMaxDistanceKm) {
+            await writeShiftAiLog(env, token, activeShift?.id, {
+              kind: 'skipped',
+              alertLabel: `${alert.type || 'Alert'}${alert.usine ? ` • ${alert.usine}` : ''}`,
+              supervisorName:
+                u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+              supervisorId: uid,
+              factory: u.usine || null,
+              reason: dist == null
+                ? `Skipped cross-factory candidate: no location data for "${userFactory}" or "${factoryId}".`
+                : `Skipped cross-factory candidate: ${dist.toFixed(1)} km exceeds shift limit of ${crossFactoryMaxDistanceKm.toFixed(1)} km.`,
+            });
+            continue;
+          }
         }
       } else {
         // Normal mode: same factory only.

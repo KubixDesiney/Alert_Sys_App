@@ -1104,34 +1104,16 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           onExportExcel: _exportFilteredAlertsExcel,
         );
 
-        final predictiveRow = LayoutBuilder(
-          builder: (pctx, pc) {
-            final stack = pc.maxWidth < 720;
-            final failure = PredictiveFailureCard(
-              accuracy: _accuracy,
-              model: scopedPreds,
-              describeType: (type) => adminTypeLabel(context, type),
-            );
-            final risk = PredictiveRiskHeatmap(
-              stats: ts,
-              model: scopedPreds,
-              activeFilter: _historyFilter,
-              onTap: _setHistoryFilter,
-            );
-            if (stack) {
-              return Column(
-                children: [failure, const SizedBox(height: 12), risk],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: failure),
-                const SizedBox(width: 12),
-                Expanded(child: risk),
-              ],
-            );
-          },
+        final failureCard = PredictiveFailureCard(
+          accuracy: _accuracy,
+          model: scopedPreds,
+          describeType: (type) => adminTypeLabel(context, type),
+        );
+        final riskCard = PredictiveRiskHeatmap(
+          stats: ts,
+          model: scopedPreds,
+          activeFilter: _historyFilter,
+          onTap: _setHistoryFilter,
         );
 
         final critical = _criticalUnclaimedCount > 0
@@ -1146,8 +1128,9 @@ class _OverviewTabState extends State<AdminOverviewTab> {
               )
             : const SizedBox.shrink();
 
-        // Wide layout: production health + history side by side; predictive
-        // intelligence stacked underneath.
+        // Wide layout: 2x2 grid.
+        //   Production health   |  Predictive failure alerts
+        //   Alert history       |  Predictive risk · next 24h
         Widget body;
         if (wide) {
           body = Column(
@@ -1164,13 +1147,29 @@ class _OverviewTabState extends State<AdminOverviewTab> {
                   children: [
                     Expanded(flex: 6, child: leftColumn),
                     const SizedBox(width: 14),
-                    Expanded(flex: 5, child: historyBox),
+                    Expanded(
+                      flex: 5,
+                      child: SingleChildScrollView(child: failureCard),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 520,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(flex: 6, child: historyBox),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      flex: 5,
+                      child: SingleChildScrollView(child: riskCard),
+                    ),
                   ],
                 ),
               ),
               critical,
-              const SizedBox(height: 14),
-              predictiveRow,
             ],
           );
         } else {
@@ -1185,10 +1184,12 @@ class _OverviewTabState extends State<AdminOverviewTab> {
               const SizedBox(height: 12),
               statGrid,
               const SizedBox(height: 14),
+              failureCard,
+              const SizedBox(height: 12),
               SizedBox(height: 520, child: historyBox),
-              critical,
               const SizedBox(height: 14),
-              predictiveRow,
+              riskCard,
+              critical,
             ],
           );
         }

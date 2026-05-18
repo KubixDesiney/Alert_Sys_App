@@ -194,6 +194,7 @@
         "handleCollaborations": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "handleCrossFactoryTransfer": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "fullControl": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "crossFactoryMaxDistanceKm": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 20000)" },
         "supervisors": {
           "$supervisorId": {
             "ready": {

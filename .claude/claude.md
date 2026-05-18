@@ -1612,6 +1612,39 @@ New file: `lib/screens/admin/developer_tab.dart` (~900 lines) provides real-time
 
 ---
 
+## AI. Cross-Factory Distance Threshold and Enriched AI Log Details (May 2026)
+
+Two operator-facing refinements were added to the AI Shift Commander surface:
+
+**1. Cross-factory distance threshold per shift.**
+
+The Production Manager can now cap how far a rostered supervisor's home factory may be from the alert factory before the AI Commander is allowed to assign them via a cross-factory transfer.
+
+- New nullable `crossFactoryMaxDistanceKm` (double) field on `ShiftModel` (`lib/models/shift_model.dart`). `null` or `<= 0` means unlimited.
+- Shift Creation/Edit dialog (`lib/screens/admin/shift_creation_dialog.dart`) shows a "Max cross-factory distance" input (km) inside the AI Commander card, revealed only when "Handle Cross-factory Transfer" is enabled. Empty input = no cap.
+- `database.rules.json` validates the field: optional number, `>= 0 && <= 20000`.
+- Shift card (`lib/widgets/shifts/shift_card.dart`) renders a `_DistanceLimitBadge` ("≤ N km") alongside the AI badge when the cap is set.
+- Worker gate (deployed `cloudflare_ai_worker.js` `runAIAssignments` and modular `worker/shift_commander.js`):
+  - When the active shift defines `crossFactoryMaxDistanceKm`, any cross-factory candidate whose haversine distance to the alert factory exceeds the cap is skipped before scoring.
+  - In the deployed AI worker, the existing `haversineDistance` between the supervisor's fresh GPS and the inferred alert-factory location feeds a new gate `gate_4_distance_threshold` that emits a structured `cross_factory_blocked` log via `writeShiftAiLog`. Missing/stale distance with a cap configured fails closed.
+  - In the modular worker, a new `haversineKm` helper plus `loadFactoryLocations` (in `worker/utils.js`) compare the two factories' static `{lat,lng}` from `hierarchy/factories` (falling back to `factories/`); failures are logged as `skipped` shift entries with the offending distance.
+- Same-factory candidates and manually-initiated collaborations are unaffected — the gate only applies to AI Commander cross-factory transfers.
+
+**2. AI log "Details" affordance on both panels.**
+
+- `AILogsPanel` (`lib/widgets/ai_logs_panel.dart`) — the existing Details button now opens a dialog that, in addition to confidence / breakdown / "why not others", renders the full unredacted `entry.reason` text in a selectable monospace-friendly block. Skipped entries still hydrate missing breakdown/considered-candidates from `ai_decisions/{alertId}` on demand.
+- `ShiftLogsPanel` (`lib/widgets/shifts/shift_logs_panel.dart`) gained a Details button per log tile and a new `_ShiftLogDetailsDialog` that shows timestamp, action ID, shift ID, alert label, supervisor (with UID), factory, confidence, kind label (including `cross_factory_blocked` / `transfer`), and the full reason text. The dialog reuses `entry.reason` so worker-side gate diagnostics (e.g. "Cross-factory transfer blocked: X is 142.0 km away (shift limit 80.0 km).") surface verbatim.
+
+**Tests:**
+
+- `worker_test/haversine.test.js` — verifies identity, real-world distance (Tunis↔Sfax), symmetry, null handling.
+- `test/models/shift_model_test.dart` — verifies `crossFactoryMaxDistanceKm` round-trips, that zero/null are omitted from `toMap`, that fromMap coerces numeric strings, and that `copyWith(clearCrossFactoryMaxDistanceKm: true)` removes the cap.
+- `npm test`: 12 suites / 158 tests pass. `flutter test`: 202 / 202 tests pass.
+
+**Deployment note:** the distance gate runs in the deployed AI worker (`cloudflare_ai_worker.js`). After merge, redeploy with `npx wrangler deploy --config wrangler.ai.toml`.
+
+---
+
 ## Quick File-to-Responsibility Index
 
 **Flutter App Core:**
