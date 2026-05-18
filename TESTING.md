@@ -1,11 +1,11 @@
 # Testing & CI/CD Guide
 
-This document explains how to run, extend, and ship the AlertSys test
+This document explains how to run, extend, and ship the Smart Industrial Alert - SIA test
 suite. Two separate harnesses live in this repo:
 
 | Harness | Tooling | Scope |
 |---|---|---|
-| Flutter app | `flutter test` | Dart code under [lib/](lib/) — parser, models, services, widgets |
+| Flutter app | `flutter test` | Dart code under [lib/](lib/) â€” parser, models, services, widgets |
 | Cloudflare Worker | Jest | The pure helpers in [cloudflare_worker.js](cloudflare_worker.js) |
 
 GitHub Actions wires both together in [.github/workflows/ci.yml](.github/workflows/ci.yml).
@@ -25,7 +25,7 @@ npm install
 npm test                     # 123 tests, <2s
 ```
 
-Both suites are hermetic — no Firebase emulator, no Cloudflare account, no
+Both suites are hermetic â€” no Firebase emulator, no Cloudflare account, no
 network access required.
 
 ---
@@ -34,21 +34,21 @@ network access required.
 
 ```
 test/
-├── voice_command_parser_test.dart        # 117 cases — every parser path
-├── widget_test.dart                       # smoke
-├── theme_test.dart                        # AppTheme tokens + extension
-├── models/
-│   ├── alert_model_test.dart              # fromMap/toMap/copyWith
-│   ├── user_model_test.dart
-│   ├── collaboration_model_test.dart
-│   └── predictive_models_test.dart
-├── services/
-│   └── offline_account_cache_test.dart    # SharedPreferences-backed
-├── utils/
-│   ├── factory_id_test.dart
-│   └── alert_meta_test.dart
-└── widgets/
-    └── locator_painter_test.dart
+â”œâ”€â”€ voice_command_parser_test.dart        # 117 cases â€” every parser path
+â”œâ”€â”€ widget_test.dart                       # smoke
+â”œâ”€â”€ theme_test.dart                        # AppTheme tokens + extension
+â”œâ”€â”€ models/
+â”‚   â”œâ”€â”€ alert_model_test.dart              # fromMap/toMap/copyWith
+â”‚   â”œâ”€â”€ user_model_test.dart
+â”‚   â”œâ”€â”€ collaboration_model_test.dart
+â”‚   â””â”€â”€ predictive_models_test.dart
+â”œâ”€â”€ services/
+â”‚   â””â”€â”€ offline_account_cache_test.dart    # SharedPreferences-backed
+â”œâ”€â”€ utils/
+â”‚   â”œâ”€â”€ factory_id_test.dart
+â”‚   â””â”€â”€ alert_meta_test.dart
+â””â”€â”€ widgets/
+    â””â”€â”€ locator_painter_test.dart
 ```
 
 ### Adding a new test
@@ -57,7 +57,7 @@ For pure-Dart logic (parser, models, utils), prefer plain unit tests with
 `flutter_test`:
 
 ```dart
-import 'package:alertsysapp/models/alert_model.dart';
+import 'package:Smart Industrial Alert - SIAapp/models/alert_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -68,7 +68,7 @@ void main() {
 }
 ```
 
-For widget tests, use `testWidgets` and `pumpWidget` — see
+For widget tests, use `testWidgets` and `pumpWidget` â€” see
 [`test/theme_test.dart`](test/theme_test.dart) for an example that captures
 context state without touching Firebase.
 
@@ -85,20 +85,20 @@ SharedPreferences.setMockInitialValues({});
 import 'package:mocktail/mocktail.dart';
 class _MockClient extends Mock implements http.Client {}
 
-// FirebaseAuth — override the singleton in your service via a
+// FirebaseAuth â€” override the singleton in your service via a
 // constructor-injected `FirebaseAuth` parameter (preferred), or wrap the
 // service in a thin abstraction layer for tests.
 ```
 
 > Firebase/Realtime Database singletons (`FirebaseAuth.instance`,
 > `FirebaseDatabase.instance`) cannot be mocked safely without a refactor.
-> Tests that depend on them either inject a fake or skip — see
+> Tests that depend on them either inject a fake or skip â€” see
 > `voice_command_dispatcher.dart` for the singleton pattern that needs
 > wrapping before it can be unit tested.
 
 ### Golden tests (visual snapshots)
 
-The `golden_toolkit` package is **not** wired in by default — adding goldens
+The `golden_toolkit` package is **not** wired in by default â€” adding goldens
 is opt-in because they bloat the diff and need careful regeneration. To add:
 
 ```yaml
@@ -140,10 +140,10 @@ Regenerate them with `flutter test --update-goldens`.
 
 ```
 worker_test/
-├── factory_id.test.js          # aiSanitizeFactoryId, aiResolveFactory
-├── score_supervisor.test.js    # buildSupStats, scoreSupervisor
-├── predictive_model.test.js    # buildPredictiveModel + _toMs
-└── briefing_helpers.test.js    # _aggregateWeek, notifTitle, FCM routing
+â”œâ”€â”€ factory_id.test.js          # aiSanitizeFactoryId, aiResolveFactory
+â”œâ”€â”€ score_supervisor.test.js    # buildSupStats, scoreSupervisor
+â”œâ”€â”€ predictive_model.test.js    # buildPredictiveModel + _toMs
+â””â”€â”€ briefing_helpers.test.js    # _aggregateWeek, notifTitle, FCM routing
 ```
 
 ### How the worker exposes pure functions
@@ -152,7 +152,7 @@ Cloudflare Workers ships ESM with a `default` export. Jest needs named
 exports, so the worker file ends with a named-export block (look for the
 `Test-only named exports` comment in
 [cloudflare_worker.js](cloudflare_worker.js)). The named exports are inert
-in production — Cloudflare only consumes the default export.
+in production â€” Cloudflare only consumes the default export.
 
 To test a new helper:
 
@@ -195,7 +195,7 @@ so it can load the worker as ESM without transformation.
 1. Sets up JDK 17 (required by AGP 8) and Flutter `3.27.4` (stable).
 2. Caches `~/.pub-cache` and `.dart_tool`.
 3. `flutter pub get`.
-4. `flutter analyze --no-fatal-infos --no-fatal-warnings` — fails on real
+4. `flutter analyze --no-fatal-infos --no-fatal-warnings` â€” fails on real
    errors only. The codebase has pre-existing `withOpacity` deprecation
    infos that don't block CI.
 5. `flutter test --reporter expanded`.
@@ -206,8 +206,8 @@ so it can load the worker as ESM without transformation.
 
 1. Sets up Node 20 with the `npm` cache.
 2. `npm ci || npm install` (graceful when no lockfile yet).
-3. `npm test` — runs the Jest suite.
-4. **`wrangler deploy`** — only on direct pushes to `main` and only when
+3. `npm test` â€” runs the Jest suite.
+4. **`wrangler deploy`** â€” only on direct pushes to `main` and only when
    `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are present. Forks
    and pull requests skip the deploy step automatically.
 
@@ -219,8 +219,8 @@ so it can load the worker as ESM without transformation.
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account id |
 | `FIREBASE_TOKEN` | (Already used by `deploy.yml` for Firebase Hosting.) |
 
-Set these under **Settings → Secrets and variables → Actions** in your
-GitHub repo. Without them, the `worker` job still runs the Jest suite —
+Set these under **Settings â†’ Secrets and variables â†’ Actions** in your
+GitHub repo. Without them, the `worker` job still runs the Jest suite â€”
 only the deploy step is skipped (with a warning annotation).
 
 ### Worker secrets (separate from GitHub secrets)
@@ -235,7 +235,7 @@ wrangler secret put ANTHROPIC_API_KEY
 wrangler secret put GEMINI_API_KEY
 ```
 
-These never go through GitHub — they live in Cloudflare's secret store and
+These never go through GitHub â€” they live in Cloudflare's secret store and
 are visible to the worker at runtime as `env.FB_DB_URL`, etc.
 
 ---
@@ -254,10 +254,11 @@ via `npm test` (which adds `--experimental-vm-modules`). Direct `npx jest`
 won't work without the flag.
 
 **Wrangler deploy step fails with `Authentication error`.**
-Re-create the API token at [Cloudflare → My Profile → API Tokens] with the
+Re-create the API token at [Cloudflare â†’ My Profile â†’ API Tokens] with the
 "Edit Cloudflare Workers" template. Update the GitHub secret.
 
 **Analyzer fails locally but passes in CI.**
 You probably don't have `flutter_lints` resolved. Run `flutter pub get`.
 The package is declared in `dev_dependencies` (added to `pubspec.yaml` for
 this reason).
+

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../models/shift_model.dart';
 import '../../services/service_locator.dart';
@@ -11,6 +10,7 @@ import '../../services/shift_service.dart';
 import '../../theme.dart';
 import '../../utils/user_friendly_error.dart';
 import '../../widgets/common/app_loading_indicator.dart';
+import '../../widgets/shifts/presence_grid.dart';
 import '../../widgets/shifts/shift_card.dart';
 import '../../widgets/shifts/shift_logs_panel.dart';
 import 'shift_creation_dialog.dart';
@@ -36,22 +36,28 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
   final GlobalKey _detailsKey = GlobalKey();
   final Map<String, bool> _confettiShown = {};
 
+  // Shift roster filters — mirrors the alert-history filter pattern.
+  _ShiftFilters _filters = const _ShiftFilters();
+
   final ShiftService _service = ServiceLocator.instance.shiftService;
 
   @override
   void initState() {
     super.initState();
-    _sub2 = _service.streamShifts().listen((data) {
-      if (!mounted) return;
-      setState(() {
-        _shifts = data;
-        _loading = false;
-        _selectedShiftId = _resolveSelectedId(data);
-      });
-    }, onError: (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-    });
+    _sub2 = _service.streamShifts().listen(
+      (data) {
+        if (!mounted) return;
+        setState(() {
+          _shifts = data;
+          _loading = false;
+          _selectedShiftId = _resolveSelectedId(data);
+        });
+      },
+      onError: (_) {
+        if (!mounted) return;
+        setState(() => _loading = false);
+      },
+    );
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -124,12 +130,76 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
     Future.delayed(const Duration(seconds: 4), entry.remove);
   }
 
+  List<ShiftModel> _filteredShifts() {
+    final now = DateTime.now();
+    return _shifts.where((s) {
+      if (_filters.kind != 'all') {
+        final k = s.kind == ShiftKind.morning
+            ? 'morning'
+            : s.kind == ShiftKind.afternoon
+            ? 'afternoon'
+            : 'night';
+        if (k != _filters.kind) return false;
+      }
+      if (_filters.commander == 'on' && !s.aiCommander) return false;
+      if (_filters.commander == 'off' && s.aiCommander) return false;
+      if (_filters.factory != 'all') {
+        final hit = s.supervisors.any((sup) => sup.factory == _filters.factory);
+        if (!hit) return false;
+      }
+      if (_filters.window == 'live' && !s.containsTime(now)) return false;
+      if (_filters.window == 'today') {
+        // Today: starts within the current calendar day.
+        final start = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).add(Duration(minutes: s.startMinutes));
+        if (start.isBefore(DateTime(now.year, now.month, now.day))) {
+          return false;
+        }
+      }
+      if (_filters.window == 'week') {
+        // Always true today since shifts repeat — kept for parity with the
+        // alert-history filter shape.
+      }
+      return true;
+    }).toList();
+  }
+
+  Future<void> _openFilters() async {
+    final factoryOptions = <String>{};
+    for (final s in _shifts) {
+      for (final sup in s.supervisors) {
+        if (sup.factory.isNotEmpty) factoryOptions.add(sup.factory);
+      }
+    }
+    final result = await showDialog<_ShiftFilters>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => _ShiftFilterSheet(
+        current: _filters,
+        factories: factoryOptions.toList()..sort(),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() => _filters = result);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
     return LayoutBuilder(
       builder: (context, constraints) {
         final hostSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final shifts = _filteredShifts();
+        final selected = _selectedShift();
+        // If the current selection was filtered out, fall back to first match.
+        final resolvedSelected =
+            selected != null && shifts.any((s) => s.id == selected.id)
+            ? selected
+            : (shifts.isNotEmpty ? shifts.first : selected);
         return Stack(
           children: [
             Column(
@@ -138,14 +208,19 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
                   child: _loading
                       ? const AppLoadingIndicator()
                       : _UnifiedShiftsView(
-                          shifts: _shifts,
-                          selectedShift: _selectedShift(),
+                          shifts: shifts,
+                          selectedShift: resolvedSelected,
                           detailsKey: _detailsKey,
                           onSelect: _selectShift,
                           onEdit: (s) => _openCreate(existing: s),
                           onDelete: _confirmDelete,
                           onViewLogs: _openLogs,
                           onConfettiNeeded: _showConfettiFor,
+                          activeFilterCount: _filters.activeCount,
+                          onOpenFilters: _openFilters,
+                          onClearFilters: () =>
+                              setState(() => _filters = const _ShiftFilters()),
+                          totalShiftCount: _shifts.length,
                         ),
                 ),
               ],
@@ -153,10 +228,7 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
             Positioned(
               right: 22,
               bottom: 22,
-              child: _PulsingFab(
-                onTap: _openCreate,
-                color: t.navy,
-              ),
+              child: _PulsingFab(onTap: _openCreate, color: t.navy),
             ),
             if (_logsShift != null)
               ShiftLogsPanel(
@@ -177,11 +249,13 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete shift?'),
         content: Text(
-            'This will permanently remove "${s.name}". Active assignments will not be affected.'),
+          'This will permanently remove "${s.name}". Active assignments will not be affected.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: t.red),
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -194,9 +268,9 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
     if (ok == true) {
       await _service.deleteShift(s.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Shift deleted')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Shift deleted')));
     }
   }
 }
@@ -211,6 +285,10 @@ class _UnifiedShiftsView extends StatelessWidget {
   final void Function(ShiftModel) onDelete;
   final void Function(ShiftModel) onViewLogs;
   final void Function(ShiftModel) onConfettiNeeded;
+  final int activeFilterCount;
+  final VoidCallback onOpenFilters;
+  final VoidCallback onClearFilters;
+  final int totalShiftCount;
 
   const _UnifiedShiftsView({
     required this.shifts,
@@ -221,11 +299,15 @@ class _UnifiedShiftsView extends StatelessWidget {
     required this.onDelete,
     required this.onViewLogs,
     required this.onConfettiNeeded,
+    required this.activeFilterCount,
+    required this.onOpenFilters,
+    required this.onClearFilters,
+    required this.totalShiftCount,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (shifts.isEmpty) {
+    if (totalShiftCount == 0) {
       return const _EmptyState(
         icon: Icons.schedule,
         title: 'No shifts yet',
@@ -233,7 +315,7 @@ class _UnifiedShiftsView extends StatelessWidget {
             'Tap the glowing + button to define your first shift. Pick a name, time range, supervisors, and AI behavior.',
       );
     }
-    final selected = selectedShift ?? shifts.first;
+    final selected = selectedShift ?? (shifts.isNotEmpty ? shifts.first : null);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
@@ -244,40 +326,451 @@ class _UnifiedShiftsView extends StatelessWidget {
           icon: Icons.calendar_view_week,
           title: 'Shift roster',
           subtitle: 'Tap a card to bring its live controls into focus.',
-          trailing: _LiveCountBadge(
-            liveCount:
-                shifts.where((s) => s.containsTime(DateTime.now())).length,
-            totalCount: shifts.length,
-          ),
-        ),
-        const SizedBox(height: 10),
-        _CompactShiftGrid(
-          shifts: shifts,
-          selectedShiftId: selected.id,
-          onSelect: onSelect,
-          onEdit: onEdit,
-          onDelete: onDelete,
-        ),
-        const SizedBox(height: 18),
-        KeyedSubtree(
-          key: detailsKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const _SectionHeader(
-                icon: Icons.podcasts,
-                title: 'Live shift detail',
-                subtitle:
-                    'Readiness, AI logs, handover, and exports in one place.',
+              _LiveCountBadge(
+                liveCount: shifts
+                    .where((s) => s.containsTime(DateTime.now()))
+                    .length,
+                totalCount: shifts.length,
               ),
-              const SizedBox(height: 10),
-              _LiveShiftPanel(
-                shift: selected,
-                onConfettiNeeded: () => onConfettiNeeded(selected),
-                onViewLogs: () => onViewLogs(selected),
+              const SizedBox(width: 8),
+              _ShiftFiltersButton(
+                count: activeFilterCount,
+                onPressed: onOpenFilters,
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 10),
+        if (shifts.isEmpty)
+          _NoMatchingShifts(onClearFilters: onClearFilters)
+        else
+          _CompactShiftGrid(
+            shifts: shifts,
+            selectedShiftId: selected?.id ?? '',
+            onSelect: onSelect,
+            onEdit: onEdit,
+            onDelete: onDelete,
+          ),
+        const SizedBox(height: 18),
+        if (selected != null)
+          KeyedSubtree(
+            key: detailsKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SectionHeader(
+                  icon: Icons.podcasts,
+                  title: 'Live shift detail',
+                  subtitle:
+                      'Presence, AI logs, handover, and PDF export in one place.',
+                ),
+                const SizedBox(height: 10),
+                _LiveShiftPanel(
+                  shift: selected,
+                  onConfettiNeeded: () => onConfettiNeeded(selected),
+                  onViewLogs: () => onViewLogs(selected),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ───────────────────────── FILTERS ───────────────────────────────────────────
+class _ShiftFilters {
+  final String kind; // all | morning | afternoon | night
+  final String commander; // all | on | off
+  final String factory; // all | <factory name>
+  final String window; // all | live | today | week
+
+  const _ShiftFilters({
+    this.kind = 'all',
+    this.commander = 'all',
+    this.factory = 'all',
+    this.window = 'all',
+  });
+
+  int get activeCount =>
+      [kind, commander, factory, window].where((v) => v != 'all').length;
+
+  _ShiftFilters copyWith({
+    String? kind,
+    String? commander,
+    String? factory,
+    String? window,
+  }) => _ShiftFilters(
+    kind: kind ?? this.kind,
+    commander: commander ?? this.commander,
+    factory: factory ?? this.factory,
+    window: window ?? this.window,
+  );
+}
+
+class _ShiftExportSettings {
+  final String reportName;
+  final DateTime day;
+  final String factory;
+  final Set<String> actionKinds;
+
+  const _ShiftExportSettings({
+    required this.reportName,
+    required this.day,
+    required this.factory,
+    required this.actionKinds,
+  });
+}
+
+class _ShiftFiltersButton extends StatelessWidget {
+  final int count;
+  final VoidCallback onPressed;
+  const _ShiftFiltersButton({required this.count, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: const Icon(Icons.tune_rounded, size: 14),
+          label: const Text(
+            'Filters',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: t.navy,
+            side: BorderSide(
+              color: count > 0 ? t.navy : t.border,
+              width: count > 0 ? 1.5 : 1.0,
+            ),
+            backgroundColor: t.scaffold,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+        ),
+        if (count > 0)
+          Positioned(
+            top: -4,
+            right: -4,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(color: t.navy, shape: BoxShape.circle),
+              child: Center(
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _NoMatchingShifts extends StatelessWidget {
+  final VoidCallback onClearFilters;
+  const _NoMatchingShifts({required this.onClearFilters});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+      decoration: BoxDecoration(
+        color: t.card,
+        border: Border.all(color: t.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.filter_alt_off_rounded, size: 36, color: t.muted),
+          const SizedBox(height: 8),
+          Text(
+            'No shifts match your filters',
+            style: TextStyle(
+              color: t.text,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onClearFilters,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: const Text('Clear filters'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShiftFilterSheet extends StatefulWidget {
+  final _ShiftFilters current;
+  final List<String> factories;
+  const _ShiftFilterSheet({required this.current, required this.factories});
+
+  @override
+  State<_ShiftFilterSheet> createState() => _ShiftFilterSheetState();
+}
+
+class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
+  late _ShiftFilters _draft = widget.current;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Dialog(
+      backgroundColor: t.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 6),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [t.navy, t.navy.withValues(alpha: 0.8)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.tune_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Shift Filters',
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          'Refine the shift roster the same way you filter alerts.',
+                          style: TextStyle(color: t.muted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _FilterSegment(
+                      label: 'Shift kind',
+                      icon: Icons.brightness_5_outlined,
+                      value: _draft.kind,
+                      options: const [
+                        ('all', 'All'),
+                        ('morning', 'Morning'),
+                        ('afternoon', 'Evening'),
+                        ('night', 'Night'),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _draft = _draft.copyWith(kind: v)),
+                    ),
+                    const SizedBox(height: 14),
+                    _FilterSegment(
+                      label: 'AI Commander',
+                      icon: Icons.auto_awesome,
+                      value: _draft.commander,
+                      options: const [
+                        ('all', 'All'),
+                        ('on', 'Enabled'),
+                        ('off', 'Disabled'),
+                      ],
+                      onChanged: (v) => setState(
+                        () => _draft = _draft.copyWith(commander: v),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _FilterSegment(
+                      label: 'Time window',
+                      icon: Icons.schedule,
+                      value: _draft.window,
+                      options: const [
+                        ('all', 'Anytime'),
+                        ('live', 'Live now'),
+                        ('today', 'Today'),
+                        ('week', 'This week'),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _draft = _draft.copyWith(window: v)),
+                    ),
+                    if (widget.factories.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(
+                        'Factory',
+                        style: TextStyle(
+                          color: t.muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        initialValue: _draft.factory,
+                        items: [
+                          const DropdownMenuItem(
+                            value: 'all',
+                            child: Text('All factories'),
+                          ),
+                          for (final f in widget.factories)
+                            DropdownMenuItem(value: f, child: Text(f)),
+                        ],
+                        onChanged: (v) => setState(
+                          () => _draft = _draft.copyWith(factory: v ?? 'all'),
+                        ),
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.factory_outlined),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: t.scaffold,
+                border: Border(top: BorderSide(color: t.border)),
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
+                ),
+              ),
+              child: Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: () =>
+                        setState(() => _draft = const _ShiftFilters()),
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Reset'),
+                  ),
+                  const Spacer(),
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context, _draft),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Apply'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: t.navy,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterSegment extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String value;
+  final List<(String, String)> options;
+  final ValueChanged<String> onChanged;
+  const _FilterSegment({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: t.muted),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: t.muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final opt in options)
+              ChoiceChip(
+                selected: value == opt.$1,
+                onSelected: (_) => onChanged(opt.$1),
+                label: Text(opt.$2),
+                labelStyle: TextStyle(
+                  color: value == opt.$1 ? Colors.white : t.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+                selectedColor: t.navy,
+                backgroundColor: t.scaffold,
+                side: BorderSide(color: value == opt.$1 ? t.navy : t.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              ),
+          ],
         ),
       ],
     );
@@ -390,86 +883,94 @@ class _CompactShiftGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    return LayoutBuilder(builder: (ctx, constraints) {
-      final cross = constraints.maxWidth >= 1180
-          ? 4
-          : constraints.maxWidth >= 860
-              ? 3
-              : constraints.maxWidth >= 560
-                  ? 2
-                  : 1;
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cross,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.95,
-        ),
-        itemCount: shifts.length,
-        itemBuilder: (ctx, i) {
-          final s = shifts[i];
-          final selected = s.id == selectedShiftId;
-          return LayoutBuilder(
-            builder: (context, box) {
-              const buttonSize = 34.0;
-              const gap = 6.0;
-              const edgeInset = 10.0;
-              final cardWidth = (box.maxHeight * 1.65).clamp(0.0, box.maxWidth);
-              final settingsLeft = cardWidth - edgeInset - buttonSize * 2 - gap;
-              final deleteLeft = cardWidth - edgeInset - buttonSize;
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        final cross = constraints.maxWidth >= 1180
+            ? 4
+            : constraints.maxWidth >= 860
+            ? 3
+            : constraints.maxWidth >= 560
+            ? 2
+            : 1;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cross,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.95,
+          ),
+          itemCount: shifts.length,
+          itemBuilder: (ctx, i) {
+            final s = shifts[i];
+            final selected = s.id == selectedShiftId;
+            return LayoutBuilder(
+              builder: (context, box) {
+                const buttonSize = 34.0;
+                const gap = 6.0;
+                const edgeInset = 10.0;
+                final cardWidth = (box.maxHeight * 1.65).clamp(
+                  0.0,
+                  box.maxWidth,
+                );
+                final settingsLeft =
+                    cardWidth - edgeInset - buttonSize * 2 - gap;
+                final deleteLeft = cardWidth - edgeInset - buttonSize;
 
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(23),
-                child: Stack(
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    SizedBox(
-                      width: cardWidth,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: EdgeInsets.all(selected ? 3 : 0),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(23),
-                          border: selected
-                              ? Border.all(
-                                  color: context.appTheme.navy, width: 2)
-                              : null,
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(23),
+                  child: Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      SizedBox(
+                        width: cardWidth,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: EdgeInsets.all(selected ? 3 : 0),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(23),
+                            border: selected
+                                ? Border.all(
+                                    color: context.appTheme.navy,
+                                    width: 2,
+                                  )
+                                : null,
+                          ),
+                          child: ShiftCard(
+                            shift: s,
+                            isActiveNow: s.containsTime(now),
+                            onTap: () => onSelect(s),
+                          ),
                         ),
-                        child: ShiftCard(
-                          shift: s,
-                          isActiveNow: s.containsTime(now),
-                          onTap: () => onSelect(s),
+                      ),
+                      Positioned(
+                        top: edgeInset,
+                        left: settingsLeft,
+                        child: _ShiftPictureIconButton(
+                          icon: Icons.settings,
+                          tooltip: 'Edit shift settings',
+                          onPressed: () => onEdit(s),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      top: edgeInset,
-                      left: settingsLeft,
-                      child: _ShiftPictureIconButton(
-                        icon: Icons.settings,
-                        tooltip: 'Edit shift settings',
-                        onPressed: () => onEdit(s),
+                      Positioned(
+                        top: edgeInset,
+                        left: deleteLeft,
+                        child: _ShiftPictureIconButton(
+                          icon: Icons.delete_outline,
+                          tooltip: 'Delete shift',
+                          onPressed: () => onDelete(s),
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      top: edgeInset,
-                      left: deleteLeft,
-                      child: _ShiftPictureIconButton(
-                        icon: Icons.delete_outline,
-                        tooltip: 'Delete shift',
-                        onPressed: () => onDelete(s),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      );
-    });
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 }
 
@@ -518,7 +1019,7 @@ class _LiveShiftPanel extends StatefulWidget {
 
 class _LiveShiftPanelState extends State<_LiveShiftPanel> {
   bool _requestingHandover = false;
-  String? _exportingFormat;
+  bool _exportingPdf = false;
   String? _handoverSummary;
 
   @override
@@ -533,8 +1034,9 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
     final timeLabel = activeNow ? 'Time remaining' : 'Starts in';
 
     if (activeNow && remaining <= 0) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => widget.onConfettiNeeded());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => widget.onConfettiNeeded(),
+      );
     }
 
     final details = Column(
@@ -548,7 +1050,10 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
               child: Text(
                 timeLabel,
                 style: TextStyle(
-                    color: t.muted, fontSize: 11, fontWeight: FontWeight.w700),
+                  color: t.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             _CountdownText(minutes: remaining, color: t.navy),
@@ -562,22 +1067,21 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
             minHeight: 6,
             backgroundColor: t.scaffold,
             valueColor: AlwaysStoppedAnimation<Color>(
-                progress > 0.85 ? t.orange : t.navy),
+              progress > 0.85 ? t.orange : t.navy,
+            ),
           ),
         ),
         const SizedBox(height: 12),
-        _ReadinessGrid(shift: widget.shift),
+        ShiftPresenceGrid(shift: widget.shift, isActiveNow: activeNow),
         const SizedBox(height: 10),
         Row(
           children: [
             Expanded(child: _ViewLogsButton(onTap: widget.onViewLogs)),
             const SizedBox(width: 8),
             Expanded(
-              child: _ShiftExportMenuButton(
-                exportingFormat: _exportingFormat,
-                onExcel: () => _generateReport('excel'),
-                onPdf: () => _generateReport('pdf'),
-                onCsv: () => _generateReport('csv'),
+              child: _ShiftPdfExportButton(
+                busy: _exportingPdf,
+                onTap: _generatePdfReport,
               ),
             ),
           ],
@@ -620,11 +1124,7 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
             if (stacked) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  card,
-                  const SizedBox(height: 14),
-                  details,
-                ],
+                children: [card, const SizedBox(height: 14), details],
               );
             }
             return Row(
@@ -648,7 +1148,8 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
     if (!mounted) return;
     setState(() {
       _requestingHandover = false;
-      _handoverSummary = result ??
+      _handoverSummary =
+          result ??
           'Could not reach the AI handover service. Please try again later.';
     });
   }
@@ -660,41 +1161,548 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
     return delta;
   }
 
-  Future<void> _generateReport(String format) async {
-    setState(() => _exportingFormat = format);
+  Future<void> _generatePdfReport() async {
+    final factories =
+        widget.shift.supervisors
+            .map((s) => s.factory.trim())
+            .where((f) => f.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final settings = await showDialog<_ShiftExportSettings>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) =>
+          _ShiftExportDialog(shift: widget.shift, factories: factories),
+    );
+    if (settings == null) return;
+    if (settings.actionKinds.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Select at least one action type'),
+          backgroundColor: context.appTheme.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _exportingPdf = true);
     try {
-      switch (format) {
-        case 'excel':
-          await ShiftPdfService.exportExcelAndShare(
-            shift: widget.shift,
-            day: DateTime.now(),
-          );
-          break;
-        case 'csv':
-          await ShiftPdfService.exportCsvAndShare(
-            shift: widget.shift,
-            day: DateTime.now(),
-          );
-          break;
-        case 'pdf':
-        default:
-          await ShiftPdfService.exportAndShare(
-            shift: widget.shift,
-            day: DateTime.now(),
-          );
-      }
+      const allKinds = _ShiftExportDialogState.actionKinds;
+      await ShiftPdfService.exportAndShare(
+        shift: widget.shift,
+        day: settings.day,
+        options: ShiftReportExportOptions(
+          reportName: settings.reportName,
+          factory: settings.factory,
+          actionKinds: settings.actionKinds.length == allKinds.length
+              ? const <String>{}
+              : settings.actionKinds,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'Failed to generate report: ${UserFriendlyError.message(e)}'),
+            'Failed to generate report: ${UserFriendlyError.message(e)}',
+          ),
           backgroundColor: context.appTheme.red,
         ),
       );
     }
     if (!mounted) return;
-    setState(() => _exportingFormat = null);
+    setState(() => _exportingPdf = false);
+  }
+}
+
+// ────────────────────────── PDF EXPORT BUTTON ───────────────────────────────
+class _ShiftPdfExportButton extends StatelessWidget {
+  final bool busy;
+  final VoidCallback onTap;
+  const _ShiftPdfExportButton({required this.busy, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    return OutlinedButton.icon(
+      onPressed: busy ? null : onTap,
+      icon: busy
+          ? SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(strokeWidth: 2, color: t.navy),
+            )
+          : const _PdfIcon(),
+      label: Text(
+        busy ? 'Generating PDF…' : 'Export PDF report',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: t.navy,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: t.scaffold,
+        side: BorderSide(color: t.navy.withValues(alpha: 0.3)),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        minimumSize: const Size(0, 32),
+      ),
+    );
+  }
+}
+
+class _ShiftExportDialog extends StatefulWidget {
+  final ShiftModel shift;
+  final List<String> factories;
+
+  const _ShiftExportDialog({required this.shift, required this.factories});
+
+  @override
+  State<_ShiftExportDialog> createState() => _ShiftExportDialogState();
+}
+
+class _ShiftExportDialogState extends State<_ShiftExportDialog> {
+  static const actionKinds = <String>{
+    'created',
+    'claimed',
+    'resolved',
+    'ai_assigned',
+    'escalated',
+    'handover',
+  };
+
+  late final TextEditingController _nameController;
+  late DateTime _day;
+  late String _factory;
+  late Set<String> _selectedKinds;
+  bool _nameTouched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _day = DateTime.now();
+    _factory = 'all';
+    _selectedKinds = Set<String>.from(actionKinds);
+    _nameController = TextEditingController(text: _autoName());
+    _nameController.addListener(() {
+      if (!_nameTouched && _nameController.text != _autoName()) {
+        _nameTouched = true;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  String _date(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _autoName() {
+    final factory = _factory == 'all' ? 'All factories' : _factory;
+    return 'SIA Shift Commander Report - ${widget.shift.name} - $factory - ${_date(_day)}';
+  }
+
+  void _refreshName() {
+    if (_nameTouched) return;
+    _nameController.text = _autoName();
+    _nameController.selection = TextSelection.collapsed(
+      offset: _nameController.text.length,
+    );
+  }
+
+  String _label(String kind) {
+    switch (kind) {
+      case 'created':
+        return 'Created';
+      case 'claimed':
+        return 'Claimed';
+      case 'resolved':
+        return 'Resolved';
+      case 'ai_assigned':
+        return 'AI Assignments';
+      case 'escalated':
+        return 'Escalations';
+      case 'handover':
+        return 'Handovers';
+      default:
+        return kind;
+    }
+  }
+
+  IconData _icon(String kind) {
+    switch (kind) {
+      case 'ai_assigned':
+        return Icons.auto_awesome_rounded;
+      case 'handover':
+        return Icons.swap_horiz_rounded;
+      case 'resolved':
+        return Icons.check_circle_outline_rounded;
+      case 'escalated':
+        return Icons.priority_high_rounded;
+      case 'claimed':
+        return Icons.person_search_rounded;
+      default:
+        return Icons.add_alert_outlined;
+    }
+  }
+
+  Future<void> _pickDay() async {
+    final t = context.appTheme;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _day,
+      firstDate: DateTime(DateTime.now().year - 5),
+      lastDate: DateTime(DateTime.now().year + 1, 12, 31),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: Theme.of(
+            ctx,
+          ).colorScheme.copyWith(primary: t.navy, onPrimary: Colors.white),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      _day = picked;
+      _refreshName();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.appTheme;
+    final canExport = _selectedKinds.isNotEmpty;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 620),
+          child: Container(
+            decoration: BoxDecoration(
+              color: t.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: t.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 28,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 12, 18),
+                  color: t.navy,
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.picture_as_pdf_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Export Shift Report',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Choose date, factory, and action types',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                        color: Colors.white,
+                        tooltip: 'Close',
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _dialogLabel(t, 'Report name', Icons.edit_note_rounded),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _nameController,
+                          maxLines: 2,
+                          minLines: 1,
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Report name',
+                            suffixIcon: _nameTouched
+                                ? IconButton(
+                                    tooltip: 'Reset name',
+                                    icon: const Icon(
+                                      Icons.refresh_rounded,
+                                      size: 18,
+                                    ),
+                                    onPressed: () => setState(() {
+                                      _nameTouched = false;
+                                      _refreshName();
+                                    }),
+                                  )
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _dialogLabel(t, 'Report date', Icons.event_rounded),
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: _pickDay,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: t.scaffold,
+                              border: Border.all(color: t.border),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.calendar_today_rounded,
+                                  color: t.muted,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _date(_day),
+                                  style: TextStyle(
+                                    color: t.text,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _dialogLabel(t, 'Factory', Icons.factory_rounded),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          initialValue: _factory,
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'all',
+                              child: Text('All factories'),
+                            ),
+                            for (final f in widget.factories)
+                              DropdownMenuItem(value: f, child: Text(f)),
+                          ],
+                          onChanged: (v) => setState(() {
+                            _factory = v ?? 'all';
+                            _refreshName();
+                          }),
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.business_rounded),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            _dialogLabel(
+                              t,
+                              'Action types',
+                              Icons.checklist_rounded,
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: () => setState(() {
+                                _selectedKinds =
+                                    _selectedKinds.length == actionKinds.length
+                                    ? <String>{}
+                                    : Set<String>.from(actionKinds);
+                              }),
+                              child: Text(
+                                _selectedKinds.length == actionKinds.length
+                                    ? 'Clear all'
+                                    : 'Select all',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => setState(() {
+                                _selectedKinds = {'ai_assigned', 'handover'};
+                              }),
+                              child: const Text(
+                                'AI only',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final kind in actionKinds)
+                              FilterChip(
+                                avatar: Icon(_icon(kind), size: 15),
+                                label: Text(_label(kind)),
+                                selected: _selectedKinds.contains(kind),
+                                selectedColor: t.navy.withValues(alpha: 0.14),
+                                checkmarkColor: t.navy,
+                                backgroundColor: t.scaffold,
+                                side: BorderSide(
+                                  color: _selectedKinds.contains(kind)
+                                      ? t.navy
+                                      : t.border,
+                                ),
+                                labelStyle: TextStyle(
+                                  color: t.text,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                onSelected: (selected) => setState(() {
+                                  if (selected) {
+                                    _selectedKinds.add(kind);
+                                  } else {
+                                    _selectedKinds.remove(kind);
+                                  }
+                                }),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                  decoration: BoxDecoration(
+                    color: t.scaffold,
+                    border: Border(top: BorderSide(color: t.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          canExport
+                              ? '${_selectedKinds.length} action type${_selectedKinds.length == 1 ? '' : 's'} selected'
+                              : 'No action types selected',
+                          style: TextStyle(
+                            color: canExport ? t.muted : t.red,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: canExport
+                            ? () => Navigator.pop(
+                                context,
+                                _ShiftExportSettings(
+                                  reportName: _nameController.text.trim(),
+                                  day: _day,
+                                  factory: _factory,
+                                  actionKinds: Set<String>.from(_selectedKinds),
+                                ),
+                              )
+                            : null,
+                        icon: const Icon(Icons.download_rounded, size: 16),
+                        label: const Text('Generate PDF'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: t.navy,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dialogLabel(AppTheme t, String label, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: t.navy),
+        const SizedBox(width: 6),
+        Text(
+          label.toUpperCase(),
+          style: TextStyle(
+            color: t.text,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.7,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PdfIcon extends StatelessWidget {
+  const _PdfIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Icon(
+      Icons.picture_as_pdf_rounded,
+      color: Color(0xFFEC1C24),
+      size: 18,
+    );
   }
 }
 
@@ -707,9 +1715,10 @@ class _CountdownText extends StatelessWidget {
   Widget build(BuildContext context) {
     final h = (minutes ~/ 60).toString().padLeft(2, '0');
     final m = (minutes % 60).toString().padLeft(2, '0');
-    return Text('${h}h ${m}m',
-        style:
-            TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900));
+    return Text(
+      '${h}h ${m}m',
+      style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w900),
+    );
   }
 }
 
@@ -748,7 +1757,10 @@ class _HandoverBanner extends StatelessWidget {
                 child: Text(
                   'Shift ends in $minutes min — generate AI handover?',
                   style: TextStyle(
-                      color: t.text, fontSize: 13, fontWeight: FontWeight.w700),
+                    color: t.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               ElevatedButton.icon(
@@ -758,9 +1770,15 @@ class _HandoverBanner extends StatelessWidget {
                         width: 12,
                         height: 12,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.auto_awesome,
-                        size: 14, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.auto_awesome,
+                        size: 14,
+                        color: Colors.white,
+                      ),
                 label: Text(requesting ? 'Generating…' : 'Generate'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF60A5FA),
@@ -771,142 +1789,12 @@ class _HandoverBanner extends StatelessWidget {
           ),
           if (summary != null) ...[
             const SizedBox(height: 10),
-            Text(summary!,
-                style: TextStyle(color: t.text, fontSize: 12, height: 1.45)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ReadinessGrid extends StatelessWidget {
-  final ShiftModel shift;
-  const _ReadinessGrid({required this.shift});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    if (shift.supervisors.isEmpty) {
-      return Text('No supervisors assigned to this shift',
-          style: TextStyle(color: t.muted, fontSize: 12));
-    }
-    final readyCount = shift.supervisors.where((s) => s.ready).length;
-    final me = FirebaseAuth.instance.currentUser?.uid;
-    final iAmIn = me != null && shift.supervisors.any((s) => s.id == me);
-    final iAmReady =
-        iAmIn && shift.supervisors.firstWhere((s) => s.id == me).ready;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.check_circle, color: t.green, size: 18),
-            const SizedBox(width: 6),
-            Text('Readiness',
-                style: TextStyle(
-                    color: t.muted, fontSize: 12, fontWeight: FontWeight.w700)),
-            const Spacer(),
-            Text('$readyCount / ${shift.supervisors.length} ready',
-                style: TextStyle(
-                    color: t.navy, fontSize: 13, fontWeight: FontWeight.w800)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final s in shift.supervisors)
-              _ReadyChip(sup: s, shiftId: shift.id),
-          ],
-        ),
-        if (iAmIn) ...[
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () async {
-              await ServiceLocator.instance.shiftService.setReadyState(
-                shiftId: shift.id,
-                supervisorId: me,
-                ready: !iAmReady,
-              );
-            },
-            icon: Icon(
-              iAmReady ? Icons.cancel : Icons.handshake,
-              size: 16,
-              color: iAmReady ? t.red : t.green,
-            ),
-            label: Text(
-              iAmReady ? 'Mark me not ready' : 'I\'m ready for shift',
-              style: TextStyle(
-                color: iAmReady ? t.red : t.green,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ReadyChip extends StatelessWidget {
-  final AssignedSupervisor sup;
-  final String shiftId;
-  const _ReadyChip({required this.sup, required this.shiftId});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return InkWell(
-      onTap: () async {
-        await ServiceLocator.instance.shiftService.setReadyState(
-          shiftId: shiftId,
-          supervisorId: sup.id,
-          ready: !sup.ready,
-        );
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: sup.ready ? t.greenLt : t.scaffold,
-          border: Border.all(
-              color: sup.ready ? t.green : t.border,
-              width: sup.ready ? 1.5 : 1),
-          borderRadius: BorderRadius.circular(99),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: sup.ready ? t.green : t.muted,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  if (sup.ready)
-                    BoxShadow(
-                      color: t.green.withValues(alpha: 0.7),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
             Text(
-              sup.name,
-              style: TextStyle(
-                color: sup.ready ? t.green : t.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+              summary!,
+              style: TextStyle(color: t.text, fontSize: 12, height: 1.45),
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -946,16 +1834,22 @@ class _TimelineView extends StatelessWidget {
             children: [
               Icon(Icons.access_time, color: t.navy, size: 18),
               const SizedBox(width: 6),
-              Text('24-hour timeline',
-                  style: TextStyle(
-                      color: t.text,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800)),
+              Text(
+                '24-hour timeline',
+                style: TextStyle(
+                  color: t.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const Spacer(),
               Text(
                 _formatNow(now),
                 style: TextStyle(
-                    color: t.muted, fontSize: 12, fontWeight: FontWeight.w700),
+                  color: t.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
@@ -986,12 +1880,15 @@ class _TimelineView extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 6),
-        Text(label,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        ),
       ],
     );
   }
@@ -1014,17 +1911,19 @@ class _TimelineStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 96,
-      child: LayoutBuilder(builder: (ctx, c) {
-        final w = c.maxWidth;
-        return CustomPaint(
-          size: Size(w, 96),
-          painter: _TimelinePainter(
-            shifts: shifts,
-            nowMinutes: nowMinutes,
-            isDark: isDark,
-          ),
-        );
-      }),
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final w = c.maxWidth;
+          return CustomPaint(
+            size: Size(w, 96),
+            painter: _TimelinePainter(
+              shifts: shifts,
+              nowMinutes: nowMinutes,
+              isDark: isDark,
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -1063,7 +1962,9 @@ class _TimelinePainter extends CustomPainter {
       ..color = isDark ? const Color(0xFF1F2937) : const Color(0xFFE2E8F0);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-          Rect.fromLTWH(0, trackY, w, trackH), const Radius.circular(8)),
+        Rect.fromLTWH(0, trackY, w, trackH),
+        const Radius.circular(8),
+      ),
       track,
     );
 
@@ -1075,8 +1976,10 @@ class _TimelinePainter extends CustomPainter {
           colors: [c.withValues(alpha: 0.85), c.withValues(alpha: 1.0)],
         ).createShader(Rect.fromLTWH(x1, trackY, x2 - x1, trackH));
       canvas.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromLTWH(x1, trackY, x2 - x1, trackH),
-            const Radius.circular(6)),
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x1, trackY, x2 - x1, trackH),
+          const Radius.circular(6),
+        ),
         paint,
       );
     }
@@ -1102,10 +2005,15 @@ class _TimelinePainter extends CustomPainter {
     for (int hr = 0; hr <= 24; hr += 3) {
       final x = (hr / 24.0) * w;
       canvas.drawLine(
-          Offset(x, trackY - 6), Offset(x, trackY + trackH + 4), tickPaint);
+        Offset(x, trackY - 6),
+        Offset(x, trackY + trackH + 4),
+        tickPaint,
+      );
       final tp = TextPainter(
         text: TextSpan(
-            text: '${hr.toString().padLeft(2, '0')}h', style: textStyle),
+          text: '${hr.toString().padLeft(2, '0')}h',
+          style: textStyle,
+        ),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset((x - tp.width / 2).clamp(0.0, w - tp.width), 6));
@@ -1114,13 +2022,18 @@ class _TimelinePainter extends CustomPainter {
     // Now marker.
     final nowX = (nowMinutes / 1440.0) * w;
     final nowGlow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF22C55E).withValues(alpha: 0.6),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(
-          center: Offset(nowX, trackY + trackH / 2), radius: 24));
+      ..shader =
+          RadialGradient(
+            colors: [
+              const Color(0xFF22C55E).withValues(alpha: 0.6),
+              Colors.transparent,
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(nowX, trackY + trackH / 2),
+              radius: 24,
+            ),
+          );
     canvas.drawCircle(Offset(nowX, trackY + trackH / 2), 24, nowGlow);
     final nowLine = Paint()
       ..color = const Color(0xFF22C55E)
@@ -1130,8 +2043,11 @@ class _TimelinePainter extends CustomPainter {
       Offset(nowX, trackY + trackH + 8),
       nowLine,
     );
-    canvas.drawCircle(Offset(nowX, trackY + trackH / 2), 5,
-        Paint()..color = const Color(0xFF22C55E));
+    canvas.drawCircle(
+      Offset(nowX, trackY + trackH / 2),
+      5,
+      Paint()..color = const Color(0xFF22C55E),
+    );
   }
 
   @override
@@ -1147,8 +2063,11 @@ class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
-  const _EmptyState(
-      {required this.icon, required this.title, required this.message});
+  const _EmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1171,9 +2090,14 @@ class _EmptyState extends StatelessWidget {
               child: Icon(icon, color: Colors.white, size: 38),
             ),
             const SizedBox(height: 16),
-            Text(title,
-                style: TextStyle(
-                    color: t.text, fontSize: 18, fontWeight: FontWeight.w800)),
+            Text(
+              title,
+              style: TextStyle(
+                color: t.text,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
             const SizedBox(height: 6),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
@@ -1373,9 +2297,13 @@ class _ConfettiPainter extends CustomPainter {
       canvas.translate(x, y);
       canvas.rotate(localT * p.spin * 6.28);
       canvas.drawRect(
-          Rect.fromCenter(
-              center: Offset.zero, width: p.size, height: p.size * 0.5),
-          paint);
+        Rect.fromCenter(
+          center: Offset.zero,
+          width: p.size,
+          height: p.size * 0.5,
+        ),
+        paint,
+      );
       canvas.restore();
     }
   }
@@ -1408,243 +2336,5 @@ class _ViewLogsButton extends StatelessWidget {
   }
 }
 
-// ────────────────────────── REPORT BUTTON ───────────────────────────────────
-class _ShiftExportMenuButton extends StatelessWidget {
-  final String? exportingFormat;
-  final VoidCallback onExcel;
-  final VoidCallback onPdf;
-  final VoidCallback onCsv;
-
-  const _ShiftExportMenuButton({
-    required this.exportingFormat,
-    required this.onExcel,
-    required this.onPdf,
-    required this.onCsv,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    final isDark = context.isDark;
-    final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
-    final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-    final borderColor =
-        isDark ? const Color(0xFF3A3A5C) : const Color(0xFFDDE1EC);
-    final busy = exportingFormat != null;
-
-    return MenuAnchor(
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(baseBg),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: borderColor),
-          ),
-        ),
-        elevation: const WidgetStatePropertyAll(4),
-        padding:
-            const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
-      ),
-      menuChildren: [
-        _ShiftExportMenuItem(
-          icon: _excelIcon(),
-          label: 'Excel',
-          hoverColor: const Color(0xFF1D6F42),
-          onTap: busy ? null : onExcel,
-          baseBg: baseBg,
-          baseText: baseText,
-        ),
-        _ShiftExportMenuItem(
-          icon: _pdfIcon(),
-          label: 'PDF',
-          hoverColor: const Color(0xFFEC1C24),
-          onTap: busy ? null : onPdf,
-          baseBg: baseBg,
-          baseText: baseText,
-        ),
-        _ShiftExportMenuItem(
-          icon: Icon(Icons.table_chart_outlined, size: 16, color: baseText),
-          label: 'CSV',
-          hoverColor: const Color(0xFF0072C6),
-          onTap: busy ? null : onCsv,
-          baseBg: baseBg,
-          baseText: baseText,
-        ),
-      ],
-      builder: (context, controller, _) => OutlinedButton.icon(
-        onPressed: busy
-            ? null
-            : () => controller.isOpen ? controller.close() : controller.open(),
-        icon: busy
-            ? SizedBox(
-                width: 13,
-                height: 13,
-                child: CircularProgressIndicator(strokeWidth: 2, color: t.navy),
-              )
-            : Icon(Icons.download_outlined, size: 15, color: t.navy),
-        label: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              busy ? 'Exporting ${exportingFormat!.toUpperCase()}' : 'Export',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: t.navy,
-              ),
-            ),
-            if (!busy) ...[
-              const SizedBox(width: 4),
-              Icon(Icons.arrow_drop_down, size: 16, color: t.navy),
-            ],
-          ],
-        ),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: baseBg,
-          side: BorderSide(color: borderColor),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-          minimumSize: const Size(0, 32),
-        ),
-      ),
-    );
-  }
-
-  Widget _pdfIcon() => Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 18,
-            height: 20,
-            decoration: const BoxDecoration(
-              color: Color(0xFFEC1C24),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(3),
-                bottomLeft: Radius.circular(3),
-                bottomRight: Radius.circular(3),
-                topRight: Radius.circular(7),
-              ),
-            ),
-          ),
-          const Positioned(
-            top: 0,
-            right: 0,
-            child: SizedBox(
-              width: 7,
-              height: 7,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Color(0xFFB71C1C),
-                  borderRadius: BorderRadius.only(
-                    topRight: Radius.circular(3),
-                    bottomLeft: Radius.circular(3),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const Text(
-            'PDF',
-            style: TextStyle(
-              fontSize: 5,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ],
-      );
-
-  Widget _excelIcon() => Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 18,
-            height: 20,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1D6F42),
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-          const Text(
-            'X',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      );
-}
-
-class _ShiftExportMenuItem extends StatefulWidget {
-  final Widget icon;
-  final String label;
-  final Color hoverColor;
-  final VoidCallback? onTap;
-  final Color baseBg;
-  final Color baseText;
-
-  const _ShiftExportMenuItem({
-    required this.icon,
-    required this.label,
-    required this.hoverColor,
-    required this.onTap,
-    required this.baseBg,
-    required this.baseText,
-  });
-
-  @override
-  State<_ShiftExportMenuItem> createState() => _ShiftExportMenuItemState();
-}
-
-class _ShiftExportMenuItemState extends State<_ShiftExportMenuItem> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) {
-        if (enabled) setState(() => _hover = true);
-      },
-      onExit: (_) {
-        if (enabled) setState(() => _hover = false);
-      },
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: _hover
-                ? widget.hoverColor.withValues(alpha: 0.12)
-                : widget.baseBg,
-            border: Border(
-              left: BorderSide(
-                color: _hover ? widget.hoverColor : Colors.transparent,
-                width: 3,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              widget.icon,
-              const SizedBox(width: 10),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _hover ? widget.hoverColor : widget.baseText,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+// Old multi-format export menu replaced by `_ShiftPdfExportButton` above —
+// PDF is now the only export format the PM can produce from this tab.

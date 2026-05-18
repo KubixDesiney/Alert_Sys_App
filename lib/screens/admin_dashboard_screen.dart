@@ -34,7 +34,6 @@ import '../utils/alert_meta.dart';
 import 'overview_tab.dart';
 import 'supervisors_tab.dart';
 import 'admin/shifts_tab.dart';
-import 'admin/developer_tab.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
 const _navy = AppColors.navy;
@@ -94,15 +93,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   static const String _prefTimeRange = 'overview_time_range';
   static const String _prefUsine = 'overview_usine';
 
-  /// SharedPreferences key for the developer-mode toggle. Stored as bool;
-  /// absent means the feature is OFF (default).
-  static const String _prefDeveloperMode = 'developer_mode_enabled';
-
-  /// When true, an extra "Developer" tab is appended to the PillTabBar and
-  /// the settings popup shows the toggle as ON. The state is persisted in
-  /// SharedPreferences so it survives app restarts.
-  bool _developerMode = false;
-
   @override
   void initState() {
     super.initState();
@@ -126,403 +116,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() {
       _timeRange = prefs.getString(_prefTimeRange) ?? 'all';
       _selectedUsine = prefs.getString(_prefUsine) ?? 'all';
-      _developerMode = prefs.getBool(_prefDeveloperMode) ?? false;
     });
     _applyFilters();
-  }
-
-  /// Persists the developer-mode flag and updates the tab bar. If the user
-  /// is currently viewing the Developer tab when they turn it OFF, we step
-  /// back to the Overview tab so they don't end up looking at an empty
-  /// area. Called from the settings popup (see `_openSettingsMenu`).
-  Future<void> _setDeveloperMode(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_prefDeveloperMode, enabled);
-    if (!mounted) return;
-    setState(() {
-      _developerMode = enabled;
-      // Tab index 6 is the Developer tab (last in the row when on).
-      // If we're sitting on it and dev mode is turning off, bounce home.
-      if (!enabled && _tab == 6) _tab = 0;
-    });
-  }
-
-  /// Shows the small settings popup anchored to the gear icon. From here
-  /// the admin can flip Developer Mode on or off; turning it ON walks
-  /// through a confirmation dialog so it's harder to enable by accident.
-  Future<void> _openSettingsMenu(GlobalKey anchorKey) async {
-    final renderBox =
-        anchorKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-    final offset = renderBox.localToGlobal(Offset.zero);
-    final size = renderBox.size;
-    final position = RelativeRect.fromLTRB(
-      offset.dx - 220,
-      offset.dy + size.height + 6,
-      offset.dx + size.width,
-      offset.dy + size.height + 240,
-    );
-
-    final t = context.appTheme;
-    final result = await showMenu<String>(
-      context: context,
-      position: position,
-      color: t.card,
-      elevation: 8,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: t.border),
-      ),
-      items: [
-        PopupMenuItem<String>(
-          enabled: false,
-          padding: EdgeInsets.zero,
-          height: 70,
-          child: Container(
-            width: 260,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.settings, color: t.navy, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Admin Settings',
-                      style: TextStyle(
-                        color: t.textDark,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Tools that affect this dashboard only',
-                  style: TextStyle(
-                    color: t.muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem<String>(
-          value: 'toggle_dev',
-          padding: EdgeInsets.zero,
-          height: 64,
-          child: Container(
-            width: 260,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Row(
-              children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: t.purple.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Icon(
-                    Icons.build_circle_outlined,
-                    color: t.purple,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Developer Mode',
-                        style: TextStyle(
-                          color: t.textDark,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      Text(
-                        _developerMode ? 'Currently on' : 'Currently off',
-                        style: TextStyle(
-                          color: _developerMode ? t.green : t.muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // We render the switch but the popup item handles the tap;
-                // pointer events through the switch would dismiss the menu
-                // without firing onChanged anyway.
-                IgnorePointer(
-                  ignoring: true,
-                  child: Switch(
-                    value: _developerMode,
-                    onChanged: (_) {},
-                    activeThumbColor: t.purple,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-
-    if (!mounted || result != 'toggle_dev') return;
-
-    if (_developerMode) {
-      // Disabling is harmless — turn off immediately.
-      await _setDeveloperMode(false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Developer Mode disabled'),
-            backgroundColor: t.navy,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } else {
-      // Enabling first asks for confirmation in a well-styled dialog.
-      final confirmed = await _showDeveloperModeConfirmation();
-      if (confirmed == true) {
-        await _setDeveloperMode(true);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Developer Mode enabled · open the Developer tab',
-              ),
-              backgroundColor: t.purple,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  /// Centered confirmation dialog shown before Developer Mode turns on.
-  /// Returns `true` when the admin confirms, `false`/`null` otherwise.
-  Future<bool?> _showDeveloperModeConfirmation() {
-    final t = context.appTheme;
-    return showGeneralDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Confirm developer mode',
-      barrierColor: Colors.black.withValues(alpha: 0.55),
-      transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (_, __, ___) => const SizedBox.shrink(),
-      transitionBuilder: (ctx, anim, _, __) {
-        final scale = Curves.easeOutBack.transform(anim.value.clamp(0.0, 1.0));
-        return Opacity(
-          opacity: anim.value,
-          child: Transform.scale(
-            scale: 0.85 + 0.15 * scale,
-            child: Center(
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  width: 420,
-                  margin: const EdgeInsets.symmetric(horizontal: 24),
-                  decoration: BoxDecoration(
-                    color: t.card,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: t.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 24,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Purple banner with the build-circle icon: signals
-                      // a "power user" surface without looking destructive.
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 20,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              t.purple.withValues(alpha: 0.95),
-                              t.navy.withValues(alpha: 0.95),
-                            ],
-                          ),
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(18),
-                            topRight: Radius.circular(18),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.build_circle_outlined,
-                                color: Colors.white,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Enable Developer Mode?',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  SizedBox(height: 2),
-                                  Text(
-                                    'Adds a Developer tab with live security telemetry',
-                                    style: TextStyle(
-                                      color: Color(0xFFE2E8F0),
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _DevConfirmRow(
-                              icon: Icons.shield_outlined,
-                              text:
-                                  'View live security actions and rate-limit blocks.',
-                              color: t.red,
-                            ),
-                            const SizedBox(height: 10),
-                            _DevConfirmRow(
-                              icon: Icons.favorite_outline,
-                              text:
-                                  'Inspect the Cloudflare Worker health pulse in real time.',
-                              color: t.green,
-                            ),
-                            const SizedBox(height: 10),
-                            _DevConfirmRow(
-                              icon: Icons.terminal_outlined,
-                              text:
-                                  'Tail in-app console logs without leaving the dashboard.',
-                              color: t.blue,
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: t.orangeLt,
-                                border: Border.all(
-                                  color: t.orange.withValues(alpha: 0.4),
-                                ),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline,
-                                    color: t.orange,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Diagnostic data may be sensitive. Disable Developer Mode when you are done.',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: t.text,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () =>
-                                        Navigator.of(ctx).pop(false),
-                                    style: OutlinedButton.styleFrom(
-                                      side: BorderSide(color: t.border),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'Cancel',
-                                      style: TextStyle(
-                                        color: t.text,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: FilledButton.icon(
-                                    onPressed: () =>
-                                        Navigator.of(ctx).pop(true),
-                                    icon: const Icon(Icons.bolt, size: 17),
-                                    label: const Text('Enable'),
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: t.purple,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 12,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _saveFilters() async {
@@ -1744,14 +1339,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               activeSups: _activeSups,
               onLogout: _logout,
               onSimulateAlert: _showSimulateDialog,
-              onOpenSettings: _openSettingsMenu,
-              developerModeOn: _developerMode,
               enableNotifications: widget.enableLiveData,
             ),
             PillTabBar(
               tab: _tab,
               onSelect: (i) => setState(() => _tab = i),
-              showDeveloperTab: _developerMode,
               badgeCounts: {4: _escalatedOpen},
             ),
             Expanded(
@@ -1848,13 +1440,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return const AdminEscalationScreen();
       case 5:
         return const HierarchyScreen();
-      case 6:
-        // Developer tab — only rendered when developer mode is on; if it
-        // somehow gets selected while OFF (defensive fallback), drop back
-        // to an empty surface rather than crash.
-        return _developerMode
-            ? const AdminDeveloperTab()
-            : const SizedBox.shrink();
       default:
         return const SizedBox.shrink();
     }
@@ -1868,22 +1453,12 @@ class _Header extends StatefulWidget {
   final int activeSups;
   final VoidCallback onLogout;
   final VoidCallback onSimulateAlert;
-  // Fired when the admin taps the gear icon next to the simulate button.
-  // The parent owns the popup logic (so it can read SharedPreferences and
-  // update tab visibility); the header just hosts the anchor.
-  final void Function(GlobalKey anchorKey) onOpenSettings;
-  // Drives the small "DEV" badge that appears on the gear icon when the
-  // developer mode is currently on — easy visual reminder so an admin
-  // never forgets to disable it before handing the device to a supervisor.
-  final bool developerModeOn;
   final bool enableNotifications;
 
   const _Header({
     required this.activeSups,
     required this.onLogout,
     required this.onSimulateAlert,
-    required this.onOpenSettings,
-    required this.developerModeOn,
     this.enableNotifications = true,
   });
 
@@ -2564,15 +2139,6 @@ class _HeaderState extends State<_Header> {
             ),
           ),
           const SizedBox(width: 8),
-          // ── Settings (Developer Mode toggle lives in here) ──
-          // The icon doubles as a "developer mode is currently ON" indicator
-          // via the small badge overlay below, so an admin can tell at a
-          // glance whether the surfaces are exposing diagnostic data.
-          _SettingsIconButton(
-            developerModeOn: widget.developerModeOn,
-            onTap: widget.onOpenSettings,
-          ),
-          const SizedBox(width: 8),
           // ── Theme toggle ──
           IconButton(
             icon: Icon(
@@ -2642,133 +2208,3 @@ class _HeaderState extends State<_Header> {
     );
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SETTINGS ICON (gear with optional "DEV" badge)
-// ═══════════════════════════════════════════════════════════════════════════
-// Stateful so we can keep our own anchor GlobalKey — the parent needs it
-// to position the popup menu correctly, and a fresh key per build risks
-// the menu opening at the wrong coordinates after a rebuild.
-class _SettingsIconButton extends StatefulWidget {
-  final bool developerModeOn;
-  final void Function(GlobalKey anchorKey) onTap;
-  const _SettingsIconButton({
-    required this.developerModeOn,
-    required this.onTap,
-  });
-  @override
-  State<_SettingsIconButton> createState() => _SettingsIconButtonState();
-}
-
-class _SettingsIconButtonState extends State<_SettingsIconButton> {
-  // Anchor used to position the dropdown menu — kept stable across builds
-  // so the popup math stays correct even after parent rebuilds.
-  final GlobalKey _anchorKey = GlobalKey();
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(
-          key: _anchorKey,
-          onPressed: () => widget.onTap(_anchorKey),
-          icon: Icon(Icons.settings_outlined, size: 20, color: t.navy),
-          tooltip: 'Settings',
-          style: IconButton.styleFrom(
-            side: BorderSide(color: t.border),
-            padding: const EdgeInsets.all(10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-        // Small "DEV" badge that confirms developer mode is currently on.
-        if (widget.developerModeOn)
-          Positioned(
-            top: -2,
-            right: -2,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: t.purple,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: t.card, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.purple.withValues(alpha: 0.4),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              child: const Text(
-                'DEV',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DEVELOPER-MODE CONFIRMATION ROW
-// ═══════════════════════════════════════════════════════════════════════════
-// Small bullet row used inside the developer-mode confirmation dialog.
-// Kept private here because the dialog only lives in this file.
-class _DevConfirmRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color color;
-  const _DevConfirmRow({
-    required this.icon,
-    required this.text,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.appTheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: color, size: 14),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              text,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: t.text,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PILL TAB BAR
-// ═══════════════════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════

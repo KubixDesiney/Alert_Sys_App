@@ -132,7 +132,7 @@ jobs:
 
           RESPONSE=$(curl -s -X POST "${{ env.AUTO_FIX_URL }}/auto-fix-full" \
             -H 'Content-Type: application/json' \
-            -H "X-AlertSys-Worker-Secret: $WORKER_SHARED_SECRET" \
+            -H "X-SIA-Worker-Secret: $WORKER_SHARED_SECRET" \
             -d "$PAYLOAD")
 
           echo "AI response: $RESPONSE"

@@ -103,10 +103,10 @@ describe('notifTitle', () => {
     expect(notifTitle('collaboration_removed')).toBe('Collaboration update');
   });
 
-  test('falls back to AlertSys for unknown / null', () => {
-    expect(notifTitle('whatever')).toBe('AlertSys');
-    expect(notifTitle(null)).toBe('AlertSys');
-    expect(notifTitle(undefined)).toBe('AlertSys');
+  test('falls back to Smart Industrial Alert - SIA for unknown / null', () => {
+    expect(notifTitle('whatever')).toBe('Smart Industrial Alert - SIA');
+    expect(notifTitle(null)).toBe('Smart Industrial Alert - SIA');
+    expect(notifTitle(undefined)).toBe('Smart Industrial Alert - SIA');
   });
 });
 

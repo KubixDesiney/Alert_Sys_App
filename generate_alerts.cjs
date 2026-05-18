@@ -1,10 +1,10 @@
 /*
- * AlertSys – Validee‑Only Generator (LSTM‑ready density)
+ * Smart Industrial Alert - SIA â€“ Valideeâ€‘Only Generator (LSTMâ€‘ready density)
  * ======================================================
  *  - 90 days, 10 alerts per day
  *  - Every alert is status "validee" (no claimed/pending)
  *  - Supervisor name = firstName + lastName (or fallback to uid)
- *  - English descriptions, static per‑type defaults
+ *  - English descriptions, static perâ€‘type defaults
  *  - Factories: AeroFloat, Delta, Delice_B, Usine A
  *
  *  Usage:
@@ -57,7 +57,7 @@ const FIXES = [
   'Operator training completed',
 ];
 
-// Hot combos – locations that recur more often
+// Hot combos â€“ locations that recur more often
 const HOT = [
   { usine: 'AeroFloat', convoyeur: 1, poste: 2 },
   { usine: 'Delta',     convoyeur: 1, poste: 3 },
@@ -116,7 +116,7 @@ function buildAlert(alertNumber, ts, supsMap) {
     superviseurName = sup.fullName;
   }
 
-  // Always validee – no claimed/pending
+  // Always validee â€“ no claimed/pending
   return {
     type, usine, convoyeur, poste,
     adresse:     `${usine}_C${convoyeur}_P${poste}`,
@@ -185,14 +185,14 @@ async function main() {
   }
 
   const pct = n => `${(n / created * 100).toFixed(1)} %`;
-  console.log(`\n\n${'═'.repeat(48)}`);
+  console.log(`\n\n${'â•'.repeat(48)}`);
   console.log(`  Total alerts   : ${created}`);
   console.log(`  Critical       : ${critical.toString().padStart(5)}  (${pct(critical)})`);
   console.log(`  Status         : all validee (no claimed/pending)`);
   console.log(`\n  Per-factory breakdown:`);
   for (const [f, c] of Object.entries(fac))
     console.log(`    ${f.padEnd(14)} ${c.toString().padStart(5)}  (${pct(c)})`);
-  console.log(`${'═'.repeat(48)}\n`);
+  console.log(`${'â•'.repeat(48)}\n`);
 
   await db.app.delete();
 }

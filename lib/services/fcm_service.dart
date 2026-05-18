@@ -17,6 +17,7 @@ import '../firebase_options.dart';
 import '../providers/alert_provider.dart';
 import '../screens/alert_detail_screen.dart';
 import '../screens/voice_claim_screen.dart';
+import 'service_locator.dart';
 import 'voice_auth_service.dart';
 import 'voice_command_dispatcher.dart';
 import 'voice_command_parser.dart';
@@ -53,6 +54,10 @@ class FcmService {
   // Action ID for the "Claim Alert" button on new-alert buzz notifications.
   static const String claimAlertActionId = 'claim_alert';
 
+  // Action ID for the green "Confirm Presence" button on shift commander
+  // inactivity check notifications.
+  static const String confirmPresenceActionId = 'confirm_presence_action';
+
   // Provider injected once at app startup; the FCM callback runs in a
   // detached context so we can't go through `Provider.of(context)`.
   static AlertProvider? alertProvider;
@@ -85,6 +90,20 @@ class FcmService {
     ),
   );
 
+  // Dedicated channel for AI Shift Commander "Confirm Presence" pings.
+  // Uses a softer vibration pattern than alert buzz and a distinct ID so
+  // Android keeps its visual styling stable.
+  static final AndroidNotificationChannel _presenceChannel =
+      AndroidNotificationChannel(
+    'shift_commander_presence',
+    'Shift presence checks',
+    description: 'AI Shift Commander checks if you are still active',
+    importance: Importance.high,
+    playSound: true,
+    enableVibration: true,
+    vibrationPattern: Int64List.fromList([0, 400, 200, 400]),
+  );
+
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   static bool _localNotificationsInitialized = false;
@@ -113,6 +132,27 @@ class FcmService {
           final alertId = response.payload;
           if (alertId != null && alertId.isNotEmpty) {
             _navigateToAlertDetailById(alertId);
+          }
+          return;
+        }
+        // "Confirm Presence" green button on the AI Shift Commander presence
+        // check. Payload format: `presence:<shiftId>`.
+        if (response.actionId == confirmPresenceActionId) {
+          final payload = response.payload ?? '';
+          if (payload.startsWith('presence:')) {
+            final shiftId = payload.substring('presence:'.length);
+            if (shiftId.isNotEmpty) {
+              unawaited(_confirmPresenceForShift(shiftId));
+            }
+          }
+          return;
+        }
+        // Plain tap on a presence notification → confirm and surface a toast.
+        final payload = response.payload;
+        if (payload != null && payload.startsWith('presence:')) {
+          final shiftId = payload.substring('presence:'.length);
+          if (shiftId.isNotEmpty) {
+            unawaited(_confirmPresenceForShift(shiftId));
           }
           return;
         }
@@ -380,6 +420,19 @@ class FcmService {
       return;
     }
 
+    // ── AI Shift Commander presence check ────────────────────────────────────
+    if (notifType == 'confirm_presence') {
+      final shiftId = data['shiftId']?.toString() ?? '';
+      if (shiftId.isEmpty) return;
+      await _showPresenceConfirmation(
+        id: _presenceNotifId(shiftId),
+        title: title.isEmpty ? 'AI Shift Commander' : title,
+        body: body,
+        shiftId: shiftId,
+      );
+      return;
+    }
+
     // ── Collab / queued notifications may carry an empty alertId ────────────
     // Show a plain high-priority notification so supervisors still see
     // collaboration requests, help requests, and critical updates.
@@ -535,6 +588,96 @@ class FcmService {
             AndroidFlutterLocalNotificationsPlugin>();
     await androidImpl?.createNotificationChannel(_androidChannel);
     await androidImpl?.createNotificationChannel(_buzzChannel);
+    await androidImpl?.createNotificationChannel(_presenceChannel);
+  }
+
+  // Show a "Confirm Presence" prompt from the AI Shift Commander. The green
+  // primary action writes confirmedAt to RTDB without launching the UI.
+  static Future<void> _showPresenceConfirmation({
+    required int id,
+    required String title,
+    required String body,
+    required String shiftId,
+  }) async {
+    if (!_localNotificationsInitialized) {
+      await _localNotifications.initialize(_initializationSettings());
+      _localNotificationsInitialized = true;
+    }
+    await _ensureAndroidChannel();
+    await _localNotifications.show(
+      id,
+      title,
+      body,
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _presenceChannel.id,
+          _presenceChannel.name,
+          channelDescription: _presenceChannel.description,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          icon: '@mipmap/ic_launcher',
+          ticker: title,
+          visibility: NotificationVisibility.public,
+          category: AndroidNotificationCategory.reminder,
+          color: const Color(0xFF16A34A),
+          colorized: true,
+          styleInformation: BigTextStyleInformation(body),
+          actions: <AndroidNotificationAction>[
+            AndroidNotificationAction(
+              confirmPresenceActionId,
+              'Confirm Presence',
+              icon: const DrawableResourceAndroidBitmap(
+                '@android:drawable/checkbox_on_background',
+              ),
+              showsUserInterface: false,
+              cancelNotification: true,
+            ),
+          ],
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: 'presence:$shiftId',
+    );
+  }
+
+  // Writes `confirmedAt` to RTDB through the presence service. Safe to call
+  // from background isolates because PresenceService grabs Firebase via the
+  // default app instance.
+  static Future<void> _confirmPresenceForShift(String shiftId) async {
+    try {
+      await ServiceLocator.instance.presenceService.confirmPresence(shiftId);
+    } catch (_) {
+      // Service may not be initialized in a cold background isolate. Fall back
+      // to a direct write keyed on the current Firebase user.
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid == null) return;
+        await FirebaseDatabase.instance
+            .ref('shift_presence/$shiftId/$uid')
+            .update({
+          'status': 'active',
+          'confirmedAt': DateTime.now().toIso8601String(),
+          'confirmRequestedAt': null,
+          'confirmExpiresAt': null,
+          'inactiveSince': null,
+        });
+      } catch (_) {}
+    }
+  }
+
+  // Stable notification ID derived from a shiftId for presence prompts.
+  static int _presenceNotifId(String shiftId) {
+    var h = 0;
+    for (final c in shiftId.codeUnits) {
+      h = (h * 33 + c) % 0x7FFFFFFF;
+    }
+    return h == 0 ? 7777 : h;
   }
 
   static Future<void> _prepareAndroidLockScreenNotifications() async {
