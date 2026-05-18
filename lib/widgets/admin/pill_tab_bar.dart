@@ -5,21 +5,15 @@ import '../../theme.dart';
 
 /// Horizontal pill-shaped tab bar used at the top of the admin dashboard.
 ///
-/// When [showDeveloperTab] is true (i.e. the admin has enabled Developer
-/// Mode from the settings popup), an extra "Developer" tab is appended.
-/// The Developer tab's index is `6`; the surrounding screen relies on that
-/// being the last index when selecting which body to render.
 class PillTabBar extends StatelessWidget {
   final int tab;
   final void Function(int) onSelect;
-  final bool showDeveloperTab;
   final Map<int, int> badgeCounts;
 
   const PillTabBar({
     super.key,
     required this.tab,
     required this.onSelect,
-    this.showDeveloperTab = false,
     this.badgeCounts = const {},
   });
 
@@ -45,8 +39,6 @@ class PillTabBar extends StatelessWidget {
         'icon': Icons.account_tree,
         'label': l10n?.adminTabHierarchy ?? 'Hierarchy',
       },
-      if (showDeveloperTab)
-        {'icon': Icons.build_circle_outlined, 'label': 'Developer'},
     ];
     final t = context.appTheme;
     return Container(
@@ -62,15 +54,9 @@ class PillTabBar extends StatelessWidget {
               children: List.generate(tabs.length, (i) {
                 final sel = tab == i;
                 final item = tabs[i];
-                // The Developer tab is purple-accented so it visually
-                // signals "elevated mode" — the surrounding row stays
-                // navy-blue, but Developer reads as a distinct tool.
-                final isDev = showDeveloperTab && i == tabs.length - 1;
-                final activeColor = isDev ? t.purple : t.navy;
-                final inactiveBorder = isDev
-                    ? t.purple.withValues(alpha: 0.35)
-                    : t.border;
-                final inactiveText = isDev ? t.purple : t.muted;
+                final activeColor = t.navy;
+                final inactiveBorder = t.border;
+                final inactiveText = t.muted;
                 final badgeCount = badgeCounts[i] ?? 0;
                 return Padding(
                   padding: const EdgeInsets.only(right: 10, top: 4),

@@ -1,11 +1,11 @@
-# AlertSys Architecture and Operating Guide (A to Z)
+# Smart Industrial Alert - SIA Architecture and Operating Guide (A to Z)
 
-This document is the full technical map of the AlertSys project.
+This document is the full technical map of the Smart Industrial Alert - SIA project.
 It explains what exists, why it exists, and how data and control flow from the first user action to final persistence and notifications.
 
 ## A. System Purpose
 
-AlertSys is a multi-platform industrial alert management system built for factory environments.
+Smart Industrial Alert - SIA is a multi-platform industrial alert management system built for factory environments.
 
 Primary goals:
 - Receive and track production alerts in real time.
@@ -89,7 +89,7 @@ App startup sequence (lib/main.dart):
 10. FcmService.init attempted with timeout guard.
 11. Shorebird code push runtime instantiated.
 12. VoiceService warmup triggered after first frame delay.
-13. runApp(AlertSysApp).
+13. runApp(Smart Industrial Alert - SIAApp).
 
 Auth and role routing:
 - AuthGate listens to FirebaseAuth authStateChanges.
@@ -389,25 +389,25 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 **Modular Worker Structure:**
 
 **Core Entry Point:**
-- `worker/index.js` — Orchestrates scheduled (cron) and fetch handlers, imports all modules, exports public APIs.
+- `worker/index.js` â€” Orchestrates scheduled (cron) and fetch handlers, imports all modules, exports public APIs.
 
 **Functional Modules:**
 
-1. **auth.js** — Firebase service account auth, token generation and caching.
-2. **alerts.js** — Alert state processing, timestamp updates, status transitions.
-3. **ai_suggest.js** — AI suggestion proxy and insight endpoint handlers.
-4. **auto_fix.js** — Automatic remediation logic (partial and full modes).
-5. **briefing.js** — Morning briefing generation with factory-scoped aggregation via Llama 3.2.
-6. **config.js** — CORS headers and configuration metadata endpoints.
-7. **escalation.js** — Escalation policy checking and enforcement.
-8. **fcm.js** — Firebase Cloud Messaging fan-out, token fetching, notification formatting.
-9. **health.js** — Cron execution health monitoring and reporting to RTDB.
-10. **load_core.js** — Parallel data loading: alerts, users, shifts, hierarchy, factories.
-11. **predictive.js** — Predictive model computation, validation, history snapshot writes.
-12. **scoring.js** — Supervisor scoring engine, workload calculations, candidate ranking.
-13. **shift_commander.js** — Shift management, AI assignments during active shifts, handover generation.
-14. **suggest_assignee.js** — Assignee recommendation endpoint.
-15. **utils.js** — Shared utilities: factory ID sanitization, time handling, briefing slugs, shift window helpers.
+1. **auth.js** â€” Firebase service account auth, token generation and caching.
+2. **alerts.js** â€” Alert state processing, timestamp updates, status transitions.
+3. **ai_suggest.js** â€” AI suggestion proxy and insight endpoint handlers.
+4. **auto_fix.js** â€” Automatic remediation logic (partial and full modes).
+5. **briefing.js** â€” Morning briefing generation with factory-scoped aggregation via Llama 3.2.
+6. **config.js** â€” CORS headers and configuration metadata endpoints.
+7. **escalation.js** â€” Escalation policy checking and enforcement.
+8. **fcm.js** â€” Firebase Cloud Messaging fan-out, token fetching, notification formatting.
+9. **health.js** â€” Cron execution health monitoring and reporting to RTDB.
+10. **load_core.js** â€” Parallel data loading: alerts, users, shifts, hierarchy, factories.
+11. **predictive.js** â€” Predictive model computation, validation, history snapshot writes.
+12. **scoring.js** â€” Supervisor scoring engine, workload calculations, candidate ranking.
+13. **shift_commander.js** â€” Shift management, AI assignments during active shifts, handover generation.
+14. **suggest_assignee.js** â€” Assignee recommendation endpoint.
+15. **utils.js** â€” Shared utilities: factory ID sanitization, time handling, briefing slugs, shift window helpers.
 
 **Scheduled Handler (Cron: every minute):**
 
@@ -428,20 +428,20 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 
 **HTTP Fetch Handler Endpoints:**
 
-- `/config` — Configuration metadata.
-- `/ai-proxy` — AI integration proxy (Gemini, Claude, Llama).
-- `/ai-suggest` — Alert resolution suggestions.
-- `/predict` — Predictive model computation.
-- `/predict-lstm` — LSTM prediction endpoint (security guarded, batched upstream call).
-- `/briefing` — Morning briefing (supports `?factory=` query parameter for scoped briefings).
-- `/suggest-assignee` — Assignee recommendation.
-- `/auto-fix` — Partial automatic remediation.
-- `/auto-fix-full` — Full automatic remediation.
-- `/shift-ai-action` — Shift-specific AI operations (evaluate, handover, created, updated).
-- `/validate-predictions` — Manual trigger for prediction validation run.
-- `/ai-retry` — Trigger AI assignment retry.
-- `/notify` — Fan-out pending notifications from RTDB queue.
-- Default (all other fetch) — Unified manual trigger: runs assignments, alerts, escalations, collaborations.
+- `/config` â€” Configuration metadata.
+- `/ai-proxy` â€” AI integration proxy (Gemini, Claude, Llama).
+- `/ai-suggest` â€” Alert resolution suggestions.
+- `/predict` â€” Predictive model computation.
+- `/predict-lstm` â€” LSTM prediction endpoint (security guarded, batched upstream call).
+- `/briefing` â€” Morning briefing (supports `?factory=` query parameter for scoped briefings).
+- `/suggest-assignee` â€” Assignee recommendation.
+- `/auto-fix` â€” Partial automatic remediation.
+- `/auto-fix-full` â€” Full automatic remediation.
+- `/shift-ai-action` â€” Shift-specific AI operations (evaluate, handover, created, updated).
+- `/validate-predictions` â€” Manual trigger for prediction validation run.
+- `/ai-retry` â€” Trigger AI assignment retry.
+- `/notify` â€” Fan-out pending notifications from RTDB queue.
+- Default (all other fetch) â€” Unified manual trigger: runs assignments, alerts, escalations, collaborations.
 
 **Deployment Status:**
 
@@ -505,7 +505,7 @@ Fixed critical push notification delivery bugs that caused slow delivery (0-60s 
 2. **Overly Restrictive Supervisor Filtering** (cloudflare_notify_worker.js)
    - `processAlerts` set `requireActiveSupervisors: true`, filtering to only supervisors with `status in ['active','available','online','ready']`.
    - Most supervisors without an explicit active status were rejected.
-   - Combined with missing lock, resulted in "no eligible recipients" → push silently abandoned.
+   - Combined with missing lock, resulted in "no eligible recipients" â†’ push silently abandoned.
 
 3. **Permanent Push Lock Tombstone** (cloudflare_notify_worker.js)
    - `skipAlertPush(alertUrl, 'no_eligible_recipients')` marked alert as `push_sent: true` permanently.
@@ -514,7 +514,7 @@ Fixed critical push notification delivery bugs that caused slow delivery (0-60s 
 4. **Firebase Write Propagation Race** (cloudflare_notify_worker.js architecture)
    - Flutter immediately POSTs to worker's `/notify` endpoint after creating alert.
    - Worker loads all alerts from RTDB to find the newly created one.
-   - If Firebase write hasn't propagated yet (<500ms), alert not found → falls back to full cron cycle (0-60s delay).
+   - If Firebase write hasn't propagated yet (<500ms), alert not found â†’ falls back to full cron cycle (0-60s delay).
 
 **Fixes Applied:**
 
@@ -529,19 +529,19 @@ Fixed critical push notification delivery bugs that caused slow delivery (0-60s 
 - Worker auth context includes admin role, so lock acquisition now succeeds.
 
 **Fix 2: Relaxed Supervisor Filtering** (cloudflare_notify_worker.js, line ~525)
-- Changed `requireActiveSupervisors: true` → `false` in `processAlerts`.
+- Changed `requireActiveSupervisors: true` â†’ `false` in `processAlerts`.
 - Now sends to all supervisors with valid FCM tokens regardless of presence status field.
 - Rationale: presence status is transient UI state; supervisor availability should be determined by token existence, not presence flag.
 - Added clarifying comment: "Removed requireActiveSupervisors gate; rely on token existence for eligibility."
 
 **Fix 3: Changed Push Lock Logic** (cloudflare_notify_worker.js, line ~532)
-- Changed `skipAlertPush(alertUrl, 'no_eligible_recipients')` → `finishAlertPush(alertUrl, false)`.
+- Changed `skipAlertPush(alertUrl, 'no_eligible_recipients')` â†’ `finishAlertPush(alertUrl, false)`.
 - Old behavior: permanently marked alert as `push_sent: true`, preventing any retry.
 - New behavior: releases the push lock while keeping `push_sent: false`, allowing future cron cycles to retry.
 - Comment added: "Release the push-lock but leave push_sent:false so the next cron can retry if supervisors become available."
 
 **Fix 4: Reduced Lock TTL** (cloudflare_notify_worker.js, line ~787)
-- Changed lock TTL check from 55s → 45s: `if (Date.now() - lockData.ts < 45000)`.
+- Changed lock TTL check from 55s â†’ 45s: `if (Date.now() - lockData.ts < 45000)`.
 - Provides 15s margin vs 60s cron interval (previously only 5s margin).
 - Prevents lock stalls when auth takes >5s.
 
@@ -561,10 +561,10 @@ Fixed critical push notification delivery bugs that caused slow delivery (0-60s 
 
 **Fix 7: Fast-Path Delivery for New Alerts** (cloudflare_notify_worker.js, line ~787-813)
 - New function `pushSingleAlert(env, alertId)` optimizes for alert creation flow.
-- **Problem solved**: When Flutter calls POST immediately after alert creation, Firebase write hasn't propagated yet → alert not found → falls back to cron (0-60s delay).
+- **Problem solved**: When Flutter calls POST immediately after alert creation, Firebase write hasn't propagated yet â†’ alert not found â†’ falls back to cron (0-60s delay).
 - **Solution**: Retry fetching the single alert 3 times with 400ms backoff between retries, handling propagation delay.
 - **Performance**: Loads only the single alert + users (not all 1102 alerts), computes recipients in ~1-2s.
-- **Fallback**: If alert not found after retries, returns false → triggers full cycle for robustness.
+- **Fallback**: If alert not found after retries, returns false â†’ triggers full cycle for robustness.
 - **Router logic** (line ~862): Fetch handler detects `alertId` in POST body and routes to fast path, with fallback to full cycle if fast path returns false.
 
 **Fix 8: Web Push Notification Support** (cloudflare_notify_worker.js, line ~327-340)
@@ -586,7 +586,7 @@ Fixed critical push notification delivery bugs that caused slow delivery (0-60s 
 - Updated service worker (web/firebase-messaging-sw.js) to read from `payload.data` as fallback when `payload.notification` not present.
 
 **Fix 9: Android Vibration Pattern Fix** (lib/services/fcm_service.dart, line 76)
-- Changed Android notification channel ID from `'alerts_new_buzz'` → `'alerts_new_buzz_v2'`.
+- Changed Android notification channel ID from `'alerts_new_buzz'` â†’ `'alerts_new_buzz_v2'`.
 - **Why needed**: Android permanently caches notification channel settings at first registration. If the old channel was ever created without vibration enabled (or with different vibration pattern), that setting is locked and cannot be changed in code.
 - **Solution**: New channel ID forces Android to create a fresh channel with the correct vibration pattern: `Int64List.fromList([0, 700, 200, 700, 200, 700, 200, 900, 250, 900, 250, 900])`.
 - **User impact**: Existing users need to uninstall/reinstall or manually delete app notification preferences to pick up the new channel (one-time).
@@ -602,7 +602,7 @@ npx wrangler deploy --config wrangler.notify.toml
 
 **Testing and Validation:**
 
-- Injected test alert and verified `push_sent` and `push_sent_at` updated within 1-2s (fast path) or ≤60s (full cycle).
+- Injected test alert and verified `push_sent` and `push_sent_at` updated within 1-2s (fast path) or â‰¤60s (full cycle).
 - Confirmed Android vibration pattern applies to newly created notifications.
 - Verified web service worker receives and displays background messages.
 - All fixes verified in production Firebase and Cloudflare Worker logs.
@@ -613,11 +613,11 @@ npx wrangler deploy --config wrangler.notify.toml
 2. AlertService immediately POSTs to worker with `{ alertId }`.
 3. Worker routes to `pushSingleAlert(env, alertId)` fast path.
 4. Fast path retries fetching alert (up to 3 times, 400ms apart) to handle Firebase propagation.
-5. Alert found → loads supervisors with FCM tokens (no active status filter).
-6. Computes eligible recipients → sends FCM messages with vibration and webpush blocks.
+5. Alert found â†’ loads supervisors with FCM tokens (no active status filter).
+6. Computes eligible recipients â†’ sends FCM messages with vibration and webpush blocks.
 7. Marks alert `push_sent: true` and `push_sent_at: now()`.
 8. **Result**: notification arrives in ~1-2s on Android and web.
-9. **Fallback**: If alert not found after retries, returns false → full `processAlerts` cycle runs at next cron (≤60s).
+9. **Fallback**: If alert not found after retries, returns false â†’ full `processAlerts` cycle runs at next cron (â‰¤60s).
 
 **Further Optimizations (May 2026 Continuation):**
 
@@ -628,7 +628,7 @@ npx wrangler deploy --config wrangler.notify.toml
   - Claim retry loop integrated: if alert claim state unstable (taken/untaken during fetch), retry up to 3 times before falling back.
   - After parallel fetch completes, compute busy supervisors immediately from supervisor_active_alerts presence (single pass, no nested lookups).
   - FCM sends issued in parallel via Promise.all for n supervisors (near-zero wait time per recipient).
-- **Performance gain**: Reduced end-to-end delivery from ~2s to ~1–1.5s by eliminating sequential waits.
+- **Performance gain**: Reduced end-to-end delivery from ~2s to ~1â€“1.5s by eliminating sequential waits.
 
 **Optimization 2: Busy Supervisor Filtering for New Alerts** (cloudflare_notify_worker.js, pushSingleAlert)
 - **Problem**: New-alert notifications were being sent to supervisors with active claims, breaking focus and chat.
@@ -644,7 +644,7 @@ npx wrangler deploy --config wrangler.notify.toml
 **Optimization 3: Android Vibration Channel Bump** (lib/services/fcm_service.dart, line 76)
 - **Problem**: Buzzing feature stopped working for all Android users after previous fixes.
 - **Root cause**: Android permanently caches notification channel settings at first registration. Modifying vibration patterns in code has no effect if the channel ID already exists.
-- **Solution**: Bumped Android notification channel ID from `'alerts_new_buzz_v2'` → `'alerts_new_buzz_v3'`.
+- **Solution**: Bumped Android notification channel ID from `'alerts_new_buzz_v2'` â†’ `'alerts_new_buzz_v3'`.
 - **Impact**: Forces Android to create a fresh notification channel with correct vibration pattern: `Int64List.fromList([0, 700, 200, 700, 200, 700, 200, 900, 250, 900, 250, 900])`.
 - **User action required**: Existing users must rebuild and reinstall the Flutter app to pick up the v3 channel. This is a one-time migration; subsequent updates will preserve the v3 channel.
 - **Channel description**: Updated to "Strong buzz for unclaimed alerts when you are available" to clarify when buzz is sent.
@@ -653,7 +653,7 @@ npx wrangler deploy --config wrangler.notify.toml
 
 - Cloudflare notification worker (`cloudflare_notify_worker.js`) deployed with parallel fetch and busy-supervisor filtering.
 - Flutter app updated with buzz channel v3; users must rebuild.
-- Expected delivery time for new alerts: ~1–1.5s end-to-end (vs. previous ~60s cron fallback).
+- Expected delivery time for new alerts: ~1â€“1.5s end-to-end (vs. previous ~60s cron fallback).
 - Busy supervisor filtering working for new_alert only; collaboration notifications unaffected.
 - Buzz notifications now respecting availability: buzz only when supervisor has no active claim.
 
@@ -792,7 +792,7 @@ AdminShiftsTab (lib/screens/admin/shifts_tab.dart) is a three-tabbed interface:
 2. _LiveView: Active shift monitoring with countdown timer and readiness tracking.
    - _LiveShiftPanel: shows active shift progress, "I'm ready" button, readiness grid.
    - _CountdownText: formatted hours/minutes to shift end.
-   - _HandoverBanner: appears when shift ending in ≤30 min, with AI handover trigger.
+   - _HandoverBanner: appears when shift ending in â‰¤30 min, with AI handover trigger.
    - _ReadinessGrid: live supervisor readiness chips with ready/not-ready states.
    - _UpcomingShiftsList: queue of shifts scheduled later today.
    - Empty state for no active shifts.
@@ -929,7 +929,7 @@ Sequence 2: AI Commander assignment during active shift
 8. shift_ai_assignment notification sent to selected supervisor.
 
 Sequence 3: Shift handover
-1. Shift nears end time (≤30 min remaining).
+1. Shift nears end time (â‰¤30 min remaining).
 2. _HandoverBanner appears in _LiveView with trigger button.
 3. User taps "Generate Handover Report" or voice says "start shift handover".
 4. VoiceCommandDispatcher calls ShiftService.requestHandoverSummary().
@@ -1057,6 +1057,202 @@ _DoubleAssignmentDialog (in shift_creation_dialog.dart):
 
 ---
 
+## AB.1 Supervisor Presence Tracking System (May 2026)
+
+Implemented comprehensive real-time supervisor presence tracking for active shifts with automatic inactivity detection, FCM confirmation prompts, and complete PDF report redesign.
+
+**Purpose:**
+- Track supervisor activity state during active shifts (Active/Inactive/Absent/PendingConfirm).
+- Automatically detect inactivity and prompt supervisors to confirm presence.
+- Provide real-time presence visualization in shift live view.
+- Redesign shift PDF reports to showcase supervisor presence data.
+- Support factory-level filtering and comprehensive audit reporting.
+
+**Data Model:**
+
+SupervisorPresence (lib/models/supervisor_presence.dart):
+- supervisorId, name, factory: identity and location.
+- status: enum PresenceStatus with four states:
+  - `active`: supervisor recently confirmed or has recent activity.
+  - `inactive`: supervisor confirmed but no activity after 30-min window.
+  - `absent`: supervisor never confirmed or confirmed but absent grace expired.
+  - `pendingConfirm`: supervisor triggered inactivity alert, awaiting confirmation response.
+- lastActiveAt: DateTime when last activity (claim, resolve) occurred.
+- inactiveSince: DateTime when inactivity period began (idle â‰¥1h without activity).
+- confirmRequestedAt: DateTime when confirm presence FCM was sent.
+- confirmExpiresAt: DateTime when confirm window closes (30 min after request).
+- confirmedAt: DateTime when supervisor tapped confirm presence button.
+- joinedAt: DateTime when supervisor joined the shift.
+- statusDurationSeconds: calculated Duration from status anchor timestamps.
+- durationInStatus getter: returns Duration since last status transition.
+- statusLabel getter: human-readable "Active", "Inactive", "Absent", "Awaiting Confirmation".
+
+Helper Methods:
+- parseStatus(String): enum parser for Firebase string values.
+- statusToString(PresenceStatus): enum serializer for Firebase writes.
+
+**Services:**
+
+PresenceService (lib/services/presence_service.dart):
+- RTDB path: `shift_presence/{shiftId}/{supervisorId}`.
+- streamPresence(shiftId): returns Stream<List<SupervisorPresence>> merged roster + presence rows, ordered by name.
+- fetchPresenceOnce(shiftId): one-shot read for export/report generation (no streaming overhead).
+- confirmPresence(shiftId): writes confirmedAt timestamp and transitions status to active when user taps FCM action.
+- Registered in ServiceLocator during app bootstrap.
+
+**UI Architecture:**
+
+ShiftPresenceGrid (lib/widgets/shifts/presence_grid.dart):
+- Replaces old _ReadinessGrid widget for shift presence display.
+- Merges roster + presence records (supervisors without presence yet show as "Awaiting check-in").
+- Header section:
+  - _HeaderPill: "Shift Commander · Live Presence" badge with radar icon.
+  - _CountBadge: shows "Awaiting · {count}" when pending confirmations pending.
+- Status summary row:
+  - Three _PresenceCountCard widgets showing Active, Inactive, Absent counts with icons and shadows.
+- Supervisor presence chips:
+  - _PresenceChip per supervisor displaying:
+    - _PulseDot: animated green dot for active supervisors, static for others.
+    - Status icon (bolt/disturb/person-off/hourglass).
+    - Supervisor name or ID.
+    - Status pill badge (colored background, "ACTIVE"/"INACTIVE"/"ABSENT"/"AWAITING").
+    - Duration counter (e.g., "3h 25m" in monospace).
+  - Tooltip shows full details: name, status, duration, factory, last activity timestamp, confirm window expiry.
+- _PulseDot: CustomPaint with AnimationController for active supervisor glow effect.
+
+AdminShiftsTab Refactoring (lib/screens/admin/shifts_tab.dart):
+- Replaced _ReadinessGrid with ShiftPresenceGrid in _LiveShiftPanel.
+- Removed _ReadyChip class (old ready/not-ready UI).
+- Removed _ShiftExportMenuButton and _ShiftExportMenuItem classes (multi-format export).
+- Added _ShiftFilters data class with fields: kind, commander, factory, window; activeCount getter.
+- Added _ShiftFilterSheet stateful dialog:
+  - Segmented filter controls using ChoiceChip pattern.
+  - Separate sections for Kind, Commander, Factory, and Window.
+  - _NoMatchingShifts widget for empty filter state.
+  - Clear/apply buttons with responsive layout.
+- Added _ShiftFiltersButton showing active filter count badge.
+- Added _ShiftPdfExportButton (PDF-only, no CSV/Excel):
+  - Shows red PDF icon.
+  - Displays progress spinner during generation.
+  - Single export button replacing multi-option dropdown.
+- Modified _UnifiedShiftsView to accept activeFilterCount, onOpenFilters, onClearFilters, totalShiftCount.
+- Changed _generateReport() to _generatePdfReport() (PDF-only export).
+
+ShiftCreationDialog Refinement (lib/screens/admin/shift_creation_dialog.dart):
+- Removed AI model selection dropdown from _AiToggleCard.
+- Removed model and onModelChanged parameters from constructor.
+- AI Commander toggle no longer shows model choices (uses fixed Llama backend).
+- Simplified UI, removed explanation of model selection.
+- Renamed `onModelChanged` callback removal from updateShift() call.
+
+**FCM and Notifications:**
+
+FcmService Extensions (lib/services/fcm_service.dart):
+- confirmPresenceActionId = 'confirm_presence_action': action ID for confirm buttons.
+- _presenceChannel: AndroidNotificationChannel with soft vibration pattern [0, 400, 200, 400].
+- _presenceNotifId(shiftId): generates stable notification ID for presence confirmations.
+- _showPresenceConfirmation(): displays green-button notification prompting presence confirmation.
+- _confirmPresenceForShift(shiftId): writes confirmedAt to shift_presence/{shiftId}/{uid}.
+- showVoiceActionNotificationForMessage(): routes confirm_presence notifType to _showPresenceConfirmation().
+- Notification response handler: handles confirmPresenceActionId action with presence:shiftId payload.
+
+**Shift PDF Report Redesign:**
+
+ShiftPdfService Complete Rewrite (lib/services/shift_pdf_service.dart):
+- Removed CSV and Excel export methods (PDF-only).
+- Added _loadPresence(shift) async method calling PresenceService.fetchPresenceOnce().
+- Complete visual redesign of hero section:
+  - Changed from purple gradient background to white card with navy left accent rail.
+  - Removed AI model row from shift metadata display.
+- New sections:
+  - _hero(): white card with navy accent, shift name, time, AI Commander status, metrics.
+  - _presenceTable(): supervisor name, factory, status pill, duration, last activity.
+  - _cellHeader(): formatted table header cells with consistent spacing.
+  - _legend(): status count summary (Active/Inactive/Absent).
+  - _presenceLabel() and _presenceColor(): status-to-label and status-to-color mappings.
+  - _humanDuration(): formats Duration to readable strings (e.g., "3h 25m").
+- Light theme throughout: white backgrounds, subtle borders, navy accents, readable typography.
+- Responsive layout for landscape A4 PDF export.
+- Web download and mobile share-sheet support.
+
+**Cloudflare AI Worker Presence Engine:**
+
+cloudflare_ai_worker.js Extensions:
+- runShiftPresenceCheck(): async function (~300 lines) runs every minute during cron and manual triggers.
+  - Processes all active shifts.
+  - Merges supervisor roster with presence records from RTDB.
+  - State transition logic:
+    * If supervisor has no FCM token or not seen after grace period (5 min) → status = absent.
+    * If idle (no claim/resolve activity) for 1 hour → sends confirm presence FCM, status = pendingConfirm.
+    * If confirm window elapsed (30 min) and not confirmed → status = inactive.
+    * If recently confirmed → status = active.
+  - Tracks status duration in seconds for UI display.
+  - Generates presence_snapshot AI log entry with status counts and supervisor names by status.
+- _readPresenceMap(shiftId): async fetches shift_presence/{shiftId}.
+- _patchPresence(shiftId, supervisorId, presence): async writes individual supervisor presence.
+- _sendConfirmPresenceFcm(fcmTokens, shiftId): async sends green-button confirm notification.
+- Constants:
+  - PRESENCE_INACTIVITY_MS = 3600000 (1 hour idle threshold).
+  - PRESENCE_CONFIRM_WINDOW_MS = 1800000 (30 minute confirmation window).
+  - PRESENCE_ABSENT_GRACE_MS = 300000 (5 minute unseen grace period).
+- Wired into every-minute cron after processShiftEnding().
+- Wired into manual fetch handler after processShiftCollaborations().
+
+**Firebase Realtime Database:**
+
+shift_presence Node (database.rules.json):
+- Path: shift_presence/{shiftId}/{supervisorId}.
+- Read: auth != null (all authenticated users can read).
+- Write: auth.uid === $supervisorId OR role === admin (supervisor owns their record).
+- Validated fields (optional strings/numbers):
+  - name, factory: identity.
+  - status: enum string (active|inactive|absent|pendingConfirm).
+  - lastActiveAt, inactiveSince, confirmRequestedAt, confirmExpiresAt, confirmedAt, joinedAt: ISO datetime strings.
+  - statusDurationSeconds: non-negative number.
+
+**Design Patterns:**
+
+1. **Four-state presence model**: captures complete lifecycle from join → active → idle → confirm → inactive/absent.
+2. **Automatic inactivity detection**: worker-side engine running every minute triggers FCM at 1h threshold.
+3. **Graceful degradation**: missing FCM tokens → absent; confirmation timeout → inactive (no manual recovery needed).
+4. **Audit-ready PDF**: redesigned to showcase presence data with timeline, status transitions, duration metrics.
+5. **Factory-scoped filtering**: admin can filter shifts by factory, commander mode, kind for targeted reporting.
+6. **Immutable snapshot logs**: presence_snapshot AI logs captured per cron cycle for forensic review.
+
+**Operational Sequence:**
+
+Sequence 1: Supervisor joins shift and presence begins tracking
+1. Admin adds supervisor to shift roster via ShiftCreationDialog.
+2. Dialog validates no double-assignment conflicts.
+3. Shift persisted with supervisor in supervisors[] array, joinedAt timestamp.
+4. Next cron run: runShiftPresenceCheck() loads shift roster.
+5. Creates initial presence record with status = active (assuming fresh join).
+
+Sequence 2: Inactivity detection and confirm presence flow
+1. Supervisor claims alert at time T.
+2. lastActiveAt updated to T.
+3. Supervisor finishes other tasks, no further claims/resolves for 1 hour.
+4. At T+1h, runShiftPresenceCheck() detects lastActiveAt is stale.
+5. Sends confirm presence FCM with green "I'm Present" button.
+6. Sets confirmRequestedAt = T+1h, confirmExpiresAt = T+1h+30min, status = pendingConfirm.
+7. If supervisor taps button before T+1h+30min:
+   - FcmService._confirmPresenceForShift() calls PresenceService.confirmPresence().
+   - confirmedAt timestamp written, status flipped to active.
+8. If 30-min window passes without tap:
+   - runShiftPresenceCheck() detects !confirmedAt && now >= confirmExpiresAt.
+   - Status transitions to inactive.
+9. Shift PDF report shows presence table with supervisor status and duration.
+
+Sequence 3: Shift report generation with presence data
+1. Admin taps "Generate Shift Report" in _LiveView.
+2. _ShiftPdfExportButton shows progress spinner.
+3. ShiftPdfService._loadPresence(shift) calls PresenceService.fetchPresenceOnce().
+4. PDF rendered with presence table (name, factory, status, duration, last activity).
+5. Status legend shows Active/Inactive/Absent counts.
+6. File downloaded (web) or shared (mobile).
+
+---
+
 ## AC. Phase 6 Continuation: Modular AI Architecture & Build Stability (May 2026)
 
 Completed extraction of AI assignment subsystem into pure, testable modules with comprehensive test coverage and resolved all Flutter SDK version pinning conflicts for stable CI/CD deployments.
@@ -1065,20 +1261,20 @@ Completed extraction of AI assignment subsystem into pure, testable modules with
 
 1. **AIScoringEngine** (lib/services/ai/ai_scoring_engine.dart)
    - Pure function scoring logic: 7 scoring factors, 4 disqualifier checks.
-   - No Firebase, singletons, or time mutation — fully testable with explicit `now` parameter.
+   - No Firebase, singletons, or time mutation â€” fully testable with explicit `now` parameter.
    - Scoring factors: same factory (+30/-25), type experience, resolution speed, workstation/conveyor familiarity, load balancing, critical history, feedback adjustment.
    - Clamps score to 0-1000 range.
    - Test coverage: 16 test cases covering all paths (test/services/ai_scoring_engine_test.dart).
 
 2. **AIStateManager** (lib/services/ai/ai_state_manager.dart)
    - In-memory bookkeeping for transient state: in-flight set, skipped alerts map, supervisor cooldown map, processed history set.
-   - No Firebase — fully unit-testable with optional `now` parameter for deterministic tests.
+   - No Firebase â€” fully unit-testable with optional `now` parameter for deterministic tests.
    - Methods: isInFlight/markInFlight/clearInFlight, isSkipped/markSkipped/clearExpiredSkipped, cooldownStart/recordCooldown, isHistoryProcessed/markHistoryProcessed.
    - clearAll() for logout/test reset.
 
 3. **AIDecisionRepository** (lib/services/ai/ai_decision_repository.dart)
    - Firebase persistence abstraction: owns ai_feedback/events and ai_feedback/summary/{supervisorId} writes.
-   - FeedbackSummary DTO: calculates rankAdjustment (±20 clamp) from accepted/rejected/aborted/resolved counts.
+   - FeedbackSummary DTO: calculates rankAdjustment (Â±20 clamp) from accepted/rejected/aborted/resolved counts.
    - Permission-denied handling: flips isAvailable flag on rules denial, short-circuits subsequent calls.
    - Constructor accepts optional FirebaseDatabase for testing.
 
@@ -1086,22 +1282,22 @@ Completed extraction of AI assignment subsystem into pure, testable modules with
    - App-wide connectivity signal via ChangeNotifier (Provider-integrated).
    - Exposes isOnline/isOffline getters, broadcast stream, init() method.
    - Properly disposes subscription and StreamController in dispose().
-   - No singleton — injected via Provider for clean testability.
+   - No singleton â€” injected via Provider for clean testability.
 
 **Dependency & Build Fixes:**
 
 - **intl version pinning:** Removed explicit intl dependency from pubspec.yaml. Intl is now provided transitively by flutter_localizations. This eliminates version conflicts across Flutter SDK versions and works in both local and CI environments.
 - **pdf/vector_math conflict:** Downgraded pdf to ^3.11.3 (compatible with Flutter SDK's pinned vector_math 2.1.4).
-- **Flutter API compatibility:** Fixed deprecated Switch.adaptive `activeThumbColor` → `activeColor`, DropdownButtonFormField `initialValue` → `value`.
+- **Flutter API compatibility:** Fixed deprecated Switch.adaptive `activeThumbColor` â†’ `activeColor`, DropdownButtonFormField `initialValue` â†’ `value`.
 - **Unused imports cleanup:** Removed unused imports from lib/widgets/admin/header.dart.
 
 **StreamSubscription Disposal Audit:**
 
-- ConnectivityService: ✅ Disposes subscription and StreamController.
-- AIAssignmentService: ✅ Disposes all 4 subscriptions.
-- BackgroundSyncService: ✅ Disposes subscription and timer.
-- AlertStreamService: ✅ Added dispose() method.
-- DashboardScreen._HeaderState: ✅ Disposes notifications and PM subscriptions.
+- ConnectivityService: âœ… Disposes subscription and StreamController.
+- AIAssignmentService: âœ… Disposes all 4 subscriptions.
+- BackgroundSyncService: âœ… Disposes subscription and timer.
+- AlertStreamService: âœ… Added dispose() method.
+- DashboardScreen._HeaderState: âœ… Disposes notifications and PM subscriptions.
 - FcmService/PushNotificationService: FirebaseMessaging listeners are app-level.
 
 **Painter RepaintBoundary Wrapping:**
@@ -1116,10 +1312,10 @@ Completed extraction of AI assignment subsystem into pure, testable modules with
 
 **Build & Deployment Status:**
 
-- ✅ `flutter pub get` succeeds (all Flutter SDK versions).
-- ✅ `flutter build web --release` succeeds.
-- ✅ All tests passing.
-- ✅ Ready for CI/GitHub Actions deployment.
+- âœ… `flutter pub get` succeeds (all Flutter SDK versions).
+- âœ… `flutter build web --release` succeeds.
+- âœ… All tests passing.
+- âœ… Ready for CI/GitHub Actions deployment.
 
 ---
 
@@ -1133,20 +1329,20 @@ The system operates in three layers:
 
 1. **History Snapshot Layer** (cloudflare_worker.js: handlePredictions)
    - When predictions are computed, a timestamped immutable copy is written to `ai_predictions/history/{key}.json` before the latest write.
-   - Key format: `_historyKey(iso)` escapes Firebase-unsafe characters by replacing `:` and `.` with `-` (e.g., `2026-05-07T14:00:00.000Z` → `2026-05-07T14-00-00-000Z`).
+   - Key format: `_historyKey(iso)` escapes Firebase-unsafe characters by replacing `:` and `.` with `-` (e.g., `2026-05-07T14:00:00.000Z` â†’ `2026-05-07T14-00-00-000Z`).
    - Snapshot includes: generatedAt, predictions[], validated (false initially).
    - Fire-and-forget write ensures history is immutable regardless of latest-write latency.
 
 2. **Validation Engine** (cloudflare_worker.js: validatePredictions)
    - Runs as part of scheduled() cron handler (after processShiftEnding).
-   - Processes snapshots aged ≥MIN_VALIDATION_AGE_HOURS (24h), capped at MAX_VALIDATION_PER_RUN (10 per cron).
+   - Processes snapshots aged â‰¥MIN_VALIDATION_AGE_HOURS (24h), capped at MAX_VALIDATION_PER_RUN (10 per cron).
    - Skips already-validated entries (validated: true).
    - For each eligible snapshot:
      - Fetches all alerts and indexes by timestamp for O(1) lookup.
      - For each prediction in snapshot, matches alerts if:
        - Alert timestamp within prediction.etaHours window (after generatedAt).
        - Same factory (case-insensitive), convoyeur, poste, type.
-     - Computes accuracy = truePositives / totalPredicted (0.0–1.0).
+     - Computes accuracy = truePositives / totalPredicted (0.0â€“1.0).
      - Writes validation object to snapshot with totalPredicted, truePositives, accuracy (4 decimals), validatedAt.
    - Aggregates macro-average across all validated snapshots.
    - Writes performance aggregate to `ai_predictions/performance/latest.json` (totalSnapshots, averageAccuracy, lastValidatedUtc).
@@ -1154,16 +1350,16 @@ The system operates in three layers:
 
 3. **Reinforcement Adjustment Layer** (cloudflare_worker.js: scoreSupervisor)
    - Reads reinforcement adjustments from `ai_feedback/adjustments.json` (keyed by supervisorId).
-   - Applies ±15% clamped adjustment to raw score before final return.
+   - Applies Â±15% clamped adjustment to raw score before final return.
    - Calculation: maxAdj = score * 0.15; clamped = clamp(adjustment, -maxAdj, +maxAdj).
-   - Only applies adjustment if |clamped| ≥ 0.01 (avoids noise).
+   - Only applies adjustment if |clamped| â‰¥ 0.01 (avoids noise).
    - Appends reason string if adjustment was applied (e.g., "Reinforcement adjustment (+5)").
    - Maintains 100% backward compatibility: missing adjustments default to 0 (no change).
 
 **Flutter Integration:**
 
 1. **PredictiveAccuracy Model** (lib/services/predictive_intel_stream_service.dart)
-   - DTO: totalSnapshots (int), averageAccuracy (0.0–1.0), lastValidatedUtc (string?).
+   - DTO: totalSnapshots (int), averageAccuracy (0.0â€“1.0), lastValidatedUtc (string?).
    - Factory method fromMap() deserializes Firebase data safely.
 
 2. **Stream Service** (lib/services/predictive_intel_stream_service.dart)
@@ -1192,7 +1388,7 @@ The system operates in three layers:
 
 - `/ai_predictions/history/{key}.json`: immutable prediction snapshots with validation metadata.
 - `/ai_predictions/performance/latest.json`: rolling macro-average accuracy and snapshot count.
-- `/ai_feedback/adjustments.json`: supervisor-keyed reinforcement adjustments (±15% clamp).
+- `/ai_feedback/adjustments.json`: supervisor-keyed reinforcement adjustments (Â±15% clamp).
 - database.rules.json: read-protected (admin access), no client writes.
 
 **Test Coverage:**
@@ -1218,7 +1414,7 @@ All 117 tests passing (111 prior + 6 new).
 2. **Immutable history:** fire-and-forget snapshot write before latest write ensures no data loss on worker crash.
 3. **Macro-average aggregation:** fairness across all snapshots regardless of individual sizes.
 4. **Lazy accuracy reads:** accuracy badge only renders when data available (no placeholder flickering).
-5. **Symmetric clamping:** ±15% adjustment ensures bidirectional feedback (positive reinforcement, negative correction).
+5. **Symmetric clamping:** Â±15% adjustment ensures bidirectional feedback (positive reinforcement, negative correction).
 6. **Path safety:** ISO timestamp escaping handled automatically by _historyKey; no manual escaping in Firebase rules.
 
 **Operational Sequences:**
@@ -1227,7 +1423,7 @@ Sequence 1: Prediction snapshot and validation
 1. Alert stream triggers predictive computation in worker.
 2. handlePredictions() writes timestamped snapshot to ai_predictions/history/{key}.json with validated: false.
 3. handlePredictions() writes latest to ai_predictions/latest.json.
-4. Next cron run: validatePredictions() finds eligible snapshot (≥24h old).
+4. Next cron run: validatePredictions() finds eligible snapshot (â‰¥24h old).
 5. Matches predictions against alerts within etaHours window.
 6. Writes validation object with accuracy.
 7. Aggregates macro-average to performance/latest.json.
@@ -1236,9 +1432,9 @@ Sequence 1: Prediction snapshot and validation
 Sequence 2: Reinforcement adjustment application
 1. Worker loads adjustments from ai_feedback/adjustments.json (keyed by supervisorId).
 2. During AI assignment scoring, scoreSupervisor() applies clamped adjustment.
-3. Final score = base score + adjustment (if |adjustment| ≥ 0.01).
+3. Final score = base score + adjustment (if |adjustment| â‰¥ 0.01).
 4. Reason appended to decision log for traceability.
-5. No adjustment present → defaults to 0 (no change from prior behavior).
+5. No adjustment present â†’ defaults to 0 (no change from prior behavior).
 
 ---
 
@@ -1251,14 +1447,14 @@ Implemented comprehensive personalization of morning briefings with three integr
 The briefing system now supports per-factory data aggregation alongside global briefings.
 
 Worker side (cloudflare_worker.js):
-- `_briefingFactorySlug(factory)`: Sanitizes factory name to Firebase-safe path segment by converting to lowercase, replacing spaces with underscores, and removing special characters (e.g., "Quality Line 1" → "quality_line_1").
+- `_briefingFactorySlug(factory)`: Sanitizes factory name to Firebase-safe path segment by converting to lowercase, replacing spaces with underscores, and removing special characters (e.g., "Quality Line 1" â†’ "quality_line_1").
 - `handleBriefing()`: Accepts optional `?factory` query parameter. If present, worker aggregates statistics scoped to only that factory's alerts.
   - Fetches validated accuracy from `ai_predictions/performance/latest.json`.
   - Fetches latest predictions from `ai_predictions/latest.json` and filters predictions by factory.
   - Selects top prediction by confidence score (highest first, factory-scoped).
   - Calls `_topSupervisorWeek(alertsMap, usersMap, factory)` to rank supervisors.
   - Writes briefing to factory-scoped Firebase path: `ai_briefing/factory/{slug}/latest.json`.
-- Null or "all" factory parameter → writes to global path: `ai_briefing/latest.json`.
+- Null or "all" factory parameter â†’ writes to global path: `ai_briefing/latest.json`.
 
 **Predictive Accuracy Injection:**
 
@@ -1291,7 +1487,7 @@ HTTP and stream services refactored for per-factory state management.
 
 PredictiveRepository (lib/services/predictive_repository.dart):
 - `_briefingCache`, `_briefingCachedAt`: Changed from single values to `Map<String?, ...>` for per-factory caching.
-- `_briefingPath(String? factory)`: Returns correct Firebase path (null/'all' → 'ai_briefing/latest', string → 'ai_briefing/factory/{slug}/latest').
+- `_briefingPath(String? factory)`: Returns correct Firebase path (null/'all' â†’ 'ai_briefing/latest', string â†’ 'ai_briefing/factory/{slug}/latest').
 - `getBriefing({bool force, String? factory})`: Caches per factory key. URL-encodes factory query parameter for HTTP transport.
 - `briefingStream({String? factory})`: Reads from factory-specific path via _briefingPath.
 
@@ -1325,7 +1521,7 @@ AI Morning Briefing Hero widget (lib/widgets/overview/ai_morning_briefing_hero.d
   - **Factory scope badge** (green): Shows only when factoryScope != null. Displays factory name.
   - **Accuracy chip** (purple): Shows "Accuracy: X%" when accuracyPct available. Includes tooltip: "Based on N validated predictions."
   - **Predictive insight chip** (amber): Shows "{type} on {convoyeur} Line {poste}" with confidence score. Tooltip: "Expected alert type and location."
-  - **Top supervisor chip** (blue): Shows "{name} — {count} resolved" highlighting top performer's achievement. Tooltip: "{name} specialized in {topType}."
+  - **Top supervisor chip** (blue): Shows "{name} â€” {count} resolved" highlighting top performer's achievement. Tooltip: "{name} specialized in {topType}."
 - Adjusted summaryMaxLines: Increased compact mode from 2 to 5 lines to accommodate full briefing paragraph.
 
 **Firebase Paths:**
@@ -1355,7 +1551,7 @@ Sequence: Morning briefing with factory personalization
    - Factory scope badge (green, "Production Line 2").
    - Accuracy chip (purple, "Accuracy: 72%").
    - Predictive insight chip (amber, "Quality on Conveyor A Line 3").
-   - Top supervisor chip (blue, "Ahmed — 8 resolved").
+   - Top supervisor chip (blue, "Ahmed â€” 8 resolved").
    - Full briefing paragraph below.
 
 **Design Decisions:**
@@ -1413,7 +1609,7 @@ Implemented a structural redesign of the Supervisors area to unify assignment op
 
 ## AG. Security Agent Architecture and Threat Mitigation (May 2026)
 
-Implemented a comprehensive security AI agent in the Cloudflare Worker to protect AlertSys from external threats including DDoS, prompt injection, data flooding, enumeration attacks, replay/race attacks, and credential abuse.
+Implemented a comprehensive security AI agent in the Cloudflare Worker to protect Smart Industrial Alert - SIA from external threats including DDoS, prompt injection, data flooding, enumeration attacks, replay/race attacks, and credential abuse.
 
 **Security Policy Architecture:**
 
@@ -1454,7 +1650,7 @@ The security agent operates as a centralized guard across all worker endpoints, 
 
 7. **Main Guard Function**
    - `_securityGuard(request, env, options)`: Central orchestrator called at entry of all HTTP endpoints.
-   - Sequence: rate limit → body size validation → JSON parse → text field scanning → sanitization → fire-and-forget audit log.
+   - Sequence: rate limit â†’ body size validation â†’ JSON parse â†’ text field scanning â†’ sanitization â†’ fire-and-forget audit log.
    - Returns object: `{ ok: true/false, body: parsed JSON, response: Response if error }`.
 
 8. **Endpoint Integration**
@@ -1471,7 +1667,7 @@ Scheduled handler modified to support security:
 1. Acquire distributed lock.
 2. Reset _securityActionsCounter to 0.
 3. Load core data in parallel.
-4. Run _runSecurityAnomalyScan() — emits heartbeat, populates counter.
+4. Run _runSecurityAnomalyScan() â€” emits heartbeat, populates counter.
 5. Continue normal alert/escalation/assignment processing.
 6. Write cron health with securityActions field.
 7. Release lock.
@@ -1588,7 +1784,7 @@ New file: `lib/screens/admin/developer_tab.dart` (~900 lines) provides real-time
 2. **Fire-and-forget security writes**: Non-blocking Promise.resolve() pattern ensures zero latency added to user requests.
 3. **Stateful settings button**: GlobalKey maintained in `_SettingsIconButton.State` ensures popup menu can anchor without rebuilds.
 4. **Color coding**: Kind-to-color mapping provides quick visual feedback.
-5. **Responsive grid layout**: Security cards adapt 2-column (wide) → 1-column (mobile) automatically.
+5. **Responsive grid layout**: Security cards adapt 2-column (wide) â†’ 1-column (mobile) automatically.
 6. **Lazy stream subscription**: _ensureStreamSub() pattern prevents duplicate subscriptions on rebuild.
 
 **Operational Sequence:**
@@ -1623,22 +1819,22 @@ The Production Manager can now cap how far a rostered supervisor's home factory 
 - New nullable `crossFactoryMaxDistanceKm` (double) field on `ShiftModel` (`lib/models/shift_model.dart`). `null` or `<= 0` means unlimited.
 - Shift Creation/Edit dialog (`lib/screens/admin/shift_creation_dialog.dart`) shows a "Max cross-factory distance" input (km) inside the AI Commander card, revealed only when "Handle Cross-factory Transfer" is enabled. Empty input = no cap.
 - `database.rules.json` validates the field: optional number, `>= 0 && <= 20000`.
-- Shift card (`lib/widgets/shifts/shift_card.dart`) renders a `_DistanceLimitBadge` ("≤ N km") alongside the AI badge when the cap is set.
+- Shift card (`lib/widgets/shifts/shift_card.dart`) renders a `_DistanceLimitBadge` ("â‰¤ N km") alongside the AI badge when the cap is set.
 - Worker gate (deployed `cloudflare_ai_worker.js` `runAIAssignments` and modular `worker/shift_commander.js`):
   - When the active shift defines `crossFactoryMaxDistanceKm`, any cross-factory candidate whose haversine distance to the alert factory exceeds the cap is skipped before scoring.
   - In the deployed AI worker, the existing `haversineDistance` between the supervisor's fresh GPS and the inferred alert-factory location feeds a new gate `gate_4_distance_threshold` that emits a structured `cross_factory_blocked` log via `writeShiftAiLog`. Missing/stale distance with a cap configured fails closed.
   - In the modular worker, a new `haversineKm` helper plus `loadFactoryLocations` (in `worker/utils.js`) compare the two factories' static `{lat,lng}` from `hierarchy/factories` (falling back to `factories/`); failures are logged as `skipped` shift entries with the offending distance.
-- Same-factory candidates and manually-initiated collaborations are unaffected — the gate only applies to AI Commander cross-factory transfers.
+- Same-factory candidates and manually-initiated collaborations are unaffected â€” the gate only applies to AI Commander cross-factory transfers.
 
 **2. AI log "Details" affordance on both panels.**
 
-- `AILogsPanel` (`lib/widgets/ai_logs_panel.dart`) — the existing Details button now opens a dialog that, in addition to confidence / breakdown / "why not others", renders the full unredacted `entry.reason` text in a selectable monospace-friendly block. Skipped entries still hydrate missing breakdown/considered-candidates from `ai_decisions/{alertId}` on demand.
+- `AILogsPanel` (`lib/widgets/ai_logs_panel.dart`) â€” the existing Details button now opens a dialog that, in addition to confidence / breakdown / "why not others", renders the full unredacted `entry.reason` text in a selectable monospace-friendly block. Skipped entries still hydrate missing breakdown/considered-candidates from `ai_decisions/{alertId}` on demand.
 - `ShiftLogsPanel` (`lib/widgets/shifts/shift_logs_panel.dart`) gained a Details button per log tile and a new `_ShiftLogDetailsDialog` that shows timestamp, action ID, shift ID, alert label, supervisor (with UID), factory, confidence, kind label (including `cross_factory_blocked` / `transfer`), and the full reason text. The dialog reuses `entry.reason` so worker-side gate diagnostics (e.g. "Cross-factory transfer blocked: X is 142.0 km away (shift limit 80.0 km).") surface verbatim.
 
 **Tests:**
 
-- `worker_test/haversine.test.js` — verifies identity, real-world distance (Tunis↔Sfax), symmetry, null handling.
-- `test/models/shift_model_test.dart` — verifies `crossFactoryMaxDistanceKm` round-trips, that zero/null are omitted from `toMap`, that fromMap coerces numeric strings, and that `copyWith(clearCrossFactoryMaxDistanceKm: true)` removes the cap.
+- `worker_test/haversine.test.js` â€” verifies identity, real-world distance (Tunisâ†”Sfax), symmetry, null handling.
+- `test/models/shift_model_test.dart` â€” verifies `crossFactoryMaxDistanceKm` round-trips, that zero/null are omitted from `toMap`, that fromMap coerces numeric strings, and that `copyWith(clearCrossFactoryMaxDistanceKm: true)` removes the cap.
 - `npm test`: 12 suites / 158 tests pass. `flutter test`: 202 / 202 tests pass.
 
 **Deployment note:** the distance gate runs in the deployed AI worker (`cloudflare_ai_worker.js`). After merge, redeploy with `npx wrangler deploy --config wrangler.ai.toml`.
@@ -1746,5 +1942,6 @@ The Production Manager can now cap how far a rostered supervisor's home factory 
 - worker_test/: Jest tests for worker pure functions.
 - TESTING.md: testing strategy and CI expectations.
 
-This is the current architecture baseline for AlertSys (May 2026).
+This is the current architecture baseline for Smart Industrial Alert - SIA (May 2026).
+
 

@@ -1,10 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:csv/csv.dart';
-import 'package:excel/excel.dart' as excel;
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -13,13 +10,15 @@ import 'package:universal_html/html.dart' as html;
 
 import '../models/alert_model.dart';
 import '../models/shift_model.dart';
+import '../models/supervisor_presence.dart';
 import 'pdf/pdf_common.dart';
+import 'presence_service.dart';
 
 /// Single timeline action that occurred during a shift window.
 class ShiftAction {
   final DateTime at;
   final String
-      kind; // created, claimed, resolved, ai_assigned, escalated, handover
+  kind; // created, claimed, resolved, ai_assigned, escalated, handover
   final String alertLabel;
   final String alertType;
   final String factory;
@@ -39,6 +38,26 @@ class ShiftAction {
   });
 }
 
+class ShiftReportExportOptions {
+  final String? reportName;
+  final String factory;
+  final Set<String> actionKinds;
+
+  const ShiftReportExportOptions({
+    this.reportName,
+    this.factory = 'all',
+    this.actionKinds = const <String>{},
+  });
+
+  bool includes(ShiftAction action) {
+    if (factory != 'all' && action.factory != factory) return false;
+    if (actionKinds.isNotEmpty && !actionKinds.contains(action.kind)) {
+      return false;
+    }
+    return true;
+  }
+}
+
 class ShiftPdfService {
   static String _safe(String v) => PdfTextSafe.normalize(v);
 
@@ -47,13 +66,28 @@ class ShiftPdfService {
   static Future<void> exportAndShare({
     required ShiftModel shift,
     required DateTime day,
+    ShiftReportExportOptions options = const ShiftReportExportOptions(),
   }) async {
     final window = _windowFor(shift, day);
-    final actions = await _loadActions(shift, window);
-    final doc = await _buildDoc(shift: shift, window: window, actions: actions);
+    final actions = (await _loadActions(
+      shift,
+      window,
+    )).where(options.includes).toList();
+    final presence = await _loadPresence(shift);
+    final doc = await _buildDoc(
+      shift: shift,
+      window: window,
+      actions: actions,
+      presence: presence,
+      reportName: options.reportName,
+    );
     final bytes = await doc.save();
+    final baseName = (options.reportName ?? '').trim().isEmpty
+        ? shift.name
+        : options.reportName!.trim();
+    final slug = _slug(baseName);
     final filename =
-        'alertsys_shift_${_slug(shift.name)}_${_fmtDateFile(day)}.pdf';
+        'SIA_shift_${slug.isEmpty ? "report" : slug}_${_fmtDateFile(day)}.pdf';
     if (kIsWeb) {
       final blob = html.Blob([bytes], 'application/pdf');
       final url = html.Url.createObjectUrlFromBlob(blob);
@@ -66,141 +100,36 @@ class ShiftPdfService {
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$filename');
     await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'AlertSys shift report — ${shift.name}',
-    );
+    await Share.shareXFiles([
+      XFile(file.path),
+    ], text: 'SIA shift report - ${shift.name}');
   }
 
-  // ──────────────────────────────────────────────────────────────────────
-  // DATA LOADING
-  // ──────────────────────────────────────────────────────────────────────
-
-  static Future<void> exportCsvAndShare({
+  @visibleForTesting
+  static Future<pw.Document> buildDocumentForTesting({
     required ShiftModel shift,
     required DateTime day,
-  }) async {
-    final window = _windowFor(shift, day);
-    final actions = await _loadActions(shift, window);
-    final rows =
-        _spreadsheetRows(shift: shift, window: window, actions: actions);
-    final csv = const ListToCsvConverter().convert(rows);
-    final filename =
-        'alertsys_shift_${_slug(shift.name)}_${_fmtDateFile(day)}.csv';
-    await _downloadOrShare(
-      bytes: utf8.encode(csv),
-      filename: filename,
-      mimeType: 'text/csv',
-      shareText: 'AlertSys shift CSV - ${shift.name}',
-    );
-  }
-
-  static Future<void> exportExcelAndShare({
-    required ShiftModel shift,
-    required DateTime day,
-  }) async {
-    final window = _windowFor(shift, day);
-    final actions = await _loadActions(shift, window);
-    final workbook = excel.Excel.createExcel();
-    final sheet = workbook['Shift Report'];
-
-    for (final row in _spreadsheetRows(
-      shift: shift,
-      window: window,
-      actions: actions,
-    )) {
-      sheet.appendRow(
-          row.map((value) => excel.TextCellValue('$value')).toList());
-    }
-
-    final bytes = workbook.encode();
-    if (bytes == null) return;
-    final filename =
-        'alertsys_shift_${_slug(shift.name)}_${_fmtDateFile(day)}.xlsx';
-    await _downloadOrShare(
-      bytes: bytes,
-      filename: filename,
-      mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      shareText: 'AlertSys shift Excel - ${shift.name}',
-    );
-  }
-
-  static Future<void> _downloadOrShare({
-    required List<int> bytes,
-    required String filename,
-    required String mimeType,
-    required String shareText,
-  }) async {
-    if (kIsWeb) {
-      final blob = html.Blob([bytes], mimeType);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      html.AnchorElement(href: url)
-        ..setAttribute('download', filename)
-        ..click();
-      html.Url.revokeObjectUrl(url);
-      return;
-    }
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/$filename');
-    await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles([XFile(file.path)], text: shareText);
-  }
-
-  static List<List<dynamic>> _spreadsheetRows({
-    required ShiftModel shift,
-    required ({DateTime start, DateTime end}) window,
     required List<ShiftAction> actions,
+    required List<SupervisorPresence> presence,
+    String? reportName,
   }) {
-    final ready = shift.supervisors.where((s) => s.ready).length;
-    final rows = <List<dynamic>>[
-      ['AlertSys Shift Report'],
-      ['Shift', shift.name],
-      [
-        'Window',
-        '${_fmtDateTime(window.start)} -> ${_fmtDateTime(window.end)}'
-      ],
-      ['Kind', _kindLabel(shift.kind)],
-      ['AI Commander', shift.aiCommander ? 'Enabled' : 'Disabled'],
-      ['Readiness', '$ready/${shift.supervisors.length} ready'],
-      ['Actions', actions.length],
-      [],
-      [
-        'Time',
-        'Action',
-        'Alert',
-        'Type',
-        'Factory',
-        'Actor',
-        'AI Confidence',
-        'Detail',
-      ],
-    ];
-
-    if (actions.isEmpty) {
-      rows.add(['-', 'No actions recorded', '-', '-', '-', '-', '-', '-']);
-      return rows;
-    }
-
-    for (final action in actions) {
-      rows.add([
-        _fmtDateTime(action.at),
-        _kindLabelText(action.kind),
-        action.alertLabel,
-        action.alertType,
-        action.factory,
-        action.actor,
-        action.aiConfidence == null
-            ? ''
-            : '${(action.aiConfidence! * 100).round()}%',
-        action.detail,
-      ]);
-    }
-    return rows;
+    return _buildDoc(
+      shift: shift,
+      window: _windowFor(shift, day),
+      actions: actions,
+      presence: presence,
+      reportName: reportName,
+    );
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DATA LOADING
+  // ─────────────────────────────────────────────────────────────────────────
 
   static ({DateTime start, DateTime end}) _windowFor(
-      ShiftModel shift, DateTime day) {
+    ShiftModel shift,
+    DateTime day,
+  ) {
     final base = DateTime(day.year, day.month, day.day);
     final start = base.add(Duration(minutes: shift.startMinutes));
     DateTime end = base.add(Duration(minutes: shift.endMinutes));
@@ -208,6 +137,16 @@ class ShiftPdfService {
       end = end.add(const Duration(days: 1));
     }
     return (start: start, end: end);
+  }
+
+  static Future<List<SupervisorPresence>> _loadPresence(
+    ShiftModel shift,
+  ) async {
+    try {
+      return await PresenceService().fetchPresenceOnce(shift.id);
+    } catch (_) {
+      return const <SupervisorPresence>[];
+    }
   }
 
   static Future<List<ShiftAction>> _loadActions(
@@ -235,107 +174,127 @@ class ShiftPdfService {
       }
 
       if (inWindow(alert.timestamp)) {
-        actions.add(ShiftAction(
-          at: alert.timestamp,
-          kind: 'created',
-          alertLabel: alert.alertLabel,
-          alertType: alert.type,
-          factory: alert.usine,
-          detail: alert.description.isEmpty
-              ? 'Alert created at ${alert.usine}, conv ${alert.convoyeur}, line ${alert.poste}'
-              : alert.description,
-          actor: 'System',
-        ));
+        actions.add(
+          ShiftAction(
+            at: alert.timestamp,
+            kind: 'created',
+            alertLabel: alert.alertLabel,
+            alertType: alert.type,
+            factory: alert.usine,
+            detail: alert.description.isEmpty
+                ? 'Alert created at ${alert.usine}, conv ${alert.convoyeur}, line ${alert.poste}'
+                : alert.description,
+            actor: 'System',
+          ),
+        );
       }
 
       if (alert.aiAssigned &&
           alert.aiAssignedAt != null &&
           inWindow(alert.aiAssignedAt)) {
-        actions.add(ShiftAction(
-          at: alert.aiAssignedAt!,
-          kind: 'ai_assigned',
-          alertLabel: alert.alertLabel,
-          alertType: alert.type,
-          factory: alert.usine,
-          detail: alert.aiAssignmentReason ?? 'AI commander assignment',
-          actor: alert.superviseurName ?? 'AI',
-          aiConfidence: alert.aiConfidence,
-        ));
+        actions.add(
+          ShiftAction(
+            at: alert.aiAssignedAt!,
+            kind: 'ai_assigned',
+            alertLabel: alert.alertLabel,
+            alertType: alert.type,
+            factory: alert.usine,
+            detail: alert.aiAssignmentReason ?? 'AI commander assignment',
+            actor: alert.superviseurName ?? 'AI',
+            aiConfidence: alert.aiConfidence,
+          ),
+        );
       } else if (alert.takenAtTimestamp != null &&
           inWindow(alert.takenAtTimestamp)) {
-        actions.add(ShiftAction(
-          at: alert.takenAtTimestamp!,
-          kind: 'claimed',
-          alertLabel: alert.alertLabel,
-          alertType: alert.type,
-          factory: alert.usine,
-          detail:
-              'Claimed by ${alert.superviseurName ?? "supervisor"} at ${alert.usine}',
-          actor: alert.superviseurName ?? '-',
-        ));
+        actions.add(
+          ShiftAction(
+            at: alert.takenAtTimestamp!,
+            kind: 'claimed',
+            alertLabel: alert.alertLabel,
+            alertType: alert.type,
+            factory: alert.usine,
+            detail:
+                'Claimed by ${alert.superviseurName ?? "supervisor"} at ${alert.usine}',
+            actor: alert.superviseurName ?? '-',
+          ),
+        );
       }
 
       if (alert.resolvedAt != null && inWindow(alert.resolvedAt)) {
-        actions.add(ShiftAction(
-          at: alert.resolvedAt!,
-          kind: 'resolved',
-          alertLabel: alert.alertLabel,
-          alertType: alert.type,
-          factory: alert.usine,
-          detail: alert.resolutionReason?.isNotEmpty == true
-              ? alert.resolutionReason!
-              : 'Resolved',
-          actor: alert.superviseurName ?? '-',
-        ));
+        actions.add(
+          ShiftAction(
+            at: alert.resolvedAt!,
+            kind: 'resolved',
+            alertLabel: alert.alertLabel,
+            alertType: alert.type,
+            factory: alert.usine,
+            detail: alert.resolutionReason?.isNotEmpty == true
+                ? alert.resolutionReason!
+                : 'Resolved',
+            actor: alert.superviseurName ?? '-',
+          ),
+        );
       }
 
       if (alert.isEscalated &&
           alert.escalatedAt != null &&
           inWindow(alert.escalatedAt)) {
-        actions.add(ShiftAction(
-          at: alert.escalatedAt!,
-          kind: 'escalated',
-          alertLabel: alert.alertLabel,
-          alertType: alert.type,
-          factory: alert.usine,
-          detail: 'Escalated as critical',
-          actor: 'System',
-        ));
+        actions.add(
+          ShiftAction(
+            at: alert.escalatedAt!,
+            kind: 'escalated',
+            alertLabel: alert.alertLabel,
+            alertType: alert.type,
+            factory: alert.usine,
+            detail: 'Escalated as critical',
+            actor: 'System',
+          ),
+        );
       }
     }
 
     if (shift.lastHandoverAt != null &&
         !shift.lastHandoverAt!.isBefore(window.start) &&
-        shift.lastHandoverAt!
-            .isBefore(window.end.add(const Duration(minutes: 30)))) {
-      actions.add(ShiftAction(
-        at: shift.lastHandoverAt!,
-        kind: 'handover',
-        alertLabel: '-',
-        alertType: '-',
-        factory: '-',
-        detail: shift.lastHandoverSummary ?? 'AI handover generated',
-        actor: 'AI Commander',
-      ));
+        shift.lastHandoverAt!.isBefore(
+          window.end.add(const Duration(minutes: 30)),
+        )) {
+      actions.add(
+        ShiftAction(
+          at: shift.lastHandoverAt!,
+          kind: 'handover',
+          alertLabel: '-',
+          alertType: '-',
+          factory: '-',
+          detail: shift.lastHandoverSummary ?? 'AI handover generated',
+          actor: 'AI Commander',
+        ),
+      );
     }
 
     actions.sort((a, b) => a.at.compareTo(b.at));
     return actions;
   }
 
-  // ──────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   // PDF BUILD
-  // ──────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
 
   static Future<pw.Document> _buildDoc({
     required ShiftModel shift,
     required ({DateTime start, DateTime end}) window,
     required List<ShiftAction> actions,
+    required List<SupervisorPresence> presence,
+    String? reportName,
   }) async {
+    final resolvedReportName = (reportName ?? '').trim().isEmpty
+        ? 'Shift Report - ${shift.name}'
+        : reportName!.trim();
+    final pdfTheme = await PdfFontTheme.load();
     final doc = pw.Document(
-      title: 'Shift Report — ${shift.name}',
-      author: 'AlertSys',
-      creator: 'AlertSys Shift Commander',
+      theme: pdfTheme,
+      title: resolvedReportName,
+      author: 'Smart Industrial Alert - SIA',
+      creator: 'Smart Industrial Alert - SIA Shift Commander',
     );
 
     final created = actions.where((a) => a.kind == 'created').length;
@@ -357,7 +316,7 @@ class ShiftPdfService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.fromLTRB(28, 28, 28, 36),
-        theme: pw.ThemeData.withFont(),
+        theme: pdfTheme,
         header: (ctx) => ctx.pageNumber == 1
             ? pw.SizedBox.shrink()
             : _runningHeader(shift, window),
@@ -374,7 +333,11 @@ class ShiftPdfService {
             escalated: escalated,
           ),
           pw.SizedBox(height: 14),
-          _shiftMetaCard(shift),
+          _shiftMetaCard(shift, resolvedReportName),
+          pw.SizedBox(height: 14),
+          _sectionHeader('Supervisor presence', shift.supervisors.length),
+          pw.SizedBox(height: 6),
+          _presenceTable(shift, presence),
           pw.SizedBox(height: 14),
           if (byFactory.isNotEmpty) ...[
             _sectionHeader('Alerts by factory', byFactory.length),
@@ -384,7 +347,9 @@ class ShiftPdfService {
           ],
           if (bySupervisor.isNotEmpty) ...[
             _sectionHeader(
-                'Top supervisors (resolutions)', bySupervisor.length),
+              'Top supervisors (resolutions)',
+              bySupervisor.length,
+            ),
             pw.SizedBox(height: 6),
             _barBreakdown(bySupervisor, PdfPalette.green),
             pw.SizedBox(height: 14),
@@ -392,14 +357,15 @@ class ShiftPdfService {
           if (aiAssigned > 0) ...[
             _sectionHeader('AI Shift Commander actions', aiAssigned),
             pw.SizedBox(height: 6),
-            _aiActionsList(
-                actions.where((a) => a.kind == 'ai_assigned').toList()),
+            ..._aiActionsList(
+              actions.where((a) => a.kind == 'ai_assigned').toList(),
+            ),
             pw.SizedBox(height: 14),
           ],
           _sectionHeader('Action timeline', actions.length),
           pw.SizedBox(height: 6),
           _timelineHeader(),
-          _timeline(actions),
+          ..._timeline(actions),
           if (shift.lastHandoverSummary != null) ...[
             pw.SizedBox(height: 14),
             _handoverCard(shift),
@@ -413,81 +379,122 @@ class ShiftPdfService {
     return doc;
   }
 
-  // ── Hero ─────────────────────────────────────────────────────────────
+  // ── Hero ────────────────────────────────────────────────────────────────
+  // Light theme: white card on a thin navy accent stripe. No giant purple
+  // background — the previous design made the text unreadable.
   static pw.Widget _hero(
     ShiftModel shift,
     ({DateTime start, DateTime end}) window,
     int totalActions,
   ) {
     return pw.Container(
-      padding: const pw.EdgeInsets.all(18),
-      decoration: const pw.BoxDecoration(color: PdfPalette.navy),
-      child: pw.Column(
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Text(
-            'ALERTSYS - SHIFT REPORT',
-            style: pw.TextStyle(
-              fontSize: 10,
-              color: PdfColors.white,
-              fontWeight: pw.FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            _safe(shift.name),
-            style: pw.TextStyle(
-              fontSize: 26,
-              color: PdfColors.white,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            'A complete record of every action that occurred during this shift, '
-            'including AI Shift Commander decisions and handover output.',
-            style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
-          ),
-          pw.SizedBox(height: 12),
-          pw.Row(children: [
-            _heroChip('${_kindLabel(shift.kind)} shift'),
-            pw.SizedBox(width: 8),
-            _heroChip(
-                '${_fmtDateTime(window.start)}  ->  ${_fmtDateTime(window.end)}'),
-            pw.SizedBox(width: 8),
-            if (shift.aiCommander) _heroChip('AI Commander ON'),
-            pw.Spacer(),
-            pw.Text(
-              '$totalActions actions',
-              style: pw.TextStyle(
-                fontSize: 16,
-                color: PdfColors.white,
-                fontWeight: pw.FontWeight.bold,
+          // Thin navy accent rail.
+          pw.Container(width: 6, height: 150, color: PdfPalette.navy),
+          pw.Expanded(
+            child: pw.Padding(
+              padding: const pw.EdgeInsets.fromLTRB(18, 16, 18, 16),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Row(
+                    children: [
+                      pw.Text(
+                        'SIA - SHIFT REPORT',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          color: PdfPalette.navy,
+                          fontWeight: pw.FontWeight.bold,
+                          letterSpacing: 1.4,
+                        ),
+                      ),
+                      pw.Spacer(),
+                      _heroChip(
+                        _kindLabel(shift.kind),
+                        color: _kindColorByKind(shift.kind),
+                      ),
+                      pw.SizedBox(width: 6),
+                      if (shift.aiCommander)
+                        _heroChip('AI Commander', color: PdfPalette.blue),
+                    ],
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Text(
+                    _safe(shift.name),
+                    style: pw.TextStyle(
+                      fontSize: 22,
+                      color: PdfPalette.text,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    '${_fmtDateTime(window.start)}  ->  ${_fmtDateTime(window.end)}',
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      color: PdfPalette.muted,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Text(
+                    'A complete record of every action that occurred during '
+                    'this shift, including supervisor presence, AI Shift '
+                    'Commander decisions and handover output.',
+                    style: const pw.TextStyle(
+                      fontSize: 9,
+                      color: PdfPalette.muted,
+                    ),
+                  ),
+                  pw.SizedBox(height: 12),
+                  pw.Row(
+                    children: [
+                      _kpi(
+                        'Actions',
+                        '$totalActions',
+                        PdfPalette.navy,
+                        compact: true,
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ]),
+          ),
         ],
       ),
     );
   }
 
-  static pw.Widget _heroChip(String label) {
+  static pw.Widget _heroChip(String label, {PdfColor? color}) {
+    final c = color ?? PdfPalette.navy;
     return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      color: const PdfColor(1, 1, 1, 0.18),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: pw.BoxDecoration(
+        color: _withAlpha(c, 0.12),
+        border: pw.Border.all(color: c, width: 0.6),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+      ),
       child: pw.Text(
         _safe(label),
         style: pw.TextStyle(
-          fontSize: 9,
-          color: PdfColors.white,
+          fontSize: 8,
+          color: c,
           fontWeight: pw.FontWeight.bold,
+          letterSpacing: 0.4,
         ),
       ),
     );
   }
 
-  // ── KPI strip ────────────────────────────────────────────────────────
+  // ── KPI strip ───────────────────────────────────────────────────────────
   static pw.Widget _kpiStrip({
     required int total,
     required int created,
@@ -496,57 +503,74 @@ class ShiftPdfService {
     required int aiAssigned,
     required int escalated,
   }) {
-    return pw.Row(children: [
-      _kpi('Actions', '$total', PdfPalette.navy),
-      _gap(),
-      _kpi('Created', '$created', PdfPalette.orange),
-      _gap(),
-      _kpi('Claimed', '$claimed', PdfPalette.blue),
-      _gap(),
-      _kpi('Resolved', '$resolved', PdfPalette.green),
-      _gap(),
-      _kpi('AI calls', '$aiAssigned', PdfPalette.purple),
-      _gap(),
-      _kpi('Escalated', '$escalated', PdfPalette.red),
-    ]);
+    return pw.Row(
+      children: [
+        _kpi('Actions', '$total', PdfPalette.navy),
+        _gap(),
+        _kpi('Created', '$created', PdfPalette.orange),
+        _gap(),
+        _kpi('Claimed', '$claimed', PdfPalette.blue),
+        _gap(),
+        _kpi('Resolved', '$resolved', PdfPalette.green),
+        _gap(),
+        _kpi('AI calls', '$aiAssigned', PdfPalette.navy),
+        _gap(),
+        _kpi('Escalated', '$escalated', PdfPalette.red),
+      ],
+    );
   }
 
   static pw.Widget _gap() => pw.SizedBox(width: 8);
 
-  static pw.Widget _kpi(String label, String value, PdfColor accent) {
-    return pw.Expanded(
-      child: pw.Container(
-        padding: const pw.EdgeInsets.fromLTRB(10, 9, 10, 10),
-        color: PdfPalette.cardBg,
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              label.toUpperCase(),
-              style: pw.TextStyle(
-                fontSize: 7,
-                color: accent,
-                fontWeight: pw.FontWeight.bold,
-                letterSpacing: 0.8,
-              ),
+  static pw.Widget _kpi(
+    String label,
+    String value,
+    PdfColor accent, {
+    bool compact = false,
+  }) {
+    final body = pw.Container(
+      padding: pw.EdgeInsets.fromLTRB(
+        10,
+        compact ? 6 : 9,
+        10,
+        compact ? 8 : 10,
+      ),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: _withAlpha(accent, 0.4)),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            label.toUpperCase(),
+            style: pw.TextStyle(
+              fontSize: 7,
+              color: accent,
+              fontWeight: pw.FontWeight.bold,
+              letterSpacing: 0.8,
             ),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              value,
-              style: pw.TextStyle(
-                fontSize: 22,
-                color: accent,
-                fontWeight: pw.FontWeight.bold,
-              ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: compact ? 18 : 22,
+              color: PdfPalette.text,
+              fontWeight: pw.FontWeight.bold,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+    return compact ? body : pw.Expanded(child: body);
   }
 
-  // ── Shift meta ───────────────────────────────────────────────────────
-  static pw.Widget _shiftMetaCard(ShiftModel shift) {
+  // ── Shift meta ──────────────────────────────────────────────────────────
+  // AI model row removed — the PM doesn't need to know which Llama variant
+  // backs the commander.
+  static pw.Widget _shiftMetaCard(ShiftModel shift, String reportName) {
     final supervisors = shift.supervisors.map((s) => s.name).join(', ');
     final commanderTasks = shift.fullControl
         ? 'Full control'
@@ -558,112 +582,308 @@ class ShiftPdfService {
     return pw.Container(
       padding: const pw.EdgeInsets.all(14),
       decoration: pw.BoxDecoration(
-        color: PdfPalette.cardBg,
+        color: PdfColors.white,
         border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
       ),
-      child: pw.Row(
+      child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Expanded(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                _metaRow('Shift kind', _kindLabel(shift.kind)),
-                _metaRow('Capacity',
-                    '${shift.supervisors.length}/${shift.maxSupervisors}'),
-                _metaRow('Randomized', shift.randomize ? 'Yes' : 'No'),
-              ],
+          pw.Text(
+            _safe(reportName),
+            style: pw.TextStyle(
+              fontSize: 12,
+              color: PdfPalette.text,
+              fontWeight: pw.FontWeight.bold,
             ),
           ),
-          pw.SizedBox(width: 24),
-          pw.Expanded(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                _metaRow(
-                    'AI Commander', shift.aiCommander ? 'Enabled' : 'Disabled'),
-                _metaRow('AI model', shift.aiModel),
-                _metaRow(
-                  'Tasks checklist',
-                  commanderTasks.isEmpty ? 'None selected' : commanderTasks,
-                ),
-              ],
-            ),
+          pw.SizedBox(height: 10),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              _metaBox('Shift kind', _kindLabel(shift.kind)),
+              pw.SizedBox(width: 8),
+              _metaBox(
+                'Capacity',
+                '${shift.supervisors.length}/${shift.maxSupervisors}',
+              ),
+              pw.SizedBox(width: 8),
+              _metaBox(
+                'AI Commander',
+                shift.aiCommander ? 'Enabled' : 'Disabled',
+              ),
+              pw.SizedBox(width: 8),
+              _metaBox('Randomized', shift.randomize ? 'Yes' : 'No'),
+            ],
           ),
-          pw.SizedBox(width: 24),
-          pw.Expanded(
-            flex: 2,
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text('SUPERVISORS',
-                    style: pw.TextStyle(
-                      fontSize: 7,
-                      color: PdfPalette.muted,
-                      fontWeight: pw.FontWeight.bold,
-                      letterSpacing: 0.8,
-                    )),
-                pw.SizedBox(height: 4),
-                pw.Text(
-                  supervisors.isEmpty ? '-' : _safe(supervisors),
-                  style: pw.TextStyle(
-                    fontSize: 10,
-                    color: PdfPalette.text,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
+          pw.SizedBox(height: 8),
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              _metaBox(
+                'Tasks',
+                commanderTasks.isEmpty ? 'None selected' : commanderTasks,
+                flex: 2,
+              ),
+              pw.SizedBox(width: 8),
+              _metaBox(
+                'Supervisors',
+                supervisors.isEmpty ? '-' : supervisors,
+                flex: 3,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  static pw.Widget _metaRow(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(bottom: 6),
-      child: pw.Row(children: [
-        pw.SizedBox(
-          width: 90,
-          child: pw.Text(
-            label.toUpperCase(),
-            style: pw.TextStyle(
-              fontSize: 7,
-              color: PdfPalette.muted,
-              fontWeight: pw.FontWeight.bold,
-              letterSpacing: 0.8,
-            ),
-          ),
+  static pw.Widget _metaBox(String label, String value, {int flex = 1}) {
+    return pw.Expanded(
+      flex: flex,
+      child: pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: pw.BoxDecoration(
+          color: PdfPalette.cardBg,
+          border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
         ),
-        pw.Expanded(
-          child: pw.Text(
-            _safe(value),
-            style: pw.TextStyle(
-              fontSize: 10,
-              color: PdfPalette.text,
-              fontWeight: pw.FontWeight.bold,
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(
+              label.toUpperCase(),
+              maxLines: 1,
+              style: pw.TextStyle(
+                fontSize: 6.5,
+                color: PdfPalette.muted,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 0.6,
+              ),
             ),
-          ),
+            pw.SizedBox(height: 4),
+            pw.Text(
+              _safe(value),
+              maxLines: 2,
+              style: pw.TextStyle(
+                fontSize: 9,
+                color: PdfPalette.text,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ],
         ),
-      ]),
+      ),
     );
   }
 
-  // ── Bar breakdown ────────────────────────────────────────────────────
+  // ── Supervisor presence table ──────────────────────────────────────────
+  // Active = green, Inactive = orange, Absent = red. Each row also shows how
+  // long the supervisor has been in that status.
+  static pw.Widget _presenceTable(
+    ShiftModel shift,
+    List<SupervisorPresence> presence,
+  ) {
+    if (shift.supervisors.isEmpty) {
+      return pw.Container(
+        padding: const pw.EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+        alignment: pw.Alignment.center,
+        decoration: pw.BoxDecoration(
+          color: PdfColors.white,
+          border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+        ),
+        child: pw.Text(
+          'No supervisors assigned to this shift.',
+          style: const pw.TextStyle(fontSize: 10, color: PdfPalette.muted),
+        ),
+      );
+    }
+    final byId = {for (final p in presence) p.supervisorId: p};
+
+    pw.Widget header() => pw.Container(
+      color: PdfPalette.navy,
+      padding: const pw.EdgeInsets.symmetric(vertical: 7, horizontal: 8),
+      child: pw.Row(
+        children: [
+          _cellHeader('SUPERVISOR', flex: 6),
+          _cellHeader('FACTORY', flex: 5),
+          _cellHeader('PRESENCE', flex: 4),
+          _cellHeader('DURATION', flex: 4),
+          _cellHeader('LAST ACTIVITY', flex: 5),
+        ],
+      ),
+    );
+
+    final rows = <pw.Widget>[];
+    for (var i = 0; i < shift.supervisors.length; i++) {
+      final sup = shift.supervisors[i];
+      final p = byId[sup.id];
+      final status = p?.status ?? PresenceStatus.absent;
+      final statusLabel = _presenceLabel(status);
+      final statusColor = _presenceColor(status);
+      final duration = p?.durationInStatus;
+      final durationLabel = duration == null ? '-' : _humanDuration(duration);
+      final lastActive = p?.lastActiveAt;
+      final lastActiveLabel = lastActive == null ? '-' : _fmtTime(lastActive);
+
+      pw.Widget cell(
+        String text,
+        int flex, {
+        PdfColor? color,
+        bool bold = false,
+      }) => pw.Expanded(
+        flex: flex,
+        child: pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+          child: pw.Text(
+            _safe(text),
+            maxLines: 2,
+            style: pw.TextStyle(
+              fontSize: 9,
+              color: color ?? PdfPalette.text,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+      );
+
+      rows.add(
+        pw.Container(
+          color: i.isOdd ? PdfPalette.stripe : PdfColors.white,
+          padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              cell(sup.name, 6, bold: true),
+              cell(
+                sup.factory.isEmpty ? '-' : sup.factory,
+                5,
+                color: PdfPalette.muted,
+              ),
+              pw.Expanded(
+                flex: 4,
+                child: pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    decoration: pw.BoxDecoration(
+                      color: _withAlpha(statusColor, 0.16),
+                      border: pw.Border.all(color: statusColor, width: 0.6),
+                      borderRadius: const pw.BorderRadius.all(
+                        pw.Radius.circular(3),
+                      ),
+                    ),
+                    child: pw.Text(
+                      statusLabel.toUpperCase(),
+                      textAlign: pw.TextAlign.center,
+                      style: pw.TextStyle(
+                        fontSize: 8,
+                        color: statusColor,
+                        fontWeight: pw.FontWeight.bold,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              cell(durationLabel, 4, color: PdfPalette.text, bold: true),
+              cell(lastActiveLabel, 5, color: PdfPalette.muted),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final activeCount = shift.supervisors
+        .where((s) => byId[s.id]?.status == PresenceStatus.active)
+        .length;
+    final inactiveCount = shift.supervisors
+        .where((s) => byId[s.id]?.status == PresenceStatus.inactive)
+        .length;
+    final absentCount = shift.supervisors.length - activeCount - inactiveCount;
+
+    return pw.Column(
+      children: [
+        pw.Container(
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+          ),
+          child: pw.Column(children: [header(), ...rows]),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Row(
+          children: [
+            _legend('Active', PdfPalette.green, activeCount),
+            pw.SizedBox(width: 8),
+            _legend('Inactive', PdfPalette.orange, inactiveCount),
+            pw.SizedBox(width: 8),
+            _legend('Absent', PdfPalette.red, absentCount),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _cellHeader(String label, {required int flex}) =>
+      pw.Expanded(
+        flex: flex,
+        child: pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: 7,
+              color: PdfColors.white,
+              fontWeight: pw.FontWeight.bold,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ),
+      );
+
+  static pw.Widget _legend(String label, PdfColor color, int count) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: pw.BoxDecoration(
+        color: _withAlpha(color, 0.10),
+        border: pw.Border.all(color: color, width: 0.6),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+      ),
+      child: pw.Text(
+        '$label · $count',
+        style: pw.TextStyle(
+          fontSize: 9,
+          color: color,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  // ── Bar breakdown ───────────────────────────────────────────────────────
   static pw.Widget _barBreakdown(Map<String, int> data, PdfColor color) {
     final entries = data.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final maxVal = entries.first.value;
     return pw.Container(
       padding: const pw.EdgeInsets.fromLTRB(14, 12, 14, 12),
-      color: PdfPalette.cardBg,
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfColor.fromHex('#E2E8F0')),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+      ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: entries
-            .map((e) => pw.Padding(
-                  padding: const pw.EdgeInsets.only(bottom: 6),
-                  child: pw.Row(children: [
+            .map(
+              (e) => pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 6),
+                child: pw.Row(
+                  children: [
                     pw.SizedBox(
                       width: 110,
                       child: pw.Text(
@@ -679,19 +899,22 @@ class ShiftPdfService {
                       child: pw.Container(
                         height: 12,
                         color: PdfColor.fromHex('#EEF2F7'),
-                        child: pw.Row(children: [
-                          pw.Expanded(
-                            flex: (e.value / maxVal * 1000)
-                                .round()
-                                .clamp(1, 1000),
-                            child: pw.Container(height: 12, color: color),
-                          ),
-                          pw.Expanded(
-                            flex: (1000 - (e.value / maxVal * 1000).round())
-                                .clamp(0, 999),
-                            child: pw.SizedBox(),
-                          ),
-                        ]),
+                        child: pw.Row(
+                          children: [
+                            pw.Expanded(
+                              flex: (e.value / maxVal * 1000).round().clamp(
+                                1,
+                                1000,
+                              ),
+                              child: pw.Container(height: 12, color: color),
+                            ),
+                            pw.Expanded(
+                              flex: (1000 - (e.value / maxVal * 1000).round())
+                                  .clamp(0, 999),
+                              child: pw.SizedBox(),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     pw.SizedBox(width: 8),
@@ -707,16 +930,18 @@ class ShiftPdfService {
                         ),
                       ),
                     ),
-                  ]),
-                ))
+                  ],
+                ),
+              ),
+            )
             .toList(),
       ),
     );
   }
 
-  // ── AI actions list ──────────────────────────────────────────────────
-  static pw.Widget _aiActionsList(List<ShiftAction> ais) {
-    return pw.Column(children: [
+  // ── AI actions list ─────────────────────────────────────────────────────
+  static List<pw.Widget> _aiActionsList(List<ShiftAction> ais) {
+    return [
       for (var i = 0; i < ais.length; i++)
         pw.Container(
           color: i.isOdd ? PdfPalette.stripe : PdfColors.white,
@@ -725,25 +950,28 @@ class ShiftPdfService {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Container(
-                padding:
-                    const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                color: PdfPalette.aiPink,
-                child: pw.Text('AI',
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      color: PdfColors.white,
-                      fontWeight: pw.FontWeight.bold,
-                    )),
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 3,
+                ),
+                color: PdfPalette.navy,
+                child: pw.Text(
+                  'AI',
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    color: PdfColors.white,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
               ),
               pw.SizedBox(width: 8),
               pw.SizedBox(
                 width: 80,
                 child: pw.Text(
                   _fmtTime(ais[i].at),
-                  style: pw.TextStyle(
+                  style: const pw.TextStyle(
                     fontSize: 8,
                     color: PdfPalette.muted,
-                    font: pw.Font.courier(),
                   ),
                 ),
               ),
@@ -755,15 +983,16 @@ class ShiftPdfService {
                     fontSize: 9,
                     color: PdfPalette.text,
                     fontWeight: pw.FontWeight.bold,
-                    font: pw.Font.courier(),
                   ),
                 ),
               ),
               pw.Expanded(
                 child: pw.Text(
                   _safe(ais[i].detail),
-                  style:
-                      const pw.TextStyle(fontSize: 9, color: PdfPalette.text),
+                  style: const pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfPalette.text,
+                  ),
                 ),
               ),
               pw.SizedBox(width: 6),
@@ -774,7 +1003,7 @@ class ShiftPdfService {
                   textAlign: pw.TextAlign.right,
                   style: pw.TextStyle(
                     fontSize: 8,
-                    color: PdfPalette.purple,
+                    color: PdfPalette.navy,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
@@ -782,14 +1011,16 @@ class ShiftPdfService {
               if (ais[i].aiConfidence != null) ...[
                 pw.SizedBox(width: 6),
                 pw.Container(
-                  padding:
-                      const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  color: _withAlpha(PdfPalette.purple, 0.14),
+                  padding: const pw.EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  color: _withAlpha(PdfPalette.navy, 0.14),
                   child: pw.Text(
                     '${(ais[i].aiConfidence! * 100).round()}%',
                     style: pw.TextStyle(
                       fontSize: 8,
-                      color: PdfPalette.purple,
+                      color: PdfPalette.navy,
                       fontWeight: pw.FontWeight.bold,
                     ),
                   ),
@@ -798,50 +1029,56 @@ class ShiftPdfService {
             ],
           ),
         ),
-    ]);
+    ];
   }
 
-  // ── Timeline ─────────────────────────────────────────────────────────
+  // ── Timeline ────────────────────────────────────────────────────────────
   static pw.Widget _timelineHeader() {
     pw.Widget cell(String label, int flex) => pw.Expanded(
-          flex: flex,
-          child: pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 4),
-            child: pw.Text(
-              label,
-              style: pw.TextStyle(
-                fontSize: 7,
-                color: PdfColors.white,
-                fontWeight: pw.FontWeight.bold,
-                letterSpacing: 0.6,
-              ),
-            ),
+      flex: flex,
+      child: pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+        child: pw.Text(
+          label,
+          style: pw.TextStyle(
+            fontSize: 7,
+            color: PdfColors.white,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 0.6,
           ),
-        );
+        ),
+      ),
+    );
     return pw.Container(
       color: PdfPalette.navy,
       padding: const pw.EdgeInsets.symmetric(vertical: 7, horizontal: 6),
-      child: pw.Row(children: [
-        cell('TIME', 5),
-        cell('EVENT', 5),
-        cell('ALERT', 4),
-        cell('TYPE', 5),
-        cell('FACTORY', 6),
-        cell('DETAIL', 18),
-        cell('ACTOR', 8),
-      ]),
+      child: pw.Row(
+        children: [
+          cell('TIME', 5),
+          cell('EVENT', 5),
+          cell('ALERT', 4),
+          cell('TYPE', 5),
+          cell('FACTORY', 6),
+          cell('DETAIL', 18),
+          cell('ACTOR', 8),
+        ],
+      ),
     );
   }
 
-  static pw.Widget _timeline(List<ShiftAction> actions) {
+  static List<pw.Widget> _timeline(List<ShiftAction> actions) {
     if (actions.isEmpty) {
-      return pw.Container(
-        padding: const pw.EdgeInsets.symmetric(vertical: 28),
-        alignment: pw.Alignment.center,
-        color: PdfPalette.cardBg,
-        child: pw.Text('No actions recorded during this shift.',
-            style: const pw.TextStyle(fontSize: 11, color: PdfPalette.muted)),
-      );
+      return [
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(vertical: 28),
+          alignment: pw.Alignment.center,
+          color: PdfColors.white,
+          child: pw.Text(
+            'No actions recorded during this shift.',
+            style: const pw.TextStyle(fontSize: 11, color: PdfPalette.muted),
+          ),
+        ),
+      ];
     }
     final rows = <pw.Widget>[];
     for (var i = 0; i < actions.length; i++) {
@@ -859,81 +1096,93 @@ class ShiftPdfService {
                 style: pw.TextStyle(
                   fontSize: 7.5,
                   color: c ?? PdfPalette.text,
-                  font: mono ? pw.Font.courier() : null,
+                  letterSpacing: mono ? 0.2 : null,
                 ),
               ),
             ),
           );
-      rows.add(pw.Container(
-        color: bg,
-        padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 6),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            cell(_fmtTime(a.at), 5, mono: true),
-            pw.Expanded(
-              flex: 5,
-              child: pw.Padding(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 4),
-                child: pw.Container(
-                  padding:
-                      const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  color: _withAlpha(color, 0.14),
-                  child: pw.Text(
-                    _kindLabelText(a.kind).toUpperCase(),
-                    style: pw.TextStyle(
-                      fontSize: 7,
-                      color: color,
-                      fontWeight: pw.FontWeight.bold,
+      rows.add(
+        pw.Container(
+          color: bg,
+          padding: const pw.EdgeInsets.symmetric(vertical: 5, horizontal: 6),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              cell(_fmtTime(a.at), 5, mono: true),
+              pw.Expanded(
+                flex: 5,
+                child: pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 4),
+                  child: pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
+                    color: _withAlpha(color, 0.14),
+                    child: pw.Text(
+                      _kindLabelText(a.kind).toUpperCase(),
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        color: color,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            cell(a.alertLabel, 4, mono: true),
-            cell(a.alertType, 5, c: PdfPalette.muted),
-            cell(a.factory, 6),
-            cell(a.detail, 18),
-            cell(a.actor, 8, c: PdfPalette.muted),
-          ],
+              cell(a.alertLabel, 4, mono: true),
+              cell(a.alertType, 5, c: PdfPalette.muted),
+              cell(a.factory, 6),
+              cell(a.detail, 18),
+              cell(a.actor, 8, c: PdfPalette.muted),
+            ],
+          ),
         ),
-      ));
+      );
     }
-    return pw.Column(children: rows);
+    return rows;
   }
 
-  // ── Handover ─────────────────────────────────────────────────────────
+  // ── Handover ────────────────────────────────────────────────────────────
+  // Light handover card (no purple flood) — readable on any printer.
   static pw.Widget _handoverCard(ShiftModel shift) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(14),
       decoration: pw.BoxDecoration(
-        color: _withAlpha(PdfPalette.purple, 0.06),
-        border: pw.Border.all(color: PdfPalette.purple, width: 1),
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfPalette.navy, width: 1),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Row(children: [
-            pw.Container(
-              padding:
-                  const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              color: PdfPalette.purple,
-              child: pw.Text('AI HANDOVER',
+          pw.Row(
+            children: [
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 3,
+                ),
+                color: PdfPalette.navy,
+                child: pw.Text(
+                  'AI HANDOVER',
                   style: pw.TextStyle(
                     fontSize: 8,
                     color: PdfColors.white,
                     fontWeight: pw.FontWeight.bold,
                     letterSpacing: 0.8,
-                  )),
-            ),
-            pw.SizedBox(width: 8),
-            pw.Text(
-              shift.lastHandoverAt == null
-                  ? ''
-                  : 'Generated ${_fmtDateTime(shift.lastHandoverAt!)}',
-              style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
-            ),
-          ]),
+                  ),
+                ),
+              ),
+              pw.SizedBox(width: 8),
+              pw.Text(
+                shift.lastHandoverAt == null
+                    ? ''
+                    : 'Generated ${_fmtDateTime(shift.lastHandoverAt!)}',
+                style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+              ),
+            ],
+          ),
           pw.SizedBox(height: 8),
           pw.Text(
             _safe(shift.lastHandoverSummary ?? ''),
@@ -948,56 +1197,70 @@ class ShiftPdfService {
     );
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────
   static pw.Widget _sectionHeader(String label, int count) {
-    return pw.Row(children: [
-      pw.Container(width: 4, height: 18, color: PdfPalette.navy),
-      pw.SizedBox(width: 8),
-      pw.Text(
-        label,
-        style: pw.TextStyle(
-          fontSize: 13,
-          color: PdfPalette.text,
-          fontWeight: pw.FontWeight.bold,
-        ),
-      ),
-      pw.SizedBox(width: 6),
-      pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        color: _withAlpha(PdfPalette.navy, 0.13),
-        child: pw.Text(
-          '$count',
-          style: pw.TextStyle(
-            fontSize: 8,
-            color: PdfPalette.navy,
-            fontWeight: pw.FontWeight.bold,
-          ),
-        ),
-      ),
-    ]);
-  }
-
-  static pw.Widget _runningHeader(
-      ShiftModel shift, ({DateTime start, DateTime end}) window) {
-    return pw.Container(
-      margin: const pw.EdgeInsets.only(bottom: 8),
-      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: PdfPalette.cardBg,
-      child: pw.Row(children: [
+    return pw.Row(
+      children: [
+        pw.Container(width: 4, height: 18, color: PdfPalette.navy),
+        pw.SizedBox(width: 8),
         pw.Text(
-          'AlertSys - Shift Report - ${_safe(shift.name)}',
+          label,
           style: pw.TextStyle(
-            fontSize: 10,
+            fontSize: 13,
             color: PdfPalette.text,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
-        pw.Spacer(),
-        pw.Text(
-          '${_fmtDateTime(window.start)}  ->  ${_fmtDateTime(window.end)}',
-          style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+        pw.SizedBox(width: 6),
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: pw.BoxDecoration(
+            color: _withAlpha(PdfPalette.navy, 0.10),
+            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+          ),
+          child: pw.Text(
+            '$count',
+            style: pw.TextStyle(
+              fontSize: 8,
+              color: PdfPalette.navy,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
         ),
-      ]),
+      ],
+    );
+  }
+
+  static pw.Widget _runningHeader(
+    ShiftModel shift,
+    ({DateTime start, DateTime end}) window,
+  ) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 8),
+      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border(
+          bottom: pw.BorderSide(color: PdfColor.fromHex('#E2E8F0')),
+        ),
+      ),
+      child: pw.Row(
+        children: [
+          pw.Text(
+            'SIA - Shift Report - ${_safe(shift.name)}',
+            style: pw.TextStyle(
+              fontSize: 10,
+              color: PdfPalette.text,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.Spacer(),
+          pw.Text(
+            '${_fmtDateTime(window.start)}  ->  ${_fmtDateTime(window.end)}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1005,37 +1268,58 @@ class ShiftPdfService {
     return pw.Container(
       margin: const pw.EdgeInsets.only(top: 12),
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: PdfPalette.cardBg,
-      child: pw.Row(children: [
-        pw.Text('Page ${ctx.pageNumber}',
-            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
-        pw.Spacer(),
-        pw.Text('Generated on ${_fmtDateTime(DateTime.now())}',
-            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted)),
-      ]),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border(
+          top: pw.BorderSide(color: PdfColor.fromHex('#E2E8F0')),
+        ),
+      ),
+      child: pw.Row(
+        children: [
+          pw.Text(
+            'Page ${ctx.pageNumber}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+          ),
+          pw.Spacer(),
+          pw.Text(
+            'Generated on ${_fmtDateTime(DateTime.now())}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+          ),
+        ],
+      ),
     );
   }
 
   static pw.Widget _watermark() {
     return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      color: PdfPalette.navy,
-      child: pw.Column(children: [
-        pw.Text(
-          'CONFIDENTIAL - INTERNAL USE',
-          style: pw.TextStyle(
-            fontSize: 9,
-            color: PdfColors.white,
-            fontWeight: pw.FontWeight.bold,
-            letterSpacing: 1.2,
+      padding: const pw.EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: PdfPalette.navy, width: 0.6),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+      ),
+      child: pw.Row(
+        children: [
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            color: PdfPalette.navy,
+            child: pw.Text(
+              'CONFIDENTIAL',
+              style: pw.TextStyle(
+                fontSize: 8,
+                color: PdfColors.white,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 1.0,
+              ),
+            ),
           ),
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(
-          'AlertSys * Shift Commander Briefing',
-          style: const pw.TextStyle(fontSize: 8, color: PdfColors.white),
-        ),
-      ]),
+          pw.SizedBox(width: 8),
+          pw.Text(
+            'Smart Industrial Alert - SIA Shift Commander Briefing',
+            style: const pw.TextStyle(fontSize: 9, color: PdfPalette.text),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1065,10 +1349,55 @@ class ShiftPdfService {
       case ShiftKind.morning:
         return 'Morning';
       case ShiftKind.afternoon:
-        return 'Afternoon';
+        return 'Evening';
       case ShiftKind.night:
         return 'Night';
     }
+  }
+
+  static PdfColor _kindColorByKind(ShiftKind k) {
+    switch (k) {
+      case ShiftKind.morning:
+        return PdfPalette.yellow;
+      case ShiftKind.afternoon:
+        return PdfPalette.orange;
+      case ShiftKind.night:
+        return PdfPalette.navy;
+    }
+  }
+
+  static String _presenceLabel(PresenceStatus s) {
+    switch (s) {
+      case PresenceStatus.active:
+        return 'Active';
+      case PresenceStatus.inactive:
+        return 'Inactive';
+      case PresenceStatus.absent:
+        return 'Absent';
+      case PresenceStatus.pendingConfirm:
+        return 'Awaiting';
+    }
+  }
+
+  static PdfColor _presenceColor(PresenceStatus s) {
+    switch (s) {
+      case PresenceStatus.active:
+        return PdfPalette.green;
+      case PresenceStatus.inactive:
+        return PdfPalette.orange;
+      case PresenceStatus.absent:
+        return PdfPalette.red;
+      case PresenceStatus.pendingConfirm:
+        return PdfPalette.blue;
+    }
+  }
+
+  static String _humanDuration(Duration d) {
+    if (d.inMinutes < 1) return '${d.inSeconds}s';
+    if (d.inMinutes < 60) return '${d.inMinutes}m';
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}m';
   }
 
   static String _fmtDateTime(DateTime d) => PdfFmt.dateTime(d);

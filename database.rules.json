@@ -222,32 +222,64 @@
           "supervisorId": { ".validate": "!newData.exists() || newData.isString()" },
           "factory": { ".validate": "!newData.exists() || newData.isString()" },
           "confidence": { ".validate": "!newData.exists() || newData.isNumber()" },
-          "reason": { ".validate": "!newData.exists() || newData.isString()" }
+          "reason": { ".validate": "!newData.exists() || newData.isString()" },
+          "details": { ".validate": "!newData.exists() || newData.isString()" }
+        }
+      }
+    },
+
+    "shift_presence": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$shiftId": {
+        ".read": "auth != null",
+        "$supervisorId": {
+          ".read": "auth != null",
+          ".write": "auth != null && (auth.uid === $supervisorId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+          "name": { ".validate": "!newData.exists() || newData.isString()" },
+          "factory": { ".validate": "!newData.exists() || newData.isString()" },
+          "status": { ".validate": "!newData.exists() || newData.isString()" },
+          "lastActiveAt": { ".validate": "!newData.exists() || newData.isString()" },
+          "inactiveSince": { ".validate": "!newData.exists() || newData.isString()" },
+          "confirmRequestedAt": { ".validate": "!newData.exists() || newData.isString()" },
+          "confirmExpiresAt": { ".validate": "!newData.exists() || newData.isString()" },
+          "confirmedAt": { ".validate": "!newData.exists() || newData.isString()" },
+          "joinedAt": { ".validate": "!newData.exists() || newData.isString()" },
+          "statusDurationSeconds": { ".validate": "!newData.exists() || newData.isNumber()" }
         }
       }
     },
 
     "security": {
-      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
-      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".read": "auth != null && auth.token.role === 'admin'",
+      ".write": "auth != null && auth.token.role === 'admin'",
       "logs": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        ".read": "auth != null && auth.token.role === 'admin'",
+        ".write": "auth != null && auth.token.role === 'admin'",
         ".indexOn": ["at", "kind", "fingerprint"]
       },
       "actions": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        ".read": "auth != null && auth.token.role === 'admin'",
+        ".write": "auth != null && auth.token.role === 'admin'",
         ".indexOn": ["at", "kind", "endpoint", "fingerprint"]
+      },
+      "siem_outbox": {
+        ".read": "auth != null && auth.token.role === 'admin'",
+        ".write": "auth != null && auth.token.role === 'admin'",
+        ".indexOn": ["status", "nextAttemptAt", "exportedAt"]
+      },
+      "siem_export_status": {
+        ".read": "auth != null && auth.token.role === 'admin'",
+        ".write": "auth != null && auth.token.role === 'admin'"
       }
     },
 
     "workers": {
-      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
-      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".read": "auth != null && auth.token.role === 'admin'",
+      ".write": "auth != null && auth.token.role === 'admin'",
       "health": {
-        ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
+        ".read": "auth != null && auth.token.role === 'admin'",
+        ".write": "auth != null && auth.token.role === 'admin'"
       }
     },
 

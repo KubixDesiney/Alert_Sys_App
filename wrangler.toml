@@ -1,4 +1,4 @@
-# Deprecated fallback Wrangler config for the old monolithic AlertSys Worker.
+# Deprecated fallback Wrangler config for the old monolithic Smart Industrial Alert - SIA Worker.
 # Use wrangler.ai.toml and wrangler.notify.toml for active deployments.
 #
 # This file is consumed by `wrangler deploy` (locally and from CI). Customise
@@ -7,7 +7,7 @@
 # CI-provided CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID env vars.
 #
 # Secrets (WORKER_SHARED_SECRET, FB_DB_URL, FB_CLIENT_EMAIL, FB_PRIVATE_KEY,
-# GEMINI_API_KEY, etc.) are managed via `wrangler secret put NAME` — do not
+# GEMINI_API_KEY, etc.) are managed via `wrangler secret put NAME` â€” do not
 # commit them. The cron schedule below mirrors the original "every minute"
 # trigger that drives AI assignment, escalation, and push fan-out.
 
@@ -20,3 +20,4 @@ binding = "AI"
 
 [triggers]
 crons = ["* * * * *"]
+
