@@ -16,7 +16,7 @@ class PdfPalette {
   static const orange = PdfColor.fromInt(0xFFEA580C);
   static const red = PdfColor.fromInt(0xFFDC2626);
   static const blue = PdfColor.fromInt(0xFF2563EB);
-  static const yellow = PdfColor.fromInt(0xFFD97706);
+  static const yellow = PdfColor.fromInt(0xFFFBBF24);
   static const aiPink = PdfColor.fromInt(0xFFC084FC);
 }
 

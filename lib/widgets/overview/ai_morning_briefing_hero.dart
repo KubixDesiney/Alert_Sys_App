@@ -64,15 +64,6 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
     return '${_fallbackGreeting()}, supervisor. Your AI briefing is warming up — historical patterns are being analysed in the background. Hard data and a personalised summary will land here within the next minute.';
   }
 
-  String _modelLabel() {
-    final b = widget.briefing;
-    if (b == null) return 'AI BRIEFING · WARMING UP';
-    if (b.model == null || b.model == 'fallback') {
-      return 'AI BRIEFING · OFFLINE FALLBACK';
-    }
-    return 'AI BRIEFING · LLAMA 3.2';
-  }
-
   String _generatedLabel() {
     final ts = widget.briefing?.generatedAt;
     if (ts == null) return 'just now';
@@ -161,40 +152,6 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                 Row(
                   children: [
                     const _LivePulseDot(),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(99),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.auto_awesome_rounded,
-                                size: 11, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                _modelLabel(),
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 1.4,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                     const Spacer(),
                     Container(
                       padding: EdgeInsets.symmetric(
@@ -269,26 +226,10 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                         b!.factoryScope!,
                         color: const Color(0xFF34D399),
                       ),
-                    if (b?.topType != null)
-                      _briefChip(
-                        Icons.local_fire_department_rounded,
-                        '${typeMeta(b!.topType!, context.appTheme).label} · ${b.topTypeCount}',
-                      ),
                     if (b?.topFactory != null && !compact && b?.factoryScope == null)
                       _briefChip(
                         Icons.factory_rounded,
                         '${b!.topFactory} most active',
-                      ),
-                    if (b != null)
-                      _briefChip(
-                        Icons.trending_up_rounded,
-                        '${b.resolutionRate}% resolved',
-                      ),
-                    if (b?.accuracyPct != null && b!.accuracyPct! > 0)
-                      _briefChip(
-                        Icons.track_changes_rounded,
-                        'AI accuracy: ${b.accuracyPct}%',
-                        color: const Color(0xFFA78BFA),
                       ),
                     if (b?.predictiveType != null && b!.predictiveConfidence != null)
                       _briefChip(
@@ -297,12 +238,6 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                         '${b.predictiveConvoyeur != null ? ' · Line ${b.predictiveConvoyeur}' : ''}'
                         ' (${b.predictiveConfidence}%)',
                         color: const Color(0xFFFBBF24),
-                      ),
-                    if (b?.topSupervisorName != null && b!.topSupervisorCount != null)
-                      _briefChip(
-                        Icons.emoji_events_rounded,
-                        '${b.topSupervisorName} · ${b.topSupervisorCount} resolved',
-                        color: const Color(0xFF60A5FA),
                       ),
                     _briefChip(
                       Icons.schedule_rounded,
@@ -420,11 +355,9 @@ class _AuroraMeshPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final base = dark
-        ? const [Color(0xFF0B1E3F), Color(0xFF1E2A4D)]
-        : const [Color(0xFF0D4A75), Color(0xFF1E5C8C)];
+    const base = [Color(0xFF0B1E3F), Color(0xFF1E2A4D)];
     final bgPaint = Paint()
-      ..shader = LinearGradient(
+      ..shader = const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: base,
@@ -439,9 +372,7 @@ class _AuroraMeshPainter extends CustomPainter {
           size.height * (0.30 + 0.18 * math.cos(twoPi * t * 0.9)),
         ),
         radius: size.width * 0.55,
-        color: dark
-            ? const Color(0xFF6366F1).withValues(alpha: 0.35)
-            : const Color(0xFF60A5FA).withValues(alpha: 0.55),
+        color: const Color(0xFF6366F1).withValues(alpha: 0.35),
       ),
       _Blob(
         center: Offset(
@@ -449,9 +380,7 @@ class _AuroraMeshPainter extends CustomPainter {
           size.height * (0.65 + 0.18 * math.sin(twoPi * (t + 0.33))),
         ),
         radius: size.width * 0.55,
-        color: dark
-            ? const Color(0xFF8B5CF6).withValues(alpha: 0.32)
-            : const Color(0xFFC084FC).withValues(alpha: 0.45),
+        color: const Color(0xFF8B5CF6).withValues(alpha: 0.32),
       ),
       _Blob(
         center: Offset(
@@ -459,9 +388,7 @@ class _AuroraMeshPainter extends CustomPainter {
           size.height * (0.85 + 0.15 * math.cos(twoPi * (t + 0.66))),
         ),
         radius: size.width * 0.55,
-        color: dark
-            ? const Color(0xFF06B6D4).withValues(alpha: 0.28)
-            : const Color(0xFF38BDF8).withValues(alpha: 0.40),
+        color: const Color(0xFF06B6D4).withValues(alpha: 0.28),
       ),
     ];
 

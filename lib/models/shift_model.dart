@@ -90,6 +90,12 @@ class ShiftModel {
   /// When true, supervisors are randomly drawn from the active pool.
   final bool randomize;
 
+  /// Optional cap on how far (in kilometres) a supervisor's home factory may
+  /// be from the alert's factory when the AI Commander considers them for a
+  /// cross-factory transfer. `null` or `<= 0` disables the threshold so any
+  /// rostered supervisor remains eligible.
+  final double? crossFactoryMaxDistanceKm;
+
   /// ISO timestamp when the shift was created.
   final DateTime createdAt;
 
@@ -116,6 +122,7 @@ class ShiftModel {
     required this.fullControl,
     required this.randomize,
     required this.createdAt,
+    this.crossFactoryMaxDistanceKm,
     this.lastHandoverSummary,
     this.lastHandoverAt,
     this.isSeeded = false,
@@ -221,6 +228,8 @@ class ShiftModel {
           m['fullControl'] == true || m['handleCrossFactoryTransfer'] == true,
       fullControl: m['fullControl'] == true,
       randomize: m['randomize'] == true,
+      crossFactoryMaxDistanceKm: _coerceNullableDouble(
+          m['crossFactoryMaxDistanceKm']),
       createdAt: DateTime.tryParse((m['createdAt'] ?? '').toString()) ??
           DateTime.now(),
       lastHandoverSummary: m['lastHandoverSummary']?.toString(),
@@ -247,6 +256,9 @@ class ShiftModel {
         'handleCrossFactoryTransfer': handleCrossFactoryTransfer,
         'fullControl': fullControl,
         'randomize': randomize,
+        if (crossFactoryMaxDistanceKm != null &&
+            crossFactoryMaxDistanceKm! > 0)
+          'crossFactoryMaxDistanceKm': crossFactoryMaxDistanceKm,
         'createdAt': createdAt.toIso8601String(),
         if (lastHandoverSummary != null)
           'lastHandoverSummary': lastHandoverSummary,
@@ -269,6 +281,8 @@ class ShiftModel {
     bool? handleCrossFactoryTransfer,
     bool? fullControl,
     bool? randomize,
+    double? crossFactoryMaxDistanceKm,
+    bool clearCrossFactoryMaxDistanceKm = false,
     String? lastHandoverSummary,
     DateTime? lastHandoverAt,
   }) =>
@@ -288,6 +302,9 @@ class ShiftModel {
             handleCrossFactoryTransfer ?? this.handleCrossFactoryTransfer,
         fullControl: fullControl ?? this.fullControl,
         randomize: randomize ?? this.randomize,
+        crossFactoryMaxDistanceKm: clearCrossFactoryMaxDistanceKm
+            ? null
+            : (crossFactoryMaxDistanceKm ?? this.crossFactoryMaxDistanceKm),
         createdAt: createdAt,
         lastHandoverSummary: lastHandoverSummary ?? this.lastHandoverSummary,
         lastHandoverAt: lastHandoverAt ?? this.lastHandoverAt,
@@ -366,4 +383,16 @@ double _coerceDouble(dynamic v, double fallback) {
   if (v is num) return v.toDouble();
   if (v is String) return double.tryParse(v) ?? fallback;
   return fallback;
+}
+
+double? _coerceNullableDouble(dynamic v) {
+  if (v == null) return null;
+  if (v is double) return v;
+  if (v is num) return v.toDouble();
+  if (v is String) {
+    final trimmed = v.trim();
+    if (trimmed.isEmpty) return null;
+    return double.tryParse(trimmed);
+  }
+  return null;
 }

@@ -12,7 +12,7 @@ import { buildPredictiveModel, handlePredictions, handleValidatePredictions, val
 import { buildSupStats, countActiveSupervisorsInFactory, scoreSupervisor } from './scoring.js';
 import { handleShiftAiAction, processShiftCollaborations, processShiftEnding, runAIAssignments, suspendAcceptedAssistantAlerts } from './shift_commander.js';
 import { handleSuggestAssignee } from './suggest_assignee.js';
-import { _aggregateWeek, _briefingDateKey, _briefingFactorySlug, _historyKey, _shiftContainsTime, _toMs, _topSupervisorWeek, _typeName, aiResolveFactory, aiSanitizeFactoryId, pickActiveShift } from './utils.js';
+import { _aggregateWeek, _briefingDateKey, _briefingFactorySlug, _historyKey, _shiftContainsTime, _toMs, _topSupervisorWeek, _typeName, aiResolveFactory, aiSanitizeFactoryId, haversineKm, pickActiveShift } from './utils.js';
 
 function _cronEvery(runStartMs, intervalMin) {
   const minutes = Math.max(1, Number(intervalMin) || 1);
@@ -176,4 +176,5 @@ export {
   checkEscalations,
   processShiftCollaborations,
   suspendAcceptedAssistantAlerts,
+  haversineKm,
 };
