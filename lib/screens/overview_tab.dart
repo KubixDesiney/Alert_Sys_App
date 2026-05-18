@@ -1,15 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:csv/csv.dart';
-import 'package:excel/excel.dart' as excel;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:universal_html/html.dart' as html;
 
 import '../../models/alert_model.dart';
 import '../../models/hierarchy_model.dart';
@@ -792,74 +784,14 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     return '${d.inMinutes}m';
   }
 
-  void _exportFilteredAlerts(List<AlertModel> alertsToExport) async {
+  Future<void> _exportFilteredAlertsPdf(
+    List<AlertModel> alertsToExport,
+    String reportName,
+  ) async {
     if (alertsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No alerts to export'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-    final csvData = <List<dynamic>>[
-      [
-        'ID',
-        'Type',
-        'Usine',
-        'Convoyeur',
-        'Poste',
-        'Adresse',
-        'Timestamp',
-        'Description',
-        'Status',
-        'Superviseur',
-        'Assistant',
-        'Resolution Reason',
-        'Elapsed Time (min)',
-        'Critical',
-      ],
-    ];
-    for (final alert in alertsToExport) {
-      csvData.add([
-        alert.id,
-        adminTypeLabel(context, alert.type),
-        alert.usine,
-        alert.convoyeur,
-        alert.poste,
-        alert.adresse,
-        alert.timestamp.toIso8601String(),
-        alert.description,
-        alert.status,
-        alert.superviseurName ?? '',
-        alert.assistantName ?? '',
-        alert.resolutionReason ?? '',
-        alert.elapsedTime ?? '',
-        alert.isCritical ? 'Yes' : 'No',
-      ]);
-    }
-    final csv = const ListToCsvConverter().convert(csvData);
-    final bytes = utf8.encode(csv);
-    if (kIsWeb) {
-      final blob = html.Blob([bytes], 'text/csv');
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      html.AnchorElement(href: url)
-        ..setAttribute('download', 'alerts.csv')
-        ..click();
-      html.Url.revokeObjectUrl(url);
-      return;
-    }
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/alerts.csv');
-    await file.writeAsBytes(bytes);
-    await Share.shareXFiles([XFile(file.path)], text: 'Exported alerts CSV');
-  }
-
-  Future<void> _exportFilteredAlertsPdf(List<AlertModel> alertsToExport) async {
-    if (alertsToExport.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No alerts to export'),
+          content: Text('No alerts match the selected filters'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -873,6 +805,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
             : widget.selectedUsine,
         timeRangeLabel: widget.timeRangeLabel,
         labelType: (t) => adminTypeLabel(context, t),
+        reportName: reportName,
       );
     } catch (e) {
       if (!mounted) return;
@@ -883,63 +816,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
         ),
       );
     }
-  }
-
-  void _exportFilteredAlertsExcel(List<AlertModel> alertsToExport) async {
-    if (alertsToExport.isEmpty) return;
-    final workbook = excel.Excel.createExcel();
-    final sheet = workbook['Alerts'];
-    sheet.appendRow([
-      excel.TextCellValue('ID'),
-      excel.TextCellValue('Type'),
-      excel.TextCellValue('Usine'),
-      excel.TextCellValue('Convoyeur'),
-      excel.TextCellValue('Poste'),
-      excel.TextCellValue('Adresse'),
-      excel.TextCellValue('Timestamp'),
-      excel.TextCellValue('Description'),
-      excel.TextCellValue('Status'),
-      excel.TextCellValue('Superviseur'),
-      excel.TextCellValue('Assistant'),
-      excel.TextCellValue('Resolution Reason'),
-      excel.TextCellValue('Elapsed Time (min)'),
-      excel.TextCellValue('Critical'),
-    ]);
-    for (final alert in alertsToExport) {
-      sheet.appendRow([
-        excel.TextCellValue(alert.id),
-        excel.TextCellValue(adminTypeLabel(context, alert.type)),
-        excel.TextCellValue(alert.usine),
-        excel.TextCellValue(alert.convoyeur.toString()),
-        excel.TextCellValue(alert.poste.toString()),
-        excel.TextCellValue(alert.adresse),
-        excel.TextCellValue(alert.timestamp.toIso8601String()),
-        excel.TextCellValue(alert.description),
-        excel.TextCellValue(alert.status),
-        excel.TextCellValue(alert.superviseurName ?? ''),
-        excel.TextCellValue(alert.assistantName ?? ''),
-        excel.TextCellValue(alert.resolutionReason ?? ''),
-        excel.TextCellValue((alert.elapsedTime ?? '').toString()),
-        excel.TextCellValue(alert.isCritical ? 'Yes' : 'No'),
-      ]);
-    }
-    final bytes = workbook.encode();
-    if (bytes == null) return;
-    if (kIsWeb) {
-      final blob = html.Blob([
-        bytes,
-      ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      html.AnchorElement(href: url)
-        ..setAttribute('download', 'alerts.xlsx')
-        ..click();
-      html.Url.revokeObjectUrl(url);
-      return;
-    }
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/alerts.xlsx');
-    await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles([XFile(file.path)], text: 'Exported alerts Excel');
   }
 
   void _openFilterSheet() {
@@ -1099,9 +975,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           scope: widget.selectedUsine == 'all'
               ? 'All Plants'
               : widget.selectedUsine,
-          onExportCsv: _exportFilteredAlerts,
           onExportPdf: _exportFilteredAlertsPdf,
-          onExportExcel: _exportFilteredAlertsExcel,
         );
 
         final failureCard = PredictiveFailureCard(
@@ -2319,9 +2193,7 @@ class _AlertHistoryBox extends StatefulWidget {
   final VoidCallback onClearQuickFilter;
   final List<Factory> factories;
   final String scope;
-  final void Function(List<AlertModel>) onExportCsv;
-  final void Function(List<AlertModel>) onExportPdf;
-  final void Function(List<AlertModel>) onExportExcel;
+  final Future<void> Function(List<AlertModel>, String reportName) onExportPdf;
 
   const _AlertHistoryBox({
     required this.allAlerts,
@@ -2329,9 +2201,7 @@ class _AlertHistoryBox extends StatefulWidget {
     required this.onClearQuickFilter,
     required this.factories,
     required this.scope,
-    required this.onExportCsv,
     required this.onExportPdf,
-    required this.onExportExcel,
   });
 
   @override
@@ -2778,16 +2648,42 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
             ),
           ),
           Divider(color: theme.border, height: 1),
-          // Export footer — single dropdown button.
+          // Export footer — opens the professional Export Report dialog.
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: _ExportMenuButton(
-              onCsv: () => widget.onExportCsv(filtered),
-              onPdf: () => widget.onExportPdf(filtered),
-              onExcel: () => widget.onExportExcel(filtered),
+            child: _ExportReportButton(
+              onTap: () => _openExportReportDialog(filtered),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _openExportReportDialog(List<AlertModel> visibleAlerts) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: _ExportReportDialog(
+          baseAlerts: widget.allAlerts,
+          factories: widget.factories,
+          scopeLabel: widget.scope,
+          initialFactory: _factory,
+          initialConveyeur: _conveyeur,
+          initialPoste: _poste,
+          initialType: _type,
+          initialCritical: _critical,
+          initialStatus: _status,
+          initialTimeRange: _timeRange,
+          labelType: (t) => adminTypeLabel(context, t),
+          onExport: (alertsToExport, reportName) async {
+            await widget.onExportPdf(alertsToExport, reportName);
+          },
+        ),
       ),
     );
   }
@@ -3378,251 +3274,1268 @@ class _AlertHistoryRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EXPORT MENU BUTTON — single dropdown with CSV / PDF / Excel options.
-// Each option shows its brand color on hover; default background is white.
+// EXPORT REPORT BUTTON — opens the professional Export Report dialog.
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _ExportMenuButton extends StatefulWidget {
-  final VoidCallback onCsv;
-  final VoidCallback onPdf;
-  final VoidCallback onExcel;
-  const _ExportMenuButton({
-    required this.onCsv,
-    required this.onPdf,
-    required this.onExcel,
-  });
+class _ExportReportButton extends StatefulWidget {
+  final VoidCallback onTap;
+  const _ExportReportButton({required this.onTap});
 
   @override
-  State<_ExportMenuButton> createState() => _ExportMenuButtonState();
+  State<_ExportReportButton> createState() => _ExportReportButtonState();
 }
 
-class _ExportMenuButtonState extends State<_ExportMenuButton> {
-  static const _excelGreen = Color(0xFF1D6F42);
-  static const _pdfRed = Color(0xFFEC1C24);
-  static const _csvBlue = Color(0xFF0072C6);
+class _ExportReportButtonState extends State<_ExportReportButton> {
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
     final isDark = context.isDark;
-    final baseText = isDark ? Colors.white : const Color(0xFF1A1A2E);
+    final accent = theme.navy;
+    final hoverBg = accent.withValues(alpha: isDark ? 0.18 : 0.08);
+    final hoverBorder = accent.withValues(alpha: 0.55);
     final baseBg = isDark ? const Color(0xFF1E1E2E) : Colors.white;
-    final borderColor = isDark
+    final baseBorder = isDark
         ? const Color(0xFF3A3A5C)
         : const Color(0xFFDDE1EC);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final menuWidth = constraints.maxWidth;
-        return SizedBox(
-          width: menuWidth,
-          child: MenuAnchor(
-            style: MenuStyle(
-              backgroundColor: WidgetStatePropertyAll(baseBg),
-              minimumSize: WidgetStatePropertyAll(Size(menuWidth, 0)),
-              maximumSize: WidgetStatePropertyAll(Size(menuWidth, double.infinity)),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  side: BorderSide(color: borderColor),
-                ),
-              ),
-              elevation: const WidgetStatePropertyAll(4),
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(vertical: 4),
-              ),
-            ),
-            menuChildren: [
-              _ExportMenuItem(
-                icon: Icon(Icons.table_chart_outlined, size: 16, color: baseText),
-                label: 'CSV',
-                hoverColor: _csvBlue,
-                onTap: widget.onCsv,
-                baseBg: baseBg,
-                baseText: baseText,
-              ),
-              _ExportMenuItem(
-                icon: _pdfIcon(),
-                label: 'PDF',
-                hoverColor: _pdfRed,
-                onTap: widget.onPdf,
-                baseBg: baseBg,
-                baseText: baseText,
-              ),
-              _ExportMenuItem(
-                icon: _excelIcon(),
-                label: 'Excel',
-                hoverColor: _excelGreen,
-                onTap: widget.onExcel,
-                baseBg: baseBg,
-                baseText: baseText,
-              ),
-            ],
-            builder: (context, controller, _) => OutlinedButton.icon(
-              onPressed: () =>
-                  controller.isOpen ? controller.close() : controller.open(),
-              icon: Icon(Icons.download_outlined, size: 15, color: theme.navy),
-              label: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Export',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: theme.navy,
+    return SizedBox(
+      width: double.infinity,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            gradient: _hover
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      accent.withValues(alpha: isDark ? 0.22 : 0.10),
+                      accent.withValues(alpha: isDark ? 0.12 : 0.04),
+                    ],
+                  )
+                : null,
+            color: _hover ? null : baseBg,
+            border: Border.all(color: _hover ? hoverBorder : baseBorder),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: _hover
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.22),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.arrow_drop_down, size: 16, color: theme.navy),
-                ],
-              ),
-              style: OutlinedButton.styleFrom(
-                backgroundColor: baseBg,
-                side: BorderSide(color: borderColor),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9),
+                  ]
+                : null,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(10),
+              splashColor: accent.withValues(alpha: 0.10),
+              highlightColor: accent.withValues(alpha: 0.05),
+              hoverColor: hoverBg,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 11,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Icon(
+                        Icons.picture_as_pdf_rounded,
+                        size: 14,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Export Report',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.tune_rounded,
+                      size: 13,
+                      color: accent.withValues(alpha: 0.75),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
-
-  Widget _pdfIcon() => Stack(
-    alignment: Alignment.center,
-    children: [
-      Container(
-        width: 18,
-        height: 20,
-        decoration: const BoxDecoration(
-          color: _pdfRed,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(3),
-            bottomLeft: Radius.circular(3),
-            bottomRight: Radius.circular(3),
-            topRight: Radius.circular(7),
-          ),
-        ),
-      ),
-      const Positioned(
-        top: 0,
-        right: 0,
-        child: SizedBox(
-          width: 7,
-          height: 7,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Color(0xFFB71C1C),
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(3),
-                bottomLeft: Radius.circular(3),
-              ),
-            ),
-          ),
-        ),
-      ),
-      const Text(
-        'PDF',
-        style: TextStyle(
-          fontSize: 5,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-          letterSpacing: 0.2,
-        ),
-      ),
-    ],
-  );
-
-  Widget _excelIcon() => Stack(
-    alignment: Alignment.center,
-    children: [
-      Container(
-        width: 18,
-        height: 20,
-        decoration: BoxDecoration(
-          color: _excelGreen,
-          borderRadius: BorderRadius.circular(3),
-        ),
-      ),
-      const Text(
-        'X',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-        ),
-      ),
-    ],
-  );
 }
 
-class _ExportMenuItem extends StatefulWidget {
-  final Widget icon;
-  final String label;
-  final Color hoverColor;
-  final VoidCallback onTap;
-  final Color baseBg;
-  final Color baseText;
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT REPORT DIALOG — corporate-grade PDF report builder.
+// Lets the user set the report name, date range (preset or custom),
+// alert types, criticality, and status. The dialog returns the filtered
+// alert list and the final report name to the caller.
+// ═══════════════════════════════════════════════════════════════════════════
 
-  const _ExportMenuItem({
-    required this.icon,
-    required this.label,
-    required this.hoverColor,
-    required this.onTap,
-    required this.baseBg,
-    required this.baseText,
+class _ExportReportDialog extends StatefulWidget {
+  final List<AlertModel> baseAlerts;
+  final List<Factory> factories;
+  final String scopeLabel;
+  final String initialFactory;
+  final String initialConveyeur;
+  final String initialPoste;
+  final String initialType;
+  final String initialCritical;
+  final String initialStatus;
+  final String initialTimeRange;
+  final String Function(String type) labelType;
+  final Future<void> Function(List<AlertModel> alerts, String reportName)
+      onExport;
+
+  const _ExportReportDialog({
+    required this.baseAlerts,
+    required this.factories,
+    required this.scopeLabel,
+    required this.initialFactory,
+    required this.initialConveyeur,
+    required this.initialPoste,
+    required this.initialType,
+    required this.initialCritical,
+    required this.initialStatus,
+    required this.initialTimeRange,
+    required this.labelType,
+    required this.onExport,
   });
 
   @override
-  State<_ExportMenuItem> createState() => _ExportMenuItemState();
+  State<_ExportReportDialog> createState() => _ExportReportDialogState();
 }
 
-class _ExportMenuItemState extends State<_ExportMenuItem> {
-  bool _hover = false;
+class _ExportReportDialogState extends State<_ExportReportDialog> {
+  static const _allTypes = <String>{
+    'qualite',
+    'maintenance',
+    'defaut_produit',
+    'manque_ressource',
+  };
+
+  late final TextEditingController _nameController;
+  bool _nameTouched = false;
+
+  late String _factory;
+  late String _conveyeur;
+  late String _poste;
+  late Set<String> _selectedTypes;
+  late String _critical;
+  late String _status;
+  late String _datePreset;
+  DateTime? _customFrom;
+  DateTime? _customTo;
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _factory = widget.initialFactory;
+    _conveyeur = widget.initialConveyeur;
+    _poste = widget.initialPoste;
+    _selectedTypes = widget.initialType == 'all'
+        ? Set<String>.from(_allTypes)
+        : {widget.initialType};
+    _critical = widget.initialCritical;
+    _status = widget.initialStatus;
+    _datePreset = widget.initialTimeRange == 'all'
+        ? 'all'
+        : widget.initialTimeRange;
+    _nameController = TextEditingController(text: _autoName());
+    _nameController.addListener(() {
+      if (!_nameTouched && _nameController.text != _autoName()) {
+        _nameTouched = true;
+      }
+    });
+  }
+
+  List<String> _factoryOptions() {
+    final names = <String>{};
+    for (final f in widget.factories) {
+      if (f.name.isNotEmpty) names.add(f.name);
+    }
+    for (final a in widget.baseAlerts) {
+      if (a.usine.isNotEmpty && a.usine != 'all') names.add(a.usine);
+    }
+    return ['all', ...names.toList()..sort()];
+  }
+
+  List<String> _conveyeurOptions() {
+    if (_factory == 'all') {
+      final vals = <String>{};
+      for (final a in widget.baseAlerts) {
+        final cv = a.convoyeur.toString();
+        if (cv.isNotEmpty && cv != '0') vals.add(cv);
+      }
+      final list = vals.toList()
+        ..sort((a, b) =>
+            (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+      return ['all', ...list];
+    }
+    Factory? fac;
+    for (final f in widget.factories) {
+      if (f.name == _factory) {
+        fac = f;
+        break;
+      }
+    }
+    if (fac == null) {
+      final vals = <String>{};
+      for (final a in widget.baseAlerts) {
+        if (a.usine == _factory) {
+          final cv = a.convoyeur.toString();
+          if (cv.isNotEmpty && cv != '0') vals.add(cv);
+        }
+      }
+      final list = vals.toList()
+        ..sort((a, b) =>
+            (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+      return ['all', ...list];
+    }
+    final list = fac.conveyors.values.map((c) => c.number.toString()).toList()
+      ..sort((a, b) =>
+          (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+    return ['all', ...list];
+  }
+
+  List<String> _posteOptions() {
+    if (_conveyeur == 'all') return const ['all'];
+    if (_factory != 'all') {
+      Factory? fac;
+      for (final f in widget.factories) {
+        if (f.name == _factory) {
+          fac = f;
+          break;
+        }
+      }
+      if (fac != null) {
+        Conveyor? conv;
+        for (final c in fac.conveyors.values) {
+          if (c.number.toString() == _conveyeur) {
+            conv = c;
+            break;
+          }
+        }
+        if (conv != null) {
+          final stations = conv.stations.values
+              .map((s) => s.id.replaceAll('station_', ''))
+              .toList()
+            ..sort((a, b) =>
+                (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+          return ['all', ...stations];
+        }
+      }
+    }
+    final vals = <String>{};
+    for (final a in widget.baseAlerts) {
+      if (a.convoyeur.toString() == _conveyeur) {
+        if (_factory != 'all' && a.usine != _factory) continue;
+        final p = a.poste.toString();
+        if (p.isNotEmpty && p != '0') vals.add(p);
+      }
+    }
+    final list = vals.toList()
+      ..sort(
+          (a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
+    return ['all', ...list];
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  String _isoDate(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _datePresetLabel() {
+    switch (_datePreset) {
+      case 'today':
+        return 'Today';
+      case 'week':
+        return 'Last 7 Days';
+      case 'month':
+        return 'This Month';
+      case 'year':
+        return 'This Year';
+      case 'custom':
+        if (_customFrom != null && _customTo != null) {
+          return '${_isoDate(_customFrom!)} - ${_isoDate(_customTo!)}';
+        }
+        return 'Custom Range';
+      default:
+        return 'All Time';
+    }
+  }
+
+  String _criticalSuffix() {
+    switch (_critical) {
+      case 'critical':
+        return ' - Critical Only';
+      case 'normal':
+        return ' - Normal Only';
+      default:
+        return '';
+    }
+  }
+
+  String _autoName() {
+    final today = _isoDate(DateTime.now());
+    final scope = _factory != 'all'
+        ? _factory
+        : (widget.scopeLabel.isEmpty ? 'All Plants' : widget.scopeLabel);
+    final locationSuffix = StringBuffer();
+    if (_conveyeur != 'all') {
+      locationSuffix.write(' - Conv. $_conveyeur');
+    }
+    if (_poste != 'all') {
+      locationSuffix.write(' - WS $_poste');
+    }
+    return 'Smart Industrial Alert - SIA - Operations Report - $scope$locationSuffix - $today${_criticalSuffix()}';
+  }
+
+  void _refreshAutoNameIfNeeded() {
+    if (!_nameTouched) {
+      _nameController.text = _autoName();
+      _nameController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _nameController.text.length),
+      );
+    }
+  }
+
+  ({DateTime? from, DateTime? to}) _resolvedRange() {
+    final now = DateTime.now();
+    switch (_datePreset) {
+      case 'today':
+        final start = DateTime(now.year, now.month, now.day);
+        return (from: start, to: now);
+      case 'week':
+        return (from: now.subtract(const Duration(days: 7)), to: now);
+      case 'month':
+        return (from: DateTime(now.year, now.month, 1), to: now);
+      case 'year':
+        return (from: DateTime(now.year, 1, 1), to: now);
+      case 'custom':
+        if (_customFrom == null || _customTo == null) {
+          return (from: null, to: null);
+        }
+        final start = DateTime(
+          _customFrom!.year,
+          _customFrom!.month,
+          _customFrom!.day,
+        );
+        final end = DateTime(
+          _customTo!.year,
+          _customTo!.month,
+          _customTo!.day,
+          23,
+          59,
+          59,
+        );
+        return (from: start, to: end);
+      default:
+        return (from: null, to: null);
+    }
+  }
+
+  List<AlertModel> _resolvedAlerts() {
+    final range = _resolvedRange();
+    return widget.baseAlerts.where((a) {
+      if (_factory != 'all' && a.usine != _factory) return false;
+      if (_conveyeur != 'all' && a.convoyeur.toString() != _conveyeur) {
+        return false;
+      }
+      if (_poste != 'all' && a.poste.toString() != _poste) return false;
+      if (!_selectedTypes.contains(a.type)) return false;
+      if (_critical == 'critical' && !a.isCritical) return false;
+      if (_critical == 'normal' && a.isCritical) return false;
+      if (_status != 'all' && a.status != _status) return false;
+      if (range.from != null && a.timestamp.isBefore(range.from!)) {
+        return false;
+      }
+      if (range.to != null && a.timestamp.isAfter(range.to!)) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  Future<void> _pickDate(bool isFrom) async {
+    final theme = context.appTheme;
+    final now = DateTime.now();
+    final initial = isFrom
+        ? (_customFrom ?? now.subtract(const Duration(days: 7)))
+        : (_customTo ?? now);
+    final firstDate = DateTime(now.year - 5);
+    final lastDate = DateTime(now.year + 1, 12, 31);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: Theme.of(ctx).colorScheme.copyWith(
+                primary: theme.navy,
+                onPrimary: Colors.white,
+              ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isFrom) {
+          _customFrom = picked;
+          if (_customTo != null && _customTo!.isBefore(picked)) {
+            _customTo = picked;
+          }
+        } else {
+          _customTo = picked;
+          if (_customFrom != null && _customFrom!.isAfter(picked)) {
+            _customFrom = picked;
+          }
+        }
+        _refreshAutoNameIfNeeded();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    final theme = context.appTheme;
+    final filtered = _resolvedAlerts();
+
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (ctx, c) {
+          final maxHeight = c.maxHeight > 0 ? c.maxHeight * 0.92 : 760.0;
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: 680, maxHeight: maxHeight),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.card,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: theme.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 32,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeader(theme),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding:
+                            const EdgeInsets.fromLTRB(22, 18, 22, 18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildReportNameField(theme),
+                            const SizedBox(height: 18),
+                            _buildLocationSection(theme),
+                            const SizedBox(height: 18),
+                            _buildDateRangeSection(theme),
+                            const SizedBox(height: 18),
+                            _buildAlertTypeSection(theme),
+                            const SizedBox(height: 18),
+                            _buildSegmentSection(
+                              theme: theme,
+                              label: 'Criticality',
+                              icon: Icons.priority_high_rounded,
+                              value: _critical,
+                              options: const [
+                                ('all', 'All'),
+                                ('critical', 'Critical Only'),
+                                ('normal', 'Normal Only'),
+                              ],
+                              onChanged: (v) => setState(() {
+                                _critical = v;
+                                _refreshAutoNameIfNeeded();
+                              }),
+                            ),
+                            const SizedBox(height: 18),
+                            _buildSegmentSection(
+                              theme: theme,
+                              label: 'Status',
+                              icon: Icons.flag_rounded,
+                              value: _status,
+                              options: const [
+                                ('all', 'All'),
+                                ('disponible', 'Pending'),
+                                ('en_cours', 'Claimed'),
+                                ('validee', 'Resolved'),
+                              ],
+                              onChanged: (v) =>
+                                  setState(() => _status = v),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _buildFooter(theme, filtered),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHeader(AppTheme theme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 20, 16, 20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.navy,
+            theme.navy.withValues(alpha: 0.78),
+          ],
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+            ),
+            child: const Icon(
+              Icons.picture_as_pdf_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Export Report',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Generate a professional PDF tailored to your filters',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: _exporting ? null : () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close_rounded),
+            color: Colors.white,
+            tooltip: 'Close',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportNameField(AppTheme theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(theme, 'Report Name', Icons.edit_note_rounded),
+        const SizedBox(height: 8),
+        Container(
           decoration: BoxDecoration(
-            color: _hover
-                ? widget.hoverColor.withValues(alpha: 0.12)
-                : widget.baseBg,
-            border: Border(
-              left: BorderSide(
-                color: _hover ? widget.hoverColor : Colors.transparent,
-                width: 3,
+            color: theme.scaffold,
+            border: Border.all(color: theme.border),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _nameController,
+                  maxLines: 2,
+                  minLines: 1,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: theme.text,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 10),
+                    hintText: 'Report name',
+                  ),
+                ),
+              ),
+              if (_nameTouched)
+                IconButton(
+                  tooltip: 'Reset to auto-generated name',
+                  onPressed: () {
+                    setState(() {
+                      _nameTouched = false;
+                      _nameController.text = _autoName();
+                    });
+                  },
+                  icon: Icon(
+                    Icons.refresh_rounded,
+                    size: 18,
+                    color: theme.muted,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _nameTouched
+              ? 'Custom report name'
+              : 'Auto-generated from current filters',
+          style: TextStyle(
+            fontSize: 11,
+            color: theme.muted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationSection(AppTheme theme) {
+    final factoryOpts = _factoryOptions();
+    final safeFactory =
+        factoryOpts.contains(_factory) ? _factory : 'all';
+    final conveyeurOpts = _conveyeurOptions();
+    final safeConveyeur =
+        conveyeurOpts.contains(_conveyeur) ? _conveyeur : 'all';
+    final posteOpts = _posteOptions();
+    final safePoste = posteOpts.contains(_poste) ? _poste : 'all';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(theme, 'Location Scope', Icons.factory_rounded),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (ctx, c) {
+            final narrow = c.maxWidth < 520;
+            final factoryField = _locationDropdown(
+              theme: theme,
+              icon: Icons.business_rounded,
+              label: 'Plant',
+              value: safeFactory,
+              items: factoryOpts.map((v) {
+                return DropdownMenuItem<String>(
+                  value: v,
+                  child: Text(
+                    v == 'all' ? 'All Plants' : v,
+                    style: TextStyle(fontSize: 13, color: theme.text),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) => setState(() {
+                _factory = v;
+                _conveyeur = 'all';
+                _poste = 'all';
+                _refreshAutoNameIfNeeded();
+              }),
+            );
+            final conveyorField = _locationDropdown(
+              theme: theme,
+              icon: Icons.linear_scale_rounded,
+              label: 'Conveyor',
+              value: safeConveyeur,
+              enabled: conveyeurOpts.length > 1,
+              items: conveyeurOpts.map((v) {
+                return DropdownMenuItem<String>(
+                  value: v,
+                  child: Text(
+                    v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                    style: TextStyle(fontSize: 13, color: theme.text),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) => setState(() {
+                _conveyeur = v;
+                _poste = 'all';
+                _refreshAutoNameIfNeeded();
+              }),
+            );
+            final stationField = _locationDropdown(
+              theme: theme,
+              icon: Icons.location_on_rounded,
+              label: 'Workstation',
+              value: safePoste,
+              enabled: posteOpts.length > 1,
+              items: posteOpts.map((v) {
+                return DropdownMenuItem<String>(
+                  value: v,
+                  child: Text(
+                    v == 'all' ? 'All Workstations' : 'WS $v',
+                    style: TextStyle(fontSize: 13, color: theme.text),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) => setState(() {
+                _poste = v;
+                _refreshAutoNameIfNeeded();
+              }),
+            );
+
+            if (narrow) {
+              return Column(
+                children: [
+                  factoryField,
+                  const SizedBox(height: 10),
+                  conveyorField,
+                  const SizedBox(height: 10),
+                  stationField,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: factoryField),
+                const SizedBox(width: 10),
+                Expanded(child: conveyorField),
+                const SizedBox(width: 10),
+                Expanded(child: stationField),
+              ],
+            );
+          },
+        ),
+        if (_factory != 'all' || _conveyeur != 'all' || _poste != 'all') ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() {
+                _factory = 'all';
+                _conveyeur = 'all';
+                _poste = 'all';
+                _refreshAutoNameIfNeeded();
+              }),
+              icon: const Icon(Icons.clear_rounded, size: 14),
+              label: const Text(
+                'Clear location filters',
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.red,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ),
-          child: Row(
+        ],
+      ],
+    );
+  }
+
+  Widget _locationDropdown({
+    required AppTheme theme,
+    required IconData icon,
+    required String label,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required void Function(String) onChanged,
+    bool enabled = true,
+  }) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              widget.icon,
-              const SizedBox(width: 10),
+              Icon(icon, size: 12, color: theme.muted),
+              const SizedBox(width: 5),
               Text(
-                widget.label,
+                label.toUpperCase(),
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _hover ? widget.hoverColor : widget.baseText,
+                  fontSize: 9.5,
+                  color: theme.muted,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 5),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: theme.scaffold,
+              border: Border.all(color: theme.border),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: value,
+                isExpanded: true,
+                style: TextStyle(fontSize: 13, color: theme.text),
+                dropdownColor: theme.card,
+                items: items,
+                onChanged: enabled
+                    ? (v) {
+                        if (v != null) onChanged(v);
+                      }
+                    : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateRangeSection(AppTheme theme) {
+    const presets = <(String, String)>[
+      ('all', 'All Time'),
+      ('today', 'Today'),
+      ('week', 'Last 7 Days'),
+      ('month', 'This Month'),
+      ('year', 'This Year'),
+      ('custom', 'Custom'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(theme, 'Date Range', Icons.event_rounded),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: presets.map((p) {
+            final selected = _datePreset == p.$1;
+            return ChoiceChip(
+              label: Text(
+                p.$2,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : theme.text,
+                ),
+              ),
+              selected: selected,
+              selectedColor: theme.navy,
+              backgroundColor: theme.scaffold,
+              side: BorderSide(
+                color: selected ? theme.navy : theme.border,
+              ),
+              onSelected: (_) => setState(() {
+                _datePreset = p.$1;
+                _refreshAutoNameIfNeeded();
+              }),
+            );
+          }).toList(),
+        ),
+        if (_datePreset == 'custom') ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _datePickerField(
+                  theme: theme,
+                  label: 'From',
+                  value: _customFrom,
+                  onTap: () => _pickDate(true),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _datePickerField(
+                  theme: theme,
+                  label: 'To',
+                  value: _customTo,
+                  onTap: () => _pickDate(false),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _datePickerField({
+    required AppTheme theme,
+    required String label,
+    required DateTime? value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: theme.scaffold,
+          border: Border.all(color: theme.border),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today_rounded, size: 14, color: theme.muted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: theme.muted,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value == null ? 'Select date' : _isoDate(value),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: value == null ? theme.muted : theme.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildAlertTypeSection(AppTheme theme) {
+    final allSelected = _selectedTypes.length == _allTypes.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _sectionLabel(theme, 'Alert Types', Icons.category_rounded),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  if (allSelected) {
+                    _selectedTypes = {};
+                  } else {
+                    _selectedTypes = Set<String>.from(_allTypes);
+                  }
+                });
+              },
+              icon: Icon(
+                allSelected
+                    ? Icons.indeterminate_check_box_outlined
+                    : Icons.select_all_rounded,
+                size: 14,
+              ),
+              label: Text(
+                allSelected ? 'Clear all' : 'Select all',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.navy,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _allTypes.map((t) {
+            final selected = _selectedTypes.contains(t);
+            final color = adminTypeColor(context, t);
+            return FilterChip(
+              label: Text(
+                widget.labelType(t),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? color : theme.text,
+                ),
+              ),
+              selected: selected,
+              selectedColor: color.withValues(alpha: 0.15),
+              checkmarkColor: color,
+              backgroundColor: theme.scaffold,
+              side: BorderSide(
+                color: selected ? color : theme.border,
+                width: selected ? 1.4 : 1,
+              ),
+              onSelected: (v) {
+                setState(() {
+                  if (v) {
+                    _selectedTypes.add(t);
+                  } else {
+                    _selectedTypes.remove(t);
+                  }
+                });
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSegmentSection({
+    required AppTheme theme,
+    required String label,
+    required IconData icon,
+    required String value,
+    required List<(String, String)> options,
+    required void Function(String) onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel(theme, label, icon),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((opt) {
+            final selected = value == opt.$1;
+            return ChoiceChip(
+              label: Text(
+                opt.$2,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : theme.text,
+                ),
+              ),
+              selected: selected,
+              selectedColor: theme.navy,
+              backgroundColor: theme.scaffold,
+              side: BorderSide(
+                color: selected ? theme.navy : theme.border,
+              ),
+              onSelected: (_) => onChanged(opt.$1),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionLabel(AppTheme theme, String text, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: theme.navy.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Icon(icon, size: 13, color: theme.navy),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text.toUpperCase(),
+          style: TextStyle(
+            fontSize: 11,
+            color: theme.text,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFooter(AppTheme theme, List<AlertModel> filtered) {
+    final canExport = filtered.isNotEmpty &&
+        _selectedTypes.isNotEmpty &&
+        !_exporting &&
+        (_datePreset != 'custom' ||
+            (_customFrom != null && _customTo != null));
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 12, 22, 16),
+      decoration: BoxDecoration(
+        color: theme.scaffold,
+        border: Border(top: BorderSide(color: theme.border)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: filtered.isEmpty
+                  ? theme.red.withValues(alpha: 0.10)
+                  : theme.green.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: filtered.isEmpty
+                    ? theme.red.withValues(alpha: 0.4)
+                    : theme.green.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  filtered.isEmpty
+                      ? Icons.warning_amber_rounded
+                      : Icons.fact_check_rounded,
+                  size: 14,
+                  color: filtered.isEmpty ? theme.red : theme.green,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  filtered.isEmpty
+                      ? 'No alerts match'
+                      : '${filtered.length} ${filtered.length == 1 ? "alert" : "alerts"} included',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: filtered.isEmpty ? theme.red : theme.green,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _datePresetLabel(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed:
+                _exporting ? null : () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              foregroundColor: theme.muted,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton.icon(
+            onPressed: canExport ? _handleExport : null,
+            icon: _exporting
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.download_rounded, size: 16),
+            label: Text(
+              _exporting ? 'Generating...' : 'Generate PDF',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.navy,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: theme.muted.withValues(alpha: 0.35),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleExport() async {
+    final filtered = _resolvedAlerts();
+    if (filtered.isEmpty) return;
+    final name = _nameController.text.trim().isEmpty
+        ? _autoName()
+        : _nameController.text.trim();
+    setState(() => _exporting = true);
+    try {
+      await widget.onExport(filtered, name);
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+        Navigator.of(context).pop();
+      }
+    }
   }
 }

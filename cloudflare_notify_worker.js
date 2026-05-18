@@ -1,11 +1,11 @@
-// Cloudflare Worker - AlertSys Notifications Worker
+// Cloudflare Worker - Smart Industrial Alert - SIA Notifications Worker
 // Cron schedule: "* * * * *" (every minute)
 // Responsibilities: new-alert push fan-out, queued notification fan-out, /notify.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-worker-secret, X-AlertSys-Worker-Secret',
+  'Access-Control-Allow-Headers': 'Content-Type, x-worker-secret, X-SIA-Worker-Secret',
 };
 
 let _fbToken = null;
@@ -633,7 +633,7 @@ function notifTitle(type) {
     case 'ai_cross_factory_recommendation': return 'AI recommendation';
     case 'ai_rejection': return 'AI rejection';
     case 'alert_suspended': return 'Alert suspended';
-    default: return 'AlertSys';
+    default: return 'Smart Industrial Alert - SIA';
   }
 }
 
@@ -718,7 +718,7 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
       const result = await sendFcmDetailed(
         fcmToken,
         notifTitle(current.type),
-        String(current.message || current.type || 'AlertSys notification'),
+        String(current.message || current.type || 'Smart Industrial Alert - SIA notification'),
         {
           notificationId: notifId,
           recipientId: uid,

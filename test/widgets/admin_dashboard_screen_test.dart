@@ -24,5 +24,8 @@ void main() {
     expect(find.text('Alerts'), findsOneWidget);
     expect(find.text('Escalations'), findsOneWidget);
     expect(find.text('Hierarchy'), findsOneWidget);
+    expect(find.text('Developer'), findsNothing);
+    expect(find.text('Developer Mode'), findsNothing);
+    expect(find.byIcon(Icons.build_circle_outlined), findsNothing);
   });
 }

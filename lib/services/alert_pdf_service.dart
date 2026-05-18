@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -27,16 +27,20 @@ class AlertPdfService {
     required String scopeLabel,
     required String timeRangeLabel,
     String Function(String type)? labelType,
+    String? reportName,
   }) async {
+    final resolvedName = (reportName ?? '').trim().isEmpty
+        ? 'Smart Industrial Alert - SIA - Operations Report'
+        : reportName!.trim();
     final doc = await _buildDoc(
       alerts: alerts,
       scopeLabel: scopeLabel,
       timeRangeLabel: timeRangeLabel,
       labelType: labelType ?? _defaultTypeLabel,
+      reportName: resolvedName,
     );
     final bytes = await doc.save();
-    final filename =
-        'alertsys_report_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final filename = '${_slugify(resolvedName)}.pdf';
     if (kIsWeb) {
       final blob = html.Blob([bytes], 'application/pdf');
       final url = html.Url.createObjectUrlFromBlob(blob);
@@ -49,10 +53,32 @@ class AlertPdfService {
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/$filename');
     await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'AlertSys operations report',
+    await Share.shareXFiles([XFile(file.path)], text: resolvedName);
+  }
+
+  @visibleForTesting
+  static Future<pw.Document> buildDocumentForTesting({
+    required List<AlertModel> alerts,
+    required String scopeLabel,
+    required String timeRangeLabel,
+    required String Function(String type) labelType,
+    required String reportName,
+  }) {
+    return _buildDoc(
+      alerts: alerts,
+      scopeLabel: scopeLabel,
+      timeRangeLabel: timeRangeLabel,
+      labelType: labelType,
+      reportName: reportName,
     );
+  }
+
+  static String _slugify(String name) {
+    final lower = name.toLowerCase();
+    final cleaned = lower.replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+    final trimmed = cleaned.replaceAll(RegExp(r'^_+|_+$'), '');
+    final base = trimmed.isEmpty ? 'sia_report' : trimmed;
+    return '${base}_${DateTime.now().millisecondsSinceEpoch}';
   }
 
   static String _defaultTypeLabel(String type) {
@@ -75,11 +101,14 @@ class AlertPdfService {
     required String scopeLabel,
     required String timeRangeLabel,
     required String Function(String) labelType,
+    required String reportName,
   }) async {
+    final pdfTheme = await PdfFontTheme.load();
     final doc = pw.Document(
-      title: 'AlertSys Operations Report',
-      author: 'AlertSys',
-      creator: 'AlertSys Production Manager',
+      theme: pdfTheme,
+      title: reportName,
+      author: 'Smart Industrial Alert - SIA',
+      creator: 'Smart Industrial Alert - SIA Production Manager',
     );
 
     final solved = alerts.where((a) => a.status == 'validee').length;
@@ -87,17 +116,17 @@ class AlertPdfService {
     final pending = alerts.where((a) => a.status == 'disponible').length;
     final critical = alerts.where((a) => a.isCritical).length;
     final total = alerts.length;
-    final resolutionRate =
-        total == 0 ? 0 : ((solved / total) * 100).round();
+    final resolutionRate = total == 0 ? 0 : ((solved / total) * 100).round();
     final solvedWithTime = alerts.where(
-        (a) => a.status == 'validee' && (a.elapsedTime ?? 0) > 0);
+      (a) => a.status == 'validee' && (a.elapsedTime ?? 0) > 0,
+    );
     final avgMin = solvedWithTime.isEmpty
         ? 0
         : (solvedWithTime
-                    .map((a) => a.elapsedTime!)
-                    .fold<int>(0, (s, e) => s + e) /
-                solvedWithTime.length)
-            .round();
+                      .map((a) => a.elapsedTime!)
+                      .fold<int>(0, (s, e) => s + e) /
+                  solvedWithTime.length)
+              .round();
 
     final byType = <String, int>{};
     for (final a in alerts) {
@@ -108,20 +137,23 @@ class AlertPdfService {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.fromLTRB(28, 28, 28, 36),
-        theme: pw.ThemeData.withFont(),
+        theme: pdfTheme,
         header: (ctx) => ctx.pageNumber == 1
             ? pw.SizedBox.shrink()
-            : pw.Column(children: [
-                _runningHeader(scopeLabel, timeRangeLabel),
-                pw.SizedBox(height: 8),
-                _tableHeader(),
-              ]),
+            : pw.Column(
+                children: [
+                  _runningHeader(scopeLabel, timeRangeLabel, reportName),
+                  pw.SizedBox(height: 8),
+                  _tableHeader(),
+                ],
+              ),
         footer: (ctx) => _footer(ctx),
         build: (ctx) => [
           _heroBanner(
             scopeLabel: scopeLabel,
             timeRangeLabel: timeRangeLabel,
             total: total,
+            reportName: reportName,
           ),
           pw.SizedBox(height: 14),
           _kpiStrip(
@@ -142,7 +174,7 @@ class AlertPdfService {
           _legendBar(),
           pw.SizedBox(height: 8),
           _tableHeader(),
-          _alertsTableWithoutHeader(alerts, labelType: labelType),
+          ..._alertRowsWithoutHeader(alerts, labelType: labelType),
           pw.SizedBox(height: 10),
           _watermarkFooter(),
         ],
@@ -160,6 +192,7 @@ class AlertPdfService {
     required String scopeLabel,
     required String timeRangeLabel,
     required int total,
+    required String reportName,
   }) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(20),
@@ -168,7 +201,7 @@ class AlertPdfService {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'ALERTSYS - OPERATIONS REPORT',
+            _safePdfText(reportName).toUpperCase(),
             style: pw.TextStyle(
               fontSize: 10,
               color: PdfColors.white,
@@ -188,10 +221,7 @@ class AlertPdfService {
           pw.SizedBox(height: 4),
           pw.Text(
             'Audit-grade snapshot of factory floor alerts and supervisor performance.',
-            style: pw.TextStyle(
-              fontSize: 10,
-              color: PdfColors.white,
-            ),
+            style: const pw.TextStyle(fontSize: 10, color: PdfColors.white),
           ),
           pw.SizedBox(height: 12),
           pw.Row(
@@ -245,33 +275,43 @@ class AlertPdfService {
     required int avgMin,
     required int resolutionRate,
   }) {
-    return pw.Row(children: [
-      _kpiCard('Total', '$total', PdfPalette.navy, PdfPalette.cardBg),
-      _kpiSpacer(),
-      _kpiCard(
-          'Pending', '$pending', PdfPalette.orange, PdfPalette.cardBg),
-      _kpiSpacer(),
-      _kpiCard(
-          'Claimed', '$inProgress', PdfPalette.blue, PdfPalette.cardBg),
-      _kpiSpacer(),
-      _kpiCard('Resolved', '$solved', PdfPalette.green, PdfPalette.cardBg),
-      _kpiSpacer(),
-      _kpiCard(
-          'Critical', '$critical', PdfPalette.red, PdfPalette.cardBg),
-      _kpiSpacer(),
-      _kpiCard(
-          'Avg fix', avgMin > 0 ? '${avgMin}m' : '-',
-          PdfPalette.purple, PdfPalette.cardBg),
-      _kpiSpacer(),
-      _kpiCard('Resolution', '$resolutionRate%', PdfPalette.yellow,
-          PdfPalette.cardBg),
-    ]);
+    return pw.Row(
+      children: [
+        _kpiCard('Total', '$total', PdfPalette.navy, PdfPalette.cardBg),
+        _kpiSpacer(),
+        _kpiCard('Pending', '$pending', PdfPalette.orange, PdfPalette.cardBg),
+        _kpiSpacer(),
+        _kpiCard('Claimed', '$inProgress', PdfPalette.blue, PdfPalette.cardBg),
+        _kpiSpacer(),
+        _kpiCard('Resolved', '$solved', PdfPalette.green, PdfPalette.cardBg),
+        _kpiSpacer(),
+        _kpiCard('Critical', '$critical', PdfPalette.red, PdfPalette.cardBg),
+        _kpiSpacer(),
+        _kpiCard(
+          'Avg fix',
+          avgMin > 0 ? '${avgMin}m' : '-',
+          PdfPalette.purple,
+          PdfPalette.cardBg,
+        ),
+        _kpiSpacer(),
+        _kpiCard(
+          'Resolution',
+          '$resolutionRate%',
+          PdfPalette.yellow,
+          PdfPalette.cardBg,
+        ),
+      ],
+    );
   }
 
   static pw.Widget _kpiSpacer() => pw.SizedBox(width: 8);
 
   static pw.Widget _kpiCard(
-      String label, String value, PdfColor accent, PdfColor bg) {
+    String label,
+    String value,
+    PdfColor accent,
+    PdfColor bg,
+  ) {
     return pw.Expanded(
       child: pw.Container(
         padding: const pw.EdgeInsets.fromLTRB(10, 9, 10, 10),
@@ -321,33 +361,33 @@ class AlertPdfService {
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Row(children: [
-            pw.Text(
-              'Distribution by alert type',
-              style: pw.TextStyle(
-                fontSize: 11,
-                color: PdfPalette.text,
-                fontWeight: pw.FontWeight.bold,
+          pw.Row(
+            children: [
+              pw.Text(
+                'Distribution by alert type',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  color: PdfPalette.text,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
-            ),
-            pw.Spacer(),
-            pw.Text(
-              '$total alerts analysed',
-              style: pw.TextStyle(
-                fontSize: 8,
-                color: PdfPalette.muted,
+              pw.Spacer(),
+              pw.Text(
+                '$total alerts analysed',
+                style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
               ),
-            ),
-          ]),
+            ],
+          ),
           pw.SizedBox(height: 8),
-          ...entries.map((e) => _typeBar(
-                label: labelType(e.key),
-                color: _typeColor(e.key),
-                count: e.value,
-                fraction: maxVal == 0 ? 0 : e.value / maxVal,
-                pctOfTotal:
-                    total == 0 ? 0 : (e.value / total * 100).round(),
-              )),
+          ...entries.map(
+            (e) => _typeBar(
+              label: labelType(e.key),
+              color: _typeColor(e.key),
+              count: e.value,
+              fraction: maxVal == 0 ? 0 : e.value / maxVal,
+              pctOfTotal: total == 0 ? 0 : (e.value / total * 100).round(),
+            ),
+          ),
         ],
       ),
     );
@@ -362,51 +402,52 @@ class AlertPdfService {
   }) {
     return pw.Padding(
       padding: const pw.EdgeInsets.only(bottom: 6),
-      child: pw.Row(children: [
-        pw.SizedBox(
-          width: 80,
-          child: pw.Text(
-            label,
-            style: pw.TextStyle(
-              fontSize: 9,
-              color: PdfPalette.text,
-              fontWeight: pw.FontWeight.bold,
+      child: pw.Row(
+        children: [
+          pw.SizedBox(
+            width: 80,
+            child: pw.Text(
+              label,
+              style: pw.TextStyle(
+                fontSize: 9,
+                color: PdfPalette.text,
+                fontWeight: pw.FontWeight.bold,
+              ),
             ),
           ),
-        ),
-        pw.Expanded(
-          child: pw.Container(
-            height: 12,
-            color: PdfColor.fromHex('#EEF2F7'),
-            child: pw.Row(children: [
-              pw.Expanded(
-                flex: (fraction.clamp(0.0, 1.0) * 1000).round(),
-                child: pw.Container(
-                  height: 12,
-                  color: color,
-                ),
+          pw.Expanded(
+            child: pw.Container(
+              height: 12,
+              color: PdfColor.fromHex('#EEF2F7'),
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    flex: (fraction.clamp(0.0, 1.0) * 1000).round(),
+                    child: pw.Container(height: 12, color: color),
+                  ),
+                  pw.Expanded(
+                    flex: ((1 - fraction.clamp(0.0, 1.0)) * 1000).round(),
+                    child: pw.SizedBox(),
+                  ),
+                ],
               ),
-              pw.Expanded(
-                flex: ((1 - fraction.clamp(0.0, 1.0)) * 1000).round(),
-                child: pw.SizedBox(),
-              ),
-            ]),
-          ),
-        ),
-        pw.SizedBox(width: 8),
-        pw.SizedBox(
-          width: 70,
-          child: pw.Text(
-            '$count  ·  $pctOfTotal%',
-            textAlign: pw.TextAlign.right,
-            style: pw.TextStyle(
-              fontSize: 9,
-              color: PdfPalette.text,
-              fontWeight: pw.FontWeight.bold,
             ),
           ),
-        ),
-      ]),
+          pw.SizedBox(width: 8),
+          pw.SizedBox(
+            width: 70,
+            child: pw.Text(
+              '$count  ·  $pctOfTotal%',
+              textAlign: pw.TextAlign.right,
+              style: pw.TextStyle(
+                fontSize: 9,
+                color: PdfPalette.text,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -431,7 +472,22 @@ class AlertPdfService {
     'Critical',
   ];
 
-  static const List<int> _tableFlexes = [6, 8, 8, 3, 3, 8, 8, 18, 6, 8, 8, 12, 5, 5];
+  static const List<int> _tableFlexes = [
+    6,
+    8,
+    8,
+    3,
+    3,
+    8,
+    8,
+    18,
+    6,
+    8,
+    8,
+    12,
+    5,
+    5,
+  ];
 
   static pw.Widget _tableHeader() {
     final headerCells = <pw.Widget>[];
@@ -462,20 +518,22 @@ class AlertPdfService {
     );
   }
 
-  static pw.Widget _alertsTableWithoutHeader(
+  static List<pw.Widget> _alertRowsWithoutHeader(
     List<AlertModel> alerts, {
     required String Function(String) labelType,
   }) {
     if (alerts.isEmpty) {
-      return pw.Container(
-        padding: const pw.EdgeInsets.symmetric(vertical: 32),
-        alignment: pw.Alignment.center,
-        color: PdfPalette.cardBg,
-        child: pw.Text(
-          'No alerts to display.',
-          style: pw.TextStyle(fontSize: 11, color: PdfPalette.muted),
+      return [
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(vertical: 32),
+          alignment: pw.Alignment.center,
+          color: PdfPalette.cardBg,
+          child: pw.Text(
+            'No alerts to display.',
+            style: const pw.TextStyle(fontSize: 11, color: PdfPalette.muted),
+          ),
         ),
-      );
+      ];
     }
 
     final rows = <pw.Widget>[];
@@ -495,9 +553,8 @@ class AlertPdfService {
       );
     }
 
-    return pw.Column(children: rows);
+    return rows;
   }
-
 
   static List<pw.Widget> _buildAlertRow(
     AlertModel a,
@@ -559,7 +616,10 @@ class AlertPdfService {
           ? pw.Align(
               alignment: pw.Alignment.center,
               child: pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 4,
+                  vertical: 2,
+                ),
                 color: PdfPalette.red,
                 child: pw.Text(
                   '!',
@@ -571,7 +631,11 @@ class AlertPdfService {
                 ),
               ),
             )
-          : _cellText('-', align: pw.TextAlign.center, color: PdfPalette.subtle),
+          : _cellText(
+              '-',
+              align: pw.TextAlign.center,
+              color: PdfPalette.subtle,
+            ),
     ];
 
     return List.generate(
@@ -602,7 +666,7 @@ class AlertPdfService {
         fontSize: fontSize,
         color: color,
         fontWeight: weight,
-        font: mono ? pw.Font.courier() : null,
+        letterSpacing: mono ? 0.2 : null,
       ),
     );
   }
@@ -611,8 +675,7 @@ class AlertPdfService {
     return pw.Align(
       alignment: pw.Alignment.centerLeft,
       child: pw.Container(
-        padding:
-            const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
         color: _withAlpha(color, 0.14),
         child: pw.Text(
           label,
@@ -630,8 +693,7 @@ class AlertPdfService {
     return pw.Align(
       alignment: pw.Alignment.centerLeft,
       child: pw.Container(
-        padding:
-            const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
         color: _withAlpha(color, 0.14),
         child: pw.Text(
           label.toUpperCase(),
@@ -650,110 +712,111 @@ class AlertPdfService {
   // ─────────────────────────────────────────────────────────────────────────
 
   static pw.Widget _sectionHeader(String label, int count) {
-    return pw.Row(children: [
-      pw.Container(
-        width: 4,
-        height: 18,
-        color: PdfPalette.navy,
-      ),
-      pw.SizedBox(width: 8),
-      pw.Text(
-        label,
-        style: pw.TextStyle(
-          fontSize: 13,
-          color: PdfPalette.text,
-          fontWeight: pw.FontWeight.bold,
-        ),
-      ),
-      pw.SizedBox(width: 6),
-      pw.Container(
-        padding:
-            const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        color: _withAlpha(PdfPalette.navy, 0.13),
-        child: pw.Text(
-          '$count entries',
-          style: pw.TextStyle(
-            fontSize: 8,
-            color: PdfPalette.navy,
-            fontWeight: pw.FontWeight.bold,
-          ),
-        ),
-      ),
-    ]);
-  }
-
-  static pw.Widget _legendBar() {
-    pw.Widget chip(String label, PdfColor color) => pw.Container(
-          padding:
-              const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          color: _withAlpha(color, 0.14),
-          child: pw.Text(
-            label,
-            style: pw.TextStyle(
-              fontSize: 7,
-              color: color,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-        );
-    return pw.Row(children: [
-      pw.Text(
-        'STATUS',
-        style: pw.TextStyle(
-          fontSize: 7,
-          color: PdfPalette.muted,
-          fontWeight: pw.FontWeight.bold,
-        ),
-      ),
-      pw.SizedBox(width: 8),
-      chip('AVAILABLE', PdfPalette.orange),
-      pw.SizedBox(width: 5),
-      chip('CLAIMED', PdfPalette.blue),
-      pw.SizedBox(width: 5),
-      chip('FIXED', PdfPalette.green),
-      pw.SizedBox(width: 14),
-      pw.Text(
-        'TYPE',
-        style: pw.TextStyle(
-          fontSize: 7,
-          color: PdfPalette.muted,
-          fontWeight: pw.FontWeight.bold,
-        ),
-      ),
-      pw.SizedBox(width: 8),
-      chip('Quality', _typeColor('qualite')),
-      pw.SizedBox(width: 5),
-      chip('Maintenance', _typeColor('maintenance')),
-      pw.SizedBox(width: 5),
-      chip('Damaged', _typeColor('defaut_produit')),
-      pw.SizedBox(width: 5),
-      chip('Resource', _typeColor('manque_ressource')),
-    ]);
-  }
-
-  static pw.Widget _runningHeader(String scope, String range) {
-    return pw.Container(
-      margin: const pw.EdgeInsets.only(bottom: 8),
-      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      color: PdfPalette.cardBg,
-      child: pw.Row(children: [
+    return pw.Row(
+      children: [
+        pw.Container(width: 4, height: 18, color: PdfPalette.navy),
+        pw.SizedBox(width: 8),
         pw.Text(
-          'AlertSys - Operations Report',
+          label,
           style: pw.TextStyle(
-            fontSize: 10,
+            fontSize: 13,
             color: PdfPalette.text,
             fontWeight: pw.FontWeight.bold,
           ),
         ),
-        pw.Spacer(),
-        pw.Text(
-          '$scope · $range',
-          style: pw.TextStyle(
-            fontSize: 8,
-            color: PdfPalette.muted,
+        pw.SizedBox(width: 6),
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          color: _withAlpha(PdfPalette.navy, 0.13),
+          child: pw.Text(
+            '$count entries',
+            style: pw.TextStyle(
+              fontSize: 8,
+              color: PdfPalette.navy,
+              fontWeight: pw.FontWeight.bold,
+            ),
           ),
         ),
-      ]),
+      ],
+    );
+  }
+
+  static pw.Widget _legendBar() {
+    pw.Widget chip(String label, PdfColor color) => pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      color: _withAlpha(color, 0.14),
+      child: pw.Text(
+        label,
+        style: pw.TextStyle(
+          fontSize: 7,
+          color: color,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+    );
+    return pw.Row(
+      children: [
+        pw.Text(
+          'STATUS',
+          style: pw.TextStyle(
+            fontSize: 7,
+            color: PdfPalette.muted,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.SizedBox(width: 8),
+        chip('AVAILABLE', PdfPalette.orange),
+        pw.SizedBox(width: 5),
+        chip('CLAIMED', PdfPalette.blue),
+        pw.SizedBox(width: 5),
+        chip('FIXED', PdfPalette.green),
+        pw.SizedBox(width: 14),
+        pw.Text(
+          'TYPE',
+          style: pw.TextStyle(
+            fontSize: 7,
+            color: PdfPalette.muted,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.SizedBox(width: 8),
+        chip('Quality', _typeColor('qualite')),
+        pw.SizedBox(width: 5),
+        chip('Maintenance', _typeColor('maintenance')),
+        pw.SizedBox(width: 5),
+        chip('Damaged', _typeColor('defaut_produit')),
+        pw.SizedBox(width: 5),
+        chip('Resource', _typeColor('manque_ressource')),
+      ],
+    );
+  }
+
+  static pw.Widget _runningHeader(
+    String scope,
+    String range,
+    String reportName,
+  ) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 8),
+      padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      color: PdfPalette.cardBg,
+      child: pw.Row(
+        children: [
+          pw.Text(
+            _safePdfText(reportName),
+            style: pw.TextStyle(
+              fontSize: 10,
+              color: PdfPalette.text,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.Spacer(),
+          pw.Text(
+            '$scope · $range',
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
+          ),
+        ],
+      ),
     );
   }
 
@@ -762,23 +825,19 @@ class AlertPdfService {
       margin: const pw.EdgeInsets.only(top: 12),
       padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       color: PdfPalette.cardBg,
-      child: pw.Row(children: [
-        pw.Text(
-          'Page ${ctx.pageNumber}',
-          style: pw.TextStyle(
-            fontSize: 8,
-            color: PdfPalette.muted,
+      child: pw.Row(
+        children: [
+          pw.Text(
+            'Page ${ctx.pageNumber}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
           ),
-        ),
-        pw.Spacer(),
-        pw.Text(
-          'Generated on ${_fmtDate(DateTime.now())}',
-          style: pw.TextStyle(
-            fontSize: 8,
-            color: PdfPalette.muted,
+          pw.Spacer(),
+          pw.Text(
+            'Generated on ${_fmtDate(DateTime.now())}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfPalette.muted),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -799,11 +858,8 @@ class AlertPdfService {
           ),
           pw.SizedBox(height: 4),
           pw.Text(
-            'AlertSys · Industrial Alert Intelligence Platform',
-            style: pw.TextStyle(
-              fontSize: 8,
-              color: PdfColors.white,
-            ),
+            'Smart Industrial Alert - SIA - Industrial Alert Intelligence Platform',
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.white),
           ),
         ],
       ),

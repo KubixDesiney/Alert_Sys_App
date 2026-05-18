@@ -271,6 +271,15 @@ const _SECURITY = Object.freeze({
   // A single matched pattern is enough to flag a prompt-injection attempt.
   // Patterns are heuristic and intentionally tuned to common attack strings.
   PROMPT_INJECTION_MATCH_THRESHOLD: 1,
+
+  // External SOC/SIEM export. Elastic data streams follow
+  // {type}-{dataset}-{namespace}; this becomes logs / sia.security /
+  // production in ECS documents.
+  ELASTIC_DEFAULT_DATA_STREAM: 'logs-sia.security-production',
+  SIEM_OUTBOX_BATCH_SIZE: 25,
+  SIEM_MAX_ATTEMPTS: 5,
+  SIEM_RETRY_BASE_MS: 60 * 1000,
+  SIEM_AUDIT_RETENTION_DAYS: 14,
 });
 
 // Per-fingerprint sliding window for rate limiting.
@@ -462,14 +471,24 @@ async function _securityLogEvent(env, event) {
     if (!token) return;
     const iso = new Date().toISOString();
     const key = _securityFbKey(iso) + '_' + Math.floor(Math.random() * 1e6).toString(36);
-    // PUT under a unique key — POST would also work, but PUT lets us
-    // dedupe on retry (the worker would compute the same key). We await the
-    // write because fire-and-forget subrequests are not reliable once the
-    // worker response has already been returned.
-    await fetch(`${env.FB_DB_URL}security/logs/${key}.json?auth=${token}`, {
-      method: 'PUT',
+    const auditRecord = { at: iso, ...event };
+    const outboxRecord = {
+      source: 'logs',
+      eventId: key,
+      status: 'pending',
+      attempts: 0,
+      createdAt: iso,
+      nextAttemptAt: iso,
+      event: auditRecord,
+    };
+    // Multi-location PATCH keeps the local audit copy and SIEM outbox in sync.
+    await fetch(`${env.FB_DB_URL}.json?auth=${token}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ at: iso, ...event }),
+      body: JSON.stringify({
+        [`security/logs/${key}`]: auditRecord,
+        [`security/siem_outbox/${key}`]: outboxRecord,
+      }),
     });
   } catch (e) {
     // Silent — we MUST NOT propagate logging errors.
@@ -484,13 +503,472 @@ async function _securityRecordAction(env, action) {
     if (!token) return;
     const iso = new Date().toISOString();
     const key = _securityFbKey(iso) + '_' + Math.floor(Math.random() * 1e6).toString(36);
-    await fetch(`${env.FB_DB_URL}security/actions/${key}.json?auth=${token}`, {
-      method: 'PUT',
+    const auditRecord = { at: iso, ...action };
+    const outboxRecord = {
+      source: 'actions',
+      eventId: key,
+      status: 'pending',
+      attempts: 0,
+      createdAt: iso,
+      nextAttemptAt: iso,
+      event: auditRecord,
+    };
+    await fetch(`${env.FB_DB_URL}.json?auth=${token}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ at: iso, ...action }),
+      body: JSON.stringify({
+        [`security/actions/${key}`]: auditRecord,
+        [`security/siem_outbox/${key}`]: outboxRecord,
+      }),
     });
   } catch (e) {
     // Silent — see comment above.
+  }
+}
+
+// ── Elastic SIEM export helpers ───────────────────────────────────────────
+function _securityBoolEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function _securityElasticConfig(env) {
+  const requested = _securityBoolEnv(env?.ELASTIC_SIEM_ENABLED);
+  const baseUrl = String(env?.ELASTICSEARCH_URL || '').trim().replace(/\/+$/, '');
+  const apiKey = String(env?.ELASTIC_API_KEY || '').trim();
+  const dataStream =
+    String(env?.ELASTIC_SECURITY_DATA_STREAM || _SECURITY.ELASTIC_DEFAULT_DATA_STREAM)
+      .trim() || _SECURITY.ELASTIC_DEFAULT_DATA_STREAM;
+  const missing = [];
+  if (!baseUrl) missing.push('ELASTICSEARCH_URL');
+  if (!apiKey) missing.push('ELASTIC_API_KEY');
+  return {
+    requested,
+    enabled: requested && missing.length === 0,
+    baseUrl,
+    apiKey,
+    dataStream,
+    missing,
+  };
+}
+
+function _securityDataStreamParts(dataStream) {
+  const parts = String(dataStream || _SECURITY.ELASTIC_DEFAULT_DATA_STREAM).split('-');
+  return {
+    type: parts[0] || 'logs',
+    dataset: parts[1] || 'sia.security',
+    namespace: parts.slice(2).join('-') || 'production',
+  };
+}
+
+function _securitySourceIpFromFingerprint(fingerprint) {
+  const raw = String(fingerprint || '').split('|')[0].trim();
+  if (!raw || raw === 'anon') return undefined;
+  if (/^[0-9]{1,3}(?:\.[0-9]{1,3}){3}$/.test(raw)) return raw;
+  if (/^[0-9a-fA-F:]+$/.test(raw) && raw.includes(':')) return raw;
+  return undefined;
+}
+
+function _securityEventProfile(kind, source) {
+  const profiles = {
+    rate_limit_block: {
+      eventKind: 'alert',
+      category: ['network'],
+      type: ['denied'],
+      outcome: 'failure',
+      severity: 7,
+      message: 'SIA security guard blocked a rate-limited request.',
+    },
+    prompt_injection_block: {
+      eventKind: 'alert',
+      category: ['intrusion_detection', 'web'],
+      type: ['denied'],
+      outcome: 'failure',
+      severity: 8,
+      message: 'SIA security guard blocked a prompt-injection attempt.',
+    },
+    bad_payload: {
+      eventKind: 'alert',
+      category: ['web'],
+      type: ['denied', 'error'],
+      outcome: 'failure',
+      severity: 5,
+      message: 'SIA security guard rejected an invalid request payload.',
+    },
+    alert_flood_detected: {
+      eventKind: 'alert',
+      category: ['intrusion_detection'],
+      type: ['info'],
+      outcome: 'unknown',
+      severity: 7,
+      message: 'SIA anomaly scan detected alert flooding.',
+    },
+    notifications_backlog: {
+      eventKind: 'alert',
+      category: ['intrusion_detection'],
+      type: ['info'],
+      outcome: 'unknown',
+      severity: 6,
+      message: 'SIA anomaly scan detected a notification backlog.',
+    },
+    auth_failure_surge: {
+      eventKind: 'alert',
+      category: ['authentication'],
+      type: ['info'],
+      outcome: 'failure',
+      severity: 8,
+      message: 'SIA anomaly scan detected an authentication failure surge.',
+    },
+    malformed_alerts_seen: {
+      eventKind: 'event',
+      category: ['database'],
+      type: ['info'],
+      outcome: 'unknown',
+      severity: 4,
+      message: 'SIA anomaly scan observed malformed alert records.',
+    },
+    scan_heartbeat: {
+      eventKind: 'event',
+      category: ['configuration'],
+      type: ['info'],
+      outcome: 'success',
+      severity: 1,
+      message: 'SIA security anomaly scan completed.',
+    },
+    scan_error: {
+      eventKind: 'event',
+      category: ['configuration'],
+      type: ['error'],
+      outcome: 'failure',
+      severity: 5,
+      message: 'SIA security anomaly scan failed.',
+    },
+  };
+  return profiles[kind] || {
+    eventKind: source === 'actions' ? 'alert' : 'event',
+    category: ['intrusion_detection'],
+    type: source === 'actions' ? ['denied'] : ['info'],
+    outcome: source === 'actions' ? 'failure' : 'unknown',
+    severity: source === 'actions' ? 6 : 2,
+    message: 'SIA security event.',
+  };
+}
+
+function _securityEventToEcsDocument(
+  source,
+  eventId,
+  rawEvent,
+  dataStream = _SECURITY.ELASTIC_DEFAULT_DATA_STREAM,
+) {
+  const event = rawEvent && typeof rawEvent === 'object' ? rawEvent : {};
+  const kind = String(event.kind || 'security_event');
+  const profile = _securityEventProfile(kind, source);
+  const ds = _securityDataStreamParts(dataStream);
+  const fingerprint = event.fingerprint != null ? String(event.fingerprint) : undefined;
+  const sourceIp = _securitySourceIpFromFingerprint(fingerprint);
+  const at = event.at && !Number.isNaN(Date.parse(String(event.at)))
+    ? String(event.at)
+    : new Date().toISOString();
+
+  const siaSecurity = {
+    source_collection: source === 'actions' ? 'actions' : 'logs',
+    firebase_event_id: String(eventId || ''),
+    kind,
+  };
+  for (const key of [
+    'endpoint',
+    'field',
+    'reason',
+    'fingerprint',
+    'observed',
+    'limit',
+    'count',
+    'threshold',
+    'windowSec',
+    'windowMin',
+    'total',
+    'alertsScanned',
+    'usersScanned',
+    'shiftsScanned',
+  ]) {
+    if (event[key] != null) siaSecurity[key] = event[key];
+  }
+  if (Array.isArray(event.matches)) siaSecurity.matches = event.matches.slice(0, 20);
+  if (event.preview != null) {
+    siaSecurity.preview = _securitySanitizeText(String(event.preview), 120);
+  }
+  if (event.message != null) {
+    siaSecurity.message = _securitySanitizeText(String(event.message), 240);
+  }
+
+  const doc = {
+    '@timestamp': at,
+    message: profile.message,
+    data_stream: ds,
+    event: {
+      kind: profile.eventKind,
+      category: profile.category,
+      type: profile.type,
+      action: kind,
+      outcome: profile.outcome,
+      severity: profile.severity,
+      module: 'sia.security',
+      dataset: 'sia.security',
+      provider: 'sia-ai-security-worker',
+    },
+    service: { name: 'sia-ai-security-worker', type: 'cloudflare-worker' },
+    observer: { vendor: 'Cloudflare', type: 'worker', name: 'alert-notifier' },
+    cloud: { provider: 'cloudflare' },
+    sia: { security: siaSecurity },
+  };
+  if (sourceIp) doc.source = { ip: sourceIp };
+  return doc;
+}
+
+function _securityBuildElasticBulkNdjson(records, dataStream) {
+  return (records || [])
+    .map((record) => {
+      const id = String(record.id || record.eventId || '');
+      const doc = record.doc || record;
+      return `${JSON.stringify({ create: { _index: dataStream, _id: id } })}\n${JSON.stringify(doc)}\n`;
+    })
+    .join('');
+}
+
+async function _securityPatchRoot(env, token, patch) {
+  const keys = Object.keys(patch || {});
+  if (!keys.length || !env?.FB_DB_URL || !token) return false;
+  const res = await fetch(`${env.FB_DB_URL}.json?auth=${token}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return res.ok;
+}
+
+function _securityShortError(error) {
+  if (!error) return 'unknown_error';
+  if (typeof error === 'string') return _securitySanitizeText(error, 240);
+  return _securitySanitizeText(error.message || JSON.stringify(error), 240);
+}
+
+function _securityRetryIso(attempts, nowMs = Date.now()) {
+  const exponent = Math.max(0, Math.min(5, Number(attempts || 0) - 1));
+  const delay = _SECURITY.SIEM_RETRY_BASE_MS * Math.pow(2, exponent);
+  return new Date(nowMs + delay).toISOString();
+}
+
+async function _securityLoadDueOutbox(env, token) {
+  const res = await fetch(
+    `${env.FB_DB_URL}security/siem_outbox.json?auth=${token}` +
+      `&orderBy=%22nextAttemptAt%22&limitToFirst=${_SECURITY.SIEM_OUTBOX_BATCH_SIZE * 2}`,
+  );
+  if (!res.ok) return [];
+  const map = (await res.json().catch(() => null)) || {};
+  const nowIso = new Date().toISOString();
+  return Object.entries(map)
+    .filter(([, v]) => {
+      if (!v || typeof v !== 'object') return false;
+      const status = String(v.status || 'pending');
+      if (status !== 'pending' && status !== 'retry') return false;
+      return !v.nextAttemptAt || String(v.nextAttemptAt) <= nowIso;
+    })
+    .slice(0, _SECURITY.SIEM_OUTBOX_BATCH_SIZE);
+}
+
+async function _securityWriteSiemStatus(env, token, status) {
+  await _securityPatchRoot(env, token, {
+    'security/siem_export_status/lastRun': {
+      at: new Date().toISOString(),
+      ...status,
+    },
+  });
+}
+
+async function _securityMarkSiemFailures(env, token, records, error) {
+  const nowIso = new Date().toISOString();
+  const patch = {};
+  let deadLetter = 0;
+  for (const record of records) {
+    const attempts = Number(record.attempts || 0) + 1;
+    const dead = attempts >= _SECURITY.SIEM_MAX_ATTEMPTS;
+    if (dead) deadLetter++;
+    patch[`security/siem_outbox/${record.outboxId}/attempts`] = attempts;
+    patch[`security/siem_outbox/${record.outboxId}/lastAttemptAt`] = nowIso;
+    patch[`security/siem_outbox/${record.outboxId}/lastError`] = _securityShortError(error);
+    patch[`security/siem_outbox/${record.outboxId}/status`] = dead ? 'dead_letter' : 'pending';
+    patch[`security/siem_outbox/${record.outboxId}/nextAttemptAt`] = dead
+      ? null
+      : _securityRetryIso(attempts);
+  }
+  await _securityPatchRoot(env, token, patch);
+  return { failed: records.length, deadLetter };
+}
+
+async function _securityMarkSiemResults(env, token, records, items) {
+  const nowIso = new Date().toISOString();
+  const patch = {};
+  let exported = 0;
+  let failed = 0;
+  let deadLetter = 0;
+  records.forEach((record, i) => {
+    const item = items?.[i]?.create || items?.[i]?.index || {};
+    const status = Number(item.status || 0);
+    if ((status >= 200 && status < 300) || status === 409) {
+      exported++;
+      patch[`security/siem_outbox/${record.outboxId}/status`] = 'exported';
+      patch[`security/siem_outbox/${record.outboxId}/exportedAt`] = nowIso;
+      patch[`security/siem_outbox/${record.outboxId}/lastAttemptAt`] = nowIso;
+      patch[`security/siem_outbox/${record.outboxId}/lastError`] = null;
+      return;
+    }
+    failed++;
+    const attempts = Number(record.attempts || 0) + 1;
+    const dead = attempts >= _SECURITY.SIEM_MAX_ATTEMPTS;
+    if (dead) deadLetter++;
+    patch[`security/siem_outbox/${record.outboxId}/attempts`] = attempts;
+    patch[`security/siem_outbox/${record.outboxId}/lastAttemptAt`] = nowIso;
+    patch[`security/siem_outbox/${record.outboxId}/lastError`] = _securityShortError(
+      item.error || `elastic_status_${status || 'missing'}`,
+    );
+    patch[`security/siem_outbox/${record.outboxId}/status`] = dead ? 'dead_letter' : 'pending';
+    patch[`security/siem_outbox/${record.outboxId}/nextAttemptAt`] = dead
+      ? null
+      : _securityRetryIso(attempts);
+  });
+  await _securityPatchRoot(env, token, patch);
+  return { exported, failed, deadLetter };
+}
+
+async function _securityPruneExportedAudit(env, token) {
+  try {
+    const cutoff = new Date(
+      Date.now() - _SECURITY.SIEM_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const res = await fetch(
+      `${env.FB_DB_URL}security/siem_outbox.json?auth=${token}` +
+        '&orderBy=%22status%22&equalTo=%22exported%22&limitToFirst=100',
+    );
+    if (!res.ok) return 0;
+    const map = (await res.json().catch(() => null)) || {};
+    const patch = {};
+    let pruned = 0;
+    for (const [id, item] of Object.entries(map)) {
+      if (!item || typeof item !== 'object') continue;
+      if (!item.exportedAt || String(item.exportedAt) >= cutoff) continue;
+      const source = item.source === 'actions' ? 'actions' : 'logs';
+      const eventId = item.eventId || id;
+      patch[`security/${source}/${eventId}`] = null;
+      patch[`security/siem_outbox/${id}`] = null;
+      pruned++;
+    }
+    if (pruned > 0) await _securityPatchRoot(env, token, patch);
+    return pruned;
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function _securityFlushSiemOutbox(env, ctx) {
+  const cfg = _securityElasticConfig(env);
+  if (!cfg.enabled) {
+    return {
+      enabled: false,
+      requested: cfg.requested,
+      missing: cfg.missing,
+      attempted: 0,
+      exported: 0,
+      failed: 0,
+      deadLetter: 0,
+    };
+  }
+
+  const token = ctx?.token || await getFirebaseToken(env);
+  const due = await _securityLoadDueOutbox(env, token);
+  if (!due.length) {
+    const pruned = await _securityPruneExportedAudit(env, token);
+    await _securityWriteSiemStatus(env, token, {
+      enabled: true,
+      dataStream: cfg.dataStream,
+      attempted: 0,
+      exported: 0,
+      failed: 0,
+      deadLetter: 0,
+      pruned,
+    });
+    return { enabled: true, attempted: 0, exported: 0, failed: 0, deadLetter: 0, pruned };
+  }
+
+  const records = due.map(([outboxId, item]) => {
+    const source = item.source === 'actions' ? 'actions' : 'logs';
+    const eventId = item.eventId || outboxId;
+    return {
+      outboxId,
+      attempts: Number(item.attempts || 0),
+      id: `sia-${eventId}`,
+      doc: _securityEventToEcsDocument(source, eventId, item.event, cfg.dataStream),
+    };
+  });
+  const body = _securityBuildElasticBulkNdjson(records, cfg.dataStream);
+
+  try {
+    const res = await fetch(`${cfg.baseUrl}/_bulk`, {
+      method: 'POST',
+      headers: {
+        Authorization: `ApiKey ${cfg.apiKey}`,
+        'Content-Type': 'application/x-ndjson',
+      },
+      body,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      const result = await _securityMarkSiemFailures(
+        env,
+        token,
+        records,
+        text || `elastic_http_${res.status}`,
+      );
+      await _securityWriteSiemStatus(env, token, {
+        enabled: true,
+        dataStream: cfg.dataStream,
+        attempted: records.length,
+        exported: 0,
+        ...result,
+        lastError: `elastic_http_${res.status}`,
+      });
+      return {
+        enabled: true,
+        attempted: records.length,
+        exported: 0,
+        ...result,
+      };
+    }
+    const json = await res.json().catch(() => ({}));
+    const result = await _securityMarkSiemResults(env, token, records, json.items || []);
+    const pruned = await _securityPruneExportedAudit(env, token);
+    await _securityWriteSiemStatus(env, token, {
+      enabled: true,
+      dataStream: cfg.dataStream,
+      attempted: records.length,
+      ...result,
+      pruned,
+    });
+    return { enabled: true, attempted: records.length, ...result, pruned };
+  } catch (e) {
+    const result = await _securityMarkSiemFailures(env, token, records, e);
+    await _securityWriteSiemStatus(env, token, {
+      enabled: true,
+      dataStream: cfg.dataStream,
+      attempted: records.length,
+      exported: 0,
+      ...result,
+      lastError: _securityShortError(e),
+    });
+    return {
+      enabled: true,
+      attempted: records.length,
+      exported: 0,
+      ...result,
+    };
   }
 }
 
@@ -4247,6 +4725,279 @@ async function processShiftEnding(env, ctx) {
   return handoverCount;
 }
 
+// ============================================================================
+// SHIFT PRESENCE ENGINE
+// ============================================================================
+// For each active shift, tracks supervisor presence (Active/Inactive/Absent/
+// PendingConfirm) and writes per-supervisor state to `shift_presence/{shiftId}`.
+// Inactivity = no claim/resolve activity for >= PRESENCE_INACTIVITY_MS.
+// On crossing that threshold, a Confirm Presence FCM is sent and the
+// supervisor is placed in `pending_confirm` for PRESENCE_CONFIRM_WINDOW_MS.
+// If no confirmation arrives, status flips to `inactive`.
+
+const PRESENCE_INACTIVITY_MS = 60 * 60 * 1000; // 1 hour
+const PRESENCE_CONFIRM_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const PRESENCE_ABSENT_GRACE_MS = 5 * 60 * 1000; // 5-minute join grace at shift start
+
+function _lastSupervisorActivity(alertsMap, supervisorId) {
+  let latest = 0;
+  for (const a of Object.values(alertsMap || {})) {
+    if (!a) continue;
+    if (a.superviseurId === supervisorId || a.assistantId === supervisorId) {
+      const t = _toMs(a.takenAtTimestamp);
+      if (t && t > latest) latest = t;
+      const r = _toMs(a.resolvedAt);
+      if (r && r > latest) latest = r;
+    }
+  }
+  return latest > 0 ? latest : null;
+}
+
+async function _readPresenceMap(env, token, shiftId) {
+  try {
+    const url = `${env.FB_DB_URL}shift_presence/${shiftId}.json?auth=${token}`;
+    const res = await fetch(url);
+    if (!res.ok) return {};
+    const data = await res.json();
+    return (data && typeof data === 'object') ? data : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+async function _patchPresence(env, token, shiftId, supervisorId, payload) {
+  try {
+    const url = `${env.FB_DB_URL}shift_presence/${shiftId}/${supervisorId}.json?auth=${token}`;
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.warn('[PRESENCE] patch failed: ' + e.message);
+  }
+}
+
+async function _sendConfirmPresenceFcm(env, user, shift) {
+  const fcmToken = user?.fcmToken;
+  if (!fcmToken) return false;
+  const title = 'AI Shift Commander';
+  const body = "We haven't seen activity from you in a while. Are you still on shift?";
+  const result = await sendFcmDetailed(
+    fcmToken,
+    title,
+    body,
+    {
+      type: 'confirm_presence',
+      notifType: 'confirm_presence',
+      shiftId: shift.id || '',
+      shiftName: shift.name || '',
+      requestedAt: new Date().toISOString(),
+    },
+    env,
+    { uid: user._uid || '' },
+  );
+  return !!result.ok;
+}
+
+// Runs every cron tick. Returns the number of presence transitions written.
+async function runShiftPresenceCheck(env, ctx) {
+  const shiftsMap = ctx?.shiftsMap;
+  const usersMap = ctx?.usersMap || {};
+  const alertsMap = ctx?.alertsMap || {};
+  const token = ctx?.token;
+  if (!shiftsMap || !token) return 0;
+  const now = new Date();
+  const nowMs = now.getTime();
+  const nowIso = now.toISOString();
+  const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+  let transitions = 0;
+
+  for (const [shiftId, shift] of Object.entries(shiftsMap)) {
+    if (!shift || !_shiftContainsTime(shift, nowMin)) continue;
+    const supsRaw = shift.supervisors && typeof shift.supervisors === 'object'
+      ? shift.supervisors
+      : {};
+    const supEntries = Object.entries(supsRaw);
+    if (supEntries.length === 0) continue;
+
+    // Determine shift start in absolute ms for absent grace.
+    const startMin = Number(shift.startMinutes ?? 0);
+    const endMin = Number(shift.endMinutes ?? 0);
+    const minutesIntoShift = (() => {
+      if (endMin >= startMin) return nowMin - startMin;
+      return nowMin >= startMin ? nowMin - startMin : 1440 - startMin + nowMin;
+    })();
+
+    const existing = await _readPresenceMap(env, token, shiftId);
+    const seenInExisting = new Set();
+    const presenceSnapshotEntries = [];
+    let snapshotShouldFire = false;
+
+    for (const [uid, supEntry] of supEntries) {
+      seenInExisting.add(uid);
+      const user = usersMap[uid] || {};
+      const supName =
+        (supEntry && (supEntry.name || supEntry.fullName)) ||
+        (user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : '') ||
+        uid;
+      const factory =
+        (supEntry && supEntry.factory) ||
+        user.usine || user.factoryName || '';
+      const current = existing[uid] || {};
+      const currentStatus = String(current.status || '').toLowerCase();
+      const lastActivityMs = _lastSupervisorActivity(alertsMap, uid);
+      const lastActivityIso = lastActivityMs
+        ? new Date(lastActivityMs).toISOString()
+        : null;
+      const idleMs = lastActivityMs ? (nowMs - lastActivityMs) : null;
+      const confirmedAtMs = _toMs(current.confirmedAt);
+      const confirmRequestedAtMs = _toMs(current.confirmRequestedAt);
+      const confirmExpiresAtMs = _toMs(current.confirmExpiresAt);
+
+      let nextStatus = 'active';
+      const payload = {
+        name: supName,
+        factory,
+      };
+
+      const hasFcm = !!user.fcmToken;
+      const hasEverBeenSeen =
+        confirmedAtMs || lastActivityMs || _toMs(current.joinedAt);
+
+      if (!hasFcm) {
+        // No token at all – absent.
+        nextStatus = 'absent';
+      } else if (!hasEverBeenSeen && minutesIntoShift * 60 * 1000 > PRESENCE_ABSENT_GRACE_MS) {
+        // Shift has been running for more than the grace period and this
+        // supervisor has shown zero activity — absent.
+        nextStatus = 'absent';
+      } else if (currentStatus === 'pending_confirm' && confirmExpiresAtMs && nowMs > confirmExpiresAtMs) {
+        // Confirm window elapsed without a tap → inactive.
+        nextStatus = 'inactive';
+        payload.inactiveSince = current.inactiveSince || nowIso;
+        payload.confirmRequestedAt = null;
+        payload.confirmExpiresAt = null;
+      } else if (currentStatus === 'pending_confirm') {
+        // Still waiting on the user.
+        nextStatus = 'pending_confirm';
+      } else if (confirmedAtMs && nowMs - confirmedAtMs < PRESENCE_INACTIVITY_MS) {
+        // Recently tapped Confirm Presence — keep active.
+        nextStatus = 'active';
+      } else if (idleMs != null && idleMs >= PRESENCE_INACTIVITY_MS) {
+        // 1h+ idle. Send a Confirm Presence push and enter pending.
+        const sent = await _sendConfirmPresenceFcm(env, { ...user, _uid: uid }, { id: shiftId, ...shift });
+        nextStatus = 'pending_confirm';
+        payload.confirmRequestedAt = nowIso;
+        payload.confirmExpiresAt = new Date(nowMs + PRESENCE_CONFIRM_WINDOW_MS).toISOString();
+        payload.inactiveSince = null;
+        if (!sent) {
+          // FCM failed — promote directly to inactive so PM sees the state.
+          nextStatus = 'inactive';
+          payload.inactiveSince = nowIso;
+        }
+      } else if (idleMs == null && !confirmedAtMs && minutesIntoShift * 60 * 1000 > PRESENCE_ABSENT_GRACE_MS) {
+        // In shift, has FCM, never claimed/resolved anything, no confirm yet.
+        // Mark inactive after the join grace window (one-time bookkeeping).
+        nextStatus = 'inactive';
+        payload.inactiveSince = current.inactiveSince || nowIso;
+      } else {
+        nextStatus = 'active';
+      }
+
+      // Track status duration for the UI.
+      const prevStatus = currentStatus;
+      let anchorMs;
+      switch (nextStatus) {
+        case 'active':
+          anchorMs = confirmedAtMs || lastActivityMs || _toMs(current.joinedAt) || nowMs;
+          break;
+        case 'pending_confirm':
+          anchorMs = _toMs(payload.confirmRequestedAt) || confirmRequestedAtMs || nowMs;
+          break;
+        case 'inactive':
+          anchorMs = _toMs(payload.inactiveSince) || _toMs(current.inactiveSince) || nowMs;
+          break;
+        case 'absent':
+        default:
+          anchorMs = _toMs(current.joinedAt) || nowMs;
+          break;
+      }
+      const statusDurationSeconds = Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
+
+      payload.status = nextStatus;
+      payload.lastActiveAt = lastActivityIso || current.lastActiveAt || null;
+      payload.joinedAt = current.joinedAt || nowIso;
+      payload.statusDurationSeconds = statusDurationSeconds;
+
+      if (prevStatus !== nextStatus) {
+        transitions++;
+      }
+
+      // First-time write OR status transition triggers presence_snapshot emission.
+      if (!existing[uid] || prevStatus !== nextStatus) {
+        snapshotShouldFire = true;
+      }
+
+      await _patchPresence(env, token, shiftId, uid, payload);
+
+      presenceSnapshotEntries.push({
+        name: supName,
+        factory,
+        status: nextStatus,
+      });
+    }
+
+    // Clean up presence rows for supervisors no longer in the roster.
+    for (const oldUid of Object.keys(existing)) {
+      if (!seenInExisting.has(oldUid)) {
+        try {
+          await fetch(`${env.FB_DB_URL}shift_presence/${shiftId}/${oldUid}.json?auth=${token}`, {
+            method: 'DELETE',
+          });
+        } catch (_) {}
+      }
+    }
+
+    // Write a single AI Commander log when presence state meaningfully changes.
+    if (snapshotShouldFire && presenceSnapshotEntries.length > 0) {
+      const active = presenceSnapshotEntries.filter((p) => p.status === 'active').length;
+      const pending = presenceSnapshotEntries.filter((p) => p.status === 'pending_confirm').length;
+      const inactive = presenceSnapshotEntries.filter((p) => p.status === 'inactive').length;
+      const absent = presenceSnapshotEntries.filter((p) => p.status === 'absent').length;
+      const activeNames = presenceSnapshotEntries
+        .filter((p) => p.status === 'active')
+        .map((p) => p.name)
+        .filter(Boolean);
+      const absentNames = presenceSnapshotEntries
+        .filter((p) => p.status === 'absent')
+        .map((p) => p.name)
+        .filter(Boolean);
+      const inactiveNames = presenceSnapshotEntries
+        .filter((p) => p.status === 'inactive')
+        .map((p) => p.name)
+        .filter(Boolean);
+      const headline =
+        `Presence snapshot: ${active} active, ${inactive} inactive, ${absent} absent` +
+        (pending > 0 ? `, ${pending} awaiting confirmation` : '') +
+        ` (${presenceSnapshotEntries.length} on roster).`;
+      const detailLines = [
+        `Active (${active}): ${activeNames.join(', ') || '—'}`,
+        `Inactive (${inactive}): ${inactiveNames.join(', ') || '—'}`,
+        `Absent (${absent}): ${absentNames.join(', ') || '—'}`,
+      ];
+      await writeShiftAiLog(env, token, shiftId, {
+        kind: 'presence_snapshot',
+        reason: headline,
+        details: detailLines.join('\n'),
+        confidence: 1,
+      });
+    }
+  }
+  return transitions;
+}
+
 async function handleShiftAiAction(request, env) {
   // This endpoint runs shift evaluations and triggers Llama-based handover
   // summary generation, so it gets full guard treatment.
@@ -4621,6 +5372,9 @@ export default {
         try { handoversGenerated = (await processShiftEnding(env, coreCtx)) ?? 0; }
         catch (e) { console.error('[CRON] processShiftEnding: ' + e.message); healthErrors.push('processShiftEnding: ' + e.message); }
 
+        try { await runShiftPresenceCheck(env, coreCtx); }
+        catch (e) { console.error('[CRON] runShiftPresenceCheck: ' + e.message); healthErrors.push('runShiftPresenceCheck: ' + e.message); }
+
         if (runValidation) {
           try { await validatePredictions(env, coreCtx); }
           catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
@@ -4697,6 +5451,13 @@ export default {
             console.error('[CRON] securityAnomalyScan: ' + e.message);
             healthErrors.push('securityScan: ' + e.message);
           }
+        }
+
+        try {
+          await _securityFlushSiemOutbox(env, coreCtx);
+        } catch (e) {
+          console.error('[CRON] securitySiemExport: ' + e.message);
+          healthErrors.push('securitySiemExport: ' + e.message);
         }
 
         // Capture the final total: blocks accumulated from inter-cron
@@ -4803,6 +5564,7 @@ export default {
       await checkEscalations(env, coreCtx);
       await runAIAssignments(env, coreCtx);
       await processShiftCollaborations(env, coreCtx);
+      await runShiftPresenceCheck(env, coreCtx);
     } catch (e) {
       console.error('[MANUAL] Error: ' + e.message);
     }
@@ -4845,4 +5607,8 @@ export {
   suspendAcceptedAssistantAlerts,
   _buildAssistantAlertSuspensionPatch,
   _securityDetectPromptInjection,
+  _securityEventToEcsDocument,
+  _securityBuildElasticBulkNdjson,
+  _securityFlushSiemOutbox,
+  _securityElasticConfig,
 };

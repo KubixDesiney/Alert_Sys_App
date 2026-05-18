@@ -381,9 +381,6 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                         _AiToggleCard(
                           enabled: _aiCommander,
                           onChanged: (v) => setState(() => _aiCommander = v),
-                          model: _aiModel,
-                          onModelChanged: (v) =>
-                              setState(() => _aiModel = v ?? _aiModel),
                           handleAssignments: _handleAssignments,
                           onHandleAssignmentsChanged: _setHandleAssignments,
                           handleCollaborations: _handleCollaborations,
@@ -667,8 +664,6 @@ class _NumericStepper extends StatelessWidget {
 class _AiToggleCard extends StatelessWidget {
   final bool enabled;
   final ValueChanged<bool> onChanged;
-  final String model;
-  final ValueChanged<String?> onModelChanged;
   final bool handleAssignments;
   final ValueChanged<bool> onHandleAssignmentsChanged;
   final bool handleCollaborations;
@@ -683,8 +678,6 @@ class _AiToggleCard extends StatelessWidget {
   const _AiToggleCard({
     required this.enabled,
     required this.onChanged,
-    required this.model,
-    required this.onModelChanged,
     required this.handleAssignments,
     required this.onHandleAssignmentsChanged,
     required this.handleCollaborations,
@@ -780,20 +773,6 @@ class _AiToggleCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.4)),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: model,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'llama-3.2-3b',
-                        child: Text('Llama 3.2 3B (Workers AI)'),
-                      ),
-                    ],
-                    onChanged: onModelChanged,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.smart_toy),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
                   Text(
                     'Choose exactly what the commander is allowed to handle '
                     'during this shift.',

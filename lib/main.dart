@@ -102,7 +102,7 @@ void main() async {
     }),
   );
 
-  runApp(const AlertSysApp());
+  runApp(const SmartIndustrialAlertApp());
 }
 
 Future<void> _safeInitFirebase() async {
@@ -117,8 +117,8 @@ Future<void> _safeInitFirebase() async {
   }
 }
 
-class AlertSysApp extends StatelessWidget {
-  const AlertSysApp({super.key});
+class SmartIndustrialAlertApp extends StatelessWidget {
+  const SmartIndustrialAlertApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +142,7 @@ class AlertSysApp extends StatelessWidget {
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) => MaterialApp(
-          title: 'AlertSys',
+          title: 'Smart Industrial Alert - SIA',
           debugShowCheckedModeBanner: false,
           themeMode: themeProvider.mode,
           theme: buildLightTheme(),
@@ -360,7 +360,7 @@ class _RoleRouterState extends State<RoleRouter> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Connect once so AlertSys can save this account for offline startup.',
+                    'Connect once so Smart Industrial Alert - SIA can save this account for offline startup.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),

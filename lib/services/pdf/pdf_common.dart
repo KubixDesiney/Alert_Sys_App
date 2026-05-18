@@ -1,4 +1,6 @@
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 /// Shared color palette used by every PDF export. Centralizing here removes
 /// the per-service `_Pal` / `_PdfPalette` duplication.
@@ -18,6 +20,39 @@ class PdfPalette {
   static const blue = PdfColor.fromInt(0xFF2563EB);
   static const yellow = PdfColor.fromInt(0xFFFBBF24);
   static const aiPink = PdfColor.fromInt(0xFFC084FC);
+}
+
+/// Loads the embedded Unicode-capable fonts used by PDF reports.
+class PdfFontTheme {
+  const PdfFontTheme._();
+
+  static const _fontPath = 'assets/fonts';
+
+  static Future<pw.ThemeData> load() async {
+    final regular = pw.Font.ttf(
+      await rootBundle.load('$_fontPath/NotoSans-Regular.ttf'),
+    );
+    final bold = pw.Font.ttf(
+      await rootBundle.load('$_fontPath/NotoSans-Bold.ttf'),
+    );
+    final italic = pw.Font.ttf(
+      await rootBundle.load('$_fontPath/NotoSans-Italic.ttf'),
+    );
+    final boldItalic = pw.Font.ttf(
+      await rootBundle.load('$_fontPath/NotoSans-BoldItalic.ttf'),
+    );
+    final arabic = pw.Font.ttf(
+      await rootBundle.load('$_fontPath/NotoSansArabic-Regular.ttf'),
+    );
+
+    return pw.ThemeData.withFont(
+      base: regular,
+      bold: bold,
+      italic: italic,
+      boldItalic: boldItalic,
+      fontFallback: [arabic],
+    );
+  }
 }
 
 /// Replaces unicode glyphs that the bundled PDF font can't render.
@@ -59,8 +94,7 @@ class PdfFmt {
       '${_two(d.day)}/${_two(d.month)}/${d.year}  ${_two(d.hour)}:${_two(d.minute)}';
 
   /// `dd/MM/yyyy`
-  static String date(DateTime d) =>
-      '${_two(d.day)}/${_two(d.month)}/${d.year}';
+  static String date(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';
 
   /// `HH:mm:ss`
   static String time(DateTime d) =>

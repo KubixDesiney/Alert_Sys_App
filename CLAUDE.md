@@ -1,4 +1,4 @@
-# AlertSys App Handoff Notes
+# Smart Industrial Alert - SIA App Handoff Notes
 
 Last verified: 2026-05-15 from the local repository.
 
@@ -7,7 +7,7 @@ app structure, worker deployment, Firebase schema, or CI behavior changes.
 
 ## Product Summary
 
-AlertSys is a Flutter industrial supervision app for factory alerts. It combines:
+Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory alerts. It combines:
 
 - Live alert intake, assignment, claiming, resolution, escalation, and validation.
 - Admin and supervisor role flows backed by Firebase Authentication and Realtime Database.
@@ -19,12 +19,12 @@ AlertSys is a Flutter industrial supervision app for factory alerts. It combines
 
 ## Current Versions
 
-- Flutter app package: `alertsysapp`
+- Flutter app package: `Smart Industrial Alert - SIAapp`
 - Flutter app version: `1.1.2+6`
 - Dart SDK constraint: `>=3.10.3 <4.0.0`
 - Flutter SDK constraint: `>=3.38.4`
 - CI Flutter version: `3.41.6`
-- Worker npm package: `alertsys-worker@1.1.0`
+- Worker npm package: `Smart Industrial Alert - SIA-worker@1.1.0`
 - CI Node version: `20`
 - Firebase project alias: `alertappsys`
 - Primary target platform: Android. Web, iOS, Windows, Linux, and macOS have support paths, but Android has the full voice/lock-screen stack.
@@ -40,7 +40,7 @@ AlertSys is a Flutter industrial supervision app for factory alerts. It combines
 - `lib/services/ai/`: Dart AI scoring engine, state manager, feedback repository, and score adjuster.
 - `lib/screens/`: Admin, supervisor, alert tree, detail, scan, mapping, locator, collaboration, voice, dashboard, hierarchy, and escalation screens.
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
-- `android/app/src/main/kotlin/com/example/alertsysapp/`: Native Android method channels and lock-screen voice capture.
+- `android/app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/`: Native Android method channels and lock-screen voice capture.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
 - `worker_test/`: Jest worker test suite. There are currently 11 worker test files.
@@ -59,8 +59,8 @@ Flutter:
 flutter pub get
 flutter analyze --no-fatal-infos --no-fatal-warnings
 flutter test --reporter expanded
-flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=... --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
-flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
+flutter build apk --debug --dart-define=Smart Industrial Alert - SIA_WORKER_SHARED_SECRET=... --dart-define=Smart Industrial Alert - SIA_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=Smart Industrial Alert - SIA_NOTIFY_WORKER_URL=https://Smart Industrial Alert - SIA.aziz-nagati01.workers.dev
+flutter build web --release --no-wasm-dry-run --dart-define=Smart Industrial Alert - SIA_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=Smart Industrial Alert - SIA_NOTIFY_WORKER_URL=https://Smart Industrial Alert - SIA.aziz-nagati01.workers.dev
 ```
 
 Workers:
@@ -91,7 +91,7 @@ The VM modules warning from Node is expected.
 
 ## Active Worker Split
 
-AlertSys uses two active Cloudflare Workers so notification delivery does not compete with AI/security work inside one invocation.
+Smart Industrial Alert - SIA uses two active Cloudflare Workers so notification delivery does not compete with AI/security work inside one invocation.
 
 ### AI And Security Worker
 
@@ -109,7 +109,7 @@ Responsibilities:
 - Collaboration approval automation and assistant alert suspension.
 - Shift handover generation.
 - Predictive model generation and validation.
-- Optional LSTM forecast integration through `https://kubixdesiney-alertsys-lstm.hf.space/predict`.
+- Optional LSTM forecast integration through `https://kubixdesiney-Smart Industrial Alert - SIA-lstm.hf.space/predict`.
 - Security guard, request rate limits, prompt-injection detection, anomaly scan, `/security-status`.
 - AI suggestions and generic AI proxy.
 - AI auto-fix endpoints used by CI self-heal flow.
@@ -148,8 +148,8 @@ HTTP routes:
 
 ### Notifications Worker
 
-- Worker name: `alertsys`
-- URL: `https://alertsys.aziz-nagati01.workers.dev`
+- Worker name: `Smart Industrial Alert - SIA`
+- URL: `https://Smart Industrial Alert - SIA.aziz-nagati01.workers.dev`
 - Main file: `cloudflare_notify_worker.js`
 - Config: `wrangler.notify.toml`
 - Cron: every minute (`* * * * *`)
@@ -211,7 +211,7 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 - `FIREBASE_SERVICE_ACCOUNT`
 - `FB_DB_Secret` if still needed by operational scripts.
 - Optional AI/provider secrets used by AI endpoints.
-- `WORKER_SHARED_SECRET` / `ALERTSYS_WORKER_SHARED_SECRET` when protected worker requests are enabled.
+- `WORKER_SHARED_SECRET` / `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET` when protected worker requests are enabled.
 
 `FIREBASE_SERVICE_ACCOUNT` is parsed by the workers to mint Firebase custom auth JWTs and FCM OAuth tokens at the edge.
 
@@ -219,10 +219,10 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 
 `lib/config/app_config.dart` owns cross-cutting constants:
 
-- `ALERTSYS_WORKER_URL`: legacy fallback URL.
-- `ALERTSYS_AI_WORKER_URL`: AI/security worker base URL.
-- `ALERTSYS_NOTIFY_WORKER_URL`: notification worker base URL.
-- `ALERTSYS_WORKER_SHARED_SECRET`: optional request secret.
+- `Smart Industrial Alert - SIA_WORKER_URL`: legacy fallback URL.
+- `Smart Industrial Alert - SIA_AI_WORKER_URL`: AI/security worker base URL.
+- `Smart Industrial Alert - SIA_NOTIFY_WORKER_URL`: notification worker base URL.
+- `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET`: optional request secret.
 - `configEndpoint`: AI `/config`.
 - `aiSuggestEndpoint`: AI `/ai-suggest`.
 - `shiftAiActionEndpoint`: AI `/shift-ai-action`.
@@ -253,7 +253,7 @@ Use `AppConfig` instead of hard-coded worker URLs.
 - Starts FCM initialization asynchronously with an 8 second timeout.
 - Initializes Shorebird code push object.
 - Pre-warms `VoiceService` after the first frame.
-- Runs `AlertSysApp`.
+- Runs `Smart Industrial Alert - SIAApp`.
 
 Providers:
 
@@ -618,3 +618,4 @@ On 2026-05-15, the notification push lock behavior was fixed:
 - `push_skip_reason` validation was added to `database.rules.json`.
 - `worker/alerts.js` was kept in sync with the deployed notification worker.
 - `npm test` passes all worker tests after the change.
+

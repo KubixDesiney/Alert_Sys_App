@@ -84,3 +84,8 @@ flutter:
   assets:
     - shorebird.yaml
     - assets/models/conformer_tisid_small.tflite
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
+    - assets/fonts/NotoSans-Italic.ttf
+    - assets/fonts/NotoSans-BoldItalic.ttf
+    - assets/fonts/NotoSansArabic-Regular.ttf
