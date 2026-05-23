@@ -61,6 +61,25 @@ class CollaborationService {
   final DatabaseReference _db;
   final AppLogger _logger;
 
+  Future<WorkerNotificationRef?> _writeNotification(
+    String uid,
+    Map<String, dynamic> notification,
+  ) async {
+    final ref = _db.child('notifications/$uid').push();
+    final notifId = ref.key;
+    if (notifId == null || notifId.isEmpty) return null;
+    final payload = Map<String, dynamic>.from(notification)
+      ..putIfAbsent('pushSent', () => false);
+    await ref.set(payload);
+    return WorkerNotificationRef(uid: uid, notifId: notifId);
+  }
+
+  Future<void> _triggerNotificationRefs(Iterable<WorkerNotificationRef?> refs) {
+    return WorkerTriggerQueue.instance.enqueueNotificationTriggers(
+      refs.whereType<WorkerNotificationRef>(),
+    );
+  }
+
   CollaborationApprovalPlan buildApprovalPlan({
     required String alertUsine,
     required List<CollaborationApprovalCandidate> candidates,
@@ -312,6 +331,7 @@ class CollaborationService {
       'collaboration_requests/$requestId': request.toMap(),
       'alerts/$alertId/collaborationRequestId': requestId,
     };
+    final notificationRefs = <WorkerNotificationRef>[];
 
     for (final targetId in targetSupervisorIds) {
       final notifId = _db.child('notifications/$targetId').push().key!;
@@ -327,12 +347,17 @@ class CollaborationService {
         'pushSent': false,
       };
       updates['notifications/$targetId/$notifId'] = notification;
+      notificationRefs.add(
+        WorkerNotificationRef(uid: targetId, notifId: notifId),
+      );
     }
 
     await _db.update(updates);
 
     // Trigger FCM fan-out so target supervisors receive a push immediately.
-    await WorkerTriggerQueue.instance.enqueueNotify();
+    await WorkerTriggerQueue.instance.enqueueNotificationTriggers(
+      notificationRefs,
+    );
     _logger.info('Collaboration request created: $requestId');
 
     return requestId;
@@ -403,6 +428,7 @@ class CollaborationService {
     }
 
     final nowIso = DateTime.now().toIso8601String();
+    final notificationRefs = <WorkerNotificationRef>[];
 
     // Record this supervisor's individual decision.
     await _db
@@ -426,7 +452,7 @@ class CollaborationService {
           'assistantRespondedAt': nowIso,
         });
 
-        await _db.child('notifications/${request.requesterId}').push().set({
+        final requesterRef = await _writeNotification(request.requesterId, {
           'type': 'collaboration_assistant_accepted',
           'collabRequestId': requestId,
           'alertId': request.alertId,
@@ -437,35 +463,38 @@ class CollaborationService {
           'status': 'pending',
           'pushSent': false,
         });
+        if (requesterRef != null) notificationRefs.add(requesterRef);
 
-        await _notifyAdminsAboutCollabRequest(
-          CollaborationRequest(
-            id: request.id,
-            alertId: request.alertId,
-            requesterId: request.requesterId,
-            requesterName: request.requesterName,
-            targetSupervisorIds: request.targetSupervisorIds,
-            targetSupervisorNames: request.targetSupervisorNames,
-            message: request.message,
-            status: request.status,
-            assistantDecision: 'accepted',
-            assistantId: responderId,
-            assistantName: responderName,
-            assistantRespondedAt: DateTime.parse(nowIso),
-            timestamp: request.timestamp,
-            requiresPMApproval: request.requiresPMApproval,
-            pmApproved: request.pmApproved,
-            usine: request.usine,
-            convoyeur: request.convoyeur,
-            poste: request.poste,
-            alertType: request.alertType,
-            alertDescription: request.alertDescription,
+        notificationRefs.addAll(
+          await _notifyAdminsAboutCollabRequest(
+            CollaborationRequest(
+              id: request.id,
+              alertId: request.alertId,
+              requesterId: request.requesterId,
+              requesterName: request.requesterName,
+              targetSupervisorIds: request.targetSupervisorIds,
+              targetSupervisorNames: request.targetSupervisorNames,
+              message: request.message,
+              status: request.status,
+              assistantDecision: 'accepted',
+              assistantId: responderId,
+              assistantName: responderName,
+              assistantRespondedAt: DateTime.parse(nowIso),
+              timestamp: request.timestamp,
+              requiresPMApproval: request.requiresPMApproval,
+              pmApproved: request.pmApproved,
+              usine: request.usine,
+              convoyeur: request.convoyeur,
+              poste: request.poste,
+              alertType: request.alertType,
+              alertDescription: request.alertDescription,
+            ),
           ),
         );
       }
     } else {
       // Declined — notify the requester.
-      await _db.child('notifications/${request.requesterId}').push().set({
+      final requesterRef = await _writeNotification(request.requesterId, {
         'type': 'collaboration_refused',
         'collabRequestId': requestId,
         'alertId': request.alertId,
@@ -475,6 +504,7 @@ class CollaborationService {
         'status': 'pending',
         'pushSent': false,
       });
+      if (requesterRef != null) notificationRefs.add(requesterRef);
 
       // If every targeted supervisor has now refused, mark request as rejected.
       final updatedDecisions = Map<String, String>.from(
@@ -496,7 +526,7 @@ class CollaborationService {
       }
     }
     // Trigger FCM fan-out so the requester / admins get a push.
-    await WorkerTriggerQueue.instance.enqueueNotify();
+    await _triggerNotificationRefs(notificationRefs);
   }
 
   /// Remove one assistant from an active collaboration request (PM action).
@@ -554,8 +584,9 @@ class CollaborationService {
     await _db.child('collaboration_requests/$requestId').update(updates);
 
     final nowIso = DateTime.now().toIso8601String();
+    final notificationRefs = <WorkerNotificationRef>[];
     // Notify requester.
-    await _db.child('notifications/${request.requesterId}').push().set({
+    final requesterRef = await _writeNotification(request.requesterId, {
       'type': 'collaboration_assistant_removed',
       'collabRequestId': requestId,
       'alertId': request.alertId,
@@ -565,8 +596,9 @@ class CollaborationService {
       'status': 'pending',
       'pushSent': false,
     });
+    if (requesterRef != null) notificationRefs.add(requesterRef);
     // Notify removed assistant.
-    await _db.child('notifications/$assistantId').push().set({
+    final assistantRef = await _writeNotification(assistantId, {
       'type': 'collaboration_removed',
       'collabRequestId': requestId,
       'alertId': request.alertId,
@@ -575,7 +607,8 @@ class CollaborationService {
       'status': 'pending',
       'pushSent': false,
     });
-    await WorkerTriggerQueue.instance.enqueueNotify();
+    if (assistantRef != null) notificationRefs.add(assistantRef);
+    await _triggerNotificationRefs(notificationRefs);
   }
 
   Future<void> addSupervisorsToRequest({
@@ -661,8 +694,9 @@ class CollaborationService {
     }
 
     await _db.child('collaboration_requests/$requestId').update(updates);
+    final notificationRefs = <WorkerNotificationRef>[];
 
-    await _db.child('notifications/${request.requesterId}').push().set({
+    final requesterRef = await _writeNotification(request.requesterId, {
       'type': 'collaboration_assistant_accepted',
       'collabRequestId': requestId,
       'alertId': request.alertId,
@@ -672,9 +706,10 @@ class CollaborationService {
       'status': 'pending',
       'pushSent': false,
     });
+    if (requesterRef != null) notificationRefs.add(requesterRef);
 
     for (int i = 0; i < newIds.length; i++) {
-      await _db.child('notifications/${newIds[i]}').push().set({
+      final ref = await _writeNotification(newIds[i], {
         'type': 'collaboration_request',
         'collabRequestId': requestId,
         'alertId': request.alertId,
@@ -685,9 +720,10 @@ class CollaborationService {
         'status': 'pending',
         'pushSent': false,
       });
+      if (ref != null) notificationRefs.add(ref);
     }
 
-    await WorkerTriggerQueue.instance.enqueueNotify();
+    await _triggerNotificationRefs(notificationRefs);
   }
 
   /// Returns true if the given supervisor already has a pending/active outgoing request.
@@ -758,10 +794,12 @@ class CollaborationService {
         'status': 'pending',
         'pushSent': false,
       };
-      await _db
-          .child('notifications/${request.requesterId}')
-          .push()
-          .set(notification);
+      final notificationRefs = <WorkerNotificationRef>[];
+      final requesterRef = await _writeNotification(
+        request.requesterId,
+        notification,
+      );
+      if (requesterRef != null) notificationRefs.add(requesterRef);
 
       // Notify target supervisors
       for (final targetId in request.targetSupervisorIds) {
@@ -775,9 +813,10 @@ class CollaborationService {
           'status': 'pending',
           'pushSent': false,
         };
-        await _db.child('notifications/$targetId').push().set(notif);
+        final ref = await _writeNotification(targetId, notif);
+        if (ref != null) notificationRefs.add(ref);
       }
-      await WorkerTriggerQueue.instance.enqueueNotify();
+      await _triggerNotificationRefs(notificationRefs);
 
       // If cancels original alert, cancel it
       if (request.cancelsOriginalAlert) {
@@ -889,10 +928,12 @@ class CollaborationService {
         'status': 'pending',
         'pushSent': false,
       };
-      await _db
-          .child('notifications/${request.requesterId}')
-          .push()
-          .set(notification);
+      final notificationRefs = <WorkerNotificationRef>[];
+      final requesterRef = await _writeNotification(
+        request.requesterId,
+        notification,
+      );
+      if (requesterRef != null) notificationRefs.add(requesterRef);
 
       for (final collaborator in collaboratorsList) {
         final targetId = collaborator['id'];
@@ -907,9 +948,10 @@ class CollaborationService {
           'status': 'pending',
           'pushSent': false,
         };
-        await _db.child('notifications/$targetId').push().set(notif);
+        final ref = await _writeNotification(targetId, notif);
+        if (ref != null) notificationRefs.add(ref);
       }
-      await WorkerTriggerQueue.instance.enqueueNotify();
+      await _triggerNotificationRefs(notificationRefs);
     } else {
       // Supervisor approval (not PM) – keep simple
       await _db.child('collaboration_requests/$requestId').update({
@@ -1252,10 +1294,9 @@ class CollaborationService {
       'status': 'pending',
       'pushSent': false,
     };
-    await _db
-        .child('notifications/${request.requesterId}')
-        .push()
-        .set(notification);
+    await _triggerNotificationRefs([
+      await _writeNotification(request.requesterId, notification),
+    ]);
 
     // Clear alert collaboration ID
     await _db.child('alerts/${request.alertId}').update({
@@ -1321,10 +1362,11 @@ class CollaborationService {
     return false;
   }
 
-  Future<void> _notifyAdminsAboutCollabRequest(
+  Future<List<WorkerNotificationRef>> _notifyAdminsAboutCollabRequest(
     CollaborationRequest request,
   ) async {
     final users = await _getAllUsers();
+    final refs = <WorkerNotificationRef>[];
     for (var entry in users.entries) {
       final role = entry.value['role'] ?? 'supervisor';
       if (role == 'admin') {
@@ -1339,9 +1381,11 @@ class CollaborationService {
           'status': 'pending',
           'pushSent': false,
         };
-        await _db.child('notifications/${entry.key}').push().set(notification);
+        final ref = await _writeNotification(entry.key, notification);
+        if (ref != null) refs.add(ref);
       }
     }
+    return refs;
   }
 
   Future<Map<String, dynamic>> _getAllUsers() async {

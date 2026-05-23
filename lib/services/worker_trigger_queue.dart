@@ -16,8 +16,10 @@ class WorkerTriggerQueue {
   static const String _storageKey = 'offline_worker_trigger_queue_v1';
   static const Duration _requestTimeout = Duration(seconds: 8);
   static const Duration _reconnectFlushDelay = Duration(seconds: 2);
+  static const int _notificationTriggerBatchSize = 5;
 
   StreamSubscription<DatabaseEvent>? _connectionSubscription;
+  http.Client? _httpClientForTesting;
   bool _started = false;
   bool _flushing = false;
   bool _connected = false;
@@ -29,15 +31,18 @@ class WorkerTriggerQueue {
     _connectionSubscription = FirebaseDatabase.instance
         .ref('.info/connected')
         .onValue
-        .listen((event) {
-      final connected = event.snapshot.value == true;
-      _connected = connected;
-      if (connected) {
-        unawaited(Future<void>.delayed(_reconnectFlushDelay, flush));
-      }
-    }, onError: (Object error) {
-      debugPrint('WorkerTriggerQueue connection listener failed: $error');
-    });
+        .listen(
+          (event) {
+            final connected = event.snapshot.value == true;
+            _connected = connected;
+            if (connected) {
+              unawaited(Future<void>.delayed(_reconnectFlushDelay, flush));
+            }
+          },
+          onError: (Object error) {
+            debugPrint('WorkerTriggerQueue connection listener failed: $error');
+          },
+        );
 
     unawaited(flush());
   }
@@ -49,6 +54,26 @@ class WorkerTriggerQueue {
     _started = false;
     _connected = false;
     _flushing = false;
+  }
+
+  @visibleForTesting
+  void configureForTesting({http.Client? httpClient, bool connected = true}) {
+    _httpClientForTesting = httpClient;
+    _started = true;
+    _connected = connected;
+  }
+
+  @visibleForTesting
+  Future<void> resetForTesting() async {
+    await stop();
+    _httpClientForTesting = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_storageKey);
+  }
+
+  @visibleForTesting
+  Future<int> pendingCountForTesting() async {
+    return (await _loadQueue()).length;
   }
 
   Future<void> enqueueNotify() {
@@ -64,6 +89,45 @@ class WorkerTriggerQueue {
       Uri.parse(AppConfig.notifyTriggerEndpoint),
       jsonBody: {'alertId': alertId},
     );
+  }
+
+  Future<void> enqueueNotificationTrigger(String uid, String notifId) {
+    if (uid.trim().isEmpty || notifId.trim().isEmpty) {
+      return Future.value();
+    }
+    return enqueuePost(
+      Uri.parse(AppConfig.notifyTriggerEndpoint),
+      jsonBody: {
+        'notification': {'uid': uid, 'notifId': notifId},
+      },
+    );
+  }
+
+  Future<void> enqueueNotificationTriggers(
+    Iterable<WorkerNotificationRef> notifications,
+  ) {
+    final refs = notifications
+        .where(
+          (ref) => ref.uid.trim().isNotEmpty && ref.notifId.trim().isNotEmpty,
+        )
+        .toList(growable: false);
+    if (refs.isEmpty) return Future.value();
+    if (refs.length == 1) {
+      return enqueueNotificationTrigger(refs.first.uid, refs.first.notifId);
+    }
+    return Future.wait([
+      for (var i = 0; i < refs.length; i += _notificationTriggerBatchSize)
+        enqueuePost(
+          Uri.parse(AppConfig.notifyTriggerEndpoint),
+          jsonBody: {
+            'notifications': refs
+                .skip(i)
+                .take(_notificationTriggerBatchSize)
+                .map((ref) => ref.toJson())
+                .toList(),
+          },
+        ),
+    ]).then((_) {});
   }
 
   Future<void> enqueuePost(
@@ -91,10 +155,12 @@ class WorkerTriggerQueue {
     );
 
     final queue = await _loadQueue();
-    final alreadyQueued = queue.any((item) =>
-        item.url == request.url &&
-        item.body == request.body &&
-        mapEquals(item.headers, request.headers));
+    final alreadyQueued = queue.any(
+      (item) =>
+          item.url == request.url &&
+          item.body == request.body &&
+          mapEquals(item.headers, request.headers),
+    );
 
     if (!alreadyQueued) {
       queue.add(request);
@@ -122,13 +188,20 @@ class WorkerTriggerQueue {
         }
 
         try {
-          final response = await http
-              .post(
-                Uri.parse(request.url),
-                headers: request.headers,
-                body: request.body,
-              )
-              .timeout(_requestTimeout);
+          final client = _httpClientForTesting;
+          final response =
+              await (client == null
+                      ? http.post(
+                          Uri.parse(request.url),
+                          headers: request.headers,
+                          body: request.body,
+                        )
+                      : client.post(
+                          Uri.parse(request.url),
+                          headers: request.headers,
+                          body: request.body,
+                        ))
+                  .timeout(_requestTimeout);
 
           if (response.statusCode >= 200 && response.statusCode < 300) {
             continue;
@@ -157,8 +230,10 @@ class WorkerTriggerQueue {
       if (decoded is! List) return <_QueuedWorkerRequest>[];
       return decoded
           .whereType<Map>()
-          .map((item) =>
-              _QueuedWorkerRequest.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) =>
+                _QueuedWorkerRequest.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     } catch (e) {
       debugPrint('WorkerTriggerQueue could not read saved queue: $e');
@@ -173,6 +248,15 @@ class WorkerTriggerQueue {
       jsonEncode(queue.map((request) => request.toJson()).toList()),
     );
   }
+}
+
+class WorkerNotificationRef {
+  const WorkerNotificationRef({required this.uid, required this.notifId});
+
+  final String uid;
+  final String notifId;
+
+  Map<String, String> toJson() => {'uid': uid, 'notifId': notifId};
 }
 
 class _QueuedWorkerRequest {
@@ -197,26 +281,26 @@ class _QueuedWorkerRequest {
   final String? lastError;
 
   _QueuedWorkerRequest failed(String error) => _QueuedWorkerRequest(
-        id: id,
-        url: url,
-        headers: headers,
-        body: body,
-        createdAt: createdAt,
-        attempts: attempts + 1,
-        lastTriedAt: DateTime.now().toUtc().toIso8601String(),
-        lastError: error,
-      );
+    id: id,
+    url: url,
+    headers: headers,
+    body: body,
+    createdAt: createdAt,
+    attempts: attempts + 1,
+    lastTriedAt: DateTime.now().toUtc().toIso8601String(),
+    lastError: error,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'url': url,
-        'headers': headers,
-        'body': body,
-        'createdAt': createdAt,
-        'attempts': attempts,
-        'lastTriedAt': lastTriedAt,
-        'lastError': lastError,
-      };
+    'id': id,
+    'url': url,
+    'headers': headers,
+    'body': body,
+    'createdAt': createdAt,
+    'attempts': attempts,
+    'lastTriedAt': lastTriedAt,
+    'lastError': lastError,
+  };
 
   factory _QueuedWorkerRequest.fromJson(Map<String, dynamic> json) {
     return _QueuedWorkerRequest(

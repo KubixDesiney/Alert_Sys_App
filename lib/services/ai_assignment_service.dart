@@ -20,6 +20,7 @@ import '../utils/factory_id.dart';
 import 'ai/ai_decision_repository.dart';
 import 'ai/ai_scoring_engine.dart';
 import 'ai/ai_state_manager.dart';
+import 'worker_trigger_queue.dart';
 
 enum AILogStatus { success, skipped, recommended, rejected, aborted }
 
@@ -98,9 +99,9 @@ class AIAssignmentService extends ChangeNotifier {
   AIAssignmentService({
     FirebaseDatabase? database,
     AIDecisionRepository? decisionRepository,
-  })  : _db = (database ?? FirebaseDatabase.instance).ref(),
-        _decisionRepo =
-            decisionRepository ?? AIDecisionRepository(database: database);
+  }) : _db = (database ?? FirebaseDatabase.instance).ref(),
+       _decisionRepo =
+           decisionRepository ?? AIDecisionRepository(database: database);
 
   /// Legacy singleton entry point. New code should obtain the service via
   /// Provider / DI; this stays so the in-flight migration is incremental.
@@ -130,6 +131,26 @@ class AIAssignmentService extends ChangeNotifier {
   final List<AILogEntry> _logs = [];
   final AIStateManager _state = AIStateManager();
   final AIDecisionRepository _decisionRepo;
+
+  Future<WorkerNotificationRef?> _writeNotification(
+    String uid,
+    Map<String, dynamic> notification,
+  ) async {
+    final ref = _db.child('notifications/$uid').push();
+    final notifId = ref.key;
+    if (notifId == null || notifId.isEmpty) return null;
+    final payload = Map<String, dynamic>.from(notification)
+      ..putIfAbsent('pushSent', () => false);
+    await ref.set(payload);
+    return WorkerNotificationRef(uid: uid, notifId: notifId);
+  }
+
+  Future<void> _triggerNotificationRefs(Iterable<WorkerNotificationRef?> refs) {
+    return WorkerTriggerQueue.instance.enqueueNotificationTriggers(
+      refs.whereType<WorkerNotificationRef>(),
+    );
+  }
+
   StreamSubscription<DatabaseEvent>? _alertsAddedSubscription;
   StreamSubscription<DatabaseEvent>? _alertsChangedSubscription;
   final Set<String> _capturedResolvedFeedback = {};
@@ -198,23 +219,26 @@ class AIAssignmentService extends ChangeNotifier {
 
     _masterSubscription?.cancel();
     if (_remoteSettingsAvailable) {
-      _masterSubscription = _db.child('ai_master').onValue.listen(
-        (event) {
-          final value = event.snapshot.value;
-          if (value == null || value is! Map) return;
-          final map = Map<String, dynamic>.from(value);
-          _enabled = map['enabled'] == true;
-          prefs.setBool(_prefKey, _enabled);
-          notifyListeners();
-        },
-        onError: (Object e) {
-          if (_isPermissionDenied(e)) {
-            _remoteSettingsAvailable = false;
-            _masterSubscription?.cancel();
-            _masterSubscription = null;
-          }
-        },
-      );
+      _masterSubscription = _db
+          .child('ai_master')
+          .onValue
+          .listen(
+            (event) {
+              final value = event.snapshot.value;
+              if (value == null || value is! Map) return;
+              final map = Map<String, dynamic>.from(value);
+              _enabled = map['enabled'] == true;
+              prefs.setBool(_prefKey, _enabled);
+              notifyListeners();
+            },
+            onError: (Object e) {
+              if (_isPermissionDenied(e)) {
+                _remoteSettingsAvailable = false;
+                _masterSubscription?.cancel();
+                _masterSubscription = null;
+              }
+            },
+          );
     }
 
     final resolvedFactory = await _resolveCurrentFactoryIds();
@@ -227,7 +251,7 @@ class AIAssignmentService extends ChangeNotifier {
     _settingsPath = 'factories/${resolvedFactory.canonicalId}/aiConfig';
     final cachedEnabled =
         prefs.getBool('$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}') ??
-            fallbackCachedEnabled;
+        fallbackCachedEnabled;
 
     try {
       final settingsSnap = await _db.child(_settingsPath!).get();
@@ -235,12 +259,14 @@ class AIAssignmentService extends ChangeNotifier {
         final map = Map<String, dynamic>.from(settingsSnap.value as Map);
         _factoryEnabledCache[resolvedFactory.canonicalId] =
             map['enabled'] == true;
-        final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
+        final ttl =
+            (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
             _defaultSkippedTtl.inMinutes;
         _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
         await prefs.setBool(
-            '$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
-            map['enabled'] == true);
+          '$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
+          map['enabled'] == true,
+        );
       } else if (resolvedFactory.legacyId != null) {
         final legacySnap = await _db
             .child('factories/${resolvedFactory.legacyId}/aiConfig')
@@ -249,12 +275,14 @@ class AIAssignmentService extends ChangeNotifier {
           final map = Map<String, dynamic>.from(legacySnap.value as Map);
           _factoryEnabledCache[resolvedFactory.canonicalId] =
               map['enabled'] == true;
-          final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
+          final ttl =
+              (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
               _defaultSkippedTtl.inMinutes;
           _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
           await prefs.setBool(
-              '$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
-              map['enabled'] == true);
+            '$_prefFactoryKeyPrefix${resolvedFactory.canonicalId}',
+            map['enabled'] == true,
+          );
         } else {
           _factoryEnabledCache[resolvedFactory.canonicalId] = cachedEnabled;
           await _db.child(_settingsPath!).set({
@@ -284,29 +312,36 @@ class AIAssignmentService extends ChangeNotifier {
 
     _settingsSubscription?.cancel();
     if (_remoteSettingsAvailable && _settingsPath != null) {
-      _settingsSubscription = _db.child(_settingsPath!).onValue.listen(
-        (event) {
-          final value = event.snapshot.value;
-          if (value == null) return;
-          final map = Map<String, dynamic>.from(value as Map);
-          final factoryEnabled = map['enabled'] == true;
-          if (_factoryId != null) {
-            _factoryEnabledCache[_factoryId!] = factoryEnabled;
-          }
-          final ttl = (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
-              _skippedAlertTtl.inMinutes;
-          _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
-          prefs.setBool('$_prefFactoryKeyPrefix${_factoryId!}', factoryEnabled);
-          notifyListeners();
-        },
-        onError: (Object e) {
-          if (_isPermissionDenied(e)) {
-            _remoteSettingsAvailable = false;
-            _settingsSubscription?.cancel();
-            _settingsSubscription = null;
-          }
-        },
-      );
+      _settingsSubscription = _db
+          .child(_settingsPath!)
+          .onValue
+          .listen(
+            (event) {
+              final value = event.snapshot.value;
+              if (value == null) return;
+              final map = Map<String, dynamic>.from(value as Map);
+              final factoryEnabled = map['enabled'] == true;
+              if (_factoryId != null) {
+                _factoryEnabledCache[_factoryId!] = factoryEnabled;
+              }
+              final ttl =
+                  (map['skippedAlertTtlMinutes'] as num?)?.toInt() ??
+                  _skippedAlertTtl.inMinutes;
+              _skippedAlertTtl = Duration(minutes: ttl.clamp(1, 240));
+              prefs.setBool(
+                '$_prefFactoryKeyPrefix${_factoryId!}',
+                factoryEnabled,
+              );
+              notifyListeners();
+            },
+            onError: (Object e) {
+              if (_isPermissionDenied(e)) {
+                _remoteSettingsAvailable = false;
+                _settingsSubscription?.cancel();
+                _settingsSubscription = null;
+              }
+            },
+          );
     }
 
     notifyListeners();
@@ -394,8 +429,9 @@ class AIAssignmentService extends ChangeNotifier {
       final userSnap = await _db.child('users/${user.uid}').get();
       if (!userSnap.exists || userSnap.value is! Map) return null;
 
-      final userData =
-          Map<String, dynamic>.from(userSnap.value as Map<dynamic, dynamic>);
+      final userData = Map<String, dynamic>.from(
+        userSnap.value as Map<dynamic, dynamic>,
+      );
 
       final rawFactoryId = userData['factoryId']?.toString().trim() ?? '';
       if (rawFactoryId.isNotEmpty) {
@@ -413,7 +449,8 @@ class AIAssignmentService extends ChangeNotifier {
       final hierarchySnap = await _db.child('hierarchy/factories').get();
       if (hierarchySnap.exists && hierarchySnap.value is Map) {
         final factories = Map<dynamic, dynamic>.from(
-            hierarchySnap.value as Map<dynamic, dynamic>);
+          hierarchySnap.value as Map<dynamic, dynamic>,
+        );
         for (final entry in factories.entries) {
           final value = entry.value;
           if (value is! Map) continue;
@@ -423,8 +460,9 @@ class AIAssignmentService extends ChangeNotifier {
             final legacyId = entry.key.toString();
             return _ResolvedFactoryIds(
               canonicalId: sanitizeFactoryId(legacyId),
-              legacyId:
-                  legacyId == sanitizeFactoryId(legacyId) ? null : legacyId,
+              legacyId: legacyId == sanitizeFactoryId(legacyId)
+                  ? null
+                  : legacyId,
             );
           }
         }
@@ -441,8 +479,11 @@ class AIAssignmentService extends ChangeNotifier {
 
   Future<void> processAlerts(List<AlertModel> alerts) async {}
 
-  Future<void> _processOne(AlertModel alert, List<_SupRecord> supervisors,
-      List<AlertModel> allAlerts) async {
+  Future<void> _processOne(
+    AlertModel alert,
+    List<_SupRecord> supervisors,
+    List<AlertModel> allAlerts,
+  ) async {
     if (_lastAssignmentTime != null) {
       final elapsed = DateTime.now().difference(_lastAssignmentTime!);
       if (elapsed < _throttleInterval) {
@@ -472,30 +513,35 @@ class AIAssignmentService extends ChangeNotifier {
 
       if (eligible.isEmpty) {
         _state.markSkipped(alert.id);
-        _addLog(AILogEntry(
-          id: _genId(),
-          alertId: alert.id,
-          alertLabel: _alertLabel(alert),
-          alertType: alert.type,
-          alertUsine: alert.usine,
-          reason:
-              'No eligible supervisor available (busy, opted-out, or in cooldown)',
-          reasonBreakdown: candidates
-              .map((c) =>
-                  '${c.supervisor.fullName}: ${c.skipReason ?? "score ${c.score.toStringAsFixed(0)}"}')
-              .toList(),
-          consideredCandidates: candidates,
-          confidence: 0,
-          timestamp: DateTime.now(),
-          status: AILogStatus.skipped,
-        ));
+        _addLog(
+          AILogEntry(
+            id: _genId(),
+            alertId: alert.id,
+            alertLabel: _alertLabel(alert),
+            alertType: alert.type,
+            alertUsine: alert.usine,
+            reason:
+                'No eligible supervisor available (busy, opted-out, or in cooldown)',
+            reasonBreakdown: candidates
+                .map(
+                  (c) =>
+                      '${c.supervisor.fullName}: ${c.skipReason ?? "score ${c.score.toStringAsFixed(0)}"}',
+                )
+                .toList(),
+            consideredCandidates: candidates,
+            confidence: 0,
+            timestamp: DateTime.now(),
+            status: AILogStatus.skipped,
+          ),
+        );
         return;
       }
 
       final best = eligible.first;
       final topSum = eligible.take(3).fold<double>(0, (s, c) => s + c.score);
-      final confidence =
-          topSum > 0 ? (best.score / topSum).clamp(0.0, 1.0) : 1.0;
+      final confidence = topSum > 0
+          ? (best.score / topSum).clamp(0.0, 1.0)
+          : 1.0;
 
       // Never auto-assign across factories regardless of criticality —
       // always route to PM for review instead.
@@ -521,8 +567,12 @@ class AIAssignmentService extends ChangeNotifier {
     }
   }
 
-  Future<void> _assignToSupervisor(AlertModel alert, AICandidate best,
-      double confidence, List<AICandidate> all) async {
+  Future<void> _assignToSupervisor(
+    AlertModel alert,
+    AICandidate best,
+    double confidence,
+    List<AICandidate> all,
+  ) async {
     final reasonSummary = best.reasons.join(' • ');
     final now = DateTime.now();
     // Generate unique ActionID to ensure idempotency across all sync operations
@@ -545,22 +595,24 @@ class AIAssignmentService extends ChangeNotifier {
       'aiAssignedAt': now.toIso8601String(),
     });
 
-    await _db.child('notifications/${best.supervisor.id}').push().set({
-      'type': 'ai_assigned',
-      'actionId': actionId,
-      'alertId': alert.id,
-      'alertType': alert.type,
-      'alertDescription': alert.description,
-      'alertUsine': alert.usine,
-      'message':
-          'Auto-assigned by AI: ${alert.type} at ${alert.usine} (Line ${alert.convoyeur}, Post ${alert.poste})',
-      'aiAssigned': true,
-      'aiReason': reasonSummary,
-      'aiConfidence': confidence,
-      'timestamp': now.toIso8601String(),
-      'status': 'pending',
-      'pushSent': false,
-    });
+    await _triggerNotificationRefs([
+      await _writeNotification(best.supervisor.id, {
+        'type': 'ai_assigned',
+        'actionId': actionId,
+        'alertId': alert.id,
+        'alertType': alert.type,
+        'alertDescription': alert.description,
+        'alertUsine': alert.usine,
+        'message':
+            'Auto-assigned by AI: ${alert.type} at ${alert.usine} (Line ${alert.convoyeur}, Post ${alert.poste})',
+        'aiAssigned': true,
+        'aiReason': reasonSummary,
+        'aiConfidence': confidence,
+        'timestamp': now.toIso8601String(),
+        'status': 'pending',
+        'pushSent': false,
+      }),
+    ]);
 
     if (_decisionStoreAvailable) {
       try {
@@ -573,14 +625,16 @@ class AIAssignmentService extends ChangeNotifier {
           'reasonSummary': reasonSummary,
           'breakdown': best.reasons,
           'consideredCandidates': all
-              .map((c) => {
-                    'supervisorId': c.supervisor.id,
-                    'name': c.supervisor.fullName,
-                    'usine': c.supervisor.usine,
-                    'score': c.score,
-                    'reasons': c.reasons,
-                    'skipReason': c.skipReason,
-                  })
+              .map(
+                (c) => {
+                  'supervisorId': c.supervisor.id,
+                  'name': c.supervisor.fullName,
+                  'usine': c.supervisor.usine,
+                  'score': c.score,
+                  'reasons': c.reasons,
+                  'skipReason': c.skipReason,
+                },
+              )
               .toList(),
           'timestamp': now.toIso8601String(),
         });
@@ -621,21 +675,23 @@ class AIAssignmentService extends ChangeNotifier {
       },
     );
 
-    _addLog(AILogEntry(
-      id: actionId,
-      alertId: alert.id,
-      alertLabel: _alertLabel(alert),
-      alertType: alert.type,
-      alertUsine: alert.usine,
-      assignedSupervisorId: best.supervisor.id,
-      assignedSupervisorName: best.supervisor.fullName,
-      reason: reasonSummary,
-      reasonBreakdown: best.reasons,
-      consideredCandidates: all,
-      confidence: confidence,
-      timestamp: now,
-      status: AILogStatus.success,
-    ));
+    _addLog(
+      AILogEntry(
+        id: actionId,
+        alertId: alert.id,
+        alertLabel: _alertLabel(alert),
+        alertType: alert.type,
+        alertUsine: alert.usine,
+        assignedSupervisorId: best.supervisor.id,
+        assignedSupervisorName: best.supervisor.fullName,
+        reason: reasonSummary,
+        reasonBreakdown: best.reasons,
+        consideredCandidates: all,
+        confidence: confidence,
+        timestamp: now,
+        status: AILogStatus.success,
+      ),
+    );
   }
 
   /// Aborts a successful AI assignment: returns the alert to disponible and
@@ -692,7 +748,8 @@ class AIAssignmentService extends ChangeNotifier {
     String? reason,
   }) async {
     final idx = _logs.indexWhere(
-        (l) => l.alertId == alertId && l.status == AILogStatus.success);
+      (l) => l.alertId == alertId && l.status == AILogStatus.success,
+    );
     if (idx >= 0) {
       _logs[idx] = _logs[idx].copyWith(
         status: AILogStatus.rejected,
@@ -715,9 +772,7 @@ class AIAssignmentService extends ChangeNotifier {
         alertId: alertId,
         supervisorId: supervisorId,
         supervisorName: supervisorName,
-        details: {
-          'reason': reason ?? 'No reason provided',
-        },
+        details: {'reason': reason ?? 'No reason provided'},
       );
     } catch (e) {
       debugPrint('AI rejection log error: $e');
@@ -758,10 +813,11 @@ class AIAssignmentService extends ChangeNotifier {
       final usersSnap = await _db.child('users').get();
       if (usersSnap.exists) {
         final users = Map<String, dynamic>.from(usersSnap.value as Map);
+        final refs = <WorkerNotificationRef>[];
         for (final entry in users.entries) {
           final u = Map<String, dynamic>.from(entry.value as Map);
           if (u['role'] == 'admin') {
-            await _db.child('notifications/${entry.key}').push().set({
+            final ref = await _writeNotification(entry.key, {
               'type': 'ai_rejection',
               'alertId': alertId,
               'message':
@@ -772,8 +828,10 @@ class AIAssignmentService extends ChangeNotifier {
               'status': 'pending',
               'pushSent': false,
             });
+            if (ref != null) refs.add(ref);
           }
         }
+        await _triggerNotificationRefs(refs);
       }
     } catch (e) {
       debugPrint('handleSupervisorRejection error: $e');
@@ -796,18 +854,20 @@ class AIAssignmentService extends ChangeNotifier {
       final status = '${data['status'] ?? ''}';
       final currentSupervisor = '${data['superviseurId'] ?? ''}'.trim();
       final recommendedId = '${data['aiRecommendedSupervisorId'] ?? ''}'.trim();
-      final recommendedName =
-          '${data['aiRecommendedSupervisorName'] ?? ''}'.trim();
+      final recommendedName = '${data['aiRecommendedSupervisorName'] ?? ''}'
+          .trim();
 
       if (!pending || recommendedId.isEmpty) return false;
       if (status != 'disponible' || currentSupervisor.isNotEmpty) {
         debugPrint(
-            'approveCrossFactoryRecommendation skipped: alert is no longer assignable ($alertId)');
+          'approveCrossFactoryRecommendation skipped: alert is no longer assignable ($alertId)',
+        );
         return false;
       }
 
       final actorId = approverId ?? FirebaseAuth.instance.currentUser?.uid;
-      final actorName = approverName ??
+      final actorName =
+          approverName ??
           FirebaseAuth.instance.currentUser?.email?.split('@').first ??
           'Production Manager';
       final now = DateTime.now();
@@ -816,8 +876,9 @@ class AIAssignmentService extends ChangeNotifier {
       await _db.child('alerts/$alertId').update({
         'status': 'en_cours',
         'superviseurId': recommendedId,
-        'superviseurName':
-            recommendedName.isNotEmpty ? recommendedName : 'Supervisor',
+        'superviseurName': recommendedName.isNotEmpty
+            ? recommendedName
+            : 'Supervisor',
         'takenAtTimestamp': nowIso,
         'aiAssigned': true,
         'aiAssignedAt': nowIso,
@@ -831,8 +892,9 @@ class AIAssignmentService extends ChangeNotifier {
       await _db.child('alerts/$alertId/aiHistory').push().set({
         'event': 'recommended_cross_factory_approved',
         'recommendedSupervisorId': recommendedId,
-        'recommendedSupervisorName':
-            recommendedName.isNotEmpty ? recommendedName : null,
+        'recommendedSupervisorName': recommendedName.isNotEmpty
+            ? recommendedName
+            : null,
         'approvedBy': actorName,
         'approvedById': actorId,
         'timestamp': nowIso,
@@ -858,15 +920,17 @@ class AIAssignmentService extends ChangeNotifier {
       }
 
       if (recommendedId.isNotEmpty) {
-        await _db.child('notifications/$recommendedId').push().set({
-          'type': 'ai_assigned',
-          'alertId': alertId,
-          'message':
-              'PM approved AI cross-factory transfer. Alert assigned to you.',
-          'timestamp': nowIso,
-          'status': 'pending',
-          'pushSent': false,
-        });
+        await _triggerNotificationRefs([
+          await _writeNotification(recommendedId, {
+            'type': 'ai_assigned',
+            'alertId': alertId,
+            'message':
+                'PM approved AI cross-factory transfer. Alert assigned to you.',
+            'timestamp': nowIso,
+            'status': 'pending',
+            'pushSent': false,
+          }),
+        ]);
       }
 
       await _recordFeedback(
@@ -882,7 +946,8 @@ class AIAssignmentService extends ChangeNotifier {
       );
 
       final idx = _logs.lastIndexWhere(
-          (l) => l.alertId == alertId && l.status == AILogStatus.recommended);
+        (l) => l.alertId == alertId && l.status == AILogStatus.recommended,
+      );
       if (idx >= 0) {
         _logs[idx] = _logs[idx].copyWith(status: AILogStatus.success);
       }
@@ -911,18 +976,20 @@ class AIAssignmentService extends ChangeNotifier {
       final data = Map<String, dynamic>.from(snap.value as Map);
       final pending = data['aiRecommendationPending'] == true;
       final recommendedId = '${data['aiRecommendedSupervisorId'] ?? ''}'.trim();
-      final recommendedName =
-          '${data['aiRecommendedSupervisorName'] ?? ''}'.trim();
+      final recommendedName = '${data['aiRecommendedSupervisorName'] ?? ''}'
+          .trim();
       if (!pending) return false;
 
       final actorId = approverId ?? FirebaseAuth.instance.currentUser?.uid;
-      final actorName = approverName ??
+      final actorName =
+          approverName ??
           FirebaseAuth.instance.currentUser?.email?.split('@').first ??
           'Production Manager';
       final now = DateTime.now();
       final nowIso = now.toIso8601String();
-      final rejectionReason =
-          (reason != null && reason.trim().isNotEmpty) ? reason.trim() : null;
+      final rejectionReason = (reason != null && reason.trim().isNotEmpty)
+          ? reason.trim()
+          : null;
 
       await _db.child('alerts/$alertId').update({
         'aiAssigned': false,
@@ -937,8 +1004,9 @@ class AIAssignmentService extends ChangeNotifier {
       await _db.child('alerts/$alertId/aiHistory').push().set({
         'event': 'recommended_cross_factory_declined',
         'recommendedSupervisorId': recommendedId,
-        'recommendedSupervisorName':
-            recommendedName.isNotEmpty ? recommendedName : null,
+        'recommendedSupervisorName': recommendedName.isNotEmpty
+            ? recommendedName
+            : null,
         'declinedBy': actorName,
         'declinedById': actorId,
         'reason': rejectionReason,
@@ -964,7 +1032,8 @@ class AIAssignmentService extends ChangeNotifier {
       }
 
       final idx = _logs.lastIndexWhere(
-          (l) => l.alertId == alertId && l.status == AILogStatus.recommended);
+        (l) => l.alertId == alertId && l.status == AILogStatus.recommended,
+      );
       if (idx >= 0) {
         _logs[idx] = _logs[idx].copyWith(
           status: AILogStatus.rejected,
@@ -995,15 +1064,21 @@ class AIAssignmentService extends ChangeNotifier {
 
   // ── Scoring ───────────────────────────────────────────────────────────────
 
-  List<AICandidate> _evaluateAll(AlertModel alert, List<_SupRecord> supervisors,
-      List<AlertModel> allAlerts) {
+  List<AICandidate> _evaluateAll(
+    AlertModel alert,
+    List<_SupRecord> supervisors,
+    List<AlertModel> allAlerts,
+  ) {
     return supervisors.map((s) => _evaluateOne(alert, s, allAlerts)).toList();
   }
 
   /// Thin delegate to [AIScoringEngine]. Live state (cooldowns, feedback)
   /// is read here and passed in as inputs so the engine itself stays pure.
   AICandidate _evaluateOne(
-      AlertModel alert, _SupRecord rec, List<AlertModel> allAlerts) {
+    AlertModel alert,
+    _SupRecord rec,
+    List<AlertModel> allAlerts,
+  ) {
     return _scoringEngine.evaluate(
       alert: alert,
       candidate: AIScoringInputs(
@@ -1018,8 +1093,9 @@ class AIAssignmentService extends ChangeNotifier {
     );
   }
 
-  static const AIScoringEngine _scoringEngine =
-      AIScoringEngine(cooldownDuration: _cooldownDuration);
+  static const AIScoringEngine _scoringEngine = AIScoringEngine(
+    cooldownDuration: _cooldownDuration,
+  );
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -1035,10 +1111,12 @@ class AIAssignmentService extends ChangeNotifier {
     for (final entry in map.entries) {
       final m = Map<String, dynamic>.from(entry.value as Map);
       m['id'] = entry.key;
-      out.add(_SupRecord(
-        user: UserModel.fromMap(entry.key, m),
-        aiOptOut: m['aiOptOut'] == true,
-      ));
+      out.add(
+        _SupRecord(
+          user: UserModel.fromMap(entry.key, m),
+          aiOptOut: m['aiOptOut'] == true,
+        ),
+      );
     }
     return out;
   }
@@ -1050,8 +1128,9 @@ class AIAssignmentService extends ChangeNotifier {
     if (factoryId == _factoryId && cached != null) return cached;
 
     try {
-      final snap =
-          await _db.child('factories/$factoryId/aiConfig/enabled').get();
+      final snap = await _db
+          .child('factories/$factoryId/aiConfig/enabled')
+          .get();
       final enabled = snap.exists && snap.value == true;
       if (factoryId == _factoryId) {
         _factoryEnabledCache[factoryId] = enabled;
@@ -1060,7 +1139,8 @@ class AIAssignmentService extends ChangeNotifier {
     } catch (e) {
       if (_isPermissionDenied(e)) {
         debugPrint(
-            'AI factory read permission denied at factories/$factoryId/aiConfig/enabled');
+          'AI factory read permission denied at factories/$factoryId/aiConfig/enabled',
+        );
       }
       return false;
     }
@@ -1129,21 +1209,24 @@ class AIAssignmentService extends ChangeNotifier {
           'reasonSummary': reasonSummary,
           'breakdown': best.reasons,
           'consideredCandidates': all
-              .map((c) => {
-                    'supervisorId': c.supervisor.id,
-                    'name': c.supervisor.fullName,
-                    'usine': c.supervisor.usine,
-                    'score': c.score,
-                    'reasons': c.reasons,
-                    'skipReason': c.skipReason,
-                  })
+              .map(
+                (c) => {
+                  'supervisorId': c.supervisor.id,
+                  'name': c.supervisor.fullName,
+                  'usine': c.supervisor.usine,
+                  'score': c.score,
+                  'reasons': c.reasons,
+                  'skipReason': c.skipReason,
+                },
+              )
               .toList(),
           'timestamp': now.toIso8601String(),
         });
       } catch (e) {
         if (_isPermissionDenied(e)) {
           debugPrint(
-              'AI decision write permission denied at ai_decisions/${alert.id}');
+            'AI decision write permission denied at ai_decisions/${alert.id}',
+          );
           _decisionStoreAvailable = false;
         }
       }
@@ -1164,10 +1247,11 @@ class AIAssignmentService extends ChangeNotifier {
     final usersSnap = await _db.child('users').get();
     if (usersSnap.exists) {
       final users = Map<String, dynamic>.from(usersSnap.value as Map);
+      final refs = <WorkerNotificationRef>[];
       for (final entry in users.entries) {
         final u = Map<String, dynamic>.from(entry.value as Map);
         if (u['role'] == 'admin') {
-          await _db.child('notifications/${entry.key}').push().set({
+          final ref = await _writeNotification(entry.key, {
             'type': 'ai_cross_factory_recommendation',
             'alertId': alert.id,
             'recommendedSupervisorId': best.supervisor.id,
@@ -1181,30 +1265,34 @@ class AIAssignmentService extends ChangeNotifier {
             'status': 'pending',
             'pushSent': false,
           });
+          if (ref != null) refs.add(ref);
         }
       }
+      await _triggerNotificationRefs(refs);
     }
 
-    _addLog(AILogEntry(
-      id: _genId(),
-      alertId: alert.id,
-      alertLabel: _alertLabel(alert),
-      alertType: alert.type,
-      alertUsine: alert.usine,
-      assignedSupervisorId: best.supervisor.id,
-      assignedSupervisorName: best.supervisor.fullName,
-      reason:
-          'Cross-factory critical recommendation queued for PM approval (not auto-finalized)',
-      reasonBreakdown: [
-        ...best.reasons,
-        'Policy: critical cross-factory assignment requires PM confirmation'
-      ],
-      consideredCandidates: all,
-      confidence: confidence,
-      timestamp: now,
-      status: AILogStatus.recommended,
-      rejectionReason: null,
-    ));
+    _addLog(
+      AILogEntry(
+        id: _genId(),
+        alertId: alert.id,
+        alertLabel: _alertLabel(alert),
+        alertType: alert.type,
+        alertUsine: alert.usine,
+        assignedSupervisorId: best.supervisor.id,
+        assignedSupervisorName: best.supervisor.fullName,
+        reason:
+            'Cross-factory critical recommendation queued for PM approval (not auto-finalized)',
+        reasonBreakdown: [
+          ...best.reasons,
+          'Policy: critical cross-factory assignment requires PM confirmation',
+        ],
+        consideredCandidates: all,
+        confidence: confidence,
+        timestamp: now,
+        status: AILogStatus.recommended,
+        rejectionReason: null,
+      ),
+    );
   }
 
   Future<void> _recordFeedback({
@@ -1255,7 +1343,8 @@ class AIAssignmentService extends ChangeNotifier {
       } catch (e) {
         if (_isPermissionDenied(e)) {
           debugPrint(
-              'AI feedback write permission denied at ai_feedback/summary');
+            'AI feedback write permission denied at ai_feedback/summary',
+          );
           _feedbackAvailable = false;
           return;
         }
@@ -1289,18 +1378,18 @@ class AIAssignmentService extends ChangeNotifier {
   }
 
   AILogEntry _skipLog(AlertModel alert, String reason) => AILogEntry(
-        id: _genId(),
-        alertId: alert.id,
-        alertLabel: _alertLabel(alert),
-        alertType: alert.type,
-        alertUsine: alert.usine,
-        reason: reason,
-        reasonBreakdown: const [],
-        consideredCandidates: const [],
-        confidence: 0,
-        timestamp: DateTime.now(),
-        status: AILogStatus.skipped,
-      );
+    id: _genId(),
+    alertId: alert.id,
+    alertLabel: _alertLabel(alert),
+    alertType: alert.type,
+    alertUsine: alert.usine,
+    reason: reason,
+    reasonBreakdown: const [],
+    consideredCandidates: const [],
+    confidence: 0,
+    timestamp: DateTime.now(),
+    status: AILogStatus.skipped,
+  );
 
   String _alertLabel(AlertModel a) =>
       '${a.type.toUpperCase()} • ${a.usine} L${a.convoyeur}/P${a.poste}';
@@ -1333,16 +1422,17 @@ class AIAssignmentService extends ChangeNotifier {
       for (final alertEntry in alertsMap.entries) {
         final alertId = alertEntry.key;
         final alertData = alertEntry.value;
-        
+
         if (alertData is! Map) continue;
-        
+
         // Extract alert metadata for label generation
         final alertType = alertData['type']?.toString() ?? '';
         final alertUsine = alertData['usine']?.toString() ?? '';
         final alertConvoyeur = alertData['convoyeur']?.toString() ?? '';
         final alertPoste = alertData['poste']?.toString() ?? '';
-        final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
-        
+        final alertLabel =
+            '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+
         final aiHistory = alertData['aiHistory'];
         if (aiHistory is! Map) continue;
 
@@ -1357,8 +1447,10 @@ class AIAssignmentService extends ChangeNotifier {
           }
 
           // Use actionId from history for idempotency - prevents duplicate processing
-          final actionId = historyData['actionId']?.toString() ?? '${alertId}_${historyEntry.key}';
-          
+          final actionId =
+              historyData['actionId']?.toString() ??
+              '${alertId}_${historyEntry.key}';
+
           // Check if already in _logs to avoid duplicates
           if (_logs.any((log) => log.id == actionId)) {
             continue;
@@ -1400,29 +1492,41 @@ class AIAssignmentService extends ChangeNotifier {
       // These listeners will persist in the background to catch events while asleep
       _alertsAddedSubscription?.cancel();
       _alertsChangedSubscription?.cancel();
-      
-      _alertsAddedSubscription = _db.child('alerts').onChildAdded.listen(
-        _handleAlertSnapshot,
-        onError: (Object e) {
-          if (kDebugMode) {
-            debugPrint('[AI_SYNC] onChildAdded error: $e');
-          }
-          // Reconnect on error
-          Future.delayed(const Duration(seconds: 5), _startRealtimeAiHistoryListener);
-        },
-      );
-      
-      _alertsChangedSubscription = _db.child('alerts').onChildChanged.listen(
-        _handleAlertSnapshot,
-        onError: (Object e) {
-          if (kDebugMode) {
-            debugPrint('[AI_SYNC] onChildChanged error: $e');
-          }
-          // Reconnect on error
-          Future.delayed(const Duration(seconds: 5), _startRealtimeAiHistoryListener);
-        },
-      );
-      
+
+      _alertsAddedSubscription = _db
+          .child('alerts')
+          .onChildAdded
+          .listen(
+            _handleAlertSnapshot,
+            onError: (Object e) {
+              if (kDebugMode) {
+                debugPrint('[AI_SYNC] onChildAdded error: $e');
+              }
+              // Reconnect on error
+              Future.delayed(
+                const Duration(seconds: 5),
+                _startRealtimeAiHistoryListener,
+              );
+            },
+          );
+
+      _alertsChangedSubscription = _db
+          .child('alerts')
+          .onChildChanged
+          .listen(
+            _handleAlertSnapshot,
+            onError: (Object e) {
+              if (kDebugMode) {
+                debugPrint('[AI_SYNC] onChildChanged error: $e');
+              }
+              // Reconnect on error
+              Future.delayed(
+                const Duration(seconds: 5),
+                _startRealtimeAiHistoryListener,
+              );
+            },
+          );
+
       if (kDebugMode) {
         debugPrint('[AI_SYNC] Realtime listeners started');
       }
@@ -1448,7 +1552,8 @@ class AIAssignmentService extends ChangeNotifier {
       final alertUsine = alertMap['usine']?.toString() ?? '';
       final alertConvoyeur = alertMap['convoyeur']?.toString() ?? '';
       final alertPoste = alertMap['poste']?.toString() ?? '';
-      final alertLabel = '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
+      final alertLabel =
+          '$alertType • $alertUsine L$alertConvoyeur/P$alertPoste';
 
       for (final entry in Map<String, dynamic>.from(aiHistory).entries) {
         final histKey = entry.key;
@@ -1456,8 +1561,9 @@ class AIAssignmentService extends ChangeNotifier {
         if (histVal is! Map) continue;
 
         // Use actionId from history for idempotency - prevents duplicate processing
-        final actionId = histVal['actionId']?.toString() ?? '${alertId}_$histKey';
-        
+        final actionId =
+            histVal['actionId']?.toString() ?? '${alertId}_$histKey';
+
         if (_state.isHistoryProcessed(actionId)) continue;
         _state.markHistoryProcessed(actionId);
 
@@ -1552,4 +1658,3 @@ class _SupRecord {
   final bool aiOptOut;
   _SupRecord({required this.user, required this.aiOptOut});
 }
-

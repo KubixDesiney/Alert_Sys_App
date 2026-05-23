@@ -419,7 +419,7 @@ function _securitySanitizeText(text, maxLen) {
   if (typeof text !== 'string') return '';
   const cap = Number.isFinite(maxLen) ? maxLen : _SECURITY.MAX_PROMPT_CHARS;
   let cleaned = text.replace(
-    /[ --﻿​-‏]/g,
+    /[\x00--﻿​-‏]/g,
     '',
   );
   if (cleaned.length > cap) cleaned = cleaned.slice(0, cap);
@@ -1107,7 +1107,7 @@ async function _runSecurityAnomalyScan(env, ctx) {
       const desc = String(a.description || '');
       const type = String(a.type || '');
       if (
-        /[ --]/.test(desc) ||
+        /[\x00--]/.test(desc) ||
         desc.length > 4000 ||
         type.length > 64
       ) {
@@ -2097,6 +2097,67 @@ async function sendFcmDetailed(token, title, body, data, env, options = {}) {
 async function sendFcm(token, title, body, data, env, options = {}) {
   const result = await sendFcmDetailed(token, title, body, data, env, options);
   return result.ok;
+}
+
+function _notifyWorkerUrl(env) {
+  const configured = String(
+    env.NOTIFY_WORKER_URL ||
+      env.ALERTSYS_NOTIFY_WORKER_URL ||
+      env.SIA_NOTIFY_WORKER_URL ||
+      'https://alertsys.aziz-nagati01.workers.dev/notify',
+  ).trim();
+  if (!configured) return '';
+  const trimmed = configured.replace(/\/+$/, '');
+  return trimmed.endsWith('/notify') ? trimmed : `${trimmed}/notify`;
+}
+
+function _notifyWorkerHeaders(env) {
+  const headers = { 'Content-Type': 'application/json' };
+  const secret = String(env.WORKER_SHARED_SECRET || env.SIA_WORKER_SHARED_SECRET || '').trim();
+  if (secret) headers['x-worker-secret'] = secret;
+  return headers;
+}
+
+async function triggerNotificationWorker(env, notifications) {
+  const refs = (notifications || [])
+    .filter((ref) => ref && ref.uid && ref.notifId)
+    .map((ref) => ({ uid: String(ref.uid), notifId: String(ref.notifId) }));
+  if (!refs.length) return false;
+  const url = _notifyWorkerUrl(env);
+  if (!url) return false;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: _notifyWorkerHeaders(env),
+      body: JSON.stringify(refs.length === 1 ? { notification: refs[0] } : { notifications: refs }),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[NOTIFY-TRIGGER] ' + e.message);
+    return false;
+  }
+}
+
+async function writeNotificationAndTrigger(env, token, uid, notification) {
+  if (!uid) return null;
+  try {
+    const res = await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...notification,
+        pushSent: notification?.pushSent === true,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const notifId = data?.name || null;
+    if (notifId) await triggerNotificationWorker(env, [{ uid, notifId }]);
+    return notifId;
+  } catch (e) {
+    console.error('[NOTIFY-TRIGGER] notification write failed: ' + e.message);
+    return null;
+  }
 }
 
 // ============ Shift helpers ============
@@ -3391,74 +3452,34 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
       }),
     ]);
 
-    let transferNotificationId = null;
-    if (supervisor.crossFactoryTransfer) {
-      const alertFactory = supervisor.alertFactoryName || current.usine || '';
-      const donorFactory = supervisor.donorFactoryName || supervisor.factoryName || supervisor.factoryId || '';
-      const distanceText =
-        typeof supervisor.distanceKm === 'number'
-          ? ` (${supervisor.distanceKm.toFixed(1)} km away)`
-          : '';
-      const transferMessage =
-        `You are being transferred from ${donorFactory || 'your factory'} ` +
-        `to ${alertFactory || 'another factory'} for ${current.type || 'an alert'}${distanceText}.`;
-      try {
-        const notifRes = await fetch(`${env.FB_DB_URL}notifications/${supervisor.uid}.json?auth=${token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'cross_factory_transfer',
-            alertId: String(alertId),
-            alertType: current.type || 'alert',
-            alertDescription: current.description || '',
-            alertFactory,
-            donorFactory,
-            distanceKm: supervisor.distanceKm ?? null,
-            message: transferMessage,
-            timestamp: nowIso,
-            status: 'pending',
-            buzz: true,
-            pushSent: false,
-          }),
-        });
-        if (notifRes.ok) {
-          const notifData = await notifRes.json().catch(() => null);
-          transferNotificationId = notifData?.name || null;
-        }
-      } catch (e) {
-        console.error('[AI-ASSIGN] Cross-factory notification write failed: ' + e.message);
-      }
-    }
-
-    if (supervisor.fcmToken) {
-      const isTransfer = supervisor.crossFactoryTransfer === true;
-      const fcmTitle = isTransfer ? 'Cross-factory transfer' : 'AI Assignment';
-      const fcmBody = isTransfer
-        ? `Transfer to ${supervisor.alertFactoryName || current.usine || 'the alert factory'}: ${current.type || 'alert'}`
-        : `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`;
-      const fcmSent = await sendFcm(
-        supervisor.fcmToken,
-        fcmTitle,
-        fcmBody,
-        {
-          type: isTransfer ? 'cross_factory_transfer' : 'ai_assigned',
-          alertId: String(alertId),
-          recipientId: String(supervisor.uid),
-          reason: reasonSummary,
-          usine: String(current.usine || ''),
-          donorFactory: String(supervisor.donorFactoryName || supervisor.factoryName || supervisor.factoryId || ''),
-          distanceKm: supervisor.distanceKm == null ? '' : String(supervisor.distanceKm),
-        },
-        env,
-      );
-      if (fcmSent && transferNotificationId) {
-        await fetch(`${env.FB_DB_URL}notifications/${supervisor.uid}/${transferNotificationId}.json?auth=${token}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pushSent: true, pushSentAt: nowIso }),
-        });
-      }
-    }
+    const isTransfer = supervisor.crossFactoryTransfer === true;
+    const alertFactory = supervisor.alertFactoryName || current.usine || '';
+    const donorFactory = supervisor.donorFactoryName || supervisor.factoryName || supervisor.factoryId || '';
+    const distanceText =
+      typeof supervisor.distanceKm === 'number'
+        ? ` (${supervisor.distanceKm.toFixed(1)} km away)`
+        : '';
+    const message = isTransfer
+      ? `You are being transferred from ${donorFactory || 'your factory'} ` +
+        `to ${alertFactory || 'another factory'} for ${current.type || 'an alert'}${distanceText}.`
+      : `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`;
+    await writeNotificationAndTrigger(env, token, supervisor.uid, {
+      type: isTransfer ? 'cross_factory_transfer' : 'ai_assigned',
+      alertId: String(alertId),
+      alertType: current.type || 'alert',
+      alertDescription: current.description || '',
+      usine: String(current.usine || ''),
+      factoryId: String(current.factoryId || ''),
+      alertFactory,
+      donorFactory,
+      distanceKm: supervisor.distanceKm ?? null,
+      reason: reasonSummary,
+      message,
+      timestamp: nowIso,
+      status: 'pending',
+      buzz: true,
+      pushSent: false,
+    });
     return true;
   }
   return false;
@@ -4471,22 +4492,18 @@ async function processShiftCollaborations(env, ctx) {
           if (collaborator.id) notifyTargets.set(String(collaborator.id), 'assistant');
         }
         for (const [uid, role] of notifyTargets.entries()) {
-          await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${token}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'collaboration_rejected',
-              collabRequestId: reqId,
-              collaborationId: reqId,
-              alertId: req.alertId || null,
-              message:
-                role === 'requester'
-                  ? `AI Shift Commander declined your collaboration request. Reason: ${decision.reason}`
-                  : `AI Shift Commander declined the collaboration request you accepted. Reason: ${decision.reason}`,
-              timestamp: nowIso,
-              status: 'unread',
-              pushSent: false,
-            }),
+          await writeNotificationAndTrigger(env, token, uid, {
+            type: 'collaboration_rejected',
+            collabRequestId: reqId,
+            collaborationId: reqId,
+            alertId: req.alertId || null,
+            message:
+              role === 'requester'
+                ? `AI Shift Commander declined your collaboration request. Reason: ${decision.reason}`
+                : `AI Shift Commander declined the collaboration request you accepted. Reason: ${decision.reason}`,
+            timestamp: nowIso,
+            status: 'unread',
+            pushSent: false,
           });
         }
       }
@@ -4565,43 +4582,29 @@ async function processShiftCollaborations(env, ctx) {
       });
       // Notify the requester so the UI updates.
       if (req.requesterId) {
-        await fetch(
-          `${env.FB_DB_URL}notifications/${req.requesterId}.json?auth=${token}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'collab_auto_approved',
-              message: `AI Shift Commander approved your collaboration request. Reason: ${decision.reason}`,
-              alertId: req.alertId || null,
-              collabRequestId: reqId,
-              collaborationId: reqId,
-              timestamp: nowIso,
-              status: 'unread',
-              pushSent: false,
-            }),
-          },
-        );
+        await writeNotificationAndTrigger(env, token, req.requesterId, {
+          type: 'collab_auto_approved',
+          message: `AI Shift Commander approved your collaboration request. Reason: ${decision.reason}`,
+          alertId: req.alertId || null,
+          collabRequestId: reqId,
+          collaborationId: reqId,
+          timestamp: nowIso,
+          status: 'unread',
+          pushSent: false,
+        });
       }
       if (acceptedCollaborators.length > 0) {
         for (const collaborator of acceptedCollaborators) {
-          await fetch(
-            `${env.FB_DB_URL}notifications/${collaborator.id}.json?auth=${token}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'collaboration_approved',
-                message: `AI Shift Commander approved your collaboration request. You can now assist on this alert. Reason: ${decision.reason}`,
-                alertId: req.alertId || null,
-                collabRequestId: reqId,
-                collaborationId: reqId,
-                timestamp: nowIso,
-                status: 'unread',
-                pushSent: false,
-              }),
-            },
-          );
+          await writeNotificationAndTrigger(env, token, collaborator.id, {
+            type: 'collaboration_approved',
+            message: `AI Shift Commander approved your collaboration request. You can now assist on this alert. Reason: ${decision.reason}`,
+            alertId: req.alertId || null,
+            collabRequestId: reqId,
+            collaborationId: reqId,
+            timestamp: nowIso,
+            status: 'unread',
+            pushSent: false,
+          });
         }
       }
     }
@@ -4699,17 +4702,15 @@ async function processShiftEnding(env, ctx) {
         ? Object.keys(shift.supervisors)
         : [];
     for (const uid of supIds) {
-      await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${ctx.token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'shift_handover',
-          message: `Auto handover for "${shift.name || id}"`,
-          alertDescription: result.summary,
-          shiftId: id,
-          timestamp: nowIso,
-          status: 'unread',
-        }),
+      await writeNotificationAndTrigger(env, ctx.token, uid, {
+        type: 'shift_handover',
+        message: `Auto handover for "${shift.name || id}"`,
+        alertDescription: result.summary,
+        shiftId: id,
+        shiftName: shift.name || '',
+        timestamp: nowIso,
+        status: 'unread',
+        pushSent: false,
       });
     }
     await writeShiftAiLog(env, ctx.token, id, {
@@ -4778,26 +4779,21 @@ async function _patchPresence(env, token, shiftId, supervisorId, payload) {
   }
 }
 
-async function _sendConfirmPresenceFcm(env, user, shift) {
+async function _sendConfirmPresenceFcm(env, token, user, shift) {
   const fcmToken = user?.fcmToken;
   if (!fcmToken) return false;
-  const title = 'AI Shift Commander';
   const body = "We haven't seen activity from you in a while. Are you still on shift?";
-  const result = await sendFcmDetailed(
-    fcmToken,
-    title,
-    body,
-    {
-      type: 'confirm_presence',
-      notifType: 'confirm_presence',
-      shiftId: shift.id || '',
-      shiftName: shift.name || '',
-      requestedAt: new Date().toISOString(),
-    },
-    env,
-    { uid: user._uid || '' },
-  );
-  return !!result.ok;
+  const notifId = await writeNotificationAndTrigger(env, token, user._uid || '', {
+    type: 'confirm_presence',
+    message: body,
+    shiftId: shift.id || '',
+    shiftName: shift.name || '',
+    requestedAt: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
+    status: 'pending',
+    pushSent: false,
+  });
+  return !!notifId;
 }
 
 // Runs every cron tick. Returns the number of presence transitions written.
@@ -4887,7 +4883,7 @@ async function runShiftPresenceCheck(env, ctx) {
         nextStatus = 'active';
       } else if (idleMs != null && idleMs >= PRESENCE_INACTIVITY_MS) {
         // 1h+ idle. Send a Confirm Presence push and enter pending.
-        const sent = await _sendConfirmPresenceFcm(env, { ...user, _uid: uid }, { id: shiftId, ...shift });
+        const sent = await _sendConfirmPresenceFcm(env, token, { ...user, _uid: uid }, { id: shiftId, ...shift });
         nextStatus = 'pending_confirm';
         payload.confirmRequestedAt = nowIso;
         payload.confirmExpiresAt = new Date(nowMs + PRESENCE_CONFIRM_WINDOW_MS).toISOString();
@@ -5075,17 +5071,15 @@ async function handleShiftAiAction(request, env) {
           ? Object.keys(shift.supervisors)
           : [];
       for (const uid of supIds) {
-        await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${coreCtx.token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'shift_handover',
-            message: `Handover for "${shift.name || shift.id}"`,
-            alertDescription: result.summary,
-            shiftId: shift.id,
-            timestamp: nowIso,
-            status: 'unread',
-          }),
+        await writeNotificationAndTrigger(env, coreCtx.token, uid, {
+          type: 'shift_handover',
+          message: `Handover for "${shift.name || shift.id}"`,
+          alertDescription: result.summary,
+          shiftId: shift.id,
+          shiftName: shift.name || '',
+          timestamp: nowIso,
+          status: 'unread',
+          pushSent: false,
         });
       }
       await writeShiftAiLog(env, coreCtx.token, shift.id, {
