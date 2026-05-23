@@ -1,14 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:http/http.dart' as http;
 import 'package:rxdart/rxdart.dart';
-import '../config/app_config.dart';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
 import 'app_logger.dart';
 import 'fcm_service.dart';
+import 'worker_trigger_queue.dart';
 
 String _defaultDescription(String type) => switch (type) {
   'qualite' => 'Quality control issue detected on the line.',
@@ -33,6 +30,70 @@ class AlertService {
 
   /// Get hierarchy service (may be null if not injected)
   HierarchyService? get hierarchyService => _hierarchyService;
+
+  Future<WorkerNotificationRef?> _writeNotification(
+    String uid,
+    Map<String, dynamic> notification,
+  ) async {
+    final ref = _db.child('notifications/$uid').push();
+    final notifId = ref.key;
+    if (notifId == null || notifId.isEmpty) return null;
+    final payload = Map<String, dynamic>.from(notification)
+      ..putIfAbsent('pushSent', () => false);
+    await ref.set(payload);
+    return WorkerNotificationRef(uid: uid, notifId: notifId);
+  }
+
+  Future<void> _triggerNotificationRefs(Iterable<WorkerNotificationRef?> refs) {
+    return WorkerTriggerQueue.instance.enqueueNotificationTriggers(
+      refs.whereType<WorkerNotificationRef>(),
+    );
+  }
+
+  Future<int> _queueNewAlertPushNotifications({
+    required String alertId,
+    required String alertType,
+    required String description,
+    required String usine,
+    required int? alertNumber,
+  }) async {
+    final users = await getAllUsers();
+    final refs = <WorkerNotificationRef>[];
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+
+    for (final entry in users.entries) {
+      final rawUser = entry.value;
+      if (rawUser is! Map) continue;
+      final user = Map<String, dynamic>.from(rawUser);
+      if (user['role']?.toString() != 'supervisor') continue;
+      if ((user['fcmToken']?.toString() ?? '').trim().isEmpty) continue;
+
+      final ref = await _writeNotification(entry.key, {
+        'type': 'new_alert',
+        'alertId': alertId,
+        'alertType': alertType,
+        'alertDescription': description,
+        'alertNumber': alertNumber,
+        'usine': usine,
+        'message': 'New alert from $usine: $alertType',
+        'timestamp': nowIso,
+        'status': 'pending',
+        'pushSent': false,
+        'pushDeliveryMode': 'notification_queue',
+      });
+      if (ref != null) refs.add(ref);
+    }
+
+    if (refs.isEmpty) return 0;
+    await _triggerNotificationRefs(refs);
+    await _db.child('alerts/$alertId').update({
+      'notificationSent': true,
+      'push_sent': true,
+      'push_sent_at': nowIso,
+      'push_delivery_mode': 'notification_queue',
+    });
+    return refs.length;
+  }
 
   Stream<List<AlertModel>> getAlertsForUsine(String usine, {int? limit}) {
     return _db
@@ -216,17 +277,26 @@ class AlertService {
       'elapsedTime': null,
     };
     await ref.set(alertData);
-    // Trigger the Cloudflare Worker to send notifications immediately
-    try {
-      await http.post(
-        Uri.parse(AppConfig.notifyTriggerEndpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'alertId': alertId}),
-      );
-    } catch (e) {
-      debugPrint(
-        'AlertService.createAlertWithHierarchy: worker trigger failed for $alertId: $e',
-      );
+    if (alertId != null && alertId.isNotEmpty) {
+      try {
+        final queued = await _queueNewAlertPushNotifications(
+          alertId: alertId,
+          alertType: type,
+          description: alertData['description'] as String,
+          usine: usine,
+          alertNumber: alertNumber,
+        );
+        if (queued == 0) {
+          await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
+        }
+      } catch (e, stackTrace) {
+        _logger.warning(
+          'Queued new-alert notification fan-out failed; using alert fallback',
+          e,
+          stackTrace,
+        );
+        await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
+      }
     }
     return alertId;
   }
@@ -359,6 +429,7 @@ class AlertService {
     String? reason,
   ) async {
     final users = await getAllUsers();
+    final refs = <WorkerNotificationRef>[];
     for (var entry in users.entries) {
       final role = entry.value['role'] ?? 'supervisor';
       if (role == 'admin') {
@@ -373,9 +444,11 @@ class AlertService {
           'status': 'pending',
           'pushSent': false,
         };
-        await _db.child('notifications/${entry.key}').push().set(notification);
+        final ref = await _writeNotification(entry.key, notification);
+        if (ref != null) refs.add(ref);
       }
     }
+    await _triggerNotificationRefs(refs);
   }
 
   Future<void> resolveAlert(
@@ -490,7 +563,9 @@ class AlertService {
   ) async {
     final notification = Map<String, dynamic>.from(request)
       ..putIfAbsent('pushSent', () => false);
-    await _db.child('notifications/$targetUserId').push().set(notification);
+    await _triggerNotificationRefs([
+      await _writeNotification(targetUserId, notification),
+    ]);
   }
 
   Future<void> createHelpRequest(
@@ -518,10 +593,9 @@ class AlertService {
       'timestamp': DateTime.now().toIso8601String(),
       'status': 'pending',
     };
-    await _db
-        .child('notifications/$targetSupervisorId')
-        .push()
-        .set(notification);
+    await _triggerNotificationRefs([
+      await _writeNotification(targetSupervisorId, notification),
+    ]);
   }
 
   Future<void> acceptHelpRequest(
@@ -553,7 +627,9 @@ class AlertService {
         'status': 'pending',
         'pushSent': false,
       };
-      await _db.child('notifications/$requesterId').push().set(notification);
+      await _triggerNotificationRefs([
+        await _writeNotification(requesterId, notification),
+      ]);
     }
   }
 
@@ -574,7 +650,9 @@ class AlertService {
       'status': 'pending',
       'pushSent': false,
     };
-    await _db.child('notifications/$requesterId').push().set(notification);
+    await _triggerNotificationRefs([
+      await _writeNotification(requesterId, notification),
+    ]);
   }
 
   Future<Map<String, dynamic>> getAllUsers() async {
@@ -600,27 +678,28 @@ class AlertService {
     }
 
     final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
-    await _db.child('alerts/$alertId').update({'notificationSent': true});
-
-    final users = await getAllUsers();
-
-    for (var entry in users.entries) {
-      final role = entry.value['role'] ?? 'supervisor';
-      if (role == 'supervisor' || role == 'admin') {
-        // Create in-app notification (Firebase only)
-        final notification = {
-          'type': 'new_alert',
-          'alertId': alertId,
-          'alertType': alertType,
-          'alertDescription': description,
-          'usine': usine,
-          'message': 'New alert from $usine: $alertType',
-          'timestamp': DateTime.now().toIso8601String(),
-          'status': 'pending',
-          'pushSent': false,
-        };
-        await _db.child('notifications/${entry.key}').push().set(notification);
+    final rawAlertNumber = alertSnap.child('alertNumber').value;
+    final alertNumber = rawAlertNumber is num
+        ? rawAlertNumber.toInt()
+        : int.tryParse(rawAlertNumber?.toString() ?? '');
+    try {
+      final queued = await _queueNewAlertPushNotifications(
+        alertId: alertId,
+        alertType: alertType,
+        description: description,
+        usine: usine,
+        alertNumber: alertNumber,
+      );
+      if (queued == 0) {
+        await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
       }
+    } catch (e, stackTrace) {
+      _logger.warning(
+        'Stream new-alert notification fan-out failed; using alert fallback',
+        e,
+        stackTrace,
+      );
+      await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
     }
   }
 }

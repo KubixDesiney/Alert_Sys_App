@@ -1,6 +1,6 @@
 import { getFirebaseToken } from './auth.js';
 import { corsHeaders } from './config.js';
-import { fanOutPendingNotifications, sendFcm } from './fcm.js';
+import { fanOutPendingNotifications } from './fcm.js';
 import { loadCoreData } from './load_core.js';
 import { AI_ACTIVE_STATUSES, AI_COOLDOWN_MS, buildSupStats, countActiveSupervisorsInFactory, scoreSupervisor } from './scoring.js';
 import { _shiftContainsTime, _toMs, aiResolveFactory, aiSanitizeFactoryId, haversineKm, loadFactoryLocations, pickActiveShift } from './utils.js';
@@ -66,6 +66,64 @@ function cloneCtxWithShift(ctx, shift) {
     activeShift: shift ?? null,
     targetShift: shift ?? null,
   };
+}
+
+function _notifyWorkerUrl(env) {
+  const configured = String(
+    env.NOTIFY_WORKER_URL ||
+      env.ALERTSYS_NOTIFY_WORKER_URL ||
+      env.SIA_NOTIFY_WORKER_URL ||
+      'https://alertsys.aziz-nagati01.workers.dev/notify',
+  ).trim();
+  if (!configured) return '';
+  const trimmed = configured.replace(/\/+$/, '');
+  return trimmed.endsWith('/notify') ? trimmed : `${trimmed}/notify`;
+}
+
+function _notifyWorkerHeaders(env) {
+  const headers = { 'Content-Type': 'application/json' };
+  const secret = String(env.WORKER_SHARED_SECRET || env.SIA_WORKER_SHARED_SECRET || '').trim();
+  if (secret) headers['x-worker-secret'] = secret;
+  return headers;
+}
+
+async function triggerNotificationWorker(env, notifications) {
+  const refs = (notifications || [])
+    .filter((ref) => ref && ref.uid && ref.notifId)
+    .map((ref) => ({ uid: String(ref.uid), notifId: String(ref.notifId) }));
+  if (!refs.length) return false;
+  const url = _notifyWorkerUrl(env);
+  if (!url) return false;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: _notifyWorkerHeaders(env),
+      body: JSON.stringify(refs.length === 1 ? { notification: refs[0] } : { notifications: refs }),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[NOTIFY-TRIGGER] ' + e.message);
+    return false;
+  }
+}
+
+async function writeNotificationAndTrigger(env, token, uid, notification) {
+  if (!uid) return null;
+  try {
+    const res = await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...notification, pushSent: notification?.pushSent === true }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const notifId = data?.name || null;
+    if (notifId) await triggerNotificationWorker(env, [{ uid, notifId }]);
+    return notifId;
+  } catch (e) {
+    console.error('[NOTIFY-TRIGGER] notification write failed: ' + e.message);
+    return null;
+  }
 }
 
 async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env, token, allCandidates = []) {
@@ -164,20 +222,20 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
         }),
       }),
     ]);
-    if (supervisor.fcmToken) {
-      await sendFcm(
-        supervisor.fcmToken,
-        'AI Assignment',
-        `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`,
-        {
-          type: 'ai_assigned',
-          alertId: String(alertId),
-          recipientId: String(supervisor.uid),
-          reason: reasonSummary,
-        },
-        env,
-      );
-    }
+    await writeNotificationAndTrigger(env, token, supervisor.uid, {
+      type: 'ai_assigned',
+      alertId: String(alertId),
+      alertType: current.type || 'alert',
+      alertDescription: current.description || '',
+      usine: String(current.usine || ''),
+      factoryId: String(current.factoryId || ''),
+      reason: reasonSummary,
+      message: `Auto-assigned: ${current.type || 'alert'}${current.usine ? ` at ${current.usine}` : ''}`,
+      timestamp: nowIso,
+      status: 'pending',
+      buzz: true,
+      pushSent: false,
+    });
     return true;
   }
   return false;
@@ -1086,22 +1144,18 @@ async function processShiftCollaborations(env, ctx) {
           if (collaborator.id) notifyTargets.set(String(collaborator.id), 'assistant');
         }
         for (const [uid, role] of notifyTargets.entries()) {
-          await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${token}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'collaboration_rejected',
-              collabRequestId: reqId,
-              collaborationId: reqId,
-              alertId: req.alertId || null,
-              message:
-                role === 'requester'
-                  ? `AI Shift Commander declined your collaboration request. Reason: ${decision.reason}`
-                  : `AI Shift Commander declined the collaboration request you accepted. Reason: ${decision.reason}`,
-              timestamp: nowIso,
-              status: 'unread',
-              pushSent: false,
-            }),
+          await writeNotificationAndTrigger(env, token, uid, {
+            type: 'collaboration_rejected',
+            collabRequestId: reqId,
+            collaborationId: reqId,
+            alertId: req.alertId || null,
+            message:
+              role === 'requester'
+                ? `AI Shift Commander declined your collaboration request. Reason: ${decision.reason}`
+                : `AI Shift Commander declined the collaboration request you accepted. Reason: ${decision.reason}`,
+            timestamp: nowIso,
+            status: 'unread',
+            pushSent: false,
           });
         }
       }
@@ -1183,43 +1237,29 @@ async function processShiftCollaborations(env, ctx) {
       });
       // Notify the requester so the UI updates.
       if (req.requesterId) {
-        await fetch(
-          `${env.FB_DB_URL}notifications/${req.requesterId}.json?auth=${token}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'collab_auto_approved',
-              message: `AI Shift Commander approved your collaboration request. Reason: ${decision.reason}`,
-              alertId: req.alertId || null,
-              collabRequestId: reqId,
-              collaborationId: reqId,
-              timestamp: nowIso,
-              status: 'unread',
-              pushSent: false,
-            }),
-          },
-        );
+        await writeNotificationAndTrigger(env, token, req.requesterId, {
+          type: 'collab_auto_approved',
+          message: `AI Shift Commander approved your collaboration request. Reason: ${decision.reason}`,
+          alertId: req.alertId || null,
+          collabRequestId: reqId,
+          collaborationId: reqId,
+          timestamp: nowIso,
+          status: 'unread',
+          pushSent: false,
+        });
       }
       if (acceptedCollaborators.length > 0) {
         for (const collaborator of acceptedCollaborators) {
-          await fetch(
-            `${env.FB_DB_URL}notifications/${collaborator.id}.json?auth=${token}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'collaboration_approved',
-                message: `AI Shift Commander approved your collaboration request. You can now assist on this alert. Reason: ${decision.reason}`,
-                alertId: req.alertId || null,
-                collabRequestId: reqId,
-                collaborationId: reqId,
-                timestamp: nowIso,
-                status: 'unread',
-                pushSent: false,
-              }),
-            },
-          );
+          await writeNotificationAndTrigger(env, token, collaborator.id, {
+            type: 'collaboration_approved',
+            message: `AI Shift Commander approved your collaboration request. You can now assist on this alert. Reason: ${decision.reason}`,
+            alertId: req.alertId || null,
+            collabRequestId: reqId,
+            collaborationId: reqId,
+            timestamp: nowIso,
+            status: 'unread',
+            pushSent: false,
+          });
         }
       }
     }
@@ -1319,17 +1359,15 @@ async function processShiftEnding(env, ctx) {
         ? Object.keys(shift.supervisors)
         : [];
     for (const uid of supIds) {
-      await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${ctx.token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'shift_handover',
-          message: `Auto handover for "${shift.name || id}"`,
-          alertDescription: result.summary,
-          shiftId: id,
-          timestamp: nowIso,
-          status: 'unread',
-        }),
+      await writeNotificationAndTrigger(env, ctx.token, uid, {
+        type: 'shift_handover',
+        message: `Auto handover for "${shift.name || id}"`,
+        alertDescription: result.summary,
+        shiftId: id,
+        shiftName: shift.name || '',
+        timestamp: nowIso,
+        status: 'unread',
+        pushSent: false,
       });
     }
     await writeShiftAiLog(env, ctx.token, id, {
@@ -1416,17 +1454,15 @@ async function handleShiftAiAction(request, env) {
           ? Object.keys(shift.supervisors)
           : [];
       for (const uid of supIds) {
-        await fetch(`${env.FB_DB_URL}notifications/${uid}.json?auth=${coreCtx.token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'shift_handover',
-            message: `Handover for "${shift.name || shift.id}"`,
-            alertDescription: result.summary,
-            shiftId: shift.id,
-            timestamp: nowIso,
-            status: 'unread',
-          }),
+        await writeNotificationAndTrigger(env, coreCtx.token, uid, {
+          type: 'shift_handover',
+          message: `Handover for "${shift.name || shift.id}"`,
+          alertDescription: result.summary,
+          shiftId: shift.id,
+          shiftName: shift.name || '',
+          timestamp: nowIso,
+          status: 'unread',
+          pushSent: false,
         });
       }
       await writeShiftAiLog(env, coreCtx.token, shift.id, {

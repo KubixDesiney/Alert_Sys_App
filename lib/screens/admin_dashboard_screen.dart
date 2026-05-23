@@ -17,13 +17,12 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../providers/alert_provider.dart';
 import 'alert_detail_screen.dart';
-import 'package:http/http.dart' as http;
 import 'admin_escalation_screen.dart';
 import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
 import '../services/alert_service.dart';
-import '../config/app_config.dart';
+import '../services/worker_trigger_queue.dart';
 import '../widgets/admin/pill_tab_bar.dart';
 import '../services/ai_assignment_service.dart';
 import '../providers/theme_provider.dart';
@@ -333,19 +332,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       'elapsedTime': null,
     });
 
-    // ✅ 3. Manual Cloudflare Worker trigger (unchanged)
-    try {
-      await http.post(
-        Uri.parse(AppConfig.notifyTriggerEndpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'type': type,
-          'description': description,
-          'alertId': alertId,
-        }),
-      );
-    } catch (e) {
-      debugPrint('Manual worker trigger failed: $e');
+    // Queue Cloudflare Worker trigger; cron remains fallback.
+    if (alertId != null && alertId.isNotEmpty) {
+      await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);
     }
   }
 

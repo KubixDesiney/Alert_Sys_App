@@ -11,11 +11,9 @@ class AuthService {
   final FirebaseAuth _auth;
   final DatabaseReference _db;
 
-  AuthService({
-    FirebaseAuth? auth,
-    DatabaseReference? database,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _db = database ?? FirebaseDatabase.instance.ref();
+  AuthService({FirebaseAuth? auth, DatabaseReference? database})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _db = database ?? FirebaseDatabase.instance.ref();
 
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -35,8 +33,9 @@ class AuthService {
         try {
           final accountSnapshot = await _db.child('users/$uid').get();
           if (accountSnapshot.value is Map) {
-            final account =
-                Map<String, dynamic>.from(accountSnapshot.value as Map);
+            final account = Map<String, dynamic>.from(
+              accountSnapshot.value as Map,
+            );
             await OfflineAccountCache.save(
               uid: uid,
               role: account['role']?.toString(),
@@ -173,10 +172,15 @@ class AuthService {
       'buzz': true,
       'pushSent': false,
     };
-    await _db
-        .child('notifications/$assistantId')
-        .push()
-        .set(assistantNotification);
+    final notificationRefs = <WorkerNotificationRef>[];
+    final assistantNotifRef = _db.child('notifications/$assistantId').push();
+    await assistantNotifRef.set(assistantNotification);
+    final assistantNotifId = assistantNotifRef.key;
+    if (assistantNotifId != null && assistantNotifId.isNotEmpty) {
+      notificationRefs.add(
+        WorkerNotificationRef(uid: assistantId, notifId: assistantNotifId),
+      );
+    }
 
     // Notify the claimant that an assistant was assigned (optional)
     final claimantId = alertSnap.child('superviseurId').value as String?;
@@ -197,17 +201,26 @@ class AuthService {
         'buzz': true,
         'pushSent': false,
       };
-      await _db
-          .child('notifications/$claimantId')
-          .push()
-          .set(claimantNotification);
+      final claimantNotifRef = _db.child('notifications/$claimantId').push();
+      await claimantNotifRef.set(claimantNotification);
+      final claimantNotifId = claimantNotifRef.key;
+      if (claimantNotifId != null && claimantNotifId.isNotEmpty) {
+        notificationRefs.add(
+          WorkerNotificationRef(uid: claimantId, notifId: claimantNotifId),
+        );
+      }
     }
 
-    await WorkerTriggerQueue.instance.enqueueNotify();
+    await WorkerTriggerQueue.instance.enqueueNotificationTriggers(
+      notificationRefs,
+    );
   }
 
   Future<void> assignSupervisorToAlert(
-      String alertId, String supervisorId, String supervisorName) async {
+    String alertId,
+    String supervisorId,
+    String supervisorName,
+  ) async {
     await _db.child('alerts/$alertId').update({
       'status': 'en_cours',
       'superviseurId': supervisorId,
@@ -218,6 +231,7 @@ class AuthService {
     final alertType = alertSnap.child('type').value ?? 'alert';
     final alertDesc = alertSnap.child('description').value ?? '';
     final notification = {
+      'type': 'ai_assigned',
       'alertId': alertId,
       'alertType': alertType,
       'alertDescription': alertDesc,
@@ -226,7 +240,15 @@ class AuthService {
       'status': 'pending',
       'pushSent': false,
     };
-    await _db.child('notifications/$supervisorId').push().set(notification);
+    final notifRef = _db.child('notifications/$supervisorId').push();
+    await notifRef.set(notification);
+    final notifId = notifRef.key;
+    if (notifId != null && notifId.isNotEmpty) {
+      await WorkerTriggerQueue.instance.enqueueNotificationTrigger(
+        supervisorId,
+        notifId,
+      );
+    }
   }
 
   Future<void> logout() async {
@@ -275,8 +297,9 @@ class AuthService {
       List<UserModel> supervisors = [];
 
       data.forEach((key, value) {
-        final Map<String, dynamic> userMap =
-            Map<String, dynamic>.from(value as Map);
+        final Map<String, dynamic> userMap = Map<String, dynamic>.from(
+          value as Map,
+        );
         userMap['id'] = key.toString();
         supervisors.add(UserModel.fromMap(key.toString(), userMap));
       });
@@ -298,11 +321,8 @@ class AuthService {
     required DateTime hiredDate,
   }) async {
     try {
-      UserCredential userCredential =
-          await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      UserCredential userCredential = await _auth
+          .createUserWithEmailAndPassword(email: email, password: password);
       final uid = userCredential.user!.uid;
       await _db.child('users/$uid').set({
         'firstName': firstName,
@@ -336,14 +356,14 @@ class AuthService {
         .equalTo('supervisor')
         .onValue
         .map((event) {
-      final data = event.snapshot.value;
-      if (data == null) return <Map<String, dynamic>>[];
-      final map = Map<String, dynamic>.from(data as Map);
-      return map.entries.map((e) {
-        final m = Map<String, dynamic>.from(e.value as Map);
-        m['id'] = e.key;
-        return m;
-      }).toList();
-    });
+          final data = event.snapshot.value;
+          if (data == null) return <Map<String, dynamic>>[];
+          final map = Map<String, dynamic>.from(data as Map);
+          return map.entries.map((e) {
+            final m = Map<String, dynamic>.from(e.value as Map);
+            m['id'] = e.key;
+            return m;
+          }).toList();
+        });
   }
 }

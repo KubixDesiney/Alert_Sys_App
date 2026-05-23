@@ -17,6 +17,7 @@ const MAX_ALERTS_TO_PUSH = 1;
 const MAX_FANOUT = 5;
 const MAX_CRON_FANOUT = 5;
 const PUSH_LOCK_TTL_MS = 2 * 60 * 1000;
+const NOTIFICATION_LOCK_TTL_MS = 2 * 60 * 1000;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 60;
 
@@ -597,12 +598,35 @@ const COLLAB_NOTIF_TYPES = new Set([
   'alert_critical_update',
 ]);
 
+const TARGETED_NOTIF_TYPES = new Set([
+  'new_alert',
+  'ai_assigned',
+  'ai_rejection',
+  'cross_factory_transfer',
+  'confirm_presence',
+  'shift_handover',
+  'help_accepted',
+  'help_refused',
+]);
+
 const ADMIN_ONLY_NOTIF_TYPES = new Set([
   'collaboration_request_admin',
   'ai_cross_factory_recommendation',
 ]);
 
-const LEGACY_SKIPPED_NOTIF_TYPES = new Set(['', 'new_alert']);
+const SUPERVISOR_ONLY_NOTIF_TYPES = new Set(['new_alert']);
+
+const LEGACY_SKIPPED_NOTIF_TYPES = new Set(['']);
+
+function _notificationLockIsFresh(notif) {
+  if (!notif || notif.pushSending !== true) return false;
+  const started = _toMs(notif.pushSendingAt);
+  return started != null && Date.now() - started < NOTIFICATION_LOCK_TTL_MS;
+}
+
+function notificationBypassesBusy(notifType) {
+  return COLLAB_NOTIF_TYPES.has(notifType) || TARGETED_NOTIF_TYPES.has(notifType);
+}
 
 function notificationTargetFactory(notif, alertsMap = {}) {
   const directFactory =
@@ -617,7 +641,10 @@ function notificationTargetFactory(notif, alertsMap = {}) {
 
 function notifTitle(type) {
   switch (String(type || '')) {
+    case 'new_alert': return 'New Alert';
     case 'ai_assigned': return 'AI Assignment';
+    case 'confirm_presence': return 'AI Shift Commander';
+    case 'shift_handover': return 'Shift handover';
     case 'collaboration_request': return 'Collaboration request';
     case 'collaboration_assistant_accepted':
     case 'collaboration_assistant_removed':
@@ -630,11 +657,203 @@ function notifTitle(type) {
     case 'cross_factory_transfer': return 'Cross-factory transfer';
     case 'help_request':
     case 'assistance_request': return 'Help request';
+    case 'help_accepted': return 'Help accepted';
+    case 'help_refused': return 'Help declined';
     case 'ai_cross_factory_recommendation': return 'AI recommendation';
     case 'ai_rejection': return 'AI rejection';
     case 'alert_suspended': return 'Alert suspended';
     default: return 'Smart Industrial Alert - SIA';
   }
+}
+
+function notificationBody(notif) {
+  return String(
+    notif?.message ||
+      notif?.alertDescription ||
+      notif?.summary ||
+      notif?.type ||
+      'Smart Industrial Alert - SIA notification',
+  );
+}
+
+function notificationFcmData(uid, notifId, notif) {
+  const type = String(notif?.type || '');
+  const alertId = String(notif?.alertId || '');
+  const notificationId =
+    type === 'new_alert' && alertId ? String(_alertNotifId(alertId)) : notifId;
+  return {
+    notificationId,
+    queueNotificationId: notifId,
+    recipientId: uid,
+    alertId,
+    collabRequestId: String(notif?.collabRequestId || notif?.collaborationId || ''),
+    collaborationId: String(notif?.collaborationId || notif?.collabRequestId || ''),
+    helpRequestId: String(notif?.helpRequestId || ''),
+    shiftId: String(notif?.shiftId || ''),
+    shiftName: String(notif?.shiftName || ''),
+    type,
+    notifType: type,
+    usine: String(notif?.usine || notif?.alertUsine || ''),
+    factoryId: String(notif?.factoryId || ''),
+    factoryName: String(notif?.factoryName || ''),
+    alertType: String(notif?.alertType || ''),
+    alertNumber: String(notif?.alertNumber || ''),
+  };
+}
+
+function notificationRecipientGate(uid, user, notif, alertsMap = {}, supervisorActiveAlertsMap = {}) {
+  if (!notif || notif.pushSent === true || _notificationLockIsFresh(notif)) return false;
+  const notifType = String(notif.type || '');
+  if (LEGACY_SKIPPED_NOTIF_TYPES.has(notifType)) return false;
+  if (!user || !user.fcmToken || uid === 'undefined') return false;
+
+  const userRole = String(user.role || '');
+  const isSupervisor = userRole === 'supervisor';
+  const isAdmin = userRole === 'admin';
+  if (!isSupervisor && !isAdmin) return false;
+  if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) return false;
+  if (SUPERVISOR_ONLY_NOTIF_TYPES.has(notifType) && !isSupervisor) return false;
+
+  const bypassBusyAndFactory = notificationBypassesBusy(notifType);
+  if (isSupervisor && !bypassBusyAndFactory) {
+    const busySupervisors = engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
+    if (busySupervisors.has(uid)) return false;
+    const targetFactoryId = notificationTargetFactory(notif, alertsMap);
+    const userFactoryId = aiResolveFactory(user || null);
+    if (targetFactoryId && targetFactoryId !== userFactoryId) return false;
+  }
+
+  return true;
+}
+
+function normalizeNotificationRefs(payload) {
+  const refs = [];
+  const pushRef = (value) => {
+    if (!value || typeof value !== 'object') return;
+    const uid = String(value.uid || value.userId || value.recipientId || '').trim();
+    const notifId = String(value.notifId || value.notificationId || value.id || '').trim();
+    if (uid && notifId) refs.push({ uid, notifId });
+  };
+  pushRef(payload?.notification);
+  pushRef(payload);
+  if (Array.isArray(payload?.notifications)) {
+    payload.notifications.forEach(pushRef);
+  }
+
+  const seen = new Set();
+  return refs.filter((ref) => {
+    const key = `${ref.uid}/${ref.notifId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function claimNotificationPush(env, token, uid, notifId) {
+  const url = `${_fbUrl(env, `notifications/${uid}/${notifId}.json`)}?auth=${token}`;
+  const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
+  if (!getRes.ok) return null;
+  const etag = getRes.headers.get('ETag');
+  const current = await readJsonResponse(getRes, `notifications/${uid}/${notifId}.json`);
+  if (!current || current.pushSent === true || _notificationLockIsFresh(current)) return null;
+  const currentType = String(current.type || '');
+  if (LEGACY_SKIPPED_NOTIF_TYPES.has(currentType)) return null;
+
+  const nowIso = new Date().toISOString();
+  const claimRes = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'if-match': etag ?? '*' },
+    body: JSON.stringify({
+      ...current,
+      pushSending: true,
+      pushSendingAt: nowIso,
+    }),
+  });
+  if (claimRes.status === 412 || !claimRes.ok) return null;
+  return { url, notif: current };
+}
+
+async function releaseNotificationPush(url) {
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pushSending: null,
+      pushSendingAt: null,
+    }),
+  });
+}
+
+async function finishNotificationPush(url, sent) {
+  const nowIso = new Date().toISOString();
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(
+      sent
+        ? {
+            pushSent: true,
+            pushSentAt: nowIso,
+            pushSending: null,
+            pushSendingAt: null,
+            pushLastErrorAt: null,
+          }
+        : {
+            pushSending: null,
+            pushSendingAt: null,
+            pushLastErrorAt: nowIso,
+          },
+    ),
+  });
+}
+
+async function pushSingleNotificationWithCtx(env, ctx, uid, notifId) {
+  if (!uid || !notifId) return false;
+  const { token, usersMap, alertsMap, supervisorActiveAlertsMap } = ctx;
+  const claimed = await claimNotificationPush(env, token, uid, notifId);
+  if (!claimed) return false;
+
+  const { url, notif } = claimed;
+  const user = usersMap?.[uid];
+  if (!notificationRecipientGate(uid, user, notif, alertsMap, supervisorActiveAlertsMap)) {
+    await releaseNotificationPush(url);
+    return false;
+  }
+
+  const result = await sendFcmDetailed(
+    String(user.fcmToken),
+    notifTitle(notif.type),
+    notificationBody(notif),
+    notificationFcmData(uid, notifId, notif),
+    env,
+    { firebaseAuthToken: token, uid },
+  );
+  if (result.unregistered && user?.fcmToken) {
+    user.fcmToken = null;
+  }
+  await finishNotificationPush(url, result.ok);
+  return result.ok;
+}
+
+async function pushSingleNotification(env, uid, notifId) {
+  const ctx = await loadCoreData(env);
+  return pushSingleNotificationWithCtx(env, ctx, uid, notifId);
+}
+
+async function pushNotificationRefs(env, refs, options = {}) {
+  const cleanRefs = (refs || []).filter((ref) => ref?.uid && ref?.notifId);
+  if (!cleanRefs.length) return { attempted: 0, sent: 0 };
+  const limit = Math.max(1, Number(options.limit ?? MAX_FANOUT) || MAX_FANOUT);
+  const ctx = await loadCoreData(env);
+  let attempted = 0;
+  let sent = 0;
+  for (const ref of cleanRefs.slice(0, limit)) {
+    attempted++;
+    if (await pushSingleNotificationWithCtx(env, ctx, ref.uid, ref.notifId)) {
+      sent++;
+    }
+  }
+  return { attempted, sent };
 }
 
 async function fanOutPendingNotifications(env, ctx, options = {}) {
@@ -654,18 +873,19 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
     const userRole = String(user?.role || '');
     const isSupervisor = userRole === 'supervisor';
     const isAdmin = userRole === 'admin';
-    const isBusySupervisor = isSupervisor && busySupervisors.has(uid);
+    if (!isSupervisor && !isAdmin) continue;
     const userFactoryId = aiResolveFactory(user || null);
 
     for (const [notifId, notif] of Object.entries(bucket || {})) {
-      if (!notif || notif.pushSent === true || notif.pushSending === true) continue;
+      if (!notif || notif.pushSent === true || _notificationLockIsFresh(notif)) continue;
       const notifType = String(notif.type || '');
       if (LEGACY_SKIPPED_NOTIF_TYPES.has(notifType)) continue;
       if (!user || !fcmToken || uid === 'undefined') continue;
-      const isCollabNotification = COLLAB_NOTIF_TYPES.has(notifType);
-      if (isBusySupervisor && !isCollabNotification) continue;
+      const bypassBusyAndFactory = notificationBypassesBusy(notifType);
+      if (!bypassBusyAndFactory && isSupervisor && busySupervisors.has(uid)) continue;
       if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) continue;
-      if (isSupervisor && !isCollabNotification) {
+      if (SUPERVISOR_ONLY_NOTIF_TYPES.has(notifType) && !isSupervisor) continue;
+      if (isSupervisor && !bypassBusyAndFactory) {
         const targetFactoryId = notificationTargetFactory(notif, alertsMap);
         if (targetFactoryId && targetFactoryId !== userFactoryId) continue;
       }
@@ -691,42 +911,36 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
   let processed = 0;
   for (const candidate of candidates) {
     if (processed >= limit) break;
-      const { uid, notifId, user, fcmToken, isAdmin, isSupervisor, userFactoryId } = candidate;
+    const { uid, notifId, user, fcmToken, isAdmin, isSupervisor, userFactoryId } = candidate;
     try {
       const url = `${_fbUrl(env, `notifications/${uid}/${notifId}.json`)}?auth=${token}`;
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
       if (!getRes.ok) continue;
       const etag = getRes.headers.get('ETag');
       const current = await readJsonResponse(getRes, `notifications/${uid}/${notifId}.json`);
-      if (!current || current.pushSent === true || current.pushSending === true) continue;
+      if (!current || current.pushSent === true || _notificationLockIsFresh(current)) continue;
       const currentType = String(current.type || '');
       if (LEGACY_SKIPPED_NOTIF_TYPES.has(currentType)) continue;
-      const currentIsCollab = COLLAB_NOTIF_TYPES.has(currentType);
+      const bypassBusyAndFactory = notificationBypassesBusy(currentType);
       if (ADMIN_ONLY_NOTIF_TYPES.has(currentType) && !isAdmin) continue;
-      if (isSupervisor && !currentIsCollab) {
+      if (SUPERVISOR_ONLY_NOTIF_TYPES.has(currentType) && !isSupervisor) continue;
+      if (isSupervisor && !bypassBusyAndFactory) {
         const targetFactoryId = notificationTargetFactory(current, alertsMap);
         if (targetFactoryId && targetFactoryId !== userFactoryId) continue;
       }
 
       const claimRes = await fetch(url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'if-match': etag },
-        body: JSON.stringify({ ...current, pushSending: true }),
+        headers: { 'Content-Type': 'application/json', 'if-match': etag ?? '*' },
+        body: JSON.stringify({ ...current, pushSending: true, pushSendingAt: nowIso }),
       });
       if (claimRes.status === 412 || !claimRes.ok) continue;
 
       const result = await sendFcmDetailed(
         fcmToken,
         notifTitle(current.type),
-        String(current.message || current.type || 'Smart Industrial Alert - SIA notification'),
-        {
-          notificationId: notifId,
-          recipientId: uid,
-          alertId: String(current.alertId || ''),
-          collabRequestId: String(current.collabRequestId || ''),
-          type: currentType,
-          usine: String(current.usine || current.alertUsine || ''),
-        },
+        notificationBody(current),
+        notificationFcmData(uid, notifId, current),
         env,
         { firebaseAuthToken: token, uid },
       );
@@ -739,8 +953,8 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           result.ok
-            ? { pushSent: true, pushSentAt: nowIso, pushSending: null }
-            : { pushSending: null, pushLastErrorAt: nowIso },
+            ? { pushSent: true, pushSentAt: nowIso, pushSending: null, pushSendingAt: null, pushLastErrorAt: null }
+            : { pushSending: null, pushSendingAt: null, pushLastErrorAt: nowIso },
         ),
       });
       processed++;
@@ -947,7 +1161,7 @@ export default {
       return _json({
         service: 'alertsys-notifications-worker',
         status: 'ok',
-        responsibilities: ['processAlerts', 'fanOutPendingNotifications'],
+        responsibilities: ['processAlerts', 'pushSingleAlert', 'pushSingleNotification', 'fanOutPendingNotifications'],
       });
     }
 
@@ -963,21 +1177,37 @@ export default {
 
     if (url.pathname === '/notify' || url.pathname === '/') {
       let alertId = null;
+      let notificationRefs = [];
       if (request.method === 'POST') {
-        try { const b = await request.clone().json(); alertId = b?.alertId || null; } catch (_) {}
+        try {
+          const b = await request.clone().json();
+          alertId = b?.alertId || null;
+          notificationRefs = normalizeNotificationRefs(b);
+        } catch (_) {}
       }
       ctx.waitUntil(
-        (alertId
-          ? pushSingleAlert(env, alertId).then(sent => {
-              if (!sent) return runNotificationCycle(env, { limit: MAX_FANOUT });
-            })
-          : runNotificationCycle(env, { limit: MAX_FANOUT })
-        ).catch(async (e) => {
+        (async () => {
+          let alertSent = false;
+          let refsResult = { attempted: 0, sent: 0 };
+          if (alertId) {
+            alertSent = await pushSingleAlert(env, alertId);
+          }
+          if (notificationRefs.length) {
+            refsResult = await pushNotificationRefs(env, notificationRefs, { limit: MAX_FANOUT });
+          }
+          if (!alertId && notificationRefs.length === 0) {
+            await runNotificationCycle(env, { limit: MAX_FANOUT });
+            return;
+          }
+          if (alertId && !alertSent) {
+            await runNotificationCycle(env, { limit: MAX_FANOUT });
+          }
+        })().catch(async (e) => {
           console.error('[NOTIFY MANUAL] ' + e.message);
           await recordNotifyError(env, e);
         }),
       );
-      return _json({ queued: true });
+      return _json({ queued: true, alertId: alertId || null, notifications: notificationRefs.length });
     }
 
     return _json({ ok: false, error: 'not_found' }, 404);
@@ -991,4 +1221,8 @@ export {
   getFcmTokensForFactory,
   processAlerts,
   fanOutPendingNotifications,
+  pushSingleAlert,
+  pushSingleNotification,
+  pushNotificationRefs,
+  normalizeNotificationRefs,
 };

@@ -44,7 +44,7 @@ class AppConfig {
   static String get predictEndpoint => '$aiWorkerBase/predict';
   static String get suggestAssigneeEndpoint => '$aiWorkerBase/suggest-assignee';
   static String get notifyEndpoint => '$notifyWorkerBase/notify';
-  static String get notifyTriggerEndpoint => '$notifyWorkerBase/';
+  static String get notifyTriggerEndpoint => notifyEndpoint;
   static String get aiRetryEndpoint => '$aiWorkerBase/ai-retry';
 
   // ── Timeouts ────────────────────────────────────────────────────────────
