@@ -1,14 +1,13 @@
 import '../models/alert_model.dart';
 import 'alert_service.dart';
 import 'app_logger.dart';
-import 'worker_trigger_queue.dart';
 
 class NotificationService {
   NotificationService({
     required AlertService alertService,
     required AppLogger logger,
-  })  : _alertService = alertService,
-        _logger = logger;
+  }) : _alertService = alertService,
+       _logger = logger;
 
   final AlertService _alertService;
   final AppLogger _logger;
@@ -46,15 +45,13 @@ class NotificationService {
         await _alertService.sendHelpRequest(userId, notification);
       }
     }
-    await WorkerTriggerQueue.instance.enqueueNotify();
   }
 
   Future<void> acceptAssistance({
     required String alertId,
     required String currentId,
     required String currentName,
-    required void Function(String, AlertModel Function(AlertModel))
-        updateLocal,
+    required void Function(String, AlertModel Function(AlertModel)) updateLocal,
   }) async {
     await _alertService.acceptHelpRequest(alertId, '', currentId, currentName);
     updateLocal(
@@ -72,8 +69,7 @@ class NotificationService {
     required String requestId,
     required String currentId,
     required String currentName,
-    required void Function(String, AlertModel Function(AlertModel))
-        updateLocal,
+    required void Function(String, AlertModel Function(AlertModel)) updateLocal,
   }) async {
     await _alertService.acceptHelpRequest(
       alertId,
@@ -94,8 +90,7 @@ class NotificationService {
   Future<void> refuseHelp({
     required String alertId,
     required String requestId,
-    required void Function(String, AlertModel Function(AlertModel))
-        updateLocal,
+    required void Function(String, AlertModel Function(AlertModel)) updateLocal,
   }) async {
     await _alertService.refuseHelpRequest(alertId, requestId);
     updateLocal(alertId, (a) => a.copyWith(helpRequestId: null));
@@ -131,7 +126,8 @@ class NotificationService {
       final userId = entry.key;
       final userData = entry.value as Map;
       if (userData['role'] == 'admin' || userData['role'] == 'supervisor') {
-        final message = customMessage ??
+        final message =
+            customMessage ??
             (isCritical
                 ? 'Alert marked as CRITICAL: ${alert.type}'
                 : 'Alert critical flag removed: ${alert.type}');

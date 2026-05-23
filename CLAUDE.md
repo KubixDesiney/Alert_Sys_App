@@ -149,16 +149,18 @@ HTTP routes:
 ### Notifications Worker
 
 - Worker name: `Smart Industrial Alert - SIA`
-- URL: `https://Smart Industrial Alert - SIA.aziz-nagati01.workers.dev`
+- URL: `https://alertsys.aziz-nagati01.workers.dev`
 - Main file: `cloudflare_notify_worker.js`
 - Config: `wrangler.notify.toml`
 - Cron: every minute (`* * * * *`)
 
 Responsibilities:
 
-- New-alert push fan-out through `processAlerts`.
+- New-alert push fan-out through queued `/notifications/{uid}/{notifId}` rows.
+- Legacy `/alerts` push fallback through `processAlerts`.
 - Queued in-app notification fan-out through `fanOutPendingNotifications`.
 - Single alert push shortcut through `pushSingleAlert`.
+- Single queued notification shortcut through `pushSingleNotification`.
 - FCM token cleanup for unregistered tokens.
 - Basic request rate limiting.
 - Notification worker health under `workers/health/notifyLastRun`.
@@ -166,7 +168,10 @@ Responsibilities:
 HTTP routes:
 
 - `GET /config`: notification worker status.
-- `POST /notify`: queues a notification cycle; if a POST body has `alertId`, it tries that alert first.
+- `POST /notify`: queues a notification cycle. Fast-path payloads:
+  - `{ "alertId": "<alertId>" }` tries one alert first.
+  - `{ "notification": { "uid": "<uid>", "notifId": "<notifId>" } }` tries one queued notification first.
+  - `{ "notifications": [{ "uid": "<uid>", "notifId": "<notifId>" }] }` tries a bounded batch of queued notifications first.
 - `POST /notify?sync=1` or `/notify-sync`: runs synchronously and returns counts/errors.
 - `/`: manual notification cycle.
 
@@ -187,11 +192,30 @@ Push lock fields on alerts:
 - `push_last_error_at`: ISO retryable failure timestamp.
 - `push_skip_reason`: string reason when a claimed alert push closes without an FCM send attempt.
 
+Push lock fields on queued notifications:
+
+- `pushSent`: boolean completion flag.
+- `pushSentAt`: ISO completion timestamp.
+- `pushSending`: boolean lock flag.
+- `pushSendingAt`: ISO lock timestamp.
+- `pushLastErrorAt`: ISO retryable failure timestamp.
+- Stale notification locks are retried after `NOTIFICATION_LOCK_TTL_MS = 2 minutes`.
+
 No-recipient push behavior:
 
 - `processAlerts` and `pushSingleAlert` now call `skipAlertPush(alertUrl, 'no_recipients')`.
 - That writes `push_sent: true`, clears `push_sending`, clears `push_last_error_at`, and records `push_skip_reason`.
 - Retryable FCM failures still keep `push_sent: false` through `finishAlertPush(alertUrl, false)`.
+
+Real-time delivery behavior:
+
+- Producers call `POST /notify` immediately after Firebase writes commit.
+- The worker still reads RTDB and claims ETag locks before sending, so duplicate producer triggers are safe.
+- The one-minute cron remains the durable fallback for missed producer triggers, offline clients, worker errors, and retryable FCM failures.
+- New-alert FCM delivery uses the same targeted queue path as collaboration/help/AI notifications: producers write supervisor-only `new_alert` rows under `/notifications`, then call `POST /notify` with exact refs.
+- The `/alerts/{alertId}` push path remains only as a fallback when queued `new_alert` rows cannot be created. It targets supervisors, not admins/Production Managers.
+- App-created queued `new_alert` rows use `pushDeliveryMode: notification_queue`; the alert record is marked with `push_delivery_mode: notification_queue` so cron does not send a duplicate `/alerts` fan-out.
+- WebSockets/Durable Objects are not the primary wake-up mechanism because Firebase writes do not wake a Worker WebSocket, and mobile background sockets are not reliable; FCM remains the background/offline delivery path.
 
 ### Compatibility And Deprecated Worker Files
 
@@ -212,6 +236,7 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 - `FB_DB_Secret` if still needed by operational scripts.
 - Optional AI/provider secrets used by AI endpoints.
 - `WORKER_SHARED_SECRET` / `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET` when protected worker requests are enabled.
+- Optional `NOTIFY_WORKER_URL` / `ALERTSYS_NOTIFY_WORKER_URL` for AI-worker-to-notification-worker fast triggers; defaults to `https://alertsys.aziz-nagati01.workers.dev/notify`.
 
 `FIREBASE_SERVICE_ACCOUNT` is parsed by the workers to mint Firebase custom auth JWTs and FCM OAuth tokens at the edge.
 
@@ -338,11 +363,11 @@ Typical app path:
 
 1. Admin or integration creates an alert under `alerts`.
 2. Alert creation reserves `alertCounter`.
-3. Alert includes `push_sent: false` for the notification worker.
-4. `WorkerTriggerQueue.enqueueAlertTrigger(alertId)` can POST to the notification worker.
-5. Notification worker claims the alert push lock using Firebase ETag and writes `push_sending: true`.
-6. FCM data-only alert push is sent to eligible recipients.
-7. Worker marks the alert `push_sent: true`, or leaves it `false` only for retryable FCM failures.
+3. Alert initially includes `push_sent: false`.
+4. The producer creates supervisor-only `new_alert` rows under `/notifications/{uid}/{notifId}` with `pushSent: false`.
+5. `WorkerTriggerQueue.enqueueNotificationTriggers(...)` POSTs exact `{ uid, notifId }` refs to the notification worker fast path.
+6. Notification worker claims each queued notification with `pushSending: true`, sends FCM with `notifType: new_alert`, then marks `pushSent: true`.
+7. The alert record is marked `push_sent: true` / `push_delivery_mode: notification_queue` once queued rows are durable; if queuing fails, `WorkerTriggerQueue.enqueueAlertTrigger(alertId)` uses the legacy `/alerts` fallback.
 8. Supervisor claims the alert through `AlertService.takeAlert`.
 9. Claiming writes `supervisor_active_alerts/{supervisorId}` and transitions the alert to `en_cours`.
 10. Resolving writes resolution fields, clears active claim, and can credit assisted work.
@@ -379,9 +404,17 @@ Notification worker recipient logic:
 Queued notification fan-out:
 
 - Reads `notifications/{uid}`.
-- Skips legacy `new_alert` queue types.
-- Supports collaboration, assistant, cross-factory, help, critical update, AI recommendation, AI rejection, and alert suspended types.
+- Supports supervisor-only `new_alert`, collaboration, assistant, cross-factory, help, critical update, AI recommendation, AI rejection, alert suspended, confirm-presence, and handover types.
+- Fast-path FCM data includes `notifType`, `notificationId`, `recipientId`, and available `alertId`, `collabRequestId`, `helpRequestId`, `shiftId`, `factoryId`, and factory/name fields.
 - Writes notification fan-out status fields after FCM send attempts.
+- New-alert/collaboration/help/AI direct-notification types bypass busy-supervisor and factory gates because they are addressed to specific users.
+
+AI-to-notification handoff:
+
+- AI/Security worker keeps making decisions and writing alert/shift/collaboration state.
+- User-visible AI Commander events are persisted under `notifications/{uid}/{notifId}` with `pushSent: false`.
+- The AI worker then calls the Notifications worker with the exact `{ uid, notifId }` reference.
+- If that worker-to-worker trigger fails, the queued notification stays pending and the notification cron sweeps it later.
 
 ## Voice Stack
 
@@ -499,6 +532,8 @@ Station scan:
   - notify trigger to notification worker.
   - AI retry to AI worker.
   - alert-specific notification trigger with POST body `{ alertId }`.
+  - queued-notification trigger with POST body `{ notification: { uid, notifId } }`.
+  - queued-notification batch trigger with POST body `{ notifications: [{ uid, notifId }] }`.
 
 ## Firebase Rules Notes
 

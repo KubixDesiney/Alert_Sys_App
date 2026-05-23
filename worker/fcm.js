@@ -2,6 +2,14 @@ import { getFcmAccessToken } from './auth.js';
 import { MAX_FANOUT } from './config.js';
 import { aiResolveFactory, aiSanitizeFactoryId } from './utils.js';
 
+function _alertNotifId(alertId) {
+  let h = 0;
+  for (let i = 0; i < alertId.length; i++) {
+    h = (h * 31 + alertId.charCodeAt(i)) % 0x7FFFFFFF;
+  }
+  return h || 1;
+}
+
 function parseFcmFailure(status, text) {
   let errorCode = '';
   let message = text || '';
@@ -176,6 +184,7 @@ function getFcmTokensForFactory(factoryName, usersMap, alertsMap, options = {}) 
 // ============ New‑alert FCM push ============
 
 const COLLAB_NOTIF_TYPES = new Set([
+  'new_alert',
   'collaboration_request',
   'collaboration_assistant_accepted',
   'collaboration_assistant_removed',
@@ -194,6 +203,7 @@ const COLLAB_NOTIF_TYPES = new Set([
 
 function notifTitle(type) {
   switch (String(type || '')) {
+    case 'new_alert': return 'New Alert';
     case 'ai_assigned': return 'AI Assignment';
     case 'collaboration_request': return 'Collaboration request';
     case 'collaboration_assistant_accepted':
@@ -233,6 +243,7 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
     for (const [notifId, notif] of Object.entries(bucket || {})) {
       if (processed >= limit) break outer;
       if (!notif || notif.pushSent === true || notif.pushSending === true) continue;
+      if (String(notif.type || '') === 'new_alert' && user.role !== 'supervisor') continue;
       if (isBusySupervisor && !COLLAB_NOTIF_TYPES.has(String(notif.type || ''))) continue;
       const url = `${env.FB_DB_URL}notifications/${uid}/${notifId}.json?auth=${token}`;
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
@@ -253,7 +264,10 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
         title,
         body,
         {
-          notificationId: notifId,
+          notificationId: String(current.type || '') === 'new_alert' && current.alertId
+            ? String(_alertNotifId(String(current.alertId)))
+            : notifId,
+          queueNotificationId: notifId,
           recipientId: uid,
           alertId: String(current.alertId || ''),
           collabRequestId: String(current.collabRequestId || ''),
