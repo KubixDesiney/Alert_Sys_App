@@ -1,6 +1,6 @@
 # Autonomous Bug-Fix Agent
 
-`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks Gemini for a code fix, validates the fix locally, asks OpenAI for an independent review gate, then opens a PR and can auto-merge it after required checks pass.
+`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks Gemini for a code fix, validates the fix locally, asks OpenAI for an independent review gate, then pushes the approved commit directly to `main` and deploys Firebase Hosting.
 
 ## Entry Points
 
@@ -29,6 +29,22 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
   - recent `security/logs`
 - Optional detection commands from `AGENT_DETECTION_COMMANDS`.
 
+## Detected Issue Conditions
+
+- UI URL request fails, times out, or returns a non-2xx/3xx status.
+- UI HTML contains failure markers such as `flutter initialization failed`, `failed to load`, `uncaught`, or `fatal error`.
+- AI worker `/config` fails.
+- AI worker `/security-status` fails.
+- Notification worker `/config` fails.
+- Recent log files contain error markers such as `error`, `exception`, `fatal`, `failed`, `uncaught`, or `unhandled`.
+- Configured detection commands exit non-zero, for example `npm test`.
+- Firebase RTDB context collection fails when credentials are configured.
+- `workers/health` is missing in RTDB.
+- `workers/health/lastRun` or `workers/health/notifyLastRun` is missing.
+- AI or notification cron health timestamps are unreadable.
+- AI or notification cron health timestamps are older than `AGENT_WORKER_STALE_MINUTES`.
+- AI or notification cron health records include non-empty `errors`.
+
 ## Fix And Gate Flow
 
 1. Stop if no actionable issue is detected, unless `AGENT_FORCE=1`.
@@ -38,33 +54,26 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
 5. Run `AGENT_VALIDATION_COMMANDS`.
 6. Send the diff and validation output to OpenAI using `OPENAI_API_KEY` and `OPENAI_REVIEW_MODEL` (`o3` by default).
 7. Retry up to `AGENT_MAX_ATTEMPTS` times with validation/review feedback.
-8. If approved, open a PR with `gh`, wait for required checks, auto-merge when `AGENT_AUTOMERGE=1`, and trigger `deploy.yml` when `AGENT_TRIGGER_DEPLOY=1`.
-9. If all attempts fail, notify Slack and/or email.
+8. If approved, commit on `main`, push `HEAD:main`, build Flutter web, and deploy Firebase Hosting.
+9. If all attempts fail, write the rejection context to `.dart_tool/autofix-agent` and fail the workflow. There is no Slack/email human escalation path.
 
 ## Required Secrets
 
 - `GEMINI_API_KEY`
 - `OPENAI_API_KEY`
-- `AUTOFIX_GITHUB_TOKEN` recommended; falls back to `GITHUB_TOKEN` in Actions.
+- `FIREBASE_TOKEN`
+- `AUTOFIX_GITHUB_TOKEN` recommended for direct `main` pushes; falls back to `GITHUB_TOKEN` in Actions when branch protection allows it.
 
 ## Runtime Context Secrets
 
 - `FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS`
 - `WORKER_SHARED_SECRET`
-- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are still needed by existing CI worker deploy jobs.
-
-## Human Alerts
-
-Configure at least one:
-
-- `SLACK_WEBHOOK_URL`
-- `RESEND_API_KEY` plus `ALERT_EMAIL_FROM` and `ALERT_EMAIL_TO`
-- SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`
+- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are needed only when `AGENT_DEPLOY_WORKERS=1`.
 
 ## Safety Notes
 
 - The runner refuses active fixes in a dirty worktree unless `AGENT_ALLOW_DIRTY=1`.
 - It refuses writes outside the repository and ignores binary/build/cache paths.
 - Generated artifacts are written under `.dart_tool/autofix-agent` and uploaded by the workflow.
-- Auto-merge still depends on repository branch protection and required checks.
+- Direct pushes to `main` still depend on repository branch protection allowing the configured token to push.
 

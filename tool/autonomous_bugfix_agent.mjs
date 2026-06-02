@@ -3,9 +3,7 @@
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
-import tls from 'node:tls';
 
 const ROOT = findRepoRoot(process.cwd());
 const ARTIFACT_DIR = path.join(ROOT, '.dart_tool', 'autofix-agent');
@@ -70,10 +68,9 @@ if (args.has('--help') || args.has('-h')) {
 const config = {
   dryRun: args.has('--dry-run') || envFlag('AGENT_DRY_RUN'),
   force: args.has('--force') || envFlag('AGENT_FORCE'),
-  noPr: args.has('--no-pr') || envFlag('AGENT_DISABLE_PR'),
-  automerge: envFlag('AGENT_AUTOMERGE'),
-  triggerDeploy: envFlag('AGENT_TRIGGER_DEPLOY'),
   allowDirty: envFlag('AGENT_ALLOW_DIRTY'),
+  deployWeb: !envFlag('AGENT_SKIP_WEB_DEPLOY'),
+  deployWorkers: envFlag('AGENT_DEPLOY_WORKERS'),
   maxAttempts: envInt('AGENT_MAX_ATTEMPTS', 3),
   commandTimeoutMs: envInt('AGENT_COMMAND_TIMEOUT_MS', 20 * 60 * 1000),
   fetchTimeoutMs: envInt('AGENT_FETCH_TIMEOUT_MS', 15000),
@@ -85,7 +82,6 @@ const config = {
   geminiModel: process.env.GEMINI_FIX_MODEL || 'gemini-2.5-pro',
   openaiReviewModel: process.env.OPENAI_REVIEW_MODEL || 'o3',
   baseBranch: process.env.AGENT_BASE_BRANCH || 'main',
-  branchPrefix: process.env.AGENT_BRANCH_PREFIX || 'agent/autofix',
   uiHealthUrls: envFlag('AGENT_DISABLE_UI_HEALTH')
     ? []
     : parseList(process.env.AGENT_UI_HEALTH_URLS ?? process.env.APP_HEALTH_URL ?? DEFAULT_UI_URL),
@@ -105,7 +101,6 @@ const config = {
 main().catch(async (error) => {
   const message = error?.stack || error?.message || String(error);
   console.error(`[agent] fatal: ${message}`);
-  await alertHuman('Autonomous bug-fix agent failed before completion', message, { fatal: true }).catch(() => {});
   process.exit(1);
 });
 
@@ -130,7 +125,7 @@ async function main() {
   }
 
   await assertActivePreflight();
-  const branchName = config.noPr ? null : await createAgentBranch();
+  await prepareMainBranchForDirectPublish();
 
   let feedback = '';
   let lastValidation = null;
@@ -184,7 +179,6 @@ async function main() {
 
     console.log('[agent] fix approved by validation and OpenAI review');
     const published = await publishApprovedFix({
-      branchName,
       changedPaths,
       signals,
       geminiFix: lastGemini,
@@ -204,7 +198,8 @@ async function main() {
     .filter(Boolean)
     .join('\n\n');
 
-  await alertHuman('Autonomous bug-fix agent needs human intervention', rejectionSummary, {
+  writeArtifact('rejected-after-retries', {
+    summary: rejectionSummary,
     issues: signals.issues,
     validation: lastValidation,
     review: lastReview,
@@ -224,6 +219,9 @@ async function assertActivePreflight() {
   }
   if (!process.env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY is required for the OpenAI review gate');
+  }
+  if (config.deployWeb && !process.env.FIREBASE_TOKEN) {
+    throw new Error('FIREBASE_TOKEN is required for direct production web deploy');
   }
 }
 
@@ -844,289 +842,76 @@ async function requestOpenAiReview({ signals, geminiFix, validation, diff, chang
   return parsed;
 }
 
-async function publishApprovedFix({ branchName, changedPaths, signals, geminiFix, validation, review }) {
+async function publishApprovedFix({ changedPaths, signals, geminiFix, validation, review }) {
   const diffNames = (await gitText(['diff', '--name-only'])).trim().split(/\r?\n/).filter(Boolean);
   if (!diffNames.length) {
     throw new Error('approved fix has no working-tree changes to publish');
   }
 
-  if (config.noPr) {
-    console.log('[agent] PR publishing disabled; leaving approved changes in working tree');
-    return { published: false, reason: 'AGENT_DISABLE_PR' };
-  }
-
   await runProcess('git', ['add', '--', ...diffNames]);
-  const title = buildPrTitle(geminiFix, signals);
+  await ensureGitIdentity();
+  const title = buildCommitTitle(geminiFix, signals);
   const commitMessage = title.length > 70 ? title.slice(0, 69) : title;
   await runProcess('git', ['commit', '-m', commitMessage]);
-  await runProcess('git', ['push', '-u', 'origin', branchName]);
+  await runProcess('git', ['push', 'origin', `HEAD:${config.baseBranch}`]);
 
-  const bodyPath = writePrBody({ signals, geminiFix, validation, review, changedPaths: diffNames });
-  const prCreate = await runProcess('gh', [
-    'pr',
-    'create',
-    '--base',
-    config.baseBranch,
-    '--head',
-    branchName,
-    '--title',
-    title,
-    '--body-file',
-    bodyPath,
-  ]);
-
-  const prUrl = (prCreate.output || '').trim().split(/\r?\n/).at(-1) || '';
-  console.log(`[agent] opened PR: ${prUrl || '(gh did not print URL)'}`);
-
-  const checks = await waitForPullRequestChecks(prUrl);
-  let merge = null;
-  if (config.automerge) {
-    merge = await mergePullRequest(prUrl);
-  } else {
-    console.log('[agent] AGENT_AUTOMERGE is not enabled; PR remains open after passing local gate');
-  }
-
-  let deploy = null;
-  if (config.triggerDeploy) {
-    deploy = await triggerDeployWorkflow();
-  }
-
+  const deploy = await deployProduction();
   return {
     published: true,
-    prUrl,
-    checks,
-    merge,
+    branch: config.baseBranch,
+    commitMessage,
+    changedPaths: diffNames,
+    validation: summarizeValidation(validation),
+    review,
     deploy,
   };
 }
 
-async function createAgentBranch() {
-  const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
-  const short = (await safeGitText(['rev-parse', '--short', 'HEAD'])).trim() || crypto.randomUUID().slice(0, 8);
-  const branchName = `${config.branchPrefix}-${timestamp}-${short}`;
-  await runProcess('git', ['checkout', '-b', branchName]);
-  console.log(`[agent] created branch: ${branchName}`);
-  return branchName;
+async function prepareMainBranchForDirectPublish() {
+  await runProcess('git', ['fetch', 'origin', config.baseBranch]);
+  await runProcess('git', ['checkout', '-B', config.baseBranch, `origin/${config.baseBranch}`]);
 }
 
-async function waitForPullRequestChecks(prUrl) {
-  const selector = prUrl || '--json-url-not-available';
-  const command = ['pr', 'checks', selector, '--watch', '--required', '--interval', '15'];
-  const result = await runProcess('gh', command, {
-    timeoutMs: envInt('AGENT_CI_TIMEOUT_MS', 45 * 60 * 1000),
-    allowFailure: true,
-  });
-  if (result.exitCode !== 0) {
-    await alertHuman('Autonomous bug-fix PR failed CI', result.output, { prUrl });
-    throw new Error(`PR checks failed or timed out: ${result.output.slice(-2000)}`);
-  }
-  return result.output;
+async function ensureGitIdentity() {
+  const name = await safeGitText(['config', 'user.name']);
+  const email = await safeGitText(['config', 'user.email']);
+  if (!name) await runProcess('git', ['config', 'user.name', 'github-actions[bot]']);
+  if (!email) await runProcess('git', ['config', 'user.email', 'github-actions[bot]@users.noreply.github.com']);
 }
 
-async function mergePullRequest(prUrl) {
-  const selector = prUrl || '';
-  const strategy = process.env.AGENT_MERGE_STRATEGY || '--squash';
-  const args = ['pr', 'merge', selector, strategy, '--auto', '--delete-branch'].filter(Boolean);
-  const result = await runProcess('gh', args, { allowFailure: true });
-  if (result.exitCode !== 0) {
-    await alertHuman('Autonomous bug-fix PR could not be auto-merged', result.output, { prUrl });
-    throw new Error(`auto-merge failed: ${result.output.slice(-2000)}`);
-  }
-  return result.output;
-}
+async function deployProduction() {
+  const results = [];
 
-async function triggerDeployWorkflow() {
-  const workflow = process.env.AGENT_DEPLOY_WORKFLOW || 'deploy.yml';
-  const result = await runProcess('gh', ['workflow', 'run', workflow, '--ref', config.baseBranch], {
-    allowFailure: true,
-  });
-  if (result.exitCode !== 0) {
-    await alertHuman('Autonomous bug-fix deploy workflow trigger failed', result.output, { workflow });
-  }
-  return result.output;
-}
+  if (config.deployWeb) {
+    const buildCommand = [
+      'flutter build web --release --no-wasm-dry-run',
+      `--dart-define=ALERTSYS_WORKER_SHARED_SECRET=${shellQuote(process.env.WORKER_SHARED_SECRET || '')}`,
+      `--dart-define=ALERTSYS_AI_WORKER_URL=${shellQuote(config.aiWorkerUrl)}`,
+      `--dart-define=ALERTSYS_NOTIFY_WORKER_URL=${shellQuote(config.notifyWorkerUrl)}`,
+    ].join(' ');
+    results.push(await runShell(buildCommand, { timeoutMs: envInt('AGENT_WEB_BUILD_TIMEOUT_MS', 30 * 60 * 1000) }));
 
-async function alertHuman(title, body, details = {}) {
-  const payload = {
-    title,
-    body,
-    details: sanitizeLargeJson(details, 30000),
-    repo: ROOT,
-    runUrl: process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
-      ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-      : null,
-    at: new Date().toISOString(),
-  };
-
-  const tasks = [];
-  if (process.env.SLACK_WEBHOOK_URL) tasks.push(sendSlack(payload));
-  if (process.env.RESEND_API_KEY) tasks.push(sendResendEmail(payload));
-  else if (process.env.SMTP_HOST) tasks.push(sendSmtpEmail(payload));
-
-  if (!tasks.length) {
-    console.warn(`[agent] human alert not sent; configure SLACK_WEBHOOK_URL, RESEND_API_KEY, or SMTP_HOST`);
-    return;
+    const deployCommand = process.env.AGENT_WEB_DEPLOY_COMMAND || 'npx firebase-tools deploy --only hosting --token "$FIREBASE_TOKEN"';
+    results.push(await runShell(deployCommand, { timeoutMs: envInt('AGENT_WEB_DEPLOY_TIMEOUT_MS', 20 * 60 * 1000) }));
   }
 
-  await Promise.allSettled(tasks);
-}
-
-async function sendSlack(payload) {
-  const text = [
-    `*${payload.title}*`,
-    payload.runUrl ? payload.runUrl : null,
-    '',
-    payload.body,
-  ]
-    .filter(Boolean)
-    .join('\n');
-  await fetchText(process.env.SLACK_WEBHOOK_URL, {
-    method: 'POST',
-    timeoutMs: 15000,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-}
-
-async function sendResendEmail(payload) {
-  const to = parseList(process.env.ALERT_EMAIL_TO);
-  const from = process.env.ALERT_EMAIL_FROM;
-  if (!to.length || !from) return;
-  const res = await fetchJson('https://api.resend.com/emails', {
-    method: 'POST',
-    timeoutMs: 15000,
-    headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject: payload.title,
-      text: renderAlertText(payload),
-    }),
-  });
-  if (!res.ok) console.warn(`[agent] Resend alert failed: ${res.status} ${res.text}`);
-}
-
-async function sendSmtpEmail(payload) {
-  const to = parseList(process.env.ALERT_EMAIL_TO);
-  const from = process.env.ALERT_EMAIL_FROM || process.env.SMTP_USER;
-  if (!to.length || !from) return;
-
-  await smtpSend({
-    host: process.env.SMTP_HOST,
-    port: envInt('SMTP_PORT', process.env.SMTP_SECURE === '1' ? 465 : 587),
-    secure: process.env.SMTP_SECURE === '1',
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-    from,
-    to,
-    subject: payload.title,
-    body: renderAlertText(payload),
-  });
-}
-
-function renderAlertText(payload) {
-  return [
-    payload.title,
-    payload.at,
-    payload.runUrl ? `Run: ${payload.runUrl}` : null,
-    '',
-    payload.body,
-    '',
-    JSON.stringify(payload.details, null, 2),
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
-async function smtpSend({ host, port, secure, user, pass, from, to, subject, body }) {
-  const socket = secure
-    ? tls.connect({ host, port, servername: host })
-    : net.connect({ host, port });
-  const reader = createSmtpReader(socket);
-  await onceConnect(socket);
-  await reader.read();
-  await smtpLine(socket, reader, `EHLO ${process.env.SMTP_HELO || 'autofix-agent.local'}`);
-  if (!secure && process.env.SMTP_STARTTLS !== '0') {
-    await smtpLine(socket, reader, 'STARTTLS');
-    const secureSocket = tls.connect({ socket, servername: host });
-    const secureReader = createSmtpReader(secureSocket);
-    await onceConnect(secureSocket);
-    await smtpLine(secureSocket, secureReader, `EHLO ${process.env.SMTP_HELO || 'autofix-agent.local'}`);
-    return smtpSendOnSocket(secureSocket, secureReader, { user, pass, from, to, subject, body });
+  if (config.deployWorkers) {
+    if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
+      throw new Error('CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required when AGENT_DEPLOY_WORKERS=1');
+    }
+    const workerDeployCommand = process.env.AGENT_WORKER_DEPLOY_COMMAND || 'npm run deploy:workers';
+    results.push(await runShell(workerDeployCommand, { timeoutMs: envInt('AGENT_WORKER_DEPLOY_TIMEOUT_MS', 20 * 60 * 1000) }));
   }
-  return smtpSendOnSocket(socket, reader, { user, pass, from, to, subject, body });
-}
 
-async function smtpSendOnSocket(socket, reader, { user, pass, from, to, subject, body }) {
-  if (user && pass) {
-    await smtpLine(socket, reader, 'AUTH LOGIN');
-    await smtpLine(socket, reader, Buffer.from(user).toString('base64'));
-    await smtpLine(socket, reader, Buffer.from(pass).toString('base64'));
+  const failed = results.find((result) => result.exitCode !== 0);
+  if (failed) {
+    throw new Error(`production deploy failed: ${failed.command}\n${failed.output.slice(-4000)}`);
   }
-  await smtpLine(socket, reader, `MAIL FROM:<${from}>`);
-  for (const recipient of to) {
-    await smtpLine(socket, reader, `RCPT TO:<${recipient}>`);
-  }
-  await smtpLine(socket, reader, 'DATA');
-  const headers = [
-    `From: ${from}`,
-    `To: ${to.join(', ')}`,
-    `Subject: ${subject.replace(/\r?\n/g, ' ')}`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
-  ].join('\r\n');
-  socket.write(`${headers}\r\n\r\n${body.replace(/\r?\n\./g, '\n..')}\r\n.\r\n`);
-  await reader.read();
-  await smtpLine(socket, reader, 'QUIT', true);
-  socket.end();
-}
-
-function createSmtpReader(socket) {
-  let buffer = '';
-  const waiters = [];
-  socket.on('data', (chunk) => {
-    buffer += chunk.toString('utf8');
-    drain();
-  });
-  socket.on('error', (error) => {
-    while (waiters.length) waiters.shift().reject(error);
-  });
-  function drain() {
-    const complete = /\r?\n\d{3} /m.test(buffer) || /^\d{3} .*\r?\n?$/.test(buffer);
-    if (!complete || !waiters.length) return;
-    const value = buffer;
-    buffer = '';
-    waiters.shift().resolve(value);
-  }
-  return {
-    read() {
-      return new Promise((resolve, reject) => {
-        waiters.push({ resolve, reject });
-        drain();
-      });
-    },
-  };
-}
-
-async function smtpLine(socket, reader, line, allowFailure = false) {
-  socket.write(`${line}\r\n`);
-  const response = await reader.read();
-  if (!allowFailure && !/^[23]\d\d/m.test(response)) {
-    throw new Error(`SMTP command failed after ${line}: ${response}`);
-  }
-  return response;
-}
-
-function onceConnect(socket) {
-  if (socket.readyState === 'open') return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    socket.once('connect', resolve);
-    socket.once('secureConnect', resolve);
-    socket.once('error', reject);
-  });
+  return results.map((result) => ({
+    command: result.command,
+    exitCode: result.exitCode,
+    outputTail: result.output.slice(-4000),
+  }));
 }
 
 async function getFirebaseDatabase() {
@@ -1402,40 +1187,7 @@ function writeArtifact(name, value) {
   return file;
 }
 
-function writePrBody({ signals, geminiFix, validation, review, changedPaths }) {
-  ensureArtifactDir();
-  const bodyPath = path.join(ARTIFACT_DIR, 'pr-body.md');
-  const body = [
-    '## Autonomous Bug Fix',
-    '',
-    `Generated at: ${new Date().toISOString()}`,
-    '',
-    '### Detected Issues',
-    ...signals.issues.map((issue) => `- ${issue.severity} ${issue.source}: ${issue.title}`),
-    '',
-    '### Gemini Fix',
-    '',
-    geminiFix.summary || '',
-    '',
-    `Root cause: ${geminiFix.rootCause || 'not provided'}`,
-    '',
-    '### Validation',
-    ...validation.results.map((result) => `- ${result.exitCode === 0 ? 'PASS' : 'FAIL'}: \`${result.command}\``),
-    '',
-    '### OpenAI Review Gate',
-    '',
-    `Approved: ${review.approved}`,
-    '',
-    review.summary || '',
-    '',
-    '### Changed Files',
-    ...changedPaths.map((file) => `- \`${file}\``),
-  ].join('\n');
-  writeFileSync(bodyPath, body, 'utf8');
-  return bodyPath;
-}
-
-function buildPrTitle(geminiFix, signals) {
+function buildCommitTitle(geminiFix, signals) {
   const firstIssue = signals.issues[0]?.title || 'detected production issue';
   const summary = geminiFix.summary || firstIssue;
   return `AI bug fix: ${summary.replace(/\s+/g, ' ').slice(0, 90)}`;
@@ -1545,6 +1297,10 @@ function trimSlash(value) {
   return String(value || '').replace(/\/+$/, '');
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\"'\"'")}'`;
+}
+
 function normalizeSlashes(value) {
   return String(value || '').replace(/\\/g, '/');
 }
@@ -1582,23 +1338,21 @@ function printHelp() {
 Autonomous bug-fix and deployment agent
 
 Usage:
-  node tool/autonomous_bugfix_agent.mjs [--dry-run] [--force] [--no-pr]
+  node tool/autonomous_bugfix_agent.mjs [--dry-run] [--force]
 
 Required for active fixes:
   GEMINI_API_KEY                 Generates candidate code fixes.
   OPENAI_API_KEY                 Runs the independent OpenAI review gate.
-  GH_TOKEN or gh auth            Opens PRs, watches checks, and auto-merges.
+  FIREBASE_TOKEN                 Deploys the approved fix to Firebase Hosting.
 
 Common configuration:
   AGENT_UI_HEALTH_URLS           Comma or newline separated deployed UI URLs.
   AGENT_DETECTION_COMMANDS       Newline separated commands for bug detection.
   AGENT_VALIDATION_COMMANDS      Newline separated commands for final validation.
+  AGENT_SKIP_WEB_DEPLOY=1        Push main without deploying Firebase Hosting.
+  AGENT_DEPLOY_WORKERS=1         Also deploy Cloudflare workers after web deploy.
   FIREBASE_SERVICE_ACCOUNT       Firebase service account JSON for RTDB context.
   FIREBASE_DATABASE_URL          RTDB URL. Defaults to alertappsys.
   WORKER_SHARED_SECRET           Optional Cloudflare worker health auth header.
-  SLACK_WEBHOOK_URL              Human alert fallback.
-  RESEND_API_KEY or SMTP_HOST    Email alert fallback.
-  AGENT_AUTOMERGE=1              Enable PR auto-merge after checks pass.
-  AGENT_TRIGGER_DEPLOY=1         Trigger deploy.yml after merge.
 `);
 }
