@@ -82,7 +82,7 @@ const config = {
   maxFileChars: envInt('AGENT_MAX_FILE_CHARS', 45000),
   maxLogChars: envInt('AGENT_MAX_LOG_CHARS', 60000),
   workerStaleMinutes: envInt('AGENT_WORKER_STALE_MINUTES', 5),
-  geminiModel: process.env.GEMINI_FIX_MODEL || 'gemini-2.5-pro',
+  openaiCodeFixModel: process.env.OPENAI_CODE_FIX_MODEL || 'gpt-5.2-codex',
   openaiReviewModel: process.env.OPENAI_REVIEW_MODEL || 'o3',
   baseBranch: process.env.AGENT_BASE_BRANCH || 'main',
   branchPrefix: process.env.AGENT_BRANCH_PREFIX || 'agent/autofix',
@@ -135,7 +135,7 @@ async function main() {
   let feedback = '';
   let lastValidation = null;
   let lastReview = null;
-  let lastGemini = null;
+  let lastCodeFix = null;
   let changedPaths = [];
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
@@ -144,13 +144,13 @@ async function main() {
     const contextArtifact = writeArtifact(`context-attempt-${attempt}`, context);
     console.log(`[agent] wrote context artifact: ${relativePath(contextArtifact)}`);
 
-    console.log(`[agent] attempt ${attempt}/${config.maxAttempts}: requesting Gemini fix`);
-    lastGemini = await requestGeminiFix(context, attempt);
-    writeArtifact(`gemini-attempt-${attempt}`, lastGemini);
+    console.log(`[agent] attempt ${attempt}/${config.maxAttempts}: requesting ChatGPT code fix`);
+    lastCodeFix = await requestOpenAiCodeFix(context, attempt);
+    writeArtifact(`chatgpt-codefix-attempt-${attempt}`, lastCodeFix);
 
-    changedPaths = applyFixedFiles(lastGemini.fixedFiles || []);
+    changedPaths = applyFixedFiles(lastCodeFix.fixedFiles || []);
     if (changedPaths.length === 0) {
-      feedback = 'Gemini returned no applicable fixed files. Return full file contents for at least one repo file.';
+      feedback = 'ChatGPT code fixer returned no applicable fixed files. Return full file contents for at least one repo file.';
       console.warn(`[agent] ${feedback}`);
       continue;
     }
@@ -169,7 +169,7 @@ async function main() {
     const diff = await gitText(['diff', '--', ...changedPaths]);
     lastReview = await requestOpenAiReview({
       signals,
-      geminiFix: lastGemini,
+      codeFix: lastCodeFix,
       validation: lastValidation,
       diff,
       changedPaths,
@@ -187,7 +187,7 @@ async function main() {
       branchName,
       changedPaths,
       signals,
-      geminiFix: lastGemini,
+      codeFix: lastCodeFix,
       validation: lastValidation,
       review: lastReview,
     });
@@ -219,11 +219,8 @@ async function assertActivePreflight() {
       'worktree is dirty; set AGENT_ALLOW_DIRTY=1 only in an isolated CI branch owned by the agent',
     );
   }
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is required to generate fixes');
-  }
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is required for the OpenAI review gate');
+    throw new Error('OPENAI_API_KEY is required for the ChatGPT code fixer and OpenAI review gate');
   }
 }
 
@@ -585,9 +582,10 @@ function budgetContextFiles(files) {
   return budgeted;
 }
 
-async function requestGeminiFix(context, attempt) {
+async function requestOpenAiCodeFix(context, attempt) {
   const schema = {
     type: 'object',
+    additionalProperties: false,
     properties: {
       summary: { type: 'string' },
       rootCause: { type: 'string' },
@@ -596,6 +594,7 @@ async function requestGeminiFix(context, attempt) {
         type: 'array',
         items: {
           type: 'object',
+          additionalProperties: false,
           properties: {
             path: { type: 'string' },
             content: { type: 'string' },
@@ -615,61 +614,89 @@ async function requestGeminiFix(context, attempt) {
     required: ['summary', 'rootCause', 'confidence', 'fixedFiles', 'validationFocus', 'riskNotes'],
   };
 
-  const response = await fetchJson(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.geminiModel)}:generateContent`,
-    {
+  const body = buildOpenAiCodeFixBody(context, attempt, schema);
+  const response = await fetchJson('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok && /reasoning|max_output_tokens/i.test(response.text || '')) {
+    const fallbackBody = { ...body };
+    delete fallbackBody.reasoning;
+    const fallbackResponse = await fetchJson('https://api.openai.com/v1/responses', {
       method: 'POST',
       timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
       headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY,
       },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [
-            {
-              text:
-                'You are the code-fix generator in a dual-model autonomous deployment gate. ' +
-                'Produce valid JSON only. Make minimal, production-grade changes. ' +
-                'Never fabricate logs or claim validation that has not run.',
-            },
-          ],
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: JSON.stringify({
-                  attempt,
-                  maxAttempts: config.maxAttempts,
-                  outputContract:
-                    'Return JSON matching the schema. fixedFiles must contain full text contents for each changed file.',
-                  context,
-                }),
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.15,
-          responseMimeType: 'application/json',
-          responseJsonSchema: schema,
-        },
-      }),
-    },
-  );
+      body: JSON.stringify(fallbackBody),
+    });
+    Object.assign(response, fallbackResponse);
+  }
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed (${response.status}): ${response.text || response.error}`);
+    throw new Error(`ChatGPT code fix request failed (${response.status}): ${response.text || response.error}`);
   }
 
-  const text = extractGeminiText(response.json);
+  const text = extractOpenAiText(response.json);
   const parsed = parseJsonText(text);
   if (!parsed || !Array.isArray(parsed.fixedFiles)) {
-    throw new Error(`Gemini returned invalid fix JSON: ${text.slice(0, 1000)}`);
+    throw new Error(`ChatGPT code fixer returned invalid fix JSON: ${text.slice(0, 1000)}`);
   }
   return parsed;
+}
+
+function buildOpenAiCodeFixBody(context, attempt, schema) {
+  return {
+    model: config.openaiCodeFixModel,
+    input: [
+      {
+        role: 'system',
+        content: [
+          {
+            type: 'input_text',
+            text:
+              'You are ChatGPT acting as the code-fix generator in a dual-model autonomous deployment gate. ' +
+              'Produce valid JSON only. Make minimal, production-grade changes. ' +
+              'Never fabricate logs or claim validation that has not run.',
+          },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: JSON.stringify({
+              attempt,
+              maxAttempts: config.maxAttempts,
+              outputContract:
+                'Return JSON matching the schema. fixedFiles must contain full text contents for each changed file.',
+              context,
+            }),
+          },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'autonomous_bugfix_code_fix',
+        strict: true,
+        schema,
+      },
+    },
+    reasoning: {
+      effort: process.env.OPENAI_CODE_FIX_REASONING_EFFORT || 'high',
+    },
+    max_output_tokens: envInt('OPENAI_CODE_FIX_MAX_OUTPUT_TOKENS', 12000),
+  };
 }
 
 function applyFixedFiles(fixedFiles) {
@@ -718,7 +745,7 @@ async function runValidation() {
   };
 }
 
-async function requestOpenAiReview({ signals, geminiFix, validation, diff, changedPaths }) {
+async function requestOpenAiReview({ signals, codeFix, validation, diff, changedPaths }) {
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -764,12 +791,12 @@ async function requestOpenAiReview({ signals, geminiFix, validation, diff, chang
     ],
     detectedIssues: signals.issues,
     changedPaths,
-    geminiFix: {
-      summary: geminiFix.summary,
-      rootCause: geminiFix.rootCause,
-      confidence: geminiFix.confidence,
-      validationFocus: geminiFix.validationFocus,
-      riskNotes: geminiFix.riskNotes,
+    codeFix: {
+      summary: codeFix.summary,
+      rootCause: codeFix.rootCause,
+      confidence: codeFix.confidence,
+      validationFocus: codeFix.validationFocus,
+      riskNotes: codeFix.riskNotes,
     },
     validation: summarizeValidation(validation),
     diff,
@@ -844,7 +871,7 @@ async function requestOpenAiReview({ signals, geminiFix, validation, diff, chang
   return parsed;
 }
 
-async function publishApprovedFix({ branchName, changedPaths, signals, geminiFix, validation, review }) {
+async function publishApprovedFix({ branchName, changedPaths, signals, codeFix, validation, review }) {
   const diffNames = (await gitText(['diff', '--name-only'])).trim().split(/\r?\n/).filter(Boolean);
   if (!diffNames.length) {
     throw new Error('approved fix has no working-tree changes to publish');
@@ -856,12 +883,12 @@ async function publishApprovedFix({ branchName, changedPaths, signals, geminiFix
   }
 
   await runProcess('git', ['add', '--', ...diffNames]);
-  const title = buildPrTitle(geminiFix, signals);
+  const title = buildPrTitle(codeFix, signals);
   const commitMessage = title.length > 70 ? title.slice(0, 69) : title;
   await runProcess('git', ['commit', '-m', commitMessage]);
   await runProcess('git', ['push', '-u', 'origin', branchName]);
 
-  const bodyPath = writePrBody({ signals, geminiFix, validation, review, changedPaths: diffNames });
+  const bodyPath = writePrBody({ signals, codeFix, validation, review, changedPaths: diffNames });
   const prCreate = await runProcess('gh', [
     'pr',
     'create',
@@ -1144,15 +1171,6 @@ async function getFirebaseDatabase() {
   return admin.database();
 }
 
-function extractGeminiText(json) {
-  return (
-    json?.candidates
-      ?.flatMap((candidate) => candidate?.content?.parts || [])
-      .map((part) => part?.text || '')
-      .join('') || ''
-  ).trim();
-}
-
 function extractOpenAiText(json) {
   if (typeof json?.output_text === 'string') return json.output_text.trim();
   const parts = [];
@@ -1402,7 +1420,7 @@ function writeArtifact(name, value) {
   return file;
 }
 
-function writePrBody({ signals, geminiFix, validation, review, changedPaths }) {
+function writePrBody({ signals, codeFix, validation, review, changedPaths }) {
   ensureArtifactDir();
   const bodyPath = path.join(ARTIFACT_DIR, 'pr-body.md');
   const body = [
@@ -1413,11 +1431,11 @@ function writePrBody({ signals, geminiFix, validation, review, changedPaths }) {
     '### Detected Issues',
     ...signals.issues.map((issue) => `- ${issue.severity} ${issue.source}: ${issue.title}`),
     '',
-    '### Gemini Fix',
+    '### ChatGPT Code Fix',
     '',
-    geminiFix.summary || '',
+    codeFix.summary || '',
     '',
-    `Root cause: ${geminiFix.rootCause || 'not provided'}`,
+    `Root cause: ${codeFix.rootCause || 'not provided'}`,
     '',
     '### Validation',
     ...validation.results.map((result) => `- ${result.exitCode === 0 ? 'PASS' : 'FAIL'}: \`${result.command}\``),
@@ -1435,9 +1453,9 @@ function writePrBody({ signals, geminiFix, validation, review, changedPaths }) {
   return bodyPath;
 }
 
-function buildPrTitle(geminiFix, signals) {
+function buildPrTitle(codeFix, signals) {
   const firstIssue = signals.issues[0]?.title || 'detected production issue';
-  const summary = geminiFix.summary || firstIssue;
+  const summary = codeFix.summary || firstIssue;
   return `AI bug fix: ${summary.replace(/\s+/g, ' ').slice(0, 90)}`;
 }
 
@@ -1585,14 +1603,15 @@ Usage:
   node tool/autonomous_bugfix_agent.mjs [--dry-run] [--force] [--no-pr]
 
 Required for active fixes:
-  GEMINI_API_KEY                 Generates candidate code fixes.
-  OPENAI_API_KEY                 Runs the independent OpenAI review gate.
+  OPENAI_API_KEY                 Runs the ChatGPT code fixer and independent review gate.
   GH_TOKEN or gh auth            Opens PRs, watches checks, and auto-merges.
 
 Common configuration:
   AGENT_UI_HEALTH_URLS           Comma or newline separated deployed UI URLs.
   AGENT_DETECTION_COMMANDS       Newline separated commands for bug detection.
   AGENT_VALIDATION_COMMANDS      Newline separated commands for final validation.
+  OPENAI_CODE_FIX_MODEL          ChatGPT/OpenAI code-fix model. Defaults to gpt-5.2-codex.
+  OPENAI_REVIEW_MODEL            OpenAI review model. Defaults to o3.
   FIREBASE_SERVICE_ACCOUNT       Firebase service account JSON for RTDB context.
   FIREBASE_DATABASE_URL          RTDB URL. Defaults to alertappsys.
   WORKER_SHARED_SECRET           Optional Cloudflare worker health auth header.
