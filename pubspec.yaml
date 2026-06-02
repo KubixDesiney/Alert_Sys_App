@@ -3,7 +3,7 @@ description: A new Flutter project.
 
 publish_to: "none"
 
-version: 1.1.2+6
+version: 1.2.1
 
 environment:
   sdk: ">=3.10.3 <4.0.0"
@@ -31,14 +31,11 @@ dependencies:
   url_launcher: ^6.3.0
 
   # Voice command stack:
-  #   - Android (production): sherpa_onnx offline ASR — streaming Zipformer
-  #     model downloaded on first launch, then fully offline. Dramatically
-  #     more accurate than Android SpeechRecognizer in factory noise.
-  #   - Other platforms (web/desktop test builds): speech_to_text fallback.
-  # flutter_tts configured in voice_service_io.dart for max-volume factory TTS.
-  sherpa_onnx: ^1.11.3
-  archive: ^3.6.1
-  speech_to_text: ^7.0.0
+  #   - speech_to_text wraps the platform recognizer for fast Android capture
+  #     and keeps web push-to-talk testable from the dashboard.
+  #   - Voice enrollment remains mandatory on Android before commands run.
+  #   - flutter_tts speaks the exact command result for factory floors.
+  speech_to_text: 7.3.0
   flutter_tts: ^4.2.0
   permission_handler: ^11.3.1
 

@@ -1,6 +1,4 @@
-// Full-screen voice flow opened from the "Speak command" notification action.
-// It captures one complete command such as "claim alert 1025" or
-// "resolve alert 1025", verifies the speaker, executes it, then closes.
+// Full-screen voice flow opened from notification actions.
 
 import 'dart:async';
 
@@ -11,14 +9,13 @@ import 'package:flutter/services.dart' show MethodChannel;
 import 'package:provider/provider.dart';
 
 import '../providers/alert_provider.dart';
+import '../services/voice_auth_service.dart';
 import '../services/voice_command_dispatcher.dart';
 import '../services/voice_command_parser.dart';
 import '../services/voice_service.dart';
 import '../theme.dart';
 
 class VoiceClaimScreen extends StatefulWidget {
-  /// Kept for notification payload compatibility. Commands intentionally use
-  /// the spoken alert number so the user can say one full sentence.
   final String? alertId;
 
   const VoiceClaimScreen({super.key, this.alertId});
@@ -41,9 +38,6 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
   @override
   void initState() {
     super.initState();
-    // Kick off recognizer warmup IMMEDIATELY — first-frame callback can be
-    // 100+ ms away on cold start, and we want the mic listening as soon as
-    // possible after the supervisor taps the notification.
     unawaited(VoiceService.instance.init());
     _prepareLockScreenVoice();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runFlow());
@@ -82,29 +76,34 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     if (!mounted) return;
 
     if (!VoiceService.instance.isAvailable) {
-      _finish(
+      await _finish(
         success: false,
-        message:
-            'Voice unavailable: ${VoiceService.instance.lastError ?? "speech recognizer not ready"}',
-        speak: 'Voice is not available on this device.',
+        message: VoiceCommandDispatcher.unrecognizedVoice,
+        speak: true,
       );
       return;
+    }
+
+    if (VoiceService.instance.requiresVoiceEnrollment) {
+      final state = await VoiceAuthService.instance.enrollmentState();
+      if (state != VoiceEnrollmentState.enrolled) {
+        await _finish(
+          success: false,
+          message: VoiceCommandDispatcher.enrollVoice,
+          speak: true,
+        );
+        return;
+      }
     }
 
     _setStep(
       _Step.awaitingCommand,
       status: 'Speak your command',
-      hint: 'e.g. "Claim alert 1025" or "Resolve alert 1025"',
+      hint:
+          'Claim alert number, resolve alert, suspend alert, or mark critical',
     );
-    await VoiceService.instance.speak('Speak your command.');
-    if (!mounted) return;
 
-    // Strict capture loop: Vosk is grammar-locked to the command vocabulary,
-    // so anything outside "<verb> alert <number>" comes back as nothing.
-    // Re-prompt once before failing so a single fluke (door slam, partial
-    // word) doesn't drop the supervisor back to manual touch.
     VoiceCommandCapture? capture;
-    VoiceCommand? command;
     for (var attempt = 0; attempt < 2; attempt++) {
       capture = await VoiceService.instance.captureCommandWithAudio(
         timeout: const Duration(seconds: 6),
@@ -112,91 +111,118 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       );
       if (!mounted) return;
 
-      command = _parseCommandForThisAlert(capture.transcripts);
-      if (_canRunActionCommand(command)) break;
-
-      if (attempt == 0) {
-        _setStep(
-          _Step.awaitingCommand,
-          status: 'I did not catch that — say it again',
-          hint: 'Say "Claim alert" then the number, e.g. "Claim alert 1025"',
-        );
-        await VoiceService.instance.speak(
-          'Please say the full command, like claim alert 1025.',
-        );
-        if (!mounted) return;
-      }
+      if (_hasTranscript(capture)) break;
     }
 
-    if (capture == null || command == null || !_canRunActionCommand(command)) {
-      _finish(
+    if (capture == null || !_hasTranscript(capture)) {
+      await _finish(
         success: false,
-        message: (capture?.transcript ?? '').trim().isEmpty
-            ? 'I did not hear a command.'
-            : 'Unrecognized command: "${capture!.transcript}"',
-        speak:
-            'I did not understand. Say the full command, like claim alert 1025.',
+        message: VoiceCommandDispatcher.noCommandHeard,
+        speak: true,
       );
       return;
     }
 
-    _setStep(
-      _Step.working,
-      status: _workingStatus(command),
-      hint: _workingHint(command),
-    );
-
+    final transcripts = capture.transcripts.toList();
+    var command = VoiceCommandParser.parseBest(transcripts);
+    if (!mounted) return;
     final provider = context.read<AlertProvider>();
+    for (
+      var attempt = 0;
+      attempt < 2 && _needsClaimContinuation(command, provider);
+      attempt++
+    ) {
+      _setStep(
+        _Step.awaitingCommand,
+        status: 'Speak your command',
+        hint: 'Claim alert number',
+      );
+      final numberCapture = await VoiceService.instance.captureCommandWithAudio(
+        timeout: const Duration(seconds: 5),
+        sampleRate: 16000,
+      );
+      if (!mounted) return;
+      if (!_hasTranscript(numberCapture)) break;
+      _appendClaimNumberAttempt(transcripts, command, numberCapture);
+      command = VoiceCommandParser.parseBest(transcripts);
+    }
+
+    if (_isActionCommand(command)) {
+      _setStep(
+        _Step.working,
+        status: _workingStatus(command),
+        hint: _workingHint(command),
+      );
+    } else {
+      _setStep(_Step.working, status: 'Running command...', hint: '');
+    }
+
+    if (!mounted) return;
     final result = await VoiceCommandDispatcher(provider).execute(
       command,
       rawAudio: capture.rawAudio,
       rawAudioSampleRate: capture.sampleRate,
+      voiceAlreadyVerified: true,
       fallbackAlertId: widget.alertId,
     );
-    _finish(success: result.success, message: result.message, speak: '');
+    await _finish(success: result.success, message: result.message);
   }
 
-  VoiceCommand _parseCommandForThisAlert(Iterable<String> transcripts) {
-    // Always try the lenient parser first — it accepts both action-first
-    // canonical phrasings and natural variants like "I'll take alert 1025"
-    // or "claim 1025" that the strict parser rejects. The strict path was
-    // discarding too many valid commands in field testing.
-    final loose = VoiceCommandParser.parseBest(transcripts);
-    if (_canRunActionCommand(loose)) return loose;
-
-    final canonical = VoiceCommandParser.parseCanonical(transcripts);
-    if (_canRunActionCommand(canonical)) return canonical;
-
-    return loose.isValid ? loose : canonical;
+  bool _hasTranscript(VoiceCommandCapture capture) {
+    return capture.transcript.trim().isNotEmpty ||
+        capture.alternatives.any((text) => text.trim().isNotEmpty);
   }
 
-  bool _canRunActionCommand(VoiceCommand command) {
-    final actionIntent = command.intent == VoiceIntent.claim ||
+  bool _needsClaimContinuation(VoiceCommand command, AlertProvider provider) {
+    if (command.intent != VoiceIntent.claim) return false;
+    final number = command.alertNumber;
+    if (number == null) return true;
+    if (VoiceCommandParser.claimMayBeEarlyPartialDuringCapture(command)) {
+      return true;
+    }
+
+    final spoken = number.toString();
+    var longerPrefixMatch = false;
+    for (final alert in provider.allAlerts) {
+      final candidate = alert.alertNumber.toString();
+      if (candidate != spoken && candidate.startsWith(spoken)) {
+        longerPrefixMatch = true;
+      }
+    }
+    return longerPrefixMatch;
+  }
+
+  void _appendClaimNumberAttempt(
+    List<String> transcripts,
+    VoiceCommand partialClaim,
+    VoiceCommandCapture numberCapture,
+  ) {
+    final numberParts = numberCapture.transcripts.toList();
+    final base = partialClaim.rawText.trim();
+    final merged = <String>[];
+    if (base.isNotEmpty) {
+      for (final part in numberParts) {
+        final text = part.trim();
+        if (text.isNotEmpty) merged.add('$base $text');
+      }
+    }
+    transcripts
+      ..insertAll(0, merged)
+      ..addAll(numberParts);
+  }
+
+  bool _isActionCommand(VoiceCommand command) {
+    return command.intent == VoiceIntent.claim ||
         command.intent == VoiceIntent.resolve ||
+        command.intent == VoiceIntent.suspend ||
         command.intent == VoiceIntent.escalate;
-    if (!actionIntent) return false;
-    if (command.alertNumber != null) return true;
-    return _hasFallbackAlert && _mentionsAlert(command.rawText);
-  }
-
-  bool get _hasFallbackAlert =>
-      widget.alertId != null && widget.alertId!.isNotEmpty;
-
-  bool _mentionsAlert(String rawText) {
-    final normalized = rawText
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r"[^a-z0-9\s]"), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return RegExp(r'\b(alert|alerts|alarm|alarms|case|ticket)\b')
-        .hasMatch(normalized);
   }
 
   String _workingHint(VoiceCommand command) {
     final number = command.alertNumber;
     if (number != null) return 'Alert #$number';
-    return 'Current alert';
+    if (command.intent == VoiceIntent.claim) return 'Alert number required';
+    return 'Current claimed alert';
   }
 
   String _workingStatus(VoiceCommand command) {
@@ -205,8 +231,10 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
         return 'Claiming alert...';
       case VoiceIntent.resolve:
         return 'Resolving alert...';
+      case VoiceIntent.suspend:
+        return 'Suspending alert...';
       case VoiceIntent.escalate:
-        return 'Escalating alert...';
+        return 'Marking critical...';
       default:
         return 'Running command...';
     }
@@ -221,10 +249,10 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
     });
   }
 
-  void _finish({
+  Future<void> _finish({
     required bool success,
     required String message,
-    required String speak,
+    bool speak = false,
   }) async {
     if (!mounted) return;
     setState(() {
@@ -233,7 +261,7 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       _success = success;
       _hint = '';
     });
-    await VoiceService.instance.speak(speak);
+    if (speak) await VoiceService.instance.speak(message);
     if (!mounted) return;
     await Future.delayed(const Duration(milliseconds: 1800));
     if (!mounted) return;

@@ -19,6 +19,7 @@ import 'dart:developer' as developer;
 enum VoiceIntent {
   claim,
   resolve,
+  suspend,
   escalate,
   showDashboard,
   showAlerts,
@@ -81,10 +82,7 @@ class VoiceCommandParser {
     }
     assert(() {
       // Only emits in debug builds.
-      developer.log(
-        'unparsed transcript: "$raw"',
-        name: 'VoiceCommandParser',
-      );
+      developer.log('unparsed transcript: "$raw"', name: 'VoiceCommandParser');
       return true;
     }());
   }
@@ -131,10 +129,7 @@ class VoiceCommandParser {
     'eighty': 80,
     'ninety': 90,
   };
-  static const Map<String, int> _scales = {
-    'hundred': 100,
-    'thousand': 1000,
-  };
+  static const Map<String, int> _scales = {'hundred': 100, 'thousand': 1000};
   static const Set<String> _numberFillers = {
     'a',
     'an',
@@ -162,13 +157,17 @@ class VoiceCommandParser {
   /// "result alert 1025".
   ///
   /// Tries every hypothesis in order and returns the first one that parses to
-  /// a complete action command (claim/resolve/escalate + alertNumber). Some
+  /// a supported action command. Claim requires an alert number; resolve,
+  /// suspend, and critical commands can use the supervisor's active alert. Some
   /// recognizers include the right phrase as a later alternative, so iterating
   /// hypotheses keeps the command flow from failing on the first noisy guess.
   static VoiceCommand parseCanonical(Iterable<String> transcripts) {
     for (final transcript in transcripts) {
       final cmd = _parseCanonicalSingle(transcript);
-      if (cmd.isValid && cmd.alertNumber != null) return cmd;
+      if (cmd.isValid &&
+          (!_requiresAlertNumber(cmd.intent) || cmd.alertNumber != null)) {
+        return cmd;
+      }
     }
     return const VoiceCommand(intent: VoiceIntent.unknown, rawText: '');
   }
@@ -192,7 +191,8 @@ class VoiceCommandParser {
     }
 
     final command = parse(raw);
-    if (!_isActionIntent(command.intent) || command.alertNumber == null) {
+    if (!_isActionIntent(command.intent) ||
+        (_requiresAlertNumber(command.intent) && command.alertNumber == null)) {
       return VoiceCommand(intent: VoiceIntent.unknown, rawText: raw);
     }
     return command;
@@ -218,17 +218,69 @@ class VoiceCommandParser {
       return const VoiceCommand(intent: VoiceIntent.unknown, rawText: '');
     }
 
+    final candidates = _withClaimContinuations(unique);
     VoiceCommand? firstValid;
-    for (final transcript in unique) {
+    VoiceCommand? bestClaim;
+    var bestClaimScore = -1;
+    for (final transcript in candidates) {
       final command = parse(transcript);
       if (!command.isValid) continue;
       firstValid ??= command;
-      if (!_requiresAlertNumber(command.intent) ||
-          command.alertNumber != null) {
+
+      if (command.intent == VoiceIntent.claim && command.alertNumber != null) {
+        final score = _claimCompletenessScore(command);
+        if (score > bestClaimScore) {
+          bestClaim = command;
+          bestClaimScore = score;
+        }
+        continue;
+      }
+
+      if (!_requiresAlertNumber(command.intent)) {
         return command;
       }
     }
-    return firstValid ?? parse(unique.first);
+    return bestClaim ?? firstValid ?? parse(unique.first);
+  }
+
+  /// Returns true when a claim transcript ends at a point where native speech
+  /// recognition commonly finalizes too early, such as "twenty one thousand".
+  static bool claimMayNeedMoreSpeech(VoiceCommand command) {
+    if (command.intent != VoiceIntent.claim) return false;
+    final alertNumber = command.alertNumber;
+    if (alertNumber == null) return true;
+
+    final tokens = _normalizedTokens(command.rawText);
+    for (var i = tokens.length - 1; i >= 0; i--) {
+      final token = tokens[i];
+      if (_numberFillers.contains(token)) continue;
+      if (token == 'hundred') return alertNumber >= 1000;
+      if (token == 'thousand') return alertNumber >= 10000;
+      if (_isNumberComponent(token)) return false;
+      return false;
+    }
+    return false;
+  }
+
+  static bool claimMayBeEarlyPartialDuringCapture(VoiceCommand command) {
+    if (command.intent != VoiceIntent.claim) return false;
+    if (command.alertNumber == null) return true;
+    if (claimMayNeedMoreSpeech(command)) return true;
+
+    final digitSequence = _digitSequenceInfo(command.rawText);
+    if (!digitSequence.isDigitSequence) return false;
+    return digitSequence.count < 4 && !digitSequence.endsAsSpokenHundred;
+  }
+
+  static bool claimIsStableForAutoStop(VoiceCommand command) {
+    if (command.intent != VoiceIntent.claim || command.alertNumber == null) {
+      return false;
+    }
+    if (claimMayNeedMoreSpeech(command)) return false;
+
+    final digitSequence = _digitSequenceInfo(command.rawText);
+    if (!digitSequence.isDigitSequence) return true;
+    return digitSequence.count >= 4 || digitSequence.endsAsSpokenHundred;
   }
 
   /// Parse a finalized transcription string into a [VoiceCommand].
@@ -273,8 +325,9 @@ class VoiceCommandParser {
     String beforeReason = normalized;
     String? reason;
     if (intent == VoiceIntent.resolve) {
-      final reasonMatch =
-          RegExp(r'\bwith reason\b\s*(.*)$').firstMatch(normalized);
+      final reasonMatch = RegExp(
+        r'\bwith reason\b\s*(.*)$',
+      ).firstMatch(normalized);
       if (reasonMatch != null) {
         reason = reasonMatch.group(1)?.trim();
         if (reason != null && reason.isEmpty) reason = null;
@@ -380,11 +433,20 @@ class VoiceCommandParser {
     }
 
     if (_containsAnyPhrase(normalized, const {
+          'mark alert as critical',
+          'mark the alert as critical',
+          'make alert critical',
+          'make the alert critical',
+          'set alert critical',
+          'set the alert critical',
           'mark critical',
           'make critical',
           'set critical',
+          'alert critical',
+          'critical alert',
           'raise priority',
         }) ||
+        (tokens.contains('critical') && _mentionsAlert(tokens)) ||
         _containsAnyToken(tokens, const {
           'escalate',
           'escalated',
@@ -393,6 +455,32 @@ class VoiceCommandParser {
           'escalade',
         })) {
       return VoiceIntent.escalate;
+    }
+
+    if (_containsAnyPhrase(normalized, const {
+          'suspend alert',
+          'suspend the alert',
+          'pause alert',
+          'pause the alert',
+          'hold alert',
+          'hold the alert',
+          'return alert',
+          'return the alert',
+          'send alert back',
+          'send the alert back',
+          'put alert back',
+          'put the alert back',
+        }) ||
+        _containsAnyToken(tokens, const {
+          'suspend',
+          'suspended',
+          'suspending',
+          'pause',
+          'paused',
+          'hold',
+          'return',
+        })) {
+      return VoiceIntent.suspend;
     }
 
     if (_containsAnyPhrase(normalized, const {
@@ -437,6 +525,10 @@ class VoiceCommandParser {
           'claim the alert',
           'claim alarm',
           'claim ticket',
+          'take alert',
+          'take the alert',
+          'grab alert',
+          'grab the alert',
           'accept assignment',
           'accept the assignment',
           'accept this assignment',
@@ -447,7 +539,6 @@ class VoiceCommandParser {
           'i ll take',
           'pick up',
           'take this',
-          'take the alert',
         }) ||
         _containsAnyToken(tokens, const {
           'claim',
@@ -502,6 +593,95 @@ class VoiceCommandParser {
       }
     }
     return false;
+  }
+
+  static List<String> _withClaimContinuations(List<String> unique) {
+    final merged = <String>[];
+    for (var i = 0; i < unique.length; i++) {
+      final base = unique[i];
+      final baseIntent = _intentOf(base);
+      if (baseIntent != VoiceIntent.claim) continue;
+
+      for (var j = i + 1; j < unique.length; j++) {
+        final continuation = unique[j];
+        if (!_looksLikeNumberOnlyContinuation(continuation)) continue;
+        merged.add('$base $continuation');
+      }
+    }
+
+    if (merged.isEmpty) return unique;
+    return [...merged, ...unique];
+  }
+
+  static VoiceIntent _intentOf(String text) {
+    final tokens = _normalizedTokens(text);
+    if (tokens.isEmpty) return VoiceIntent.unknown;
+    return _detectIntent(tokens.join(' '), tokens);
+  }
+
+  static bool _looksLikeNumberOnlyContinuation(String text) {
+    final tokens = _normalizedTokens(text);
+    if (tokens.isEmpty) return false;
+    if (_isActionIntent(_detectIntent(tokens.join(' '), tokens))) {
+      return false;
+    }
+    return RegExp(r'\d').hasMatch(text) || _hasNumberWord(tokens);
+  }
+
+  static int _claimCompletenessScore(VoiceCommand command) {
+    final tokens = _normalizedTokens(command.rawText);
+    var numberTokenCount = 0;
+    for (final token in tokens) {
+      if (_isNumberComponent(token) || RegExp(r'^\d{1,7}$').hasMatch(token)) {
+        numberTokenCount++;
+      }
+    }
+    final digitCount = command.alertNumber?.toString().length ?? 0;
+    return numberTokenCount * 1000 + digitCount * 10 + tokens.length;
+  }
+
+  static bool _isNumberComponent(String token) {
+    return _ones.containsKey(token) ||
+        _tens.containsKey(token) ||
+        _scales.containsKey(token);
+  }
+
+  static _DigitSequenceInfo _digitSequenceInfo(String text) {
+    final tokens = _normalizedTokens(text);
+    var started = false;
+    var count = 0;
+    var sawNonDigitNumber = false;
+    final digitWords = <String>[];
+
+    for (final token in tokens) {
+      if (_numberFillers.contains(token)) continue;
+
+      final digit = _digitWordValue(token);
+      if (digit != null) {
+        started = true;
+        count++;
+        digitWords.add(token);
+        continue;
+      }
+
+      if (!started) continue;
+
+      if (_isNumberComponent(token)) {
+        sawNonDigitNumber = true;
+      }
+      break;
+    }
+
+    final endsAsSpokenHundred =
+        digitWords.length == 3 &&
+        _digitWordValue(digitWords[digitWords.length - 1]) == 0 &&
+        _digitWordValue(digitWords[digitWords.length - 2]) == 0;
+
+    return _DigitSequenceInfo(
+      isDigitSequence: started && count > 0 && !sawNonDigitNumber,
+      count: count,
+      endsAsSpokenHundred: endsAsSpokenHundred,
+    );
   }
 
   static bool _containsAnyPhrase(String text, Set<String> phrases) {
@@ -602,11 +782,27 @@ class VoiceCommandParser {
     }
 
     if (const {
+      'suspend',
+      'suspended',
+      'suspending',
+      'pause',
+      'paused',
+      'hold',
+      'return',
+    }.contains(token)) {
+      return VoiceIntent.suspend;
+    }
+
+    if (const {
       'escalate',
       'escalated',
       'escalating',
       'escalation',
       'escalade',
+      'mark',
+      'make',
+      'set',
+      'critical',
     }.contains(token)) {
       return VoiceIntent.escalate;
     }
@@ -630,6 +826,7 @@ class VoiceCommandParser {
   static bool _isActionIntent(VoiceIntent intent) {
     return intent == VoiceIntent.claim ||
         intent == VoiceIntent.resolve ||
+        intent == VoiceIntent.suspend ||
         intent == VoiceIntent.escalate;
   }
 
@@ -643,6 +840,13 @@ class VoiceCommandParser {
     }
 
     final tokens = text.split(' ');
+    if (tokens.any(_scales.containsKey)) {
+      final scaledNumber = _extractScaledNumber(tokens);
+      if (scaledNumber != null) {
+        return scaledNumber;
+      }
+    }
+
     final chunkedAlertNumber = _extractChunkedNumber(tokens);
     if (chunkedAlertNumber != null) {
       return chunkedAlertNumber;
@@ -653,9 +857,13 @@ class VoiceCommandParser {
       return digitSequence;
     }
 
-    int total = 0; // accumulated value of finished segments
-    int current = 0; // current segment being built
-    bool sawAny = false; // did we ever consume a number word?
+    return _extractScaledNumber(tokens);
+  }
+
+  static int? _extractScaledNumber(List<String> tokens) {
+    var total = 0;
+    var current = 0;
+    var sawAny = false;
 
     for (final t in tokens) {
       if (_ones.containsKey(t)) {
@@ -710,10 +918,15 @@ class VoiceCommandParser {
         .trim();
   }
 
+  static List<String> _normalizedTokens(String text) {
+    final normalized = _normalize(text);
+    return normalized.isEmpty
+        ? const <String>[]
+        : normalized.split(' ').where((t) => t.isNotEmpty).toList();
+  }
+
   static bool _requiresAlertNumber(VoiceIntent intent) {
-    return intent == VoiceIntent.claim ||
-        intent == VoiceIntent.resolve ||
-        intent == VoiceIntent.escalate;
+    return intent == VoiceIntent.claim;
   }
 
   static int? _extractChunkedNumber(List<String> tokens) {
@@ -770,6 +983,15 @@ class VoiceCommandParser {
       return int.tryParse(chunks.map((chunk) => chunk.value).join());
     }
 
+    if (chunks.length >= 3 &&
+        chunks[0].width == 2 &&
+        chunks.skip(1).every((chunk) => chunk.width == 1)) {
+      final digits = chunks
+          .map((chunk) => chunk.value.toString().padLeft(chunk.width, '0'))
+          .join();
+      return int.tryParse(digits);
+    }
+
     if (chunks.length == 2 && chunks[0].width == 1 && chunks[1].width == 2) {
       return chunks[0].value * 100 + chunks[1].value;
     }
@@ -808,4 +1030,16 @@ class _NumberChunk {
   final int tokenCount;
 
   const _NumberChunk(this.value, this.width, this.tokenCount);
+}
+
+class _DigitSequenceInfo {
+  final bool isDigitSequence;
+  final int count;
+  final bool endsAsSpokenHundred;
+
+  const _DigitSequenceInfo({
+    required this.isDigitSequence,
+    required this.count,
+    required this.endsAsSpokenHundred,
+  });
 }

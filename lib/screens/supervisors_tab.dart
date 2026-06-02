@@ -462,6 +462,12 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     _performanceOverlayEntry?.markNeedsBuild();
   }
 
+  void _setChartRange(String range) {
+    if (_chartRange == range) return;
+    setState(() => _chartRange = range);
+    _refreshPerformanceOverlay();
+  }
+
   void _removePerformanceOverlay() {
     _performanceOverlayEntry?.remove();
     _performanceOverlayEntry = null;
@@ -2220,10 +2226,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       icon: Icons.show_chart,
       title: 'Performance Graph',
       subtitle: 'Resolved alerts over time',
-      trailing: _RangeToggle(
-        value: _chartRange,
-        onChanged: (v) => setState(() => _chartRange = v),
-      ),
+      trailing: _RangeToggle(value: _chartRange, onChanged: _setChartRange),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

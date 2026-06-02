@@ -7,6 +7,8 @@
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "agent:bugfix": "node tool/autonomous_bugfix_agent.mjs",
+    "agent:bugfix:dry-run": "node tool/autonomous_bugfix_agent.mjs --dry-run",
     "deploy": "npm run deploy:workers",
     "deploy:ai": "wrangler deploy --config wrangler.ai.toml",
     "deploy:notify": "wrangler deploy --config wrangler.notify.toml",
