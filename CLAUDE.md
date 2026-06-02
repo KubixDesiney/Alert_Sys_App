@@ -45,7 +45,7 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
 - `worker_test/`: Jest worker test suite. There are currently 11 worker test files.
 - `test/`: Flutter unit/widget tests. There are currently 20 Dart test files.
-- `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Gemini fix generation, OpenAI review gating, PR creation, CI wait, auto-merge, deploy trigger, and Slack/email escalation.
+- `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Gemini fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, and optional worker deploy.
 - `functions/`: Firebase Cloud Functions. Includes legacy OneSignal push and AI retry triggers.
 - `database.rules.json`: Realtime Database security rules and validation.
 - `.github/workflows/ci.yml`: Flutter analysis/tests/build plus Worker Jest/deploy.
@@ -640,8 +640,8 @@ Current verified worker result:
 - Sends the fix request to Gemini, applies safe text-file updates, then validates with Jest, Flutter analysis, and Flutter tests.
 - Sends the resulting diff to the OpenAI review gate using `OPENAI_REVIEW_MODEL` (default `o3`).
 - Retries up to three times with validation/review feedback.
-- If approved, opens a PR, waits for required checks, auto-merges when allowed, and triggers `deploy.yml`.
-- If rejected after all attempts, alerts Slack and/or email.
+- If approved, commits on `main`, pushes `HEAD:main`, builds Flutter web, and deploys Firebase Hosting directly.
+- If rejected after all attempts, writes the rejection context under `.dart_tool/autofix-agent` and fails the workflow. There is no Slack/email human escalation path.
 
 Required GitHub Actions secrets:
 
@@ -652,7 +652,7 @@ Required GitHub Actions secrets:
 - `GEMINI_API_KEY`
 - `OPENAI_API_KEY`
 - Optional but recommended: `AUTOFIX_GITHUB_TOKEN`
-- Alerting: `SLACK_WEBHOOK_URL` and/or email secrets such as `RESEND_API_KEY` or SMTP credentials.
+- Optional worker deploy: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` when `AGENT_DEPLOY_WORKERS=1`.
 
 ## Important Gotchas
 
