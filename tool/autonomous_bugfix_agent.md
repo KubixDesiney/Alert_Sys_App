@@ -1,6 +1,6 @@
 # Autonomous Bug-Fix Agent
 
-`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks Gemini for a code fix, validates the fix locally, asks OpenAI for an independent review gate, then opens a PR and can auto-merge it after required checks pass.
+`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks the ChatGPT/OpenAI code fixer for a patch, validates the fix locally, asks OpenAI for an independent review gate, then opens a PR and can auto-merge it after required checks pass.
 
 ## Entry Points
 
@@ -33,7 +33,7 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
 
 1. Stop if no actionable issue is detected, unless `AGENT_FORCE=1`.
 2. Create an isolated `agent/autofix-*` branch.
-3. Send structured context to Gemini using `GEMINI_API_KEY`.
+3. Send structured context to the ChatGPT/OpenAI code fixer using `OPENAI_API_KEY` and `OPENAI_CODE_FIX_MODEL`.
 4. Apply only safe text file writes inside the repo.
 5. Run `AGENT_VALIDATION_COMMANDS`.
 6. Send the diff and validation output to OpenAI using `OPENAI_API_KEY` and `OPENAI_REVIEW_MODEL` (`o3` by default).
@@ -43,7 +43,6 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
 
 ## Required Secrets
 
-- `GEMINI_API_KEY`
 - `OPENAI_API_KEY`
 - `AUTOFIX_GITHUB_TOKEN` recommended; falls back to `GITHUB_TOKEN` in Actions.
 
@@ -67,4 +66,3 @@ Configure at least one:
 - It refuses writes outside the repository and ignores binary/build/cache paths.
 - Generated artifacts are written under `.dart_tool/autofix-agent` and uploaded by the workflow.
 - Auto-merge still depends on repository branch protection and required checks.
-
