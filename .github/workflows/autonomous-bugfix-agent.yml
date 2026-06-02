@@ -32,8 +32,9 @@ jobs:
     env:
       FLUTTER_VERSION: '3.41.6'
       NODE_VERSION: '20'
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_FIX_MODEL: ${{ vars.GEMINI_FIX_MODEL || 'gemini-2.5-pro' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_CODE_FIX_MODEL: ${{ vars.OPENAI_CODE_FIX_MODEL || 'gpt-5.2-codex' }}
       OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'o3' }}
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
       FIREBASE_DATABASE_URL: ${{ vars.FIREBASE_DATABASE_URL || 'https://alertappsys-default-rtdb.firebaseio.com' }}
@@ -100,3 +101,4 @@ jobs:
           path: .dart_tool/autofix-agent
           if-no-files-found: ignore
           retention-days: 14
+

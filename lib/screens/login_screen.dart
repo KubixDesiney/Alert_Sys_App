@@ -26,7 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
     const copy = {
       'en': {
         'title': 'Sign In',
-        'subtitle': 'Sign In (v2.0 - Patched!)',
+        'subtitle': 'Sign In',
         'email': 'Email',
         'email_hint': 'your@email.com',
         'password': 'Password',
@@ -34,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
       },
       'fr': {
         'title': 'Connexion',
-        'subtitle': 'Connexion (v2.0 - Patched!)',
+        'subtitle': 'Connexion',
         'email': 'Email',
         'email_hint': 'votre@email.com',
         'password': 'Mot de passe',
