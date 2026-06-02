@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -19,10 +18,7 @@ import '../screens/alert_detail_screen.dart';
 import '../screens/voice_claim_screen.dart';
 import 'service_locator.dart';
 import 'voice_auth_service.dart';
-import 'voice_command_dispatcher.dart';
-import 'voice_command_parser.dart';
-import 'voice_lock_service.dart';
-import 'sherpa_stt_service.dart';
+import 'voice_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -64,45 +60,56 @@ class FcmService {
 
   static const AndroidNotificationChannel _androidChannel =
       AndroidNotificationChannel(
-    'alerts_voice_critical',
-    'Critical voice alerts',
-    description: 'Urgent alerts with lock-screen voice actions',
-    importance: Importance.max,
-    playSound: true,
-    enableVibration: true,
-    audioAttributesUsage: AudioAttributesUsage.alarm,
-  );
+        'alerts_voice_critical',
+        'Critical voice alerts',
+        description: 'Urgent alerts with lock-screen voice actions',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      );
 
   // Dedicated channel for new-alert buzz notifications. The vibration pattern
   // is set at channel level (Android 8+ ignores per-notification patterns when
   // a channel pattern is set, so we need a separate channel here).
   static final AndroidNotificationChannel _buzzChannel =
       AndroidNotificationChannel(
-    'alerts_new_buzz_v3',
-    'New alert buzz',
-    description: 'Strong buzz for unclaimed alerts when you are available',
-    importance: Importance.max,
-    playSound: true,
-    enableVibration: true,
-    audioAttributesUsage: AudioAttributesUsage.alarm,
-    vibrationPattern: Int64List.fromList(
-      [0, 700, 200, 700, 200, 700, 200, 900, 250, 900, 250, 900],
-    ),
-  );
+        'alerts_new_buzz_v3',
+        'New alert buzz',
+        description: 'Strong buzz for unclaimed alerts when you are available',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        vibrationPattern: Int64List.fromList([
+          0,
+          700,
+          200,
+          700,
+          200,
+          700,
+          200,
+          900,
+          250,
+          900,
+          250,
+          900,
+        ]),
+      );
 
   // Dedicated channel for AI Shift Commander "Confirm Presence" pings.
   // Uses a softer vibration pattern than alert buzz and a distinct ID so
   // Android keeps its visual styling stable.
   static final AndroidNotificationChannel _presenceChannel =
       AndroidNotificationChannel(
-    'shift_commander_presence',
-    'Shift presence checks',
-    description: 'AI Shift Commander checks if you are still active',
-    importance: Importance.high,
-    playSound: true,
-    enableVibration: true,
-    vibrationPattern: Int64List.fromList([0, 400, 200, 400]),
-  );
+        'shift_commander_presence',
+        'Shift presence checks',
+        description: 'AI Shift Commander checks if you are still active',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 400, 200, 400]),
+      );
 
   static final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -113,8 +120,10 @@ class FcmService {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   Future<void> init() async {
-    // Pre-warm the TFLite speaker model so the first voice verification is fast.
+    // Pre-warm the TFLite speaker model + the offline STT model so the first
+    // voice command from a notification action starts capturing instantly.
     unawaited(VoiceAuthService.instance.preload());
+    unawaited(VoiceService.instance.init());
 
     // Get token and save
     await _updateToken();
@@ -192,8 +201,12 @@ class FcmService {
   void _handleForegroundMessage(RemoteMessage message) {
     final alertId = message.data['alertId'];
     // FCM messages are now data-only; title/body live in message.data.
-    final title = message.notification?.title ?? message.data['title'] ?? 'New Alert';
-    final body = message.notification?.body ?? message.data['body'] ?? 'Tap to view details';
+    final title =
+        message.notification?.title ?? message.data['title'] ?? 'New Alert';
+    final body =
+        message.notification?.body ??
+        message.data['body'] ??
+        'Tap to view details';
 
     if (alertId == null) return;
 
@@ -245,10 +258,6 @@ class FcmService {
   }
 
   void _navigateToVoiceClaim(String? alertId) {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      unawaited(_startAndroidVoiceLockFlow(alertId));
-      return;
-    }
     _navigateToVoiceClaimScreen(alertId);
   }
 
@@ -271,64 +280,6 @@ class FcmService {
         builder: (_) => VoiceClaimScreen(alertId: alertId),
       ),
     );
-  }
-
-  Future<void> _startAndroidVoiceLockFlow(String? alertId) async {
-    final result = await VoiceLockService.startVoiceLockFlow();
-    if (result == null) {
-      _navigateToVoiceClaimScreen(alertId);
-      return;
-    }
-
-    final provider = alertProvider;
-    if (provider == null) return;
-
-    Uint8List? audioBytes;
-    if (result.audioPath.isNotEmpty) {
-      try {
-        audioBytes = await File(result.audioPath).readAsBytes();
-      } catch (_) {}
-    }
-
-    final transcripts = result.transcripts.toList(growable: true);
-    final transcript = await _transcribeVoiceLockAudio(audioBytes);
-    if (transcript.isNotEmpty) transcripts.insert(0, transcript);
-    final cmd = VoiceCommandParser.parseBest(transcripts);
-
-    // VoiceCommandDispatcher handles voice auth internally.
-    try {
-      await VoiceCommandDispatcher(provider).execute(
-        cmd,
-        rawAudio: audioBytes,
-        fallbackAlertId: alertId,
-      );
-    } catch (_) {}
-
-    if (result.audioPath.isNotEmpty) {
-      try {
-        File(result.audioPath).deleteSync();
-      } catch (_) {}
-    }
-  }
-
-  static Future<String> _transcribeVoiceLockAudio(Uint8List? audioBytes) async {
-    if (audioBytes == null || audioBytes.isEmpty) return '';
-
-    try {
-      var ready = SherpaSttService.instance.isReady;
-      if (!ready) {
-        ready = await SherpaSttService.instance.ensureReady();
-      }
-      if (!ready) {
-        debugPrint('FcmService: voice STT model was not ready.');
-        return '';
-      }
-      return SherpaSttService.instance
-          .transcribe(audioBytes, sampleRate: 16000);
-    } catch (e, st) {
-      debugPrint('FcmService: voice transcription failed: $e\n$st');
-      return '';
-    }
   }
 
   void _schedulePendingVoiceClaim() {
@@ -392,20 +343,18 @@ class FcmService {
   static Future<void> showVoiceActionNotificationForMessage(
     RemoteMessage message,
   ) async {
-    final data      = message.data;
-    final alertId   = data['alertId']?.toString() ?? '';
+    final data = message.data;
+    final alertId = data['alertId']?.toString() ?? '';
     final notifType = data['notifType']?.toString() ?? '';
     final queueType = data['type']?.toString() ?? '';
 
-    final title = message.notification?.title ??
-        data['title'] ??
-        'New Alert';
-    final body = message.notification?.body ??
-        data['body'] ??
-        'Tap to view details';
+    final title = message.notification?.title ?? data['title'] ?? 'New Alert';
+    final body =
+        message.notification?.body ?? data['body'] ?? 'Tap to view details';
 
     // Prefer the deterministic ID sent by the worker; fall back to message hash.
-    final id = int.tryParse(data['notificationId']?.toString() ?? '') ??
+    final id =
+        int.tryParse(data['notificationId']?.toString() ?? '') ??
         message.messageId?.hashCode ??
         message.hashCode;
 
@@ -514,10 +463,10 @@ class FcmService {
               showsUserInterface: false,
               cancelNotification: true,
             ),
-            AndroidNotificationAction(
+            const AndroidNotificationAction(
               claimAlertActionId,
               'Claim Alert',
-              icon: const DrawableResourceAndroidBitmap(
+              icon: DrawableResourceAndroidBitmap(
                 '@android:drawable/ic_menu_agenda',
               ),
               showsUserInterface: true,
@@ -583,9 +532,10 @@ class FcmService {
   }
 
   static Future<void> _ensureAndroidChannel() async {
-    final androidImpl =
-        _localNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidImpl = _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidImpl?.createNotificationChannel(_androidChannel);
     await androidImpl?.createNotificationChannel(_buzzChannel);
     await androidImpl?.createNotificationChannel(_presenceChannel);
@@ -625,10 +575,10 @@ class FcmService {
           colorized: true,
           styleInformation: BigTextStyleInformation(body),
           actions: <AndroidNotificationAction>[
-            AndroidNotificationAction(
+            const AndroidNotificationAction(
               confirmPresenceActionId,
               'Confirm Presence',
-              icon: const DrawableResourceAndroidBitmap(
+              icon: DrawableResourceAndroidBitmap(
                 '@android:drawable/checkbox_on_background',
               ),
               showsUserInterface: false,
@@ -661,12 +611,12 @@ class FcmService {
         await FirebaseDatabase.instance
             .ref('shift_presence/$shiftId/$uid')
             .update({
-          'status': 'active',
-          'confirmedAt': DateTime.now().toIso8601String(),
-          'confirmRequestedAt': null,
-          'confirmExpiresAt': null,
-          'inactiveSince': null,
-        });
+              'status': 'active',
+              'confirmedAt': DateTime.now().toIso8601String(),
+              'confirmRequestedAt': null,
+              'confirmExpiresAt': null,
+              'inactiveSince': null,
+            });
       } catch (_) {}
     }
   }
@@ -687,9 +637,10 @@ class FcmService {
     }
     _androidLockScreenAccessPrepared = true;
 
-    final androidImpl =
-        _localNotifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidImpl = _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidImpl == null) return;
 
     try {
@@ -743,10 +694,10 @@ class FcmService {
           fullScreenIntent: true,
           audioAttributesUsage: AudioAttributesUsage.alarm,
           actions: <AndroidNotificationAction>[
-            AndroidNotificationAction(
+            const AndroidNotificationAction(
               voiceClaimActionId,
               'Voice command',
-              icon: const DrawableResourceAndroidBitmap(
+              icon: DrawableResourceAndroidBitmap(
                 '@android:drawable/ic_btn_speak_now',
               ),
               showsUserInterface: true,
