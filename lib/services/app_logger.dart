@@ -70,6 +70,11 @@ class AppLogger {
 
   final bool enabled;
 
+  /// Optional hook invoked for every ERROR-level entry. The bug reporting
+  /// pipeline registers here so production errors reach the SuperAdmin Logs
+  /// tab without the logger depending on Firebase.
+  static void Function(AppLogEntry entry)? onErrorEntry;
+
   void debug(String message, [Object? error, StackTrace? stackTrace]) {
     _log('DEBUG', message, error, stackTrace);
   }
@@ -107,13 +112,19 @@ class AppLogger {
     // it. We deliberately keep the buffer behind a singleton rather than
     // an instance field — the existing codebase uses `const AppLogger()`
     // in several places.
-    AppLogBuffer.instance.add(
-      AppLogEntry(
-        at: DateTime.now(),
-        level: level,
-        message: message,
-        error: error?.toString(),
-      ),
+    final entry = AppLogEntry(
+      at: DateTime.now(),
+      level: level,
+      message: message,
+      error: error?.toString(),
     );
+    AppLogBuffer.instance.add(entry);
+    if (level == 'ERROR') {
+      try {
+        onErrorEntry?.call(entry);
+      } catch (_) {
+        // The error hook must never take the logger down with it.
+      }
+    }
   }
 }

@@ -10,17 +10,23 @@ void main() {
   });
 
   group('OfflineAccountCache.isValidRole', () {
-    test('accepts admin and supervisor', () {
+    test('accepts admin, supervisor and superadmin', () {
       expect(OfflineAccountCache.isValidRole('admin'), isTrue);
       expect(OfflineAccountCache.isValidRole('supervisor'), isTrue);
+      expect(OfflineAccountCache.isValidRole('superadmin'), isTrue);
+    });
+
+    test('normalizes case so console-typed roles like SuperAdmin work', () {
+      expect(OfflineAccountCache.isValidRole('SuperAdmin'), isTrue);
+      expect(OfflineAccountCache.normalizeRole('SuperAdmin'), 'superadmin');
+      expect(OfflineAccountCache.normalizeRole('Admin'), 'admin');
     });
 
     test('rejects null, empty, and unknown roles', () {
       expect(OfflineAccountCache.isValidRole(null), isFalse);
       expect(OfflineAccountCache.isValidRole(''), isFalse);
       expect(OfflineAccountCache.isValidRole('operator'), isFalse);
-      expect(OfflineAccountCache.isValidRole('Admin'), isFalse,
-          reason: 'role check is case-sensitive');
+      expect(OfflineAccountCache.normalizeRole('operator'), isNull);
     });
   });
 
@@ -66,6 +72,11 @@ void main() {
       expect(await OfflineAccountCache.roleFor('u2'), 'supervisor');
       expect(await OfflineAccountCache.usineFor('u1'), 'Usine A');
       expect(await OfflineAccountCache.usineFor('u2'), 'Usine B');
+    });
+
+    test('persists SuperAdmin in canonical lowercase form', () async {
+      await OfflineAccountCache.save(uid: 'u3', role: 'SuperAdmin');
+      expect(await OfflineAccountCache.roleFor('u3'), 'superadmin');
     });
   });
 }
