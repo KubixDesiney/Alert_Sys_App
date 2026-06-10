@@ -1,3 +1,0 @@
-{
-  "error" : "Index not defined, add \".indexOn\": \"timestamp\", for path \"/alerts\", to the rules"
-}

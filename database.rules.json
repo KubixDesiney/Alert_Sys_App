@@ -114,8 +114,8 @@
       ".write": false,
       ".indexOn": ["role", "usine", "aiOptOut"],
       "$userId": {
-        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin'",
-        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin'",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
         "currentLocation": {
           ".validate": "newData.hasChildren(['lat','lng']) && newData.child('lat').isNumber() && newData.child('lng').isNumber() && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').isString())"
         }
@@ -252,15 +252,15 @@
     },
 
     "security": {
-      ".read": "auth != null && auth.token.role === 'admin'",
+      ".read": "auth != null && (auth.token.role === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && auth.token.role === 'admin'",
       "logs": {
-        ".read": "auth != null && auth.token.role === 'admin'",
+        ".read": "auth != null && (auth.token.role === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
         ".write": "auth != null && auth.token.role === 'admin'",
         ".indexOn": ["at", "kind", "fingerprint"]
       },
       "actions": {
-        ".read": "auth != null && auth.token.role === 'admin'",
+        ".read": "auth != null && (auth.token.role === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
         ".write": "auth != null && auth.token.role === 'admin'",
         ".indexOn": ["at", "kind", "endpoint", "fingerprint"]
       },
@@ -276,11 +276,43 @@
     },
 
     "workers": {
-      ".read": "auth != null && auth.token.role === 'admin'",
+      ".read": "auth != null && (auth.token.role === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && auth.token.role === 'admin'",
       "health": {
-        ".read": "auth != null && auth.token.role === 'admin'",
+        ".read": "auth != null && (auth.token.role === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
         ".write": "auth != null && auth.token.role === 'admin'"
+      }
+    },
+
+    "ai_lstm": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      "model": {
+        "weights": { ".validate": "newData.isString()" },
+        "inputSize": { ".validate": "newData.isNumber()" },
+        "hiddenSize": { ".validate": "newData.isNumber()" },
+        "outputSize": { ".validate": "newData.isNumber()" },
+        "seqLen": { ".validate": "newData.isNumber()" },
+        "trainedAt": { ".validate": "newData.isString()" },
+        "datasetName": { ".validate": "!newData.exists() || newData.isString()" },
+        "sampleCount": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "valLoss": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "valAccuracy": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "learning": { ".validate": "!newData.exists() || newData.isBoolean()" }
+      }
+    },
+
+    "bugs": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      "client": {
+        ".indexOn": ["lastSeenAt", "status", "area"],
+        "$bugId": {
+          ".write": "auth != null"
+        }
+      },
+      "agent": {
+        ".indexOn": ["at", "status"]
       }
     },
 

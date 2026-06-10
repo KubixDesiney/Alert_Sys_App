@@ -79,7 +79,7 @@ const config = {
   maxFileChars: envInt('AGENT_MAX_FILE_CHARS', 45000),
   maxLogChars: envInt('AGENT_MAX_LOG_CHARS', 60000),
   workerStaleMinutes: envInt('AGENT_WORKER_STALE_MINUTES', 5),
-  geminiModel: process.env.GEMINI_FIX_MODEL || 'gemini-2.5-pro',
+  claudeFixModel: process.env.CLAUDE_FIX_MODEL || 'claude-opus-4-8',
   openaiReviewModel: process.env.OPENAI_REVIEW_MODEL || 'o3',
   baseBranch: process.env.AGENT_BASE_BRANCH || 'main',
   uiHealthUrls: envFlag('AGENT_DISABLE_UI_HEALTH')
@@ -115,6 +115,7 @@ async function main() {
 
   if (signals.issues.length === 0 && !config.force) {
     console.log('[agent] no actionable bugs detected');
+    if (!config.dryRun) await recordAgentRun('clean', { signals });
     return;
   }
 
@@ -130,7 +131,7 @@ async function main() {
   let feedback = '';
   let lastValidation = null;
   let lastReview = null;
-  let lastGemini = null;
+  let lastClaude = null;
   let changedPaths = [];
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt += 1) {
@@ -139,13 +140,13 @@ async function main() {
     const contextArtifact = writeArtifact(`context-attempt-${attempt}`, context);
     console.log(`[agent] wrote context artifact: ${relativePath(contextArtifact)}`);
 
-    console.log(`[agent] attempt ${attempt}/${config.maxAttempts}: requesting Gemini fix`);
-    lastGemini = await requestGeminiFix(context, attempt);
-    writeArtifact(`gemini-attempt-${attempt}`, lastGemini);
+    console.log(`[agent] attempt ${attempt}/${config.maxAttempts}: requesting Claude fix`);
+    lastClaude = await requestClaudeFix(context, attempt);
+    writeArtifact(`claude-attempt-${attempt}`, lastClaude);
 
-    changedPaths = applyFixedFiles(lastGemini.fixedFiles || []);
+    changedPaths = applyFixedFiles(lastClaude.fixedFiles || []);
     if (changedPaths.length === 0) {
-      feedback = 'Gemini returned no applicable fixed files. Return full file contents for at least one repo file.';
+      feedback = 'Claude returned no applicable fixed files. Return full file contents for at least one repo file.';
       console.warn(`[agent] ${feedback}`);
       continue;
     }
@@ -164,7 +165,7 @@ async function main() {
     const diff = await gitText(['diff', '--', ...changedPaths]);
     lastReview = await requestOpenAiReview({
       signals,
-      geminiFix: lastGemini,
+      claudeFix: lastClaude,
       validation: lastValidation,
       diff,
       changedPaths,
@@ -181,11 +182,18 @@ async function main() {
     const published = await publishApprovedFix({
       changedPaths,
       signals,
-      geminiFix: lastGemini,
+      claudeFix: lastClaude,
       validation: lastValidation,
       review: lastReview,
     });
     writeArtifact('publish-result', published);
+    const commitSha = await safeGitText(['rev-parse', '--short', 'HEAD']);
+    await recordAgentRun('ai_fixed', {
+      signals,
+      commit: commitSha,
+      summary: published.commitMessage,
+      changedPaths: published.changedPaths,
+    });
     return;
   }
 
@@ -204,7 +212,111 @@ async function main() {
     validation: lastValidation,
     review: lastReview,
   });
+
+  // Human escalation path: open a GitHub issue carrying the full rejection
+  // context, then surface the run in RTDB so the SuperAdmin Logs tab shows
+  // the bug as escalated rather than silently failing.
+  const issueUrl = await createGitHubEscalationIssue(signals, rejectionSummary);
+  await recordAgentRun(issueUrl ? 'escalated' : 'rejected', {
+    signals,
+    summary: rejectionSummary.slice(0, 800),
+    issueUrl,
+  });
   throw new Error('automatic fix was rejected after all attempts');
+}
+
+/**
+ * Records the outcome of an agent run under `bugs/agent/{runId}` so the
+ * SuperAdmin Logs tab can display what the AI detected, fixed or escalated.
+ * Best-effort: never fails the agent.
+ */
+async function recordAgentRun(status, { signals, commit, summary, issueUrl, changedPaths } = {}) {
+  try {
+    const db = await getFirebaseDatabase();
+    if (!db) {
+      console.warn('[agent] no FIREBASE_SERVICE_ACCOUNT; skipping RTDB run record');
+      return;
+    }
+    const record = {
+      at: new Date().toISOString(),
+      status,
+      issues: (signals?.issues || []).slice(0, 10).map((issue) => `${issue.severity}/${issue.source}: ${issue.title}`),
+    };
+    if (commit) record.commit = commit;
+    if (summary) record.summary = String(summary).slice(0, 1000);
+    if (issueUrl) record.issueUrl = issueUrl;
+    if (changedPaths?.length) record.changedPaths = changedPaths.slice(0, 20);
+    await db.ref('bugs/agent').push(record);
+    console.log(`[agent] recorded ${status} run to bugs/agent`);
+  } catch (error) {
+    console.warn(`[agent] failed to record run to RTDB: ${error?.message || error}`);
+  }
+}
+
+/**
+ * Opens a GitHub issue when every automatic fix attempt was rejected.
+ * Returns the issue URL or null. Best-effort.
+ */
+async function createGitHubEscalationIssue(signals, rejectionSummary) {
+  const token = process.env.AUTOFIX_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.warn('[agent] no GitHub token; cannot escalate to an issue');
+    return null;
+  }
+  let repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) {
+    const remote = await safeGitText(['remote', 'get-url', 'origin']);
+    const match = remote.match(/github\.com[:/]([^/]+\/[^/.\s]+)/);
+    if (match) repo = match[1];
+  }
+  if (!repo) {
+    console.warn('[agent] cannot resolve GitHub repository for escalation');
+    return null;
+  }
+  const firstIssue = signals?.issues?.[0]?.title || 'production issue';
+  const issueLines = (signals?.issues || [])
+    .map((issue) => `- **${issue.severity}** \`${issue.source}\`: ${issue.title}`)
+    .join('\n');
+  const body = [
+    'The autonomous bug-fix agent detected the issue(s) below but every automatic fix attempt was rejected by validation or the review gate. A human needs to take over.',
+    '',
+    '## Detected issues',
+    issueLines || '_none captured_',
+    '',
+    '## Rejection context',
+    '```',
+    rejectionSummary.slice(0, 5000),
+    '```',
+    '',
+    `_Run artifacts are stored under \`.dart_tool/autofix-agent\` in the workflow run. Reported at ${new Date().toISOString()}._`,
+  ].join('\n');
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'alertsys-autofix-agent',
+      },
+      body: JSON.stringify({
+        title: `[autofix-escalation] ${firstIssue}`.slice(0, 240),
+        body,
+        labels: ['autofix-escalation', 'bug'],
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      console.warn(`[agent] GitHub issue creation failed: ${response.status} ${text.slice(0, 300)}`);
+      return null;
+    }
+    const json = await response.json();
+    console.log(`[agent] escalated to GitHub issue: ${json.html_url}`);
+    return json.html_url || null;
+  } catch (error) {
+    console.warn(`[agent] GitHub escalation error: ${error?.message || error}`);
+    return null;
+  }
 }
 
 async function assertActivePreflight() {
@@ -214,8 +326,8 @@ async function assertActivePreflight() {
       'worktree is dirty; set AGENT_ALLOW_DIRTY=1 only in an isolated CI branch owned by the agent',
     );
   }
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is required to generate fixes');
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is required to generate fixes with Claude');
   }
   if (!process.env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY is required for the OpenAI review gate');
@@ -583,9 +695,10 @@ function budgetContextFiles(files) {
   return budgeted;
 }
 
-async function requestGeminiFix(context, attempt) {
+async function requestClaudeFix(context, attempt) {
   const schema = {
     type: 'object',
+    additionalProperties: false,
     properties: {
       summary: { type: 'string' },
       rootCause: { type: 'string' },
@@ -594,6 +707,7 @@ async function requestGeminiFix(context, attempt) {
         type: 'array',
         items: {
           type: 'object',
+          additionalProperties: false,
           properties: {
             path: { type: 'string' },
             content: { type: 'string' },
@@ -613,59 +727,62 @@ async function requestGeminiFix(context, attempt) {
     required: ['summary', 'rootCause', 'confidence', 'fixedFiles', 'validationFocus', 'riskNotes'],
   };
 
-  const response = await fetchJson(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.geminiModel)}:generateContent`,
-    {
-      method: 'POST',
-      timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': process.env.ANTHROPIC_API_KEY,
+    'anthropic-version': process.env.ANTHROPIC_VERSION || '2023-06-01',
+  };
+  if (process.env.ANTHROPIC_BETA) headers['anthropic-beta'] = process.env.ANTHROPIC_BETA;
+
+  const response = await fetchJson('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
+    headers,
+    body: JSON.stringify({
+      model: config.claudeFixModel,
+      max_tokens: envInt('CLAUDE_FIX_MAX_TOKENS', 12000),
+      system:
+        'You are Claude acting as the code-fix generator in a dual-model autonomous deployment gate. ' +
+        'Make minimal, production-grade changes. Never fabricate logs or claim validation that has not run. ' +
+        'Return the result only by calling the submit_code_fix tool.',
+      messages: [
+        {
+          role: 'user',
+          content: [
             {
-              text:
-                'You are the code-fix generator in a dual-model autonomous deployment gate. ' +
-                'Produce valid JSON only. Make minimal, production-grade changes. ' +
-                'Never fabricate logs or claim validation that has not run.',
+              type: 'text',
+              text: JSON.stringify({
+                attempt,
+                maxAttempts: config.maxAttempts,
+                outputContract:
+                  'Call submit_code_fix. fixedFiles must contain full text contents for each changed file.',
+                context,
+              }),
             },
           ],
         },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: JSON.stringify({
-                  attempt,
-                  maxAttempts: config.maxAttempts,
-                  outputContract:
-                    'Return JSON matching the schema. fixedFiles must contain full text contents for each changed file.',
-                  context,
-                }),
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.15,
-          responseMimeType: 'application/json',
-          responseJsonSchema: schema,
+      ],
+      tools: [
+        {
+          name: 'submit_code_fix',
+          description: 'Submit the minimal code fix for the detected issue.',
+          input_schema: schema,
         },
-      }),
-    },
-  );
+      ],
+      tool_choice: {
+        type: 'tool',
+        name: 'submit_code_fix',
+      },
+    }),
+  });
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed (${response.status}): ${response.text || response.error}`);
+    throw new Error(`Claude request failed (${response.status}): ${response.text || response.error}`);
   }
 
-  const text = extractGeminiText(response.json);
-  const parsed = parseJsonText(text);
+  const parsed = extractClaudeToolInput(response.json) || parseJsonText(extractClaudeText(response.json));
   if (!parsed || !Array.isArray(parsed.fixedFiles)) {
-    throw new Error(`Gemini returned invalid fix JSON: ${text.slice(0, 1000)}`);
+    throw new Error(`Claude returned invalid fix JSON: ${JSON.stringify(response.json).slice(0, 1000)}`);
   }
   return parsed;
 }
@@ -716,7 +833,7 @@ async function runValidation() {
   };
 }
 
-async function requestOpenAiReview({ signals, geminiFix, validation, diff, changedPaths }) {
+async function requestOpenAiReview({ signals, claudeFix, validation, diff, changedPaths }) {
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -762,12 +879,12 @@ async function requestOpenAiReview({ signals, geminiFix, validation, diff, chang
     ],
     detectedIssues: signals.issues,
     changedPaths,
-    geminiFix: {
-      summary: geminiFix.summary,
-      rootCause: geminiFix.rootCause,
-      confidence: geminiFix.confidence,
-      validationFocus: geminiFix.validationFocus,
-      riskNotes: geminiFix.riskNotes,
+    claudeFix: {
+      summary: claudeFix.summary,
+      rootCause: claudeFix.rootCause,
+      confidence: claudeFix.confidence,
+      validationFocus: claudeFix.validationFocus,
+      riskNotes: claudeFix.riskNotes,
     },
     validation: summarizeValidation(validation),
     diff,
@@ -842,7 +959,7 @@ async function requestOpenAiReview({ signals, geminiFix, validation, diff, chang
   return parsed;
 }
 
-async function publishApprovedFix({ changedPaths, signals, geminiFix, validation, review }) {
+async function publishApprovedFix({ changedPaths, signals, claudeFix, validation, review }) {
   const diffNames = (await gitText(['diff', '--name-only'])).trim().split(/\r?\n/).filter(Boolean);
   if (!diffNames.length) {
     throw new Error('approved fix has no working-tree changes to publish');
@@ -850,7 +967,7 @@ async function publishApprovedFix({ changedPaths, signals, geminiFix, validation
 
   await runProcess('git', ['add', '--', ...diffNames]);
   await ensureGitIdentity();
-  const title = buildCommitTitle(geminiFix, signals);
+  const title = buildCommitTitle(claudeFix, signals);
   const commitMessage = title.length > 70 ? title.slice(0, 69) : title;
   await runProcess('git', ['commit', '-m', commitMessage]);
   await runProcess('git', ['push', 'origin', `HEAD:${config.baseBranch}`]);
@@ -929,13 +1046,21 @@ async function getFirebaseDatabase() {
   return admin.database();
 }
 
-function extractGeminiText(json) {
-  return (
-    json?.candidates
-      ?.flatMap((candidate) => candidate?.content?.parts || [])
-      .map((part) => part?.text || '')
-      .join('') || ''
-  ).trim();
+function extractClaudeToolInput(json) {
+  for (const part of json?.content || []) {
+    if (part?.type === 'tool_use' && part?.name === 'submit_code_fix' && part?.input) {
+      return part.input;
+    }
+  }
+  return null;
+}
+
+function extractClaudeText(json) {
+  return (json?.content || [])
+    .filter((part) => part?.type === 'text' && typeof part?.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
 }
 
 function extractOpenAiText(json) {
@@ -1187,9 +1312,9 @@ function writeArtifact(name, value) {
   return file;
 }
 
-function buildCommitTitle(geminiFix, signals) {
+function buildCommitTitle(claudeFix, signals) {
   const firstIssue = signals.issues[0]?.title || 'detected production issue';
-  const summary = geminiFix.summary || firstIssue;
+  const summary = claudeFix.summary || firstIssue;
   return `AI bug fix: ${summary.replace(/\s+/g, ' ').slice(0, 90)}`;
 }
 
@@ -1341,7 +1466,7 @@ Usage:
   node tool/autonomous_bugfix_agent.mjs [--dry-run] [--force]
 
 Required for active fixes:
-  GEMINI_API_KEY                 Generates candidate code fixes.
+  ANTHROPIC_API_KEY              Generates candidate code fixes with Claude.
   OPENAI_API_KEY                 Runs the independent OpenAI review gate.
   FIREBASE_TOKEN                 Deploys the approved fix to Firebase Hosting.
 
@@ -1349,6 +1474,7 @@ Common configuration:
   AGENT_UI_HEALTH_URLS           Comma or newline separated deployed UI URLs.
   AGENT_DETECTION_COMMANDS       Newline separated commands for bug detection.
   AGENT_VALIDATION_COMMANDS      Newline separated commands for final validation.
+  CLAUDE_FIX_MODEL               Claude fix model. Defaults to claude-opus-4-8.
   AGENT_SKIP_WEB_DEPLOY=1        Push main without deploying Firebase Hosting.
   AGENT_DEPLOY_WORKERS=1         Also deploy Cloudflare workers after web deploy.
   FIREBASE_SERVICE_ACCOUNT       Firebase service account JSON for RTDB context.
