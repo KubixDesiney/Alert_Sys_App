@@ -1,6 +1,6 @@
 # Autonomous Bug-Fix Agent
 
-`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks Gemini for a code fix, validates the fix locally, asks OpenAI for an independent review gate, then pushes the approved commit directly to `main` and deploys Firebase Hosting.
+`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks Claude for a code fix, validates the fix locally, asks OpenAI for an independent review gate, then pushes the approved commit directly to `main` and deploys Firebase Hosting.
 
 ## Entry Points
 
@@ -48,8 +48,8 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
 ## Fix And Gate Flow
 
 1. Stop if no actionable issue is detected, unless `AGENT_FORCE=1`.
-2. Create an isolated `agent/autofix-*` branch.
-3. Send structured context to Gemini using `GEMINI_API_KEY`.
+2. Reset the local working branch to `origin/main` for direct publish.
+3. Send structured context to Claude using `ANTHROPIC_API_KEY` and `CLAUDE_FIX_MODEL`.
 4. Apply only safe text file writes inside the repo.
 5. Run `AGENT_VALIDATION_COMMANDS`.
 6. Send the diff and validation output to OpenAI using `OPENAI_API_KEY` and `OPENAI_REVIEW_MODEL` (`o3` by default).
@@ -59,7 +59,7 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
 
 ## Required Secrets
 
-- `GEMINI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
 - `FIREBASE_TOKEN`
 - `AUTOFIX_GITHUB_TOKEN` recommended for direct `main` pushes; falls back to `GITHUB_TOKEN` in Actions when branch protection allows it.

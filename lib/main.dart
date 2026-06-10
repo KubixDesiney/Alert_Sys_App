@@ -11,6 +11,7 @@ import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/superadmin/superadmin_dashboard_screen.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'services/fcm_service.dart';
 import 'services/location_tracking_service.dart';
@@ -21,6 +22,7 @@ import 'services/voice_service.dart';
 import 'services/worker_trigger_queue.dart';
 import 'services/background_sync_service.dart';
 import 'services/app_lifecycle_observer.dart';
+import 'services/bug_report_service.dart';
 import 'theme.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'services/connectivity_service.dart';
@@ -72,6 +74,9 @@ void main() async {
 
   await _safeInitFirebase();
   ServiceLocator.instance.init();
+  // Route every ERROR-level log and uncaught async error into the bugs
+  // pipeline surfaced on the SuperAdmin Logs tab.
+  BugReportService.instance.init();
   await OfflineDatabaseService.configure();
   // Initialize background sync service for offline support
   BackgroundSyncService.instance.initialize();
@@ -382,7 +387,11 @@ class _RoleRouterState extends State<RoleRouter> {
       }
       return const LoginScreen();
     }
-    if (_role == 'admin') {
+    final normalizedRole = _role?.trim().toLowerCase();
+    if (normalizedRole == 'superadmin') {
+      return const SuperAdminDashboardScreen();
+    }
+    if (normalizedRole == 'admin') {
       return const AdminDashboardScreen();
     }
     return const DashboardScreen();

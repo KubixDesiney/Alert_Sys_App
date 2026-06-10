@@ -1,6 +1,6 @@
 # Smart Industrial Alert - SIA App Handoff Notes
 
-Last verified: 2026-05-15 from the local repository.
+Last verified: 2026-06-10 from the local repository.
 
 This file is the working context for future coding agents. Keep it updated when the
 app structure, worker deployment, Firebase schema, or CI behavior changes.
@@ -16,6 +16,8 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - Offline-aware startup, cached account role data, queued worker triggers, and background sync.
 - Voice command and voice claim flows with Android-native lock-screen capture, Sherpa ONNX STT, TFLite speaker verification, and fallback stubs for non-Android platforms.
 - Factory hierarchy, assets, custom plant maps, station QR scanning, location tracking, and locator routing.
+- SuperAdmin command console (role `superadmin`/`SuperAdmin`) with on-device LSTM training/deployment, Production Manager account provisioning, platform-wide logs/bugs/security/cron/database observability, and a reserved hardware tab.
+- Pure-Dart LSTM forecaster (no external inference service) that trains on uploaded company alert history (CSV/Excel/JSON/SQL dump/PDF) and serves live next-24h machine risk on every Production Manager dashboard.
 
 ## Current Versions
 
@@ -31,21 +33,25 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 
 ## Repository Map
 
-- `lib/`: Flutter application code. There are currently 127 Dart files.
+- `lib/`: Flutter application code. There are currently 140 Dart files.
 - `lib/main.dart`: Firebase init, service init, providers, localization, auth gate, role router, offline account fallback.
 - `lib/config/app_config.dart`: Single source for worker URLs, Dart defines, worker endpoints, and request timeouts.
 - `lib/models/`: Alert, user, collaboration, hierarchy, factory map, shift, and predictive data models.
 - `lib/providers/alert_provider.dart`: Main app state facade for alert streams, per-supervisor alert buckets, actions, comments, critical flags, help, and assistance.
 - `lib/services/`: Firebase, alerts, auth, FCM, voice, AI, predictions, shifts, hierarchy, location, offline, PDF, and worker queue services.
 - `lib/services/ai/`: Dart AI scoring engine, state manager, feedback repository, and score adjuster.
+- `lib/services/lstm/`: Pure-Dart LSTM stack — multi-format dataset parser, feature engineer, network (BPTT + Adam), trainer, RTDB model store, and forecast engine.
+- `lib/services/superadmin_service.dart`: Production Manager account provisioning via a secondary Firebase app.
+- `lib/services/bug_report_service.dart`: Deduplicated client error reporting into `bugs/client`.
 - `lib/screens/`: Admin, supervisor, alert tree, detail, scan, mapping, locator, collaboration, voice, dashboard, hierarchy, and escalation screens.
+- `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, Production Managers, Logs, Hardware tabs).
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
 - `android/app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/`: Native Android method channels and lock-screen voice capture.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
-- `worker_test/`: Jest worker test suite. There are currently 11 worker test files.
-- `test/`: Flutter unit/widget tests. There are currently 20 Dart test files.
-- `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Gemini fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, and optional worker deploy.
+- `worker_test/`: Jest worker test suite. There are currently 14 worker test files.
+- `test/`: Flutter unit/widget tests. There are currently 27 Dart test files.
+- `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Claude fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, optional worker deploy, `bugs/agent` RTDB run records, and GitHub issue escalation on rejection.
 - `functions/`: Firebase Cloud Functions. Includes legacy OneSignal push and AI retry triggers.
 - `database.rules.json`: Realtime Database security rules and validation.
 - `.github/workflows/ci.yml`: Flutter analysis/tests/build plus Worker Jest/deploy.
@@ -81,7 +87,7 @@ npm run agent:bugfix:dry-run
 npm run agent:bugfix
 ```
 
-Active agent runs require `GEMINI_API_KEY`, `OPENAI_API_KEY`, GitHub CLI auth or `GH_TOKEN`, and any runtime context secrets needed for Firebase/worker health.
+Active agent runs require `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, git credentials that can push to `main`, and any runtime context secrets needed for Firebase/worker health.
 
 Firebase:
 
@@ -337,6 +343,8 @@ Important RTDB roots from `database.rules.json` and code:
 - `security/actions`
 - `workers/health`
 - `cron_lock`
+- `ai_lstm` (model weights, scaler, training telemetry, run history)
+- `bugs/client` (deduplicated app error reports) and `bugs/agent` (autonomous agent run outcomes)
 
 Alert fields used across app and workers:
 
@@ -363,9 +371,11 @@ User fields used across app and workers:
 
 Role conventions:
 
-- `admin`: admin dashboard, broad database access, can manage hierarchy, supervisors, settings, shifts, collaborations.
+- `superadmin` (also accepted as `SuperAdmin` — role matching is case-insensitive in the app): SuperAdmin command console with LSTM training, Production Manager provisioning, and platform observability. Database rules check both literal spellings.
+- `admin`: Production Manager — admin dashboard, broad database access, can manage hierarchy, supervisors, settings, shifts, collaborations.
 - `supervisor`: dashboard, alert handling, collaboration/help, voice claim, location tracking.
 - Other roles can log in if role is valid, but non-admin routing currently lands on supervisor dashboard.
+- `security/*` and `workers/*` reads are limited to the worker service token and `superadmin`; plain `admin` accounts are deliberately excluded (enforced by `worker_test/database_rules_security.test.js`).
 
 ## Alert Lifecycle
 
@@ -589,20 +599,26 @@ Worker Jest tests:
 - `scoring.test.js`
 - `security_prompt_injection.test.js`
 - `validation.test.js`
+- `database_rules_security.test.js` (security/workers/bugs/ai_lstm rule policy)
+- `haversine.test.js`
 
 Flutter tests:
 
 - `theme_test.dart`
 - `voice_command_parser_test.dart`
 - `widget_test.dart`
-- Model tests for alert, collaboration, predictive, and user models.
+- Model tests for alert, collaboration, predictive, shift, and user models.
 - Service tests for AI scoring, alert actions, alert stream, collaboration, offline account cache, predictive scope, AI score adjuster, and reinforcement.
+- LSTM tests: `lstm_network_test.dart` (loss decreases on a learnable task, serialization, clone), `lstm_feature_engineer_test.dart` (daily rows, scaler, windows), `lstm_trainer_test.dart` (end-to-end learning verdict, cancel, small-dataset rejection), `alert_record_parser_test.dart` (CSV/JSON/SQL/PDF/timestamps/type normalization).
 - Utility tests for alert metadata and factory ids.
 - Widget tests for admin dashboard, factory location picker, and locator painter.
 
-Current verified worker result:
+Current verified results (2026-06-10):
 
-- `npm test`: 11 suites passed, 154 tests passed.
+- `npm test`: 14 suites passed, 180 tests passed.
+- `flutter test`: 264 tests passed.
+- `flutter analyze --no-fatal-infos --no-fatal-warnings`: clean (style infos only).
+- `flutter build web --release --no-wasm-dry-run`: succeeds.
 
 ## CI And Deploy
 
@@ -637,7 +653,7 @@ Current verified worker result:
 - Runs hourly and by manual dispatch.
 - Probes deployed UI, Cloudflare worker config/security endpoints, recent logs, RTDB worker health, and configured detection commands.
 - Builds structured context from `CLAUDE.md`, source files, logs, DB state, and worker responses.
-- Sends the fix request to Gemini, applies safe text-file updates, then validates with Jest, Flutter analysis, and Flutter tests.
+- Sends the fix request to Claude using `CLAUDE_FIX_MODEL` (default `claude-opus-4-8`), applies safe text-file updates, then validates with Jest, Flutter analysis, and Flutter tests.
 - Sends the resulting diff to the OpenAI review gate using `OPENAI_REVIEW_MODEL` (default `o3`).
 - Retries up to three times with validation/review feedback.
 - If approved, commits on `main`, pushes `HEAD:main`, builds Flutter web, and deploys Firebase Hosting directly.
@@ -649,7 +665,7 @@ Required GitHub Actions secrets:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 - `FIREBASE_TOKEN`
-- `GEMINI_API_KEY`
+- `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
 - Optional but recommended: `AUTOFIX_GITHUB_TOKEN`
 - Optional worker deploy: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` when `AGENT_DEPLOY_WORKERS=1`.
@@ -679,3 +695,61 @@ On 2026-05-15, the notification push lock behavior was fixed:
 - `worker/alerts.js` was kept in sync with the deployed notification worker.
 - `npm test` passes all worker tests after the change.
 
+
+## SuperAdmin Console And On-Device LSTM (2026-06-10)
+
+A full SuperAdmin tier was added on top of the existing admin/supervisor roles, together with a working, trainable LSTM forecaster and a platform-wide observability surface.
+
+### Role And Routing
+
+- New role `superadmin` (case-insensitive in the app; rules accept both `superadmin` and `SuperAdmin` literals). Create the account record manually in Firebase: `users/{uid}/role = "SuperAdmin"`.
+- `RoleRouter` (lib/main.dart) normalizes the role and routes superadmin to `SuperAdminDashboardScreen`; `OfflineAccountCache.normalizeRole` persists the canonical lowercase form for offline startup.
+- Database rules: superadmin can read/write `users/{uid}` (for Production Manager provisioning), read `security/*`, `workers/*`, `bugs`, and write `ai_lstm`. Plain `admin` (Production Manager) accounts remain excluded from `security/*` and `workers/*` reads — enforced by `worker_test/database_rules_security.test.js`.
+- Deploy rules after pulling: `firebase deploy --only database`.
+
+### SuperAdmin Console (lib/screens/superadmin/)
+
+Always-dark futuristic command-center design with an animated neural-mesh vector background (`superadmin_theme.dart`: `NeuralBackground`, `GlassPanel`, `GlowChip`, `PulseDot`, `SaButton`, …). Four tabs:
+
+1. **AI Training** (`lstm_training_tab.dart`): upload company alert history, watch deployed-model status, auto-tuned editable hyperparameters, live training monitor (gradient progress bar, train/val loss curves, accuracy/F1 curves, LEARNING/NOT-LEARNING verdict), next-24h forecast preview, one-click deploy.
+2. **Production Managers** (`production_managers_tab.dart`): provision/revoke Production Manager (`role: admin`) accounts and send password resets. Account creation runs through a secondary Firebase app (`superadmin_service.dart`) so the SuperAdmin session is never replaced.
+3. **Logs** (`logs_tab.dart`): five live sections — Bugs (client errors + autonomous agent runs with AI FIXED / ESCALATED status and GitHub issue links), Console (AppLogBuffer live viewer with level filters), Security (enforcement actions + anomaly observations from `security/*`), Cron Health (both workers' pulses with freshness/staleness states and raw pulse view), Database (animated live topology map of RTDB roots with shallow-count probing via the REST API and per-node health).
+4. **Hardware** (`hardware_tab.dart`): reserved placeholder with radar-sweep animation.
+
+### Pure-Dart LSTM (lib/services/lstm/)
+
+The forecaster is a real recurrent network trained on-device — no HuggingFace or external inference dependency:
+
+- `alert_record_parser.dart`: ingests CSV/TSV, JSON (incl. Firebase RTDB exports), Excel (.xlsx), MySQL dumps (.sql INSERT parsing with CREATE TABLE fallback), and PDFs (table extraction via Syncfusion + heuristic line scan). Header-synonym mapping (EN/FR), flexible timestamps (ISO, epoch s/ms, dd/MM/yyyy, Excel serial), type normalization onto the four canonical types.
+- `lstm_feature_engineer.dart`: mirrors the worker's `_buildDailyFeatures` — per-machine gap-free daily rows with the 8 `kLstmFeatureCols` features, min/max scaler (persisted with the model), 14-day windows with next-day multi-label targets, and padded inference windows for quiet machines.
+- `lstm_network.dart`: single-layer LSTM + sigmoid head, full BPTT, Adam, global-norm gradient clipping, weighted BCE for class imbalance, forget-gate bias init, JSON (de)serialization.
+- `lstm_trainer.dart`: stratified split, per-class positive weights, early stopping with best-weights snapshot, cooperative yielding (UI stays smooth on web and mobile), streams `EpochStat`s that drive the live curves, and a quantitative learning verdict (best val loss <= 97% of starting val loss).
+- `lstm_model_store.dart`: persists weights/scaler/metadata to `ai_lstm/model`, run history to `ai_lstm/history`, live training telemetry to `ai_lstm/training/latest`.
+- `lstm_forecast_engine.dart`: on-device inference over recent alerts; publishes throttled snapshots to `ai_predictions/lstm`.
+
+### Production Manager Dashboard Integration
+
+`lib/widgets/overview/overview_lstm_forecast_card.dart` (`LstmForecastCard`) is embedded in the admin Overview tab (both wide and narrow layouts). It streams `ai_lstm/model`, re-runs inference whenever the alert stream changes (throttled to 15s), scopes to the selected factory, renders animated per-machine risk rings and per-type probability bars, and keeps `ai_predictions/lstm` fresh (one write per 10 minutes across all open dashboards). With no deployed model it shows a guidance empty state.
+
+### Bugs Pipeline
+
+- `lib/services/bug_report_service.dart` hooks `AppLogger.onErrorEntry` (every ERROR-level log) and `PlatformDispatcher.onError`, dedupes by FNV-1a hash, rate-limits (5 min/hash), and writes `bugs/client/{hash}` with area inference (auth/notifications/database/locator/supervisors/voice/shifts/ai/app), counts, and timestamps. Wired in `main.dart` right after `ServiceLocator.init()`.
+- `tool/autonomous_bugfix_agent.mjs` now records every run to `bugs/agent` (`clean` / `ai_fixed` + commit / `escalated` + issueUrl / `rejected`) and, when all fix attempts are rejected, opens a GitHub issue (label `autofix-escalation`) via `AUTOFIX_GITHUB_TOKEN`/`GITHUB_TOKEN` before failing the workflow.
+- The SuperAdmin Logs tab renders both nodes with status chips and issue links.
+
+### New Dependencies
+
+- `file_picker` (dataset upload) and `syncfusion_flutter_pdf` (PDF text extraction). Both web-compatible.
+
+### Cleanup Performed (2026-06-10)
+
+- Deleted: `android_old/`, `android_backup/`, `.idea/`, `alertsysapp.iml`, `lib/screens/admin/developer_tab.dart` (orphaned; superseded by the SuperAdmin Logs tab), root duplicate `firebase_options.dart` (app uses `lib/firebase_options.dart`), `WORKER_UPDATE_FILTER_CLAIMED.js`, debug exports (`__*.json`, `temp_error.json`, mangled `C:Users…` file), one-off scripts (`boost.cjs`, `trigger_flood.cjs`, `cleanup_flood.cjs`, `reset_push_sent.cjs`), and stale `flutter_*.log` / `.codex-*.log` files.
+- `.gitignore` rewritten as clean UTF-8 (it contained a corrupted UTF-16 line) and extended with `__*.json`, `temp_error.json`, `service-account.json`.
+
+### Operational Sequence: Train And Serve The LSTM
+
+1. SuperAdmin signs in (role `SuperAdmin`) and lands on the console.
+2. AI Training tab → upload an alert-history export (CSV/Excel/JSON/SQL/PDF). The parser reports rows/machines/span/type distribution and engineering yields N training windows.
+3. Hyperparameters are auto-tuned from dataset size; Start Training runs genuine BPTT with live loss/accuracy curves and a learning verdict.
+4. Deploy to Production writes weights+scaler to `ai_lstm/model` and an immediate live snapshot to `ai_predictions/lstm` computed from production alerts.
+5. Every Production Manager dashboard's `LstmForecastCard` picks the model up via stream and starts on-device, real-time next-24h forecasting that refreshes as alerts arrive.

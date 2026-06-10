@@ -4,8 +4,14 @@ class OfflineAccountCache {
   static const _rolePrefix = 'offline_account_role_';
   static const _usinePrefix = 'offline_account_usine_';
 
-  static bool isValidRole(String? role) =>
-      role == 'admin' || role == 'supervisor';
+  /// Canonical lowercase role name, or null when unknown.
+  static String? normalizeRole(String? role) {
+    final r = role?.trim().toLowerCase();
+    if (r == 'admin' || r == 'supervisor' || r == 'superadmin') return r;
+    return null;
+  }
+
+  static bool isValidRole(String? role) => normalizeRole(role) != null;
 
   static Future<void> save({
     required String uid,
@@ -13,8 +19,9 @@ class OfflineAccountCache {
     String? usine,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    if (isValidRole(role)) {
-      await prefs.setString('$_rolePrefix$uid', role!);
+    final normalized = normalizeRole(role);
+    if (normalized != null) {
+      await prefs.setString('$_rolePrefix$uid', normalized);
     }
     final cleanUsine = usine?.trim();
     if (cleanUsine != null && cleanUsine.isNotEmpty) {
@@ -25,7 +32,7 @@ class OfflineAccountCache {
   static Future<String?> roleFor(String uid) async {
     final prefs = await SharedPreferences.getInstance();
     final role = prefs.getString('$_rolePrefix$uid');
-    return isValidRole(role) ? role : null;
+    return normalizeRole(role);
   }
 
   static Future<String?> usineFor(String uid) async {

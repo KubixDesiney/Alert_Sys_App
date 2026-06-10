@@ -11,6 +11,7 @@ import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../../widgets/overview/ai_morning_briefing_hero.dart';
 import '../../widgets/overview/overview_critical_alerts_card.dart';
+import '../../widgets/overview/overview_lstm_forecast_card.dart';
 import '../../widgets/overview/overview_predictive_failure_card.dart';
 import '../../widgets/overview/overview_predictive_heatmap.dart';
 import '../../widgets/overview/overview_stat_card.dart';
@@ -983,6 +984,10 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           model: scopedPreds,
           describeType: (type) => adminTypeLabel(context, type),
         );
+        final lstmCard = LstmForecastCard(
+          alerts: widget.allAlerts,
+          selectedUsine: widget.selectedUsine,
+        );
         final riskCard = PredictiveRiskHeatmap(
           stats: ts,
           model: scopedPreds,
@@ -1043,6 +1048,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
                   ],
                 ),
               ),
+              const SizedBox(height: 14),
+              lstmCard,
               critical,
             ],
           );
@@ -1063,6 +1070,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
               SizedBox(height: 520, child: historyBox),
               const SizedBox(height: 14),
               riskCard,
+              const SizedBox(height: 14),
+              lstmCard,
               critical,
             ],
           );

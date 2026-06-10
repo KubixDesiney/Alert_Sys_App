@@ -1708,6 +1708,13 @@ All security nodes protected by admin-only read; writes restricted to worker via
 
 ## AH. Developer Mode and In-App Telemetry (May 2026)
 
+> **Superseded (June 2026):** the admin Developer tab described below was removed.
+> Its telemetry surface (worker health, security logs/actions, AppLogBuffer console)
+> now lives in the SuperAdmin console Logs tab (`lib/screens/superadmin/logs_tab.dart`),
+> gated by the `superadmin` role instead of a per-session toggle. `AppLogBuffer`
+> (lib/services/app_logger.dart) remains and feeds both the console viewer and the
+> new `bugs/client` error pipeline. The historical notes are kept for context.
+
 Implemented comprehensive developer mode tooling that surfaces worker security telemetry, health metrics, and app console logs through a new Developer tab, accessible only when enabled via authenticated settings toggle.
 
 **App-Level Logging Infrastructure:**
