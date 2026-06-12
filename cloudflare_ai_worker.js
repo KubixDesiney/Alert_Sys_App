@@ -987,8 +987,18 @@ async function _securityGuard(request, env, options) {
   const opts = options || {};
   const endpoint = opts.endpoint || 'default';
 
+  // Security Sentinel master switch + per-defense toggles from the
+  // SuperAdmin AI Agents console (60s cache, fails open).
+  const control = await _loadAgentControl(env);
+  const sentinelOn = _agentEnabled(control, 'security');
+  const rateLimitOn = sentinelOn && _agentSetting(control, 'security', 'rateLimiting');
+  const injectionOn = sentinelOn && _agentSetting(control, 'security', 'promptInjection');
+  const sanitizeOn = sentinelOn && _agentSetting(control, 'security', 'sanitization');
+
   // 1. Rate limit per fingerprint × endpoint.
-  const rl = _securityRateLimit(request, endpoint);
+  const rl = rateLimitOn
+    ? _securityRateLimit(request, endpoint)
+    : { ok: true, fingerprint: _securityFingerprint(request) };
   if (!rl.ok) {
     await _securityRecordAction(env, {
       kind: 'rate_limit_block',
@@ -1038,7 +1048,9 @@ async function _securityGuard(request, env, options) {
     const textFields = Array.isArray(opts.textFields) ? opts.textFields : [];
     for (const f of textFields) {
       if (body[f] != null && typeof body[f] === 'string') {
-        const det = _securityDetectPromptInjection(body[f]);
+        const det = injectionOn
+          ? _securityDetectPromptInjection(body[f])
+          : { hit: false, matches: [] };
         if (det.hit) {
           // We log the matches but do NOT feed the poisoned text to Llama.
           await _securityRecordAction(env, {
@@ -1063,7 +1075,9 @@ async function _securityGuard(request, env, options) {
             ),
           };
         }
-        body[f] = _securitySanitizeText(body[f], opts.maxTextLen);
+        if (sanitizeOn) {
+          body[f] = _securitySanitizeText(body[f], opts.maxTextLen);
+        }
       }
     }
   }
@@ -1227,6 +1241,96 @@ async function handleSecurityStatus(env) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     },
   );
+}
+
+// ============ AI Agent Fleet control plane ============
+// The SuperAdmin console (AI Agents tab) writes master switches and
+// per-agent settings under `ai_agents/{id}` in RTDB:
+//   ai_agents/{shift|briefing|assist|security|predictive}/enabled   (bool)
+//   ai_agents/security/settings/{promptInjection,rateLimiting,
+//                                sanitization,anomalyScan,siemExport}
+//   ai_agents/predictive/settings/{adaptationEnabled,outcomeGrading}
+//   ai_agents/assist/promptTemplate                                 (string)
+// The worker honors them through a 60s cache so toggles propagate within a
+// minute without adding an RTDB read to every request. All reads fail OPEN
+// (missing node / IO error = enabled) so a control-plane hiccup can never
+// take the fleet down.
+const AGENT_CONTROL_TTL_MS = 60 * 1000;
+let _agentControlCache = { at: 0, data: null };
+
+async function _loadAgentControl(env, token = null) {
+  const now = Date.now();
+  if (_agentControlCache.data && now - _agentControlCache.at < AGENT_CONTROL_TTL_MS) {
+    return _agentControlCache.data;
+  }
+  try {
+    const t = token || (await getFirebaseToken(env));
+    const res = await fetch(`${env.FB_DB_URL}ai_agents.json?auth=${t}`);
+    const data = res.ok ? ((await res.json()) || {}) : {};
+    _agentControlCache = { at: now, data };
+    return data;
+  } catch (_) {
+    return _agentControlCache.data || {};
+  }
+}
+
+function _agentEnabled(control, agentId) {
+  return !control || !control[agentId] || control[agentId].enabled !== false;
+}
+
+function _agentSetting(control, agentId, key) {
+  const settings = control?.[agentId]?.settings;
+  return !settings || settings[key] !== false;
+}
+
+// Fire-and-forget stat bump using RTDB atomic server increments, so several
+// isolates never race each other's counters.
+function _agentBumpStats(env, token, agentId, fields) {
+  if (!token || !env?.FB_DB_URL) return;
+  try {
+    const body = {};
+    for (const [k, v] of Object.entries(fields || {})) {
+      body[k] = typeof v === 'number' ? { '.sv': { increment: v } } : v;
+    }
+    fetch(`${env.FB_DB_URL}ai_agents/${agentId}/stats.json?auth=${token}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// Fire-and-forget per-agent activity log row (rendered in the AI Agents tab).
+function _agentLog(env, token, agentId, entry) {
+  if (!token || !env?.FB_DB_URL) return;
+  try {
+    fetch(`${env.FB_DB_URL}ai_agents/${agentId}/logs.json?auth=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ at: new Date().toISOString(), ...entry }),
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// The AI Assist agent's built-in prompt. The SuperAdmin can deploy an
+// override at ai_agents/assist/promptTemplate using the same placeholders;
+// the worker substitutes them at request time.
+const _ASSIST_DEFAULT_PROMPT = `You are an industrial operations assistant. A supervisor needs a resolution suggestion.
+
+Alert type: {type}
+Description: {description}
+Location: Factory: {usine}, Conveyor line: {convoyeur}, Workstation: #{poste}
+
+{history}
+
+Provide a concise, actionable resolution in 2-3 bullet points. Base it on the past fixes when available; otherwise suggest the most likely root cause and immediate action.`;
+
+function _assistFillPrompt(template, vars) {
+  let out = String(template || '');
+  for (const [k, v] of Object.entries(vars || {})) {
+    out = out.split('{' + k + '}').join(String(v ?? ''));
+  }
+  return out;
 }
 
 function _aggregateWeek(alertsMap = {}, factoryFilter = null) {
@@ -2552,10 +2656,24 @@ async function handleAiSuggest(request, env) {
       });
     }
 
+    // AI Assist agent master switch (SuperAdmin AI Agents console).
+    const control = await _loadAgentControl(env);
+    if (!_agentEnabled(control, 'assist')) {
+      return new Response(
+        JSON.stringify({ suggestion: _AI_FALLBACK, agentDisabled: true }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    let token = null;
+    try { token = await getFirebaseToken(env); } catch (_) {}
+
     // Fetch resolved alerts for this factory so we can extract past fixes.
     let pastResolutions = [];
     try {
-      const token = await getFirebaseToken(env);
       const res = await fetch(
         `${env.FB_DB_URL}alerts.json?auth=${token}&orderBy="usine"&equalTo=${encodeURIComponent(usine)}`,
       );
@@ -2585,17 +2703,40 @@ async function handleAiSuggest(request, env) {
         ? `Past resolutions for this exact location (most recent first):\n${pastResolutions.map((r) => `- ${r}`).join('\n')}`
         : 'No past resolutions on record for this specific location.';
 
-    const prompt = `You are an industrial operations assistant. A supervisor needs a resolution suggestion.
+    // SuperAdmin-editable prompt template (sanitized + length-capped before
+    // it can reach Llama, same budget as any other prompt text).
+    const overrideRaw = control?.assist?.promptTemplate;
+    const template =
+      typeof overrideRaw === 'string' && overrideRaw.trim().length > 0
+        ? _securitySanitizeText(overrideRaw, _SECURITY.MAX_PROMPT_CHARS)
+        : _ASSIST_DEFAULT_PROMPT;
 
-Alert type: ${typeLabel}
-Description: ${description}
-Location: Factory: ${usine}, Conveyor line: ${convoyeur}, Workstation: #${poste}
-
-${historyBlock}
-
-Provide a concise, actionable resolution in 2-3 bullet points. Base it on the past fixes when available; otherwise suggest the most likely root cause and immediate action.`;
+    const prompt = _assistFillPrompt(template, {
+      type: typeLabel,
+      description,
+      usine,
+      convoyeur,
+      poste,
+      history: historyBlock,
+    });
 
     const suggestion = await _runLlama(prompt, env) ?? _AI_FALLBACK;
+
+    // Fleet telemetry: served counter + activity row for the AI Agents tab.
+    _agentBumpStats(env, token, 'assist', {
+      served: 1,
+      lastServedAt: new Date().toISOString(),
+    });
+    _agentLog(env, token, 'assist', {
+      type,
+      usine,
+      convoyeur: convoyeur ?? null,
+      poste: poste ?? null,
+      historyUsed: pastResolutions.length,
+      promptSource: template === _ASSIST_DEFAULT_PROMPT ? 'default' : 'override',
+      outcome: suggestion === _AI_FALLBACK ? 'fallback' : 'served',
+    });
+
     return new Response(JSON.stringify({ suggestion }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -2868,16 +3009,31 @@ async function handleBriefing(request, env) {
       ? `ai_briefing/factory/${factorySlug}/history/${today}.json`
       : `ai_briefing/history/${today}.json`;
 
-    if (!force) {
+    // Briefing agent master switch: when the SuperAdmin takes the officer
+    // offline we keep serving whatever was already written (history stays
+    // readable) but never spend another Llama run.
+    const agentControl = await _loadAgentControl(env, coreCtx.token);
+    const briefingAgentOn = _agentEnabled(agentControl, 'briefing');
+
+    if (!force || !briefingAgentOn) {
       const existing = await fetch(`${env.FB_DB_URL}${latestPath}?auth=${coreCtx.token}`);
       if (existing.ok) {
         const data = await existing.json();
-        if (data?.date === today) {
+        if (data && (data.date === today || !briefingAgentOn)) {
           return new Response(JSON.stringify(data), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
+      }
+      if (!briefingAgentOn) {
+        return new Response(
+          JSON.stringify({ error: 'briefing_agent_disabled' }),
+          {
+            status: 503,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
       }
     }
 
@@ -2989,6 +3145,18 @@ Begin with "Good morning". Acknowledge what is going well, name the top supervis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+
+    // Fleet telemetry for the AI Agents tab.
+    _agentBumpStats(env, coreCtx.token, 'briefing', {
+      generated: 1,
+      lastGeneratedAt: new Date().toISOString(),
+    });
+    _agentLog(env, coreCtx.token, 'briefing', {
+      factoryScope: factoryParam || 'global',
+      model,
+      alerts: stats.total,
+    });
+
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -5247,6 +5415,186 @@ function handleConfigRequest() {
 // number of security blocks (rate-limit hits, prompt-injection rejections,
 // anomaly-triggered records) seen during the run. The developer UI subscribes
 // to this node and surfaces every counter in real time.
+// ============ Forecast outcome learner (Predictive agent) ============
+// Server-side half of the GBDT forecaster's continuous-learning loop. Open
+// PM dashboards already snapshot + grade opportunistically; this cycle makes
+// the loop survive nights and weekends with zero dashboards open:
+//   1. Snapshot what the deployed model predicts for tomorrow, taken from
+//      the latest on-device `ai_predictions/forecast` publish (first write
+//      wins — identical key scheme to the Dart learner).
+//   2. Grade every fully-elapsed pending day against the alerts that really
+//      happened, using the tuned per-type thresholds the console deployed,
+//      and fold hits/misses + Brier into the same `ai_forecast/accuracy`
+//      ledger the SuperAdmin console and PM dashboards stream.
+// Adaptation boosting itself stays on-device in Dart — the worker only
+// grades; it never mutates the ensemble.
+const _FORECAST_TYPES = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
+
+function _forecastDayKey(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+async function _runForecastOutcomeCycle(env, ctx) {
+  const token = ctx?.token ?? (await getFirebaseToken(env));
+  const control = await _loadAgentControl(env, token);
+  if (!_agentEnabled(control, 'predictive')) return 0;
+  if (!_agentSetting(control, 'predictive', 'outcomeGrading')) return 0;
+
+  const nowMs = Date.now();
+  const todayKey = _forecastDayKey(new Date(nowMs));
+  const headers = { 'Content-Type': 'application/json' };
+
+  // ── 1. Snapshot tomorrow from the latest live forecast publish ──
+  try {
+    const fRes = await fetch(`${env.FB_DB_URL}ai_predictions/forecast.json?auth=${token}`);
+    if (fRes.ok) {
+      const f = (await fRes.json()) || {};
+      const genMs = _toMs(f.generatedAt);
+      const preds = Array.isArray(f.predictions) ? f.predictions : [];
+      if (genMs != null && nowMs - genMs < 24 * 3600 * 1000 && preds.length > 0) {
+        const tomorrowKey = _forecastDayKey(new Date(nowMs + 24 * 3600 * 1000));
+        const pendUrl = `${env.FB_DB_URL}ai_forecast/accuracy/pending/${tomorrowKey}.json?auth=${token}`;
+        const pendRes = await fetch(pendUrl);
+        const existing = pendRes.ok ? await pendRes.json() : null;
+        if (!existing) {
+          const machines = {};
+          for (const p of preds.slice(0, 80)) {
+            // Same key scheme as the Dart learner: usine~convoyeur~poste
+            // (RTDB paths cannot contain '|').
+            const key = `${String(p.usine || '')}~${p.convoyeur ?? 0}~${p.poste ?? 0}`;
+            const probs = p.probabilities;
+            if (probs && typeof probs === 'object') machines[key] = probs;
+          }
+          if (Object.keys(machines).length > 0) {
+            await fetch(pendUrl, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify({
+                generatedAt: new Date().toISOString(),
+                modelVersion: Number(f.modelVersion) || 0,
+                source: 'edge_worker',
+                machines,
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[FORECAST-LEARN] Snapshot failed: ' + e.message);
+  }
+
+  // ── 2. Grade fully elapsed pending days ──
+  let pending = {};
+  try {
+    const res = await fetch(`${env.FB_DB_URL}ai_forecast/accuracy/pending.json?auth=${token}`);
+    if (res.ok) pending = (await res.json()) || {};
+  } catch (_) { return 0; }
+  const elapsed = Object.entries(pending).filter(([k]) => k < todayKey);
+  if (elapsed.length === 0) return 0;
+
+  // Tuned decision thresholds mirrored outside the weights blob at deploy.
+  let thresholds = [0.5, 0.5, 0.5, 0.5];
+  try {
+    const tRes = await fetch(`${env.FB_DB_URL}ai_forecast/model/thresholds.json?auth=${token}`);
+    if (tRes.ok) {
+      const t = await tRes.json();
+      if (Array.isArray(t) && t.length > 0) thresholds = t.map(Number);
+    }
+  } catch (_) {}
+
+  // Reality index: dayKey → Set('usine~conv~poste~type').
+  const occurred = new Map();
+  for (const a of Object.values(ctx?.alertsMap || {})) {
+    if (!a) continue;
+    const ms = _toMs(a.timestamp);
+    if (ms == null) continue;
+    const dk = _forecastDayKey(new Date(ms));
+    const key = `${String(a.usine || '')}~${a.convoyeur ?? 0}~${a.poste ?? 0}~${String(a.type || '')}`;
+    if (!occurred.has(dk)) occurred.set(dk, new Set());
+    occurred.get(dk).add(key);
+  }
+
+  let graded = 0;
+  for (const [dateKey, snap] of elapsed) {
+    const pendDelUrl = `${env.FB_DB_URL}ai_forecast/accuracy/pending/${dateKey}.json?auth=${token}`;
+    const machines = snap?.machines;
+    if (!machines || typeof machines !== 'object') {
+      await fetch(pendDelUrl, { method: 'DELETE' }).catch(() => {});
+      continue;
+    }
+    let pairs = 0, tp = 0, fp = 0, fn = 0, brierSum = 0;
+    const reality = occurred.get(dateKey) || new Set();
+    for (const [mk, probs] of Object.entries(machines)) {
+      if (!probs || typeof probs !== 'object') continue;
+      for (let ti = 0; ti < _FORECAST_TYPES.length; ti++) {
+        const type = _FORECAST_TYPES[ti];
+        const p = Number(probs[type]);
+        if (!Number.isFinite(p)) continue;
+        const happened = reality.has(`${mk}~${type}`);
+        pairs++;
+        const actual = happened ? 1 : 0;
+        brierSum += (p - actual) * (p - actual);
+        const called = p >= (Number.isFinite(thresholds[ti]) ? thresholds[ti] : 0.5);
+        if (called && happened) tp++;
+        if (called && !happened) fp++;
+        if (!called && happened) fn++;
+      }
+    }
+    if (pairs > 0) {
+      // Fold into the rolling ledger — same shape the Dart learner writes.
+      const ledgerUrl = `${env.FB_DB_URL}ai_forecast/accuracy/latest.json?auth=${token}`;
+      let prev = {};
+      try {
+        const lr = await fetch(ledgerUrl);
+        if (lr.ok) prev = (await lr.json()) || {};
+      } catch (_) {}
+      const pi = (k) => Number(prev?.[k]) || 0;
+      await fetch(ledgerUrl, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          gradedDays: pi('gradedDays') + 1,
+          gradedPairs: pi('gradedPairs') + pairs,
+          brierSum: Number((pi('brierSum') + brierSum).toFixed(6)),
+          tp: pi('tp') + tp,
+          fp: pi('fp') + fp,
+          fn: pi('fn') + fn,
+          lastGradedDay: dateKey,
+          updatedAt: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+      await fetch(`${env.FB_DB_URL}ai_forecast/accuracy/history/${dateKey}.json?auth=${token}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          pairs,
+          brier: Number((brierSum / pairs).toFixed(6)),
+          tp,
+          fp,
+          fn,
+          gradedAt: new Date().toISOString(),
+          gradedBy: 'edge_worker',
+        }),
+      }).catch(() => {});
+      graded++;
+    }
+    await fetch(pendDelUrl, { method: 'DELETE' }).catch(() => {});
+  }
+
+  if (graded > 0) {
+    _agentBumpStats(env, token, 'predictive', {
+      gradedDays: graded,
+      lastGradedAt: new Date().toISOString(),
+    });
+    _agentLog(env, token, 'predictive', {
+      kind: 'outcome_grading',
+      gradedDays: graded,
+    });
+  }
+  return graded;
+}
+
 async function _writeCronHealth(token, env, {
   runStart,
   assignmentsMade,
@@ -5350,28 +5698,55 @@ export default {
         }
 
         const runValidation = _cronEvery(runStart, VALIDATION_CRON_INTERVAL_MIN);
-        const runPredictive = _cronEvery(runStart, PREDICTIVE_CRON_INTERVAL_MIN);
+        const runPredictiveBase = _cronEvery(runStart, PREDICTIVE_CRON_INTERVAL_MIN);
+        const runSecurityScanBase = _cronEvery(runStart, SECURITY_SCAN_INTERVAL_MIN);
+
+        // AI Agent Fleet master switches (SuperAdmin console). Escalation
+        // checks are platform safety, not an agent — they always run.
+        const agentControl = await _loadAgentControl(env, coreCtx.token);
+        const shiftAgentOn = _agentEnabled(agentControl, 'shift');
+        const predictiveAgentOn = _agentEnabled(agentControl, 'predictive');
+        const securityAgentOn = _agentEnabled(agentControl, 'security');
+
+        const runPredictive = runPredictiveBase && predictiveAgentOn;
         const runLstm = LSTM_CRON_ENABLED && runPredictive && _cronEvery(runStart, LSTM_CRON_INTERVAL_MIN);
-        const runSecurityScan = _cronEvery(runStart, SECURITY_SCAN_INTERVAL_MIN);
+        const runSecurityScan = runSecurityScanBase && securityAgentOn &&
+          _agentSetting(agentControl, 'security', 'anomalyScan');
 
         try { await checkEscalations(env, coreCtx); }
         catch (e) { console.error('[CRON] checkEscalations: ' + e.message); healthErrors.push('checkEscalations: ' + e.message); }
 
-        try { assignmentsMade = (await runAIAssignments(env, coreCtx)) ?? 0; }
-        catch (e) { console.error('[CRON] runAIAssignments: ' + e.message); healthErrors.push('runAIAssignments: ' + e.message); }
+        if (shiftAgentOn) {
+          try { assignmentsMade = (await runAIAssignments(env, coreCtx)) ?? 0; }
+          catch (e) { console.error('[CRON] runAIAssignments: ' + e.message); healthErrors.push('runAIAssignments: ' + e.message); }
 
-        try { collaborationsApproved = (await processShiftCollaborations(env, coreCtx)) ?? 0; }
-        catch (e) { console.error('[CRON] processShiftCollaborations: ' + e.message); healthErrors.push('processShiftCollaborations: ' + e.message); }
+          try { collaborationsApproved = (await processShiftCollaborations(env, coreCtx)) ?? 0; }
+          catch (e) { console.error('[CRON] processShiftCollaborations: ' + e.message); healthErrors.push('processShiftCollaborations: ' + e.message); }
 
-        try { handoversGenerated = (await processShiftEnding(env, coreCtx)) ?? 0; }
-        catch (e) { console.error('[CRON] processShiftEnding: ' + e.message); healthErrors.push('processShiftEnding: ' + e.message); }
+          try { handoversGenerated = (await processShiftEnding(env, coreCtx)) ?? 0; }
+          catch (e) { console.error('[CRON] processShiftEnding: ' + e.message); healthErrors.push('processShiftEnding: ' + e.message); }
 
-        try { await runShiftPresenceCheck(env, coreCtx); }
-        catch (e) { console.error('[CRON] runShiftPresenceCheck: ' + e.message); healthErrors.push('runShiftPresenceCheck: ' + e.message); }
+          try { await runShiftPresenceCheck(env, coreCtx); }
+          catch (e) { console.error('[CRON] runShiftPresenceCheck: ' + e.message); healthErrors.push('runShiftPresenceCheck: ' + e.message); }
 
-        if (runValidation) {
+          if (assignmentsMade > 0 || collaborationsApproved > 0 || handoversGenerated > 0) {
+            _agentBumpStats(env, coreCtx.token, 'shift', {
+              assignments: assignmentsMade,
+              collaborations: collaborationsApproved,
+              handovers: handoversGenerated,
+              lastActionAt: new Date().toISOString(),
+            });
+          }
+        }
+
+        if (runValidation && predictiveAgentOn) {
           try { await validatePredictions(env, coreCtx); }
           catch (e) { console.error('[CRON] validatePredictions: ' + e.message); healthErrors.push('validatePredictions: ' + e.message); }
+
+          // GBDT forecast continuous learner: snapshot tomorrow + grade
+          // elapsed days even when no dashboard is open.
+          try { await _runForecastOutcomeCycle(env, coreCtx); }
+          catch (e) { console.error('[CRON] forecastOutcomeCycle: ' + e.message); healthErrors.push('forecastOutcomeCycle: ' + e.message); }
         }
 
         let basePredictiveModel = null;
@@ -5447,11 +5822,13 @@ export default {
           }
         }
 
-        try {
-          await _securityFlushSiemOutbox(env, coreCtx);
-        } catch (e) {
-          console.error('[CRON] securitySiemExport: ' + e.message);
-          healthErrors.push('securitySiemExport: ' + e.message);
+        if (securityAgentOn && _agentSetting(agentControl, 'security', 'siemExport')) {
+          try {
+            await _securityFlushSiemOutbox(env, coreCtx);
+          } catch (e) {
+            console.error('[CRON] securitySiemExport: ' + e.message);
+            healthErrors.push('securitySiemExport: ' + e.message);
+          }
         }
 
         // Capture the final total: blocks accumulated from inter-cron
@@ -5556,9 +5933,12 @@ export default {
     try {
       const coreCtx = await loadCoreData(env);
       await checkEscalations(env, coreCtx);
-      await runAIAssignments(env, coreCtx);
-      await processShiftCollaborations(env, coreCtx);
-      await runShiftPresenceCheck(env, coreCtx);
+      const manualControl = await _loadAgentControl(env, coreCtx.token);
+      if (_agentEnabled(manualControl, 'shift')) {
+        await runAIAssignments(env, coreCtx);
+        await processShiftCollaborations(env, coreCtx);
+        await runShiftPresenceCheck(env, coreCtx);
+      }
     } catch (e) {
       console.error('[MANUAL] Error: ' + e.message);
     }
@@ -5601,6 +5981,11 @@ export {
   suspendAcceptedAssistantAlerts,
   _buildAssistantAlertSuspensionPatch,
   _securityDetectPromptInjection,
+  _agentEnabled,
+  _agentSetting,
+  _assistFillPrompt,
+  _forecastDayKey,
+  _runForecastOutcomeCycle,
   _securityEventToEcsDocument,
   _securityBuildElasticBulkNdjson,
   _securityFlushSiemOutbox,

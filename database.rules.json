@@ -284,16 +284,32 @@
       }
     },
 
-    "ai_lstm": {
+    "ai_agents": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      "$agentId": {
+        "enabled": { ".validate": "newData.isBoolean()" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isString()" },
+        "promptTemplate": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 8000)" },
+        "promptUpdatedAt": { ".validate": "!newData.exists() || newData.isString()" },
+        "logs": {
+          ".indexOn": ["at"]
+        }
+      }
+    },
+
+    "ai_forecast": {
       ".read": "auth != null",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
       "model": {
         "weights": { ".validate": "newData.isString()" },
-        "inputSize": { ".validate": "newData.isNumber()" },
-        "hiddenSize": { ".validate": "newData.isNumber()" },
-        "outputSize": { ".validate": "newData.isNumber()" },
-        "seqLen": { ".validate": "newData.isNumber()" },
+        "algo": { ".validate": "!newData.exists() || newData.isString()" },
+        "featureCount": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "rounds": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "adaptedRounds": { ".validate": "!newData.exists() || newData.isNumber()" },
         "trainedAt": { ".validate": "newData.isString()" },
+        "lastAdaptedAt": { ".validate": "!newData.exists() || newData.isString()" },
+        "version": { ".validate": "!newData.exists() || newData.isNumber()" },
         "datasetName": { ".validate": "!newData.exists() || newData.isString()" },
         "sampleCount": { ".validate": "!newData.exists() || newData.isNumber()" },
         "valLoss": { ".validate": "!newData.exists() || newData.isNumber()" },

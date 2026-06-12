@@ -43,9 +43,20 @@ describe('security database rules', () => {
     expect(bugs.client.$bugId['.write']).toBe('auth != null');
   });
 
-  test('ai_lstm model is world-readable for inference and privileged-write', () => {
-    const lstm = rules.ai_lstm;
-    expect(lstm['.read']).toBe('auth != null');
-    expect(lstm['.write']).toContain("'superadmin'");
+  test('ai_forecast model is world-readable for inference and privileged-write', () => {
+    const forecast = rules.ai_forecast;
+    expect(forecast['.read']).toBe('auth != null');
+    expect(forecast['.write']).toContain("'superadmin'");
+  });
+
+  test('ai_agents fleet controls are app-readable but superadmin/service-token write only', () => {
+    const agents = rules.ai_agents;
+    // Dashboards (PM + learner) read switches; only the console and the
+    // worker service token may flip them.
+    expect(agents['.read']).toBe('auth != null');
+    expect(agents['.write']).toContain("'superadmin'");
+    expect(agents['.write']).toContain("auth.token.role === 'admin'");
+    // Plain app-admin role must not be able to rewrite agent prompts.
+    expect(agents['.write']).not.toContain("child('role').val() === 'admin'");
   });
 });

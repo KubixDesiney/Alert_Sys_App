@@ -116,19 +116,19 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                             decoration: InputDecoration(
                               hintText: 'Search by name, email or plant…',
                               hintStyle: Sa.body(size: 12.5, color: Sa.muted),
-                              prefixIcon: const Icon(Icons.search,
-                                  size: 17, color: Sa.muted),
+                              prefixIcon:
+                                  Icon(Icons.search, size: 17, color: Sa.muted),
                               filled: true,
                               fillColor: Sa.bgRaised.withValues(alpha: 0.7),
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 11),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Sa.border),
+                                borderSide: BorderSide(color: Sa.border),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Sa.cyan),
+                                borderSide: BorderSide(color: Sa.cyan),
                               ),
                             ),
                           ),
@@ -143,8 +143,8 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                     ),
                     const SizedBox(height: 16),
                     if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 40),
                         child: Center(
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5, color: Sa.blue),
@@ -158,8 +158,8 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                         accent: Sa.red,
                       )
                     else if (_filtered.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
                         child: SaEmptyState(
                           icon: Icons.badge_outlined,
                           title: 'No Production Managers yet',
@@ -230,7 +230,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
         backgroundColor: Sa.panelSolid,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Sa.border),
+          side: BorderSide(color: Sa.border),
         ),
         title: Text('Revoke $name?', style: Sa.heading(size: 16)),
         content: Text(
@@ -274,7 +274,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
           backgroundColor: Sa.panelSolid,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
-            side: const BorderSide(color: Sa.borderBright),
+            side: BorderSide(color: Sa.borderBright),
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),
@@ -341,11 +341,11 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                         fillColor: Sa.bgRaised.withValues(alpha: 0.7),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Sa.border),
+                          borderSide: BorderSide(color: Sa.border),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Sa.cyan),
+                          borderSide: BorderSide(color: Sa.cyan),
                         ),
                       ),
                       items: [
@@ -486,7 +486,7 @@ class _ManagerCard extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Sa.blue, Sa.violet]),
+              gradient: LinearGradient(colors: [Sa.blue, Sa.violet]),
               borderRadius: BorderRadius.circular(12),
             ),
             alignment: Alignment.center,
@@ -530,13 +530,12 @@ class _ManagerCard extends StatelessWidget {
           IconButton(
             tooltip: 'Send password reset',
             onPressed: onResetPassword,
-            icon: const Icon(Icons.lock_reset, size: 18, color: Sa.amber),
+            icon: Icon(Icons.lock_reset, size: 18, color: Sa.amber),
           ),
           IconButton(
             tooltip: 'Revoke access',
             onPressed: onDelete,
-            icon:
-                const Icon(Icons.delete_outline, size: 18, color: Sa.red),
+            icon: Icon(Icons.delete_outline, size: 18, color: Sa.red),
           ),
         ],
       ),
