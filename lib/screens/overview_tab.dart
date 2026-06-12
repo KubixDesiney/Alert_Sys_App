@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import '../../models/alert_model.dart';
 import '../../models/hierarchy_model.dart';
 import '../../services/alert_pdf_service.dart';
+import '../../services/forecast/forecast_overview_engine.dart';
 import '../../services/predictive_intel_service.dart';
 import '../../services/service_locator.dart';
 import '../../theme.dart';
 import '../../widgets/overview/ai_morning_briefing_hero.dart';
 import '../../widgets/overview/overview_critical_alerts_card.dart';
-import '../../widgets/overview/overview_lstm_forecast_card.dart';
 import '../../widgets/overview/overview_predictive_failure_card.dart';
 import '../../widgets/overview/overview_predictive_heatmap.dart';
 import '../../widgets/overview/overview_stat_card.dart';
@@ -407,6 +407,10 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   bool _briefingWarmed = false;
   bool _predictionsWarmed = false;
 
+  // On-device AI forecasts: once the SuperAdmin deploys a model, this
+  // engine's overlay replaces the statistical model inside the Predictive
+  // Failure Alerts and Predictive Risk cards.
+  final ForecastOverviewEngine _forecastEngine = ForecastOverviewEngine();
 
   @override
   void initState() {
@@ -415,6 +419,12 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     _loadFactories();
     _bindPredictiveStreams();
     _warmPredictiveCaches();
+    _forecastEngine.addListener(_onForecastEngineChanged);
+    _forecastEngine.updateAlerts(widget.allAlerts);
+  }
+
+  void _onForecastEngineChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -422,6 +432,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     _briefSub?.cancel();
     _predSub?.cancel();
     _accSub?.cancel();
+    _forecastEngine.removeListener(_onForecastEngineChanged);
+    _forecastEngine.dispose();
     super.dispose();
   }
 
@@ -435,6 +447,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     if (oldWidget.selectedUsine != widget.selectedUsine) {
       _rebindFactoryScopedIntelStreams();
     }
+    _forecastEngine.updateAlerts(widget.allAlerts);
   }
 
   void _rebindFactoryScopedIntelStreams() {
@@ -979,18 +992,24 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           onExportPdf: _exportFilteredAlertsPdf,
         );
 
+        // The deployed AI forecaster takes over both predictive cards; the
+        // statistical model remains the fallback until a model is deployed
+        // (or when the current scope has no machine forecasts yet).
+        final forecastOverlay =
+            _forecastEngine.overlayFor(widget.selectedUsine, scopedPreds);
+        final effectivePreds = forecastOverlay ?? scopedPreds;
+        final forecastLive = forecastOverlay != null;
+
         final failureCard = PredictiveFailureCard(
           accuracy: _accuracy,
-          model: scopedPreds,
+          model: effectivePreds,
+          forecastLive: forecastLive,
           describeType: (type) => adminTypeLabel(context, type),
-        );
-        final lstmCard = LstmForecastCard(
-          alerts: widget.allAlerts,
-          selectedUsine: widget.selectedUsine,
         );
         final riskCard = PredictiveRiskHeatmap(
           stats: ts,
-          model: scopedPreds,
+          model: effectivePreds,
+          forecastLive: forecastLive,
           activeFilter: _historyFilter,
           onTap: _setHistoryFilter,
         );
@@ -1048,8 +1067,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
-              lstmCard,
               critical,
             ],
           );
@@ -1070,8 +1087,6 @@ class _OverviewTabState extends State<AdminOverviewTab> {
               SizedBox(height: 520, child: historyBox),
               const SizedBox(height: 14),
               riskCard,
-              const SizedBox(height: 14),
-              lstmCard,
               critical,
             ],
           );

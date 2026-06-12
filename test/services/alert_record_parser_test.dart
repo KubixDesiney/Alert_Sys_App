@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:alertsysapp/services/lstm/alert_record_parser.dart';
+import 'package:alertsysapp/services/forecast/alert_record_parser.dart';
 
 void main() {
   group('AlertRecordParser CSV', () {

@@ -133,9 +133,7 @@ class _BugsSection extends StatefulWidget {
 
 class _BugsSectionState extends State<_BugsSection> {
   StreamSubscription<DatabaseEvent>? _clientSub;
-  StreamSubscription<DatabaseEvent>? _agentSub;
   List<Map<String, dynamic>> _clientBugs = const [];
-  List<Map<String, dynamic>> _agentRuns = const [];
   String? _error;
   String _statusFilter = 'all';
 
@@ -165,32 +163,11 @@ class _BugsSectionState extends State<_BugsSection> {
     }, onError: (e) {
       if (mounted) setState(() => _error = '$e');
     });
-    _agentSub = FirebaseDatabase.instance
-        .ref('bugs/agent')
-        .limitToLast(40)
-        .onValue
-        .listen((event) {
-      final v = event.snapshot.value;
-      final list = <Map<String, dynamic>>[];
-      if (v is Map) {
-        v.forEach((k, val) {
-          if (val is Map) {
-            final m = Map<String, dynamic>.from(val);
-            m['id'] = k.toString();
-            list.add(m);
-          }
-        });
-        list.sort(
-            (a, b) => (b['at'] ?? '').toString().compareTo((a['at'] ?? '').toString()));
-      }
-      if (mounted) setState(() => _agentRuns = list);
-    }, onError: (_) {});
   }
 
   @override
   void dispose() {
     _clientSub?.cancel();
-    _agentSub?.cancel();
     super.dispose();
   }
 
@@ -262,8 +239,8 @@ class _BugsSectionState extends State<_BugsSection> {
                         accent: Sa.red,
                       )
                     else if (_filtered.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 30),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 30),
                         child: SaEmptyState(
                           icon: Icons.verified_outlined,
                           title: 'No bugs on record',
@@ -274,30 +251,6 @@ class _BugsSectionState extends State<_BugsSection> {
                       )
                     else
                       ..._filtered.map((b) => _BugCard(bug: b)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              GlassPanel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SaSectionHeader(
-                      icon: Icons.smart_toy_outlined,
-                      title: 'AUTONOMOUS AGENT RUNS',
-                      subtitle:
-                          'Hourly self-healing sweeps: probes production, generates fixes, ships or escalates to GitHub.',
-                      accent: Sa.violet,
-                    ),
-                    const SizedBox(height: 12),
-                    if (_agentRuns.isEmpty)
-                      Text(
-                        'No agent runs recorded yet. Runs appear here once the '
-                        'autonomous bug-fix workflow executes with RTDB reporting enabled.',
-                        style: Sa.body(size: 12, color: Sa.textDim),
-                      )
-                    else
-                      ..._agentRuns.take(20).map((r) => _AgentRunRow(run: r)),
                   ],
                 ),
               ),
@@ -320,17 +273,17 @@ class _BugCard extends StatefulWidget {
 class _BugCardState extends State<_BugCard> {
   bool _expanded = false;
 
-  static const _areaColors = {
-    'auth': Sa.amber,
-    'notifications': Sa.cyan,
-    'database': Sa.red,
-    'locator': Sa.blue,
-    'supervisors': Sa.violet,
-    'voice': Sa.pink,
-    'shifts': Sa.green,
-    'ai': Sa.violet,
-    'app': Sa.muted,
-  };
+  static Map<String, Color> get _areaColors => {
+        'auth': Sa.amber,
+        'notifications': Sa.cyan,
+        'database': Sa.red,
+        'locator': Sa.blue,
+        'supervisors': Sa.violet,
+        'voice': Sa.pink,
+        'shifts': Sa.green,
+        'ai': Sa.violet,
+        'app': Sa.muted,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -414,7 +367,7 @@ class _BugCardState extends State<_BugCard> {
                   TextButton.icon(
                     onPressed: () =>
                         launchUrl(Uri.parse(issueUrl), mode: LaunchMode.externalApplication),
-                    icon: const Icon(Icons.open_in_new, size: 13, color: Sa.cyan),
+                    icon: Icon(Icons.open_in_new, size: 13, color: Sa.cyan),
                     label: Text('Open GitHub issue',
                         style: Sa.mono(size: 10.5, color: Sa.cyan)),
                   ),
@@ -428,92 +381,23 @@ class _BugCardState extends State<_BugCard> {
   }
 }
 
-class _AgentRunRow extends StatelessWidget {
-  final Map<String, dynamic> run;
-  const _AgentRunRow({required this.run});
-
-  @override
-  Widget build(BuildContext context) {
-    final status = (run['status'] ?? '').toString();
-    final (color, label) = switch (status) {
-      'ai_fixed' => (Sa.green, 'AI FIXED & DEPLOYED'),
-      'escalated' => (Sa.red, 'ESCALATED TO GITHUB'),
-      'clean' => (Sa.cyan, 'NO ISSUES FOUND'),
-      'rejected' => (Sa.amber, 'FIX REJECTED'),
-      _ => (Sa.muted, status.toUpperCase()),
-    };
-    final issues = run['issues'];
-    final issueText = issues is List
-        ? issues.map((e) => e.toString()).join(' · ')
-        : (run['summary'] ?? '').toString();
-    final issueUrl = (run['issueUrl'] ?? '').toString();
-    final commit = (run['commit'] ?? '').toString();
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Sa.bgRaised.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Sa.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 150,
-            child:
-                Text(label, style: Sa.mono(size: 9.5, color: color, weight: FontWeight.w700)),
-          ),
-          Expanded(
-            child: Text(
-              issueText.isEmpty ? '—' : issueText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Sa.body(size: 11.5, color: Sa.textDim),
-            ),
-          ),
-          if (commit.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            Text(commit.length > 7 ? commit.substring(0, 7) : commit,
-                style: Sa.mono(size: 9.5, color: Sa.green)),
-          ],
-          if (issueUrl.isNotEmpty)
-            IconButton(
-              tooltip: 'Open GitHub issue',
-              onPressed: () => launchUrl(Uri.parse(issueUrl),
-                  mode: LaunchMode.externalApplication),
-              icon: const Icon(Icons.open_in_new, size: 13, color: Sa.cyan),
-            ),
-          const SizedBox(width: 8),
-          Text(_shortTime(run['at']), style: Sa.mono(size: 9.5, color: Sa.muted)),
-        ],
-      ),
-    );
-  }
-}
-
 class _MonoBlock extends StatelessWidget {
   final String text;
   const _MonoBlock({required this.text});
 
   @override
   Widget build(BuildContext context) {
+    // Terminal block: stays dark in both themes for log readability.
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF030911),
+        color: Sa.termBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Sa.border),
+        border: Border.all(color: Sa.termBorder),
       ),
       child: SelectableText(text,
-          style: Sa.mono(size: 10, color: Sa.textDim), maxLines: 14),
+          style: Sa.mono(size: 10, color: Sa.termDim), maxLines: 14),
     );
   }
 }
@@ -556,11 +440,13 @@ class _ConsoleSectionState extends State<_ConsoleSection> {
     super.dispose();
   }
 
+  // Fixed bright colors: console lines render on the dark terminal surface
+  // in both themes.
   static const _levelColors = {
-    'ERROR': Sa.red,
-    'WARN': Sa.amber,
-    'INFO': Sa.blue,
-    'DEBUG': Sa.muted,
+    'ERROR': Color(0xFFF87171),
+    'WARN': Color(0xFFFBBF24),
+    'INFO': Color(0xFF3B82F6),
+    'DEBUG': Color(0xFF64748B),
   };
 
   @override
@@ -583,7 +469,7 @@ class _ConsoleSectionState extends State<_ConsoleSection> {
               accent: Sa.cyan,
               trailing: TextButton.icon(
                 onPressed: () => AppLogBuffer.instance.clear(),
-                icon: const Icon(Icons.delete_sweep_outlined,
+                icon: Icon(Icons.delete_sweep_outlined,
                     size: 15, color: Sa.muted),
                 label:
                     Text('CLEAR', style: Sa.mono(size: 10, color: Sa.muted)),
@@ -610,18 +496,18 @@ class _ConsoleSectionState extends State<_ConsoleSection> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF020710),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Sa.border),
+                  border: Border.all(color: Sa.termBorder),
                 ),
                 child: filtered.isEmpty
                     ? Center(
                         child: Text('— console buffer empty —',
-                            style: Sa.mono(size: 11, color: Sa.muted)))
+                            style: Sa.mono(size: 11, color: Sa.termMuted)))
                     : ListView.builder(
                         controller: _scroll,
                         itemCount: filtered.length,
                         itemBuilder: (_, i) {
                           final e = filtered[i];
-                          final color = _levelColors[e.level] ?? Sa.textDim;
+                          final color = _levelColors[e.level] ?? Sa.termDim;
                           final hh = e.at.hour.toString().padLeft(2, '0');
                           final mm = e.at.minute.toString().padLeft(2, '0');
                           final ss = e.at.second.toString().padLeft(2, '0');
@@ -632,8 +518,8 @@ class _ConsoleSectionState extends State<_ConsoleSection> {
                                 children: [
                                   TextSpan(
                                       text: '[$hh:$mm:$ss] ',
-                                      style:
-                                          Sa.mono(size: 10.5, color: Sa.muted)),
+                                      style: Sa.mono(
+                                          size: 10.5, color: Sa.termMuted)),
                                   TextSpan(
                                       text: '[${e.level}] ',
                                       style: Sa.mono(
@@ -643,7 +529,7 @@ class _ConsoleSectionState extends State<_ConsoleSection> {
                                   TextSpan(
                                       text: e.message,
                                       style: Sa.mono(
-                                          size: 10.5, color: Sa.text)),
+                                          size: 10.5, color: Sa.termText)),
                                   if (e.error != null)
                                     TextSpan(
                                         text: '  ⟵ ${e.error}',
@@ -726,16 +612,16 @@ class _SecuritySectionState extends State<_SecuritySection> {
     super.dispose();
   }
 
-  static const _kindColors = {
-    'rate_limit': Sa.amber,
-    'prompt_injection': Sa.red,
-    'blocked': Sa.red,
-    'sanitize': Sa.amber,
-    'alert_flood': Sa.red,
-    'malformed_alerts': Sa.amber,
-    'notification_backlog': Sa.blue,
-    'auth_surge': Sa.violet,
-  };
+  static Map<String, Color> get _kindColors => {
+        'rate_limit': Sa.amber,
+        'prompt_injection': Sa.red,
+        'blocked': Sa.red,
+        'sanitize': Sa.amber,
+        'alert_flood': Sa.red,
+        'malformed_alerts': Sa.amber,
+        'notification_backlog': Sa.blue,
+        'auth_surge': Sa.violet,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -971,7 +857,7 @@ class _CronHealthSectionState extends State<_CronHealthSection> {
                 ('collaborations', 'Collaborations'),
                 ('handovers', 'Handovers'),
                 ('securityActions', 'Security actions'),
-                ('lstmPredictions', 'LSTM predictions'),
+                ('lstmPredictions', 'Edge forecasts'),
                 ('errorCount', 'Errors'),
               ],
             );
@@ -1165,17 +1051,30 @@ class _DatabaseSection extends StatefulWidget {
 class _DatabaseSectionState extends State<_DatabaseSection>
     with SingleTickerProviderStateMixin {
   late final AnimationController _anim;
+  final ValueNotifier<double> _tick = ValueNotifier<double>(0);
+  int _lastFrameMs = 0;
   final Map<String, int?> _counts = {};
   final Map<String, bool> _reachable = {};
   bool _probing = false;
   DateTime? _probedAt;
 
-  static const _domainColors = {
-    'operations': Sa.cyan,
-    'people': Sa.blue,
-    'ai': Sa.violet,
-    'coordination': Sa.green,
-    'platform': Sa.amber,
+  // Theme-aware colors for chips and stat tiles on the glass panel.
+  static Map<String, Color> get _domainColors => {
+        'operations': Sa.cyan,
+        'people': Sa.blue,
+        'ai': Sa.violet,
+        'coordination': Sa.green,
+        'platform': Sa.amber,
+      };
+
+  // Fixed bright colors for the map itself — it paints on the dark terminal
+  // surface in both themes.
+  static const _mapColors = {
+    'operations': Color(0xFF22D3EE),
+    'people': Color(0xFF3B82F6),
+    'ai': Color(0xFFA78BFA),
+    'coordination': Color(0xFF34D399),
+    'platform': Color(0xFFFBBF24),
   };
 
   // Hand-placed conceptual layout, grouped by domain.
@@ -1193,7 +1092,7 @@ class _DatabaseSectionState extends State<_DatabaseSection>
     _DbNodeSpec('shift_presence', 'shift_presence', 'coordination', 0.74, 0.84),
     _DbNodeSpec('ai_decisions', 'ai_decisions', 'ai', 0.62, 0.18),
     _DbNodeSpec('ai_predictions', 'ai_predictions', 'ai', 0.74, 0.38),
-    _DbNodeSpec('ai_lstm', 'ai_lstm', 'ai', 0.88, 0.20),
+    _DbNodeSpec('ai_forecast', 'ai_forecast', 'ai', 0.88, 0.20),
     _DbNodeSpec('ai_briefing', 'ai_briefing', 'ai', 0.86, 0.54),
     _DbNodeSpec('security/logs', 'security', 'platform', 0.90, 0.76),
     _DbNodeSpec('workers/health', 'worker_health', 'platform', 0.74, 0.10),
@@ -1214,7 +1113,7 @@ class _DatabaseSectionState extends State<_DatabaseSection>
     ('shifts', 'shift_presence'),
     ('alerts', 'ai_decisions'),
     ('ai_decisions', 'ai_predictions'),
-    ('ai_lstm', 'ai_predictions'),
+    ('ai_forecast', 'ai_predictions'),
     ('ai_predictions', 'ai_briefing'),
     ('workers/health', 'ai_decisions'),
     ('workers/health', 'security/logs'),
@@ -1226,13 +1125,24 @@ class _DatabaseSectionState extends State<_DatabaseSection>
     super.initState();
     _anim =
         AnimationController(vsync: this, duration: const Duration(seconds: 24))
+          ..addListener(_onFrame)
           ..repeat();
     _probe();
+  }
+
+  void _onFrame() {
+    // Cap the map animation at ~25fps; the drift is slow enough that this is
+    // visually identical while keeping the tab light.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastFrameMs < 40) return;
+    _lastFrameMs = now;
+    _tick.value = _anim.value;
   }
 
   @override
   void dispose() {
     _anim.dispose();
+    _tick.dispose();
     super.dispose();
   }
 
@@ -1328,23 +1238,20 @@ class _DatabaseSectionState extends State<_DatabaseSection>
                     child: Container(
                       height: height,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF030911),
-                        border: Border.all(color: Sa.border),
+                        color: Sa.termBg,
+                        border: Border.all(color: Sa.termBorder),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: RepaintBoundary(
-                        child: AnimatedBuilder(
-                          animation: _anim,
-                          builder: (_, __) => CustomPaint(
-                            size: Size.infinite,
-                            painter: _SchemaPainter(
-                              t: _anim.value,
-                              nodes: _nodes,
-                              edges: _edges,
-                              counts: _counts,
-                              reachable: _reachable,
-                              domainColors: _domainColors,
-                            ),
+                        child: CustomPaint(
+                          size: Size.infinite,
+                          painter: _SchemaPainter(
+                            tick: _tick,
+                            nodes: _nodes,
+                            edges: _edges,
+                            counts: _counts,
+                            reachable: _reachable,
+                            domainColors: _mapColors,
                           ),
                         ),
                       ),
@@ -1381,7 +1288,7 @@ class _DatabaseSectionState extends State<_DatabaseSection>
 }
 
 class _SchemaPainter extends CustomPainter {
-  final double t;
+  final ValueNotifier<double> tick;
   final List<_DbNodeSpec> nodes;
   final List<(String, String)> edges;
   final Map<String, int?> counts;
@@ -1389,13 +1296,15 @@ class _SchemaPainter extends CustomPainter {
   final Map<String, Color> domainColors;
 
   _SchemaPainter({
-    required this.t,
+    required this.tick,
     required this.nodes,
     required this.edges,
     required this.counts,
     required this.reachable,
     required this.domainColors,
-  });
+  }) : super(repaint: tick);
+
+  double get t => tick.value;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1423,14 +1332,14 @@ class _SchemaPainter extends CustomPainter {
       );
       final pulseT = (t * 2 + (a.hashCode % 17) / 17) % 1.0;
       final pulsePos = Offset.lerp(pa, pb, pulseT)!;
-      canvas.drawCircle(
-          pulsePos, 2, Paint()..color = Sa.cyan.withValues(alpha: 0.55));
+      canvas.drawCircle(pulsePos, 2,
+          Paint()..color = const Color(0xFF22D3EE).withValues(alpha: 0.55));
     }
 
-    // Nodes.
+    // Nodes (always on the dark terminal surface; fixed bright colors).
     for (final n in nodes) {
       final p = pos[n.path]!;
-      final color = domainColors[n.domain] ?? Sa.cyan;
+      final color = domainColors[n.domain] ?? const Color(0xFF22D3EE);
       final ok = reachable[n.path] == true;
       final count = counts[n.path];
 
@@ -1451,7 +1360,8 @@ class _SchemaPainter extends CustomPainter {
         p,
         14,
         Paint()
-          ..color = ok ? color : Sa.muted.withValues(alpha: 0.6)
+          ..color =
+              ok ? color : const Color(0xFF64748B).withValues(alpha: 0.6)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.4,
       );
@@ -1460,13 +1370,14 @@ class _SchemaPainter extends CustomPainter {
       canvas.drawCircle(
         p + const Offset(10, -10),
         3.2,
-        Paint()..color = ok ? Sa.green : Sa.muted,
+        Paint()
+          ..color = ok ? const Color(0xFF34D399) : const Color(0xFF64748B),
       );
 
       _text(canvas, n.label, p + const Offset(0, 22), color, 10,
           FontWeight.w600);
       if (count != null) {
-        _text(canvas, '$count', p, Sa.text, 9, FontWeight.w700);
+        _text(canvas, '$count', p, Sa.termText, 9, FontWeight.w700);
       }
     }
   }

@@ -11,10 +11,16 @@ class PredictiveFailureCard extends StatefulWidget {
   final PredictiveModel? model;
   final String Function(String) describeType;
   final PredictiveAccuracy? accuracy;
+
+  /// True when [model] carries on-device machine-learning forecasts instead
+  /// of the statistical edge model — switches the source badge and subtitle.
+  final bool forecastLive;
+
   const PredictiveFailureCard({
     required this.model,
     required this.describeType,
     this.accuracy,
+    this.forecastLive = false,
   });
 
   @override
@@ -128,7 +134,9 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                       Text(
                         widget.model == null
                             ? 'Edge model warming up — first inference within 60s.'
-                            : 'Top probable next failures · trained on last ${widget.model!.predictions.isEmpty ? 30 : 30}d',
+                            : widget.forecastLive
+                                ? 'Top probable next failures · on-device AI forecaster · next 24h'
+                                : 'Top probable next failures · trained on last 30d',
                         style: TextStyle(
                           fontSize: 11.5,
                           color: theme.muted,
@@ -138,7 +146,11 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                     ],
                   ),
                 ),
-                if (widget.accuracy != null &&
+                // The validated-accuracy badge measures the statistical edge
+                // model; it does not describe the AI forecaster, so it hides
+                // when the live forecasts take over.
+                if (!widget.forecastLive &&
+                    widget.accuracy != null &&
                     widget.accuracy!.totalSnapshots > 0)
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
@@ -173,7 +185,11 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                     decoration: BoxDecoration(
                       color: theme.card,
                       borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: theme.border),
+                      border: Border.all(
+                        color: widget.forecastLive
+                            ? theme.purple.withValues(alpha: 0.45)
+                            : theme.border,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -194,11 +210,13 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          'LIVE',
+                          widget.forecastLive ? 'AI · LIVE' : 'LIVE',
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
-                            color: theme.text,
+                            color: widget.forecastLive
+                                ? theme.purple
+                                : theme.text,
                             letterSpacing: 1.1,
                           ),
                         ),

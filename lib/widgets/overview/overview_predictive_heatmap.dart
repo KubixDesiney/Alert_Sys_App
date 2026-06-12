@@ -11,11 +11,17 @@ class PredictiveRiskHeatmap extends StatelessWidget {
   final PredictiveModel? model;
   final String? activeFilter;
   final void Function(String) onTap;
+
+  /// True when [model] carries on-device machine-learning forecasts instead
+  /// of the statistical edge model — switches the source badge and subtitle.
+  final bool forecastLive;
+
   const PredictiveRiskHeatmap({
     required this.stats,
     required this.model,
     required this.activeFilter,
     required this.onTap,
+    this.forecastLive = false,
   });
 
   @override
@@ -67,7 +73,9 @@ class PredictiveRiskHeatmap extends StatelessWidget {
                     Text(
                       model == null
                           ? 'Awaiting first model from edge inference…'
-                          : 'Probability per 2h window · tap row to filter history',
+                          : forecastLive
+                              ? 'On-device AI forecaster · probability per 2h window · tap row to filter'
+                              : 'Probability per 2h window · tap row to filter history',
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.muted,
@@ -85,10 +93,16 @@ class PredictiveRiskHeatmap extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.bolt_rounded, size: 11, color: theme.purple),
+                    Icon(
+                      forecastLive
+                          ? Icons.psychology_outlined
+                          : Icons.bolt_rounded,
+                      size: 11,
+                      color: theme.purple,
+                    ),
                     const SizedBox(width: 3),
                     Text(
-                      'ML',
+                      forecastLive ? 'AI' : 'ML',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,

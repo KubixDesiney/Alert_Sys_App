@@ -3,59 +3,187 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Design tokens for the SuperAdmin command console.
+/// One full color set for the command center. Two instances exist — deep-space
+/// dark and arctic light — and [Sa] points at whichever the operator picked.
+class SaPalette {
+  final bool isDark;
+  final Color bg;
+  final Color bgRaised;
+  final Color panel;
+  final Color panelSolid;
+  final Color border;
+  final Color borderBright;
+  final Color cyan;
+  final Color blue;
+  final Color violet;
+  final Color green;
+  final Color amber;
+  final Color red;
+  final Color pink;
+  final Color text;
+  final Color textDim;
+  final Color muted;
+
+  /// Foreground used on accent-filled surfaces (gradient buttons, logo tile).
+  final Color onAccent;
+
+  /// Drop shadow under panels.
+  final Color shadow;
+
+  const SaPalette({
+    required this.isDark,
+    required this.bg,
+    required this.bgRaised,
+    required this.panel,
+    required this.panelSolid,
+    required this.border,
+    required this.borderBright,
+    required this.cyan,
+    required this.blue,
+    required this.violet,
+    required this.green,
+    required this.amber,
+    required this.red,
+    required this.pink,
+    required this.text,
+    required this.textDim,
+    required this.muted,
+    required this.onAccent,
+    required this.shadow,
+  });
+}
+
+/// Design tokens for the SuperAdmin command center.
 ///
-/// The console is intentionally always-dark: a deep-space navy command-center
-/// look built on the same brand blues as the rest of Smart Industrial Alert,
-/// with cyan/violet accents for AI surfaces.
+/// The console follows the app-wide theme: a deep-space navy command-center
+/// look in dark mode and an arctic glass variant in light mode, built on the
+/// same brand blues as the rest of Smart Industrial Alert with cyan/violet
+/// accents for AI surfaces. Call [Sa.setDark] before building the console
+/// subtree; every token below resolves against the active palette.
 class Sa {
   Sa._();
 
-  static const Color bg = Color(0xFF040A18);
-  static const Color bgRaised = Color(0xFF081127);
-  static const Color panel = Color(0xC00B1530);
-  static const Color panelSolid = Color(0xFF0B1530);
-  static const Color border = Color(0xFF1B2A4A);
-  static const Color borderBright = Color(0xFF2C4370);
+  static const SaPalette darkPalette = SaPalette(
+    isDark: true,
+    bg: Color(0xFF040A18),
+    bgRaised: Color(0xFF081127),
+    panel: Color(0xC00B1530),
+    panelSolid: Color(0xFF0B1530),
+    border: Color(0xFF1B2A4A),
+    borderBright: Color(0xFF2C4370),
+    cyan: Color(0xFF22D3EE),
+    blue: Color(0xFF3B82F6),
+    violet: Color(0xFFA78BFA),
+    green: Color(0xFF34D399),
+    amber: Color(0xFFFBBF24),
+    red: Color(0xFFF87171),
+    pink: Color(0xFFF472B6),
+    text: Color(0xFFE2E8F0),
+    textDim: Color(0xFF94A3B8),
+    muted: Color(0xFF64748B),
+    onAccent: Color(0xFF03101F),
+    shadow: Color(0x66000000),
+  );
 
-  static const Color cyan = Color(0xFF22D3EE);
-  static const Color blue = Color(0xFF3B82F6);
-  static const Color violet = Color(0xFFA78BFA);
-  static const Color green = Color(0xFF34D399);
-  static const Color amber = Color(0xFFFBBF24);
-  static const Color red = Color(0xFFF87171);
-  static const Color pink = Color(0xFFF472B6);
+  static const SaPalette lightPalette = SaPalette(
+    isDark: false,
+    bg: Color(0xFFEDF2FA),
+    bgRaised: Color(0xFFF7FAFF),
+    panel: Color(0xE6FFFFFF),
+    panelSolid: Color(0xFFFFFFFF),
+    border: Color(0xFFD4DEF0),
+    borderBright: Color(0xFFB4C5E4),
+    cyan: Color(0xFF0E7490),
+    blue: Color(0xFF2563EB),
+    violet: Color(0xFF7C3AED),
+    green: Color(0xFF047857),
+    amber: Color(0xFFB45309),
+    red: Color(0xFFDC2626),
+    pink: Color(0xFFDB2777),
+    text: Color(0xFF14233E),
+    textDim: Color(0xFF4A5C7A),
+    muted: Color(0xFF7787A3),
+    onAccent: Color(0xFFFFFFFF),
+    shadow: Color(0x1F35538A),
+  );
 
-  static const Color text = Color(0xFFE2E8F0);
-  static const Color textDim = Color(0xFF94A3B8);
-  static const Color muted = Color(0xFF64748B);
+  static SaPalette _p = darkPalette;
 
-  static TextStyle display({double size = 22, Color color = text}) =>
+  static SaPalette get palette => _p;
+  static bool get isDark => _p.isDark;
+
+  /// Points the console tokens at the dark or light palette. Idempotent and
+  /// cheap — called from the dashboard build whenever the app theme changes.
+  static void setDark(bool dark) {
+    _p = dark ? darkPalette : lightPalette;
+  }
+
+  static Color get bg => _p.bg;
+  static Color get bgRaised => _p.bgRaised;
+  static Color get panel => _p.panel;
+  static Color get panelSolid => _p.panelSolid;
+  static Color get border => _p.border;
+  static Color get borderBright => _p.borderBright;
+  static Color get cyan => _p.cyan;
+  static Color get blue => _p.blue;
+  static Color get violet => _p.violet;
+  static Color get green => _p.green;
+  static Color get amber => _p.amber;
+  static Color get red => _p.red;
+  static Color get pink => _p.pink;
+  static Color get text => _p.text;
+  static Color get textDim => _p.textDim;
+  static Color get muted => _p.muted;
+  static Color get onAccent => _p.onAccent;
+  static Color get shadow => _p.shadow;
+
+  // Terminal surfaces (console viewer, raw JSON, schema map) intentionally
+  // stay dark in both themes — light-on-dark monospace is the readable
+  // convention for logs.
+  static const Color termBg = Color(0xFF030911);
+  static const Color termBorder = Color(0xFF1B2A4A);
+  static const Color termText = Color(0xFFE2E8F0);
+  static const Color termDim = Color(0xFF94A3B8);
+  static const Color termMuted = Color(0xFF64748B);
+
+  static TextStyle display({double size = 22, Color? color}) =>
       GoogleFonts.orbitron(
         fontSize: size,
         fontWeight: FontWeight.w700,
-        color: color,
+        color: color ?? _p.text,
         letterSpacing: 1.2,
       );
 
-  static TextStyle heading({double size = 15, Color color = text}) =>
+  static TextStyle heading({double size = 15, Color? color}) =>
       GoogleFonts.rajdhani(
         fontSize: size,
         fontWeight: FontWeight.w700,
-        color: color,
+        color: color ?? _p.text,
         letterSpacing: 0.8,
       );
 
-  static TextStyle body({double size = 13, Color color = text, FontWeight weight = FontWeight.w400}) =>
-      TextStyle(fontSize: size, color: color, fontWeight: weight, height: 1.4);
+  static TextStyle body(
+          {double size = 13,
+          Color? color,
+          FontWeight weight = FontWeight.w400}) =>
+      TextStyle(
+          fontSize: size,
+          color: color ?? _p.text,
+          fontWeight: weight,
+          height: 1.4);
 
-  static TextStyle mono({double size = 12, Color color = text, FontWeight weight = FontWeight.w500}) =>
-      GoogleFonts.jetBrainsMono(fontSize: size, color: color, fontWeight: weight);
+  static TextStyle mono(
+          {double size = 12,
+          Color? color,
+          FontWeight weight = FontWeight.w500}) =>
+      GoogleFonts.jetBrainsMono(
+          fontSize: size, color: color ?? _p.text, fontWeight: weight);
 }
 
 /// Animated neural-mesh background: drifting nodes joined by proximity links
-/// with pulses travelling along them. Pure vector motion graphics, wrapped in
-/// a RepaintBoundary so it never invalidates the content above it.
+/// with pulses travelling along them. Pure vector motion graphics, painted at
+/// a capped ~30fps behind a RepaintBoundary so it never invalidates the
+/// content above it and never causes layout work.
 class NeuralBackground extends StatefulWidget {
   final Widget child;
   const NeuralBackground({super.key, required this.child});
@@ -67,43 +195,56 @@ class NeuralBackground extends StatefulWidget {
 class _NeuralBackgroundState extends State<NeuralBackground>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  final ValueNotifier<double> _tick = ValueNotifier<double>(0);
+  int _lastFrameMs = 0;
 
   @override
   void initState() {
     super.initState();
     _controller =
-        AnimationController(vsync: this, duration: const Duration(seconds: 60))
+        AnimationController(vsync: this, duration: const Duration(seconds: 90))
+          ..addListener(_onFrame)
           ..repeat();
+  }
+
+  void _onFrame() {
+    // Cap the mesh at ~30fps — indistinguishable for slow drift, halves the
+    // raster cost so foreground charts and transitions stay fluid.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastFrameMs < 33) return;
+    _lastFrameMs = now;
+    _tick.value = _controller.value;
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _tick.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Sa.isDark;
     return Stack(
       fit: StackFit.expand,
       children: [
-        const DecoratedBox(
+        DecoratedBox(
           decoration: BoxDecoration(
             gradient: RadialGradient(
-              center: Alignment(-0.6, -0.9),
+              center: const Alignment(-0.6, -0.9),
               radius: 1.6,
-              colors: [Color(0xFF0A1A38), Sa.bg],
+              colors: isDark
+                  ? const [Color(0xFF0A1A38), Color(0xFF040A18)]
+                  : const [Color(0xFFFDFEFF), Color(0xFFE7EEF9)],
             ),
           ),
         ),
         RepaintBoundary(
           child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (_, __) => CustomPaint(
-                painter: _NeuralPainter(_controller.value),
-                size: Size.infinite,
-              ),
+            child: CustomPaint(
+              painter: _NeuralPainter(tick: _tick, isDark: isDark),
+              size: Size.infinite,
             ),
           ),
         ),
@@ -114,10 +255,13 @@ class _NeuralBackgroundState extends State<NeuralBackground>
 }
 
 class _NeuralPainter extends CustomPainter {
-  final double t;
-  _NeuralPainter(this.t);
+  final ValueNotifier<double> tick;
+  final bool isDark;
 
-  static const int _nodeCount = 42;
+  _NeuralPainter({required this.tick, required this.isDark})
+      : super(repaint: tick);
+
+  static const int _nodeCount = 38;
   static final List<_NodeSeed> _seeds = List.generate(
     _nodeCount,
     (i) {
@@ -136,11 +280,19 @@ class _NeuralPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final t = tick.value;
     final angle = t * math.pi * 2;
+    // Light mode keeps the mesh whisper-quiet so content contrast stays high.
+    final dim = isDark ? 1.0 : 0.45;
+    final nodeColor = isDark ? const Color(0xFF22D3EE) : const Color(0xFF2563EB);
+    final linkColor = isDark ? const Color(0xFF22D3EE) : const Color(0xFF2563EB);
+    final pulseA = isDark ? const Color(0xFF22D3EE) : const Color(0xFF0E7490);
+    final pulseB = isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED);
 
     // Faint perspective grid.
     final gridPaint = Paint()
-      ..color = const Color(0x0E3B82F6)
+      ..color = (isDark ? const Color(0xFF3B82F6) : const Color(0xFF6E8BC7))
+          .withValues(alpha: isDark ? 0.055 : 0.05)
       ..strokeWidth = 1;
     const gridStep = 64.0;
     for (var x = 0.0; x < size.width; x += gridStep) {
@@ -166,7 +318,7 @@ class _NeuralPainter extends CustomPainter {
         if (d > maxDist) continue;
         final strength = 1 - d / maxDist;
         linkPaint.color =
-            Color.lerp(const Color(0x0022D3EE), const Color(0x3322D3EE), strength)!;
+            linkColor.withValues(alpha: 0.20 * strength * dim);
         canvas.drawLine(positions[i], positions[j], linkPaint);
 
         // A pulse travelling along some links.
@@ -176,7 +328,9 @@ class _NeuralPainter extends CustomPainter {
           canvas.drawCircle(
             pos,
             1.6,
-            Paint()..color = Color.lerp(Sa.cyan, Sa.violet, p)!.withValues(alpha: 0.5 * strength),
+            Paint()
+              ..color = Color.lerp(pulseA, pulseB, p)!
+                  .withValues(alpha: 0.5 * strength * dim),
           );
         }
       }
@@ -188,18 +342,19 @@ class _NeuralPainter extends CustomPainter {
       canvas.drawCircle(
         positions[i],
         s.radius + 2.5,
-        Paint()..color = Sa.cyan.withValues(alpha: 0.08 * glow),
+        Paint()..color = nodeColor.withValues(alpha: 0.08 * glow * dim),
       );
       canvas.drawCircle(
         positions[i],
         s.radius,
-        Paint()..color = Sa.cyan.withValues(alpha: 0.5 * glow + 0.2),
+        Paint()..color = nodeColor.withValues(alpha: (0.5 * glow + 0.2) * dim),
       );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _NeuralPainter oldDelegate) => oldDelegate.t != t;
+  bool shouldRepaint(covariant _NeuralPainter oldDelegate) =>
+      oldDelegate.isDark != isDark;
 }
 
 class _NodeSeed {
@@ -215,45 +370,62 @@ class _NodeSeed {
   });
 }
 
-/// Frosted glass panel with a soft glow border — the standard surface of the
-/// console.
+/// Frosted glass panel with a gradient hairline border — the standard surface
+/// of the console. The 1px gradient frame catches the accent at the top-left
+/// corner and fades through the regular border color, which reads as premium
+/// glass in both themes.
 class GlassPanel extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final Color accent;
+  final Color? accent;
   final bool glow;
 
   const GlassPanel({
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(18),
-    this.accent = Sa.cyan,
+    this.accent,
     this.glow = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final a = accent ?? Sa.cyan;
     return Container(
-      padding: padding,
       decoration: BoxDecoration(
-        color: Sa.panel,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: glow ? accent.withValues(alpha: 0.45) : Sa.border),
+        borderRadius: BorderRadius.circular(17),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            a.withValues(alpha: glow ? 0.60 : 0.30),
+            Sa.border,
+            a.withValues(alpha: glow ? 0.28 : 0.08),
+          ],
+        ),
         boxShadow: [
           if (glow)
             BoxShadow(
-              color: accent.withValues(alpha: 0.12),
-              blurRadius: 24,
+              color: a.withValues(alpha: Sa.isDark ? 0.13 : 0.16),
+              blurRadius: 26,
               spreadRadius: 1,
             ),
-          const BoxShadow(
-            color: Color(0x66000000),
+          BoxShadow(
+            color: Sa.shadow,
             blurRadius: 18,
-            offset: Offset(0, 8),
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: child,
+      padding: const EdgeInsets.all(1),
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: Sa.panel,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: child,
+      ),
     );
   }
 }
@@ -263,7 +435,7 @@ class SaSectionHeader extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
-  final Color accent;
+  final Color? accent;
   final Widget? trailing;
 
   const SaSectionHeader({
@@ -271,12 +443,13 @@ class SaSectionHeader extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
-    this.accent = Sa.cyan,
+    this.accent,
     this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
+    final a = accent ?? Sa.cyan;
     return Row(
       children: [
         Container(
@@ -284,14 +457,14 @@ class SaSectionHeader extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [accent.withValues(alpha: 0.25), accent.withValues(alpha: 0.06)],
+              colors: [a.withValues(alpha: 0.25), a.withValues(alpha: 0.06)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: accent.withValues(alpha: 0.5)),
+            border: Border.all(color: a.withValues(alpha: 0.5)),
           ),
-          child: Icon(icon, color: accent, size: 18),
+          child: Icon(icon, color: a, size: 18),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -310,7 +483,8 @@ class SaSectionHeader extends StatelessWidget {
   }
 }
 
-/// Pill chip with optional pulsing dot.
+/// Pill chip with optional pulsing dot. Layout is fully stable: the pulse is
+/// painted, never laid out, so the chip never jitters.
 class GlowChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -330,7 +504,12 @@ class GlowChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        gradient: LinearGradient(
+          colors: [
+            color.withValues(alpha: 0.16),
+            color.withValues(alpha: 0.07),
+          ],
+        ),
         borderRadius: BorderRadius.circular(99),
         border: Border.all(color: color.withValues(alpha: 0.45)),
       ),
@@ -353,6 +532,10 @@ class GlowChip extends StatelessWidget {
 }
 
 /// Animated pulsing dot used in LIVE badges.
+///
+/// Occupies a fixed [size]×[size] box; the expanding ripple is painted past
+/// the bounds (CustomPaint does not clip) so the surrounding layout never
+/// shifts — this is what keeps status chips perfectly steady.
 class PulseDot extends StatefulWidget {
   final Color color;
   final double size;
@@ -369,7 +552,8 @@ class _PulseDotState extends State<PulseDot>
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1600))
       ..repeat();
   }
 
@@ -381,31 +565,50 @@ class _PulseDotState extends State<PulseDot>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (_, __) {
-        final v = _c.value;
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(
-              width: widget.size + widget.size * 1.6 * v,
-              height: widget.size + widget.size * 1.6 * v,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.color.withValues(alpha: (1 - v) * 0.35),
-              ),
-            ),
-            Container(
-              width: widget.size,
-              height: widget.size,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color),
-            ),
-          ],
-        );
-      },
+    return RepaintBoundary(
+      child: SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CustomPaint(
+          painter: _PulseDotPainter(color: widget.color, tick: _c),
+        ),
+      ),
     );
   }
+}
+
+class _PulseDotPainter extends CustomPainter {
+  final Color color;
+  final Animation<double> tick;
+
+  _PulseDotPainter({required this.color, required this.tick})
+      : super(repaint: tick);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final core = size.shortestSide / 2;
+    final v = Curves.easeOut.transform(tick.value);
+
+    // Expanding ripple, fading out (painted beyond bounds, no layout impact).
+    canvas.drawCircle(
+      center,
+      core + core * 1.6 * v,
+      Paint()..color = color.withValues(alpha: (1 - v) * 0.30),
+    );
+    // Soft halo.
+    canvas.drawCircle(
+      center,
+      core * 1.45,
+      Paint()..color = color.withValues(alpha: 0.22),
+    );
+    // Core.
+    canvas.drawCircle(center, core, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PulseDotPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// Compact stat tile.
@@ -428,7 +631,7 @@ class SaStatTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Sa.bgRaised.withValues(alpha: 0.8),
+        color: Sa.bgRaised.withValues(alpha: Sa.isDark ? 0.8 : 0.9),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Sa.border),
       ),
@@ -441,9 +644,12 @@ class SaStatTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(value, style: Sa.mono(size: 15, color: Sa.text, weight: FontWeight.w700)),
+              Text(value,
+                  style:
+                      Sa.mono(size: 15, color: Sa.text, weight: FontWeight.w700)),
               Text(label.toUpperCase(),
-                  style: Sa.mono(size: 8.5, color: Sa.muted, weight: FontWeight.w600)),
+                  style:
+                      Sa.mono(size: 8.5, color: Sa.muted, weight: FontWeight.w600)),
             ],
           ),
         ],
@@ -452,12 +658,12 @@ class SaStatTile extends StatelessWidget {
   }
 }
 
-/// Primary console button with gradient fill.
-class SaButton extends StatelessWidget {
+/// Primary console button with gradient fill, hover lift and glow.
+class SaButton extends StatefulWidget {
   final String label;
   final IconData icon;
   final VoidCallback? onPressed;
-  final Color color;
+  final Color? color;
   final bool busy;
   final bool outlined;
 
@@ -466,61 +672,93 @@ class SaButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
-    this.color = Sa.cyan,
+    this.color,
     this.busy = false,
     this.outlined = false,
   });
 
   @override
+  State<SaButton> createState() => _SaButtonState();
+}
+
+class _SaButtonState extends State<SaButton> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
-    final disabled = onPressed == null || busy;
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      opacity: disabled ? 0.55 : 1,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: disabled ? null : onPressed,
-          borderRadius: BorderRadius.circular(10),
-          child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            decoration: BoxDecoration(
-              gradient: outlined
-                  ? null
-                  : LinearGradient(
-                      colors: [color.withValues(alpha: 0.85), color.withValues(alpha: 0.55)],
-                    ),
-              color: outlined ? Colors.transparent : null,
+    final color = widget.color ?? Sa.cyan;
+    final disabled = widget.onPressed == null || widget.busy;
+    final lifted = _hover && !disabled;
+    return MouseRegion(
+      cursor: disabled ? MouseCursor.defer : SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: disabled ? 0.55 : 1,
+        child: AnimatedScale(
+          scale: lifted ? 1.03 : 1.0,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: disabled ? null : widget.onPressed,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: outlined ? color.withValues(alpha: 0.6) : Colors.transparent),
-              boxShadow: outlined || disabled
-                  ? null
-                  : [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 14)],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (busy)
-                  SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: outlined ? color : Sa.bg,
-                    ),
-                  )
-                else
-                  Icon(icon, size: 15, color: outlined ? color : const Color(0xFF03101F)),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: Sa.heading(
-                    size: 13,
-                    color: outlined ? color : const Color(0xFF03101F),
-                  ),
+              child: Ink(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                decoration: BoxDecoration(
+                  gradient: widget.outlined
+                      ? null
+                      : LinearGradient(
+                          colors: [
+                            color.withValues(alpha: lifted ? 1.0 : 0.85),
+                            color.withValues(alpha: lifted ? 0.75 : 0.55),
+                          ],
+                        ),
+                  color: widget.outlined ? Colors.transparent : null,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: widget.outlined
+                          ? color.withValues(alpha: lifted ? 0.9 : 0.6)
+                          : Colors.transparent),
+                  boxShadow: widget.outlined || disabled
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: color.withValues(alpha: lifted ? 0.45 : 0.3),
+                            blurRadius: lifted ? 18 : 14,
+                          ),
+                        ],
                 ),
-              ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.busy)
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: widget.outlined ? color : Sa.onAccent,
+                        ),
+                      )
+                    else
+                      Icon(widget.icon,
+                          size: 15,
+                          color: widget.outlined ? color : Sa.onAccent),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.label,
+                      style: Sa.heading(
+                        size: 13,
+                        color: widget.outlined ? color : Sa.onAccent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -564,14 +802,15 @@ class SaTextField extends StatelessWidget {
         prefixIcon: icon != null ? Icon(icon, size: 17, color: Sa.muted) : null,
         filled: true,
         fillColor: Sa.bgRaised.withValues(alpha: 0.7),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Sa.border),
+          borderSide: BorderSide(color: Sa.border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Sa.cyan),
+          borderSide: BorderSide(color: Sa.cyan),
         ),
       ),
     );
@@ -583,18 +822,19 @@ class SaEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String message;
-  final Color accent;
+  final Color? accent;
 
   const SaEmptyState({
     super.key,
     required this.icon,
     required this.title,
     required this.message,
-    this.accent = Sa.cyan,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
+    final a = accent ?? Sa.cyan;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -605,12 +845,12 @@ class SaEmptyState extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(colors: [
-                accent.withValues(alpha: 0.18),
-                accent.withValues(alpha: 0.02),
+                a.withValues(alpha: 0.18),
+                a.withValues(alpha: 0.02),
               ]),
-              border: Border.all(color: accent.withValues(alpha: 0.35)),
+              border: Border.all(color: a.withValues(alpha: 0.35)),
             ),
-            child: Icon(icon, color: accent, size: 30),
+            child: Icon(icon, color: a, size: 30),
           ),
           const SizedBox(height: 16),
           Text(title, style: Sa.heading(size: 16)),

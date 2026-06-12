@@ -34,7 +34,7 @@ class HardwareTab extends StatelessWidget {
                 style: Sa.body(size: 13, color: Sa.textDim),
               ),
               const SizedBox(height: 18),
-              const GlowChip(
+              GlowChip(
                 label: 'AWAITING FIRST DEVICE',
                 color: Sa.violet,
                 pulse: true,
@@ -125,7 +125,7 @@ class _RadarPainter extends CustomPainter {
           Sa.violet.withValues(alpha: 0),
           Sa.violet.withValues(alpha: 0.45),
         ],
-        transform: GradientRotation(0),
+        transform: const GradientRotation(0),
       ).createShader(Rect.fromCircle(center: center, radius: radius));
     canvas.drawPath(
       Path()

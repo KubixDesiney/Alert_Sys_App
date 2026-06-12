@@ -2,58 +2,50 @@ import 'dart:async';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
-import '../../services/lstm/alert_record_parser.dart';
-import '../../services/lstm/lstm_feature_engineer.dart';
-import '../../services/lstm/lstm_forecast_engine.dart';
-import '../../services/lstm/lstm_model_store.dart';
-import '../../services/lstm/lstm_trainer.dart';
-import '../../services/lstm/lstm_types.dart';
+import '../../services/forecast/forecast_model_store.dart';
+import '../../services/forecast/forecast_training_controller.dart';
+import '../../services/forecast/forecast_types.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin tab 1: upload historical alert data in any common format,
-/// train the on-device LSTM with live learning curves, verify it is actually
-/// learning, then deploy the model for every Production Manager dashboard.
-class LstmTrainingTab extends StatefulWidget {
-  const LstmTrainingTab({super.key});
+/// train the on-device gradient-boosting forecaster with live learning
+/// curves, verify it is actually learning, then deploy the model for every
+/// Production Manager dashboard. Once deployed, the model grades its own
+/// forecasts against reality and keeps adapting on fresh production data.
+///
+/// This widget is a *view* over [ForecastTrainingController]: the run itself
+/// lives app-globally, so switching tabs, navigating away or signing out
+/// never interrupts learning, and closed-tab runs resume from their
+/// checkpoint.
+class AiTrainingTab extends StatefulWidget {
+  const AiTrainingTab({super.key});
 
   @override
-  State<LstmTrainingTab> createState() => _LstmTrainingTabState();
+  State<AiTrainingTab> createState() => _AiTrainingTabState();
 }
 
-class _LstmTrainingTabState extends State<LstmTrainingTab> {
-  final _store = LstmModelStore();
-  final _trainer = LstmTrainer();
+class _AiTrainingTabState extends State<AiTrainingTab> {
+  final _store = ForecastModelStore();
+  final _controller = ForecastTrainingController.instance;
 
-  // Deployed model (live from RTDB).
-  StreamSubscription<TrainedLstmModel?>? _modelSub;
-  TrainedLstmModel? _deployedModel;
+  // Deployed model + self-evaluation ledger (live from RTDB).
+  StreamSubscription<TrainedForecastModel?>? _modelSub;
+  TrainedForecastModel? _deployedModel;
+  StreamSubscription<ForecastAccuracy?>? _accuracySub;
+  ForecastAccuracy? _accuracy;
 
-  // Upload / parse state.
-  bool _parsing = false;
-  ParsedDataset? _dataset;
-  List<TrainingSample> _samples = const [];
-  FeatureScaler? _scaler;
-  String? _parseError;
-
-  // Hyperparameters.
-  LstmTrainingConfig _config = LstmTrainingConfig.auto(0);
-  final _hiddenCtrl = TextEditingController();
-  final _epochsCtrl = TextEditingController();
+  // Hyperparameter editors (view-local; the run config lives in the
+  // controller).
+  final _roundsCtrl = TextEditingController();
   final _lrCtrl = TextEditingController();
-  final _batchCtrl = TextEditingController();
-
-  // Training state.
-  bool _training = false;
-  LstmTrainingUpdate? _lastUpdate;
-  LstmTrainingResult? _result;
-  List<MachineForecast> _previewForecasts = const [];
-
-  // Deploy state.
-  bool _deploying = false;
-  String? _deployMessage;
+  final _depthCtrl = TextEditingController();
+  final _leafCtrl = TextEditingController();
+  final _subsampleCtrl = TextEditingController();
+  final _l2Ctrl = TextEditingController();
+  final _posWeightCapCtrl = TextEditingController();
+  ForecastTrainingConfig? _syncedConfig;
 
   @override
   void initState() {
@@ -61,41 +53,62 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
     _modelSub = _store.modelStream().listen((m) {
       if (mounted) setState(() => _deployedModel = m);
     }, onError: (_) {});
+    _accuracySub = _store.accuracyStream().listen((a) {
+      if (mounted) setState(() => _accuracy = a);
+    }, onError: (_) {});
+    _controller.addListener(_onControllerChanged);
     _syncConfigFields();
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onControllerChanged);
     _modelSub?.cancel();
-    _trainer.cancel();
-    _hiddenCtrl.dispose();
-    _epochsCtrl.dispose();
+    _accuracySub?.cancel();
+    _roundsCtrl.dispose();
     _lrCtrl.dispose();
-    _batchCtrl.dispose();
+    _depthCtrl.dispose();
+    _leafCtrl.dispose();
+    _subsampleCtrl.dispose();
+    _l2Ctrl.dispose();
+    _posWeightCapCtrl.dispose();
     super.dispose();
   }
 
-  void _syncConfigFields() {
-    _hiddenCtrl.text = '${_config.hiddenSize}';
-    _epochsCtrl.text = '${_config.epochs}';
-    _lrCtrl.text = '${_config.learningRate}';
-    _batchCtrl.text = '${_config.batchSize}';
+  void _onControllerChanged() {
+    if (!mounted) return;
+    if (!identical(_controller.config, _syncedConfig)) _syncConfigFields();
+    setState(() {});
   }
 
-  LstmTrainingConfig _configFromFields() {
-    return _config.copyWith(
-      hiddenSize: int.tryParse(_hiddenCtrl.text)?.clamp(4, 96),
-      epochs: int.tryParse(_epochsCtrl.text)?.clamp(3, 300),
+  void _syncConfigFields() {
+    final config = _controller.config;
+    _syncedConfig = config;
+    _roundsCtrl.text = '${config.rounds}';
+    _lrCtrl.text = '${config.learningRate}';
+    _depthCtrl.text = '${config.maxDepth}';
+    _leafCtrl.text = '${config.minSamplesLeaf}';
+    _subsampleCtrl.text = '${config.subsample}';
+    _l2Ctrl.text = '${config.l2}';
+    _posWeightCapCtrl.text = '${config.posWeightCap}';
+  }
+
+  ForecastTrainingConfig _configFromFields() {
+    return _controller.config.copyWith(
+      rounds: int.tryParse(_roundsCtrl.text)?.clamp(10, 800),
       learningRate:
-          double.tryParse(_lrCtrl.text)?.clamp(0.0001, 0.1).toDouble(),
-      batchSize: int.tryParse(_batchCtrl.text)?.clamp(4, 256),
+          double.tryParse(_lrCtrl.text)?.clamp(0.005, 0.5).toDouble(),
+      maxDepth: int.tryParse(_depthCtrl.text)?.clamp(2, 8),
+      minSamplesLeaf: int.tryParse(_leafCtrl.text)?.clamp(2, 200),
+      subsample:
+          double.tryParse(_subsampleCtrl.text)?.clamp(0.3, 1.0).toDouble(),
+      l2: double.tryParse(_l2Ctrl.text)?.clamp(0.0, 50.0).toDouble(),
+      posWeightCap:
+          double.tryParse(_posWeightCapCtrl.text)?.clamp(1.0, 200.0).toDouble(),
     );
   }
 
   Future<void> _pickFile() async {
-    setState(() {
-      _parseError = null;
-    });
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: [
@@ -106,178 +119,13 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
     final file = picked?.files.firstOrNull;
     if (file == null) return;
     final bytes = file.bytes;
-    if (bytes == null) {
-      setState(() => _parseError = 'Could not read the selected file.');
-      return;
-    }
-
-    setState(() {
-      _parsing = true;
-      _dataset = null;
-      _result = null;
-      _previewForecasts = const [];
-      _lastUpdate = null;
-      _deployMessage = null;
-    });
-    // Let the spinner paint before heavy parsing starts.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-
-    try {
-      final parsed =
-          await AlertRecordParser.parse(fileName: file.name, bytes: bytes);
-      final rows = LstmFeatureEngineer.buildDailyRows(parsed.records);
-      final scaler = FeatureScaler.fit(rows);
-      final samples = LstmFeatureEngineer.buildWindows(rows, scaler, 14);
-      setState(() {
-        _dataset = parsed;
-        _scaler = scaler;
-        _samples = samples;
-        _config = LstmTrainingConfig.auto(samples.length);
-        _syncConfigFields();
-        _parsing = false;
-      });
-    } catch (e) {
-      setState(() {
-        _parsing = false;
-        _parseError = e is FormatException ? e.message : e.toString();
-      });
-    }
-  }
-
-  Future<void> _startTraining() async {
-    if (_samples.isEmpty || _scaler == null || _training) return;
-    final config = _configFromFields();
-    setState(() {
-      _config = config;
-      _syncConfigFields();
-      _training = true;
-      _result = null;
-      _previewForecasts = const [];
-      _deployMessage = null;
-    });
-    unawaited(_store.writeTrainingStatus(
-      status: 'running',
-      progress: 0,
-      message: 'Training started on ${_dataset?.summary.sourceName}',
-    ));
-
-    try {
-      await for (final update in _trainer.train(
-        samples: _samples,
-        scaler: _scaler!,
-        config: config,
-      )) {
-        if (!mounted) return;
-        setState(() => _lastUpdate = update);
-        if (update.phase == LstmTrainingPhase.training &&
-            update.epochs.length % 5 == 0) {
-          unawaited(_store.writeTrainingStatus(
-            status: 'running',
-            progress: update.progress,
-            message: update.message,
-            epochs: update.epochs,
-          ));
-        }
-      }
-      final result = _trainer.result;
-      if (!mounted) return;
-      setState(() {
-        _training = false;
-        _result = result;
-        if (result != null && _dataset != null) {
-          _previewForecasts = LstmForecastEngine.computeForecasts(
-            TrainedLstmModel(
-              network: result.network,
-              scaler: result.scaler,
-              seqLen: config.seqLen,
-            ),
-            _dataset!.records,
-            now: _dataset!.summary.lastTimestamp,
-          );
-        }
-      });
-      unawaited(_store.writeTrainingStatus(
-        status: _result == null ? 'failed' : 'done',
-        progress: 1,
-        message: _lastUpdate?.message ?? 'finished',
-        epochs: _lastUpdate?.epochs ?? const [],
-      ));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _training = false;
-        _parseError = 'Training failed: $e';
-      });
-      unawaited(_store.writeTrainingStatus(
-        status: 'failed',
-        progress: 0,
-        message: '$e',
-      ));
-    }
-  }
-
-  Future<void> _deploy() async {
-    final result = _result;
-    if (result == null || _deploying) return;
-    setState(() {
-      _deploying = true;
-      _deployMessage = null;
-    });
-    try {
-      await _store.saveModel(
-        network: result.network,
-        scaler: result.scaler,
-        seqLen: _config.seqLen,
-        datasetName: _dataset?.summary.sourceName ?? 'dataset',
-        sampleCount: result.sampleCount,
-        valLoss: result.bestValLoss,
-        valAccuracy: result.bestValAccuracy,
-        learning: result.isLearning,
-        epochs: result.epochs,
-      );
-
-      // Publish a live snapshot computed from production alerts so the rest
-      // of the platform sees forecasts immediately.
-      List<MachineForecast> live = _previewForecasts;
-      try {
-        final snap = await FirebaseDatabase.instance.ref('alerts').get();
-        if (snap.value is Map) {
-          final records = LstmForecastEngine.recordsFromAlertMaps(
-              (snap.value as Map).values.whereType<Map>());
-          if (records.isNotEmpty) {
-            live = LstmForecastEngine.computeForecasts(
-              TrainedLstmModel(
-                network: result.network,
-                scaler: result.scaler,
-                seqLen: _config.seqLen,
-              ),
-              records,
-            );
-          }
-        }
-      } catch (_) {
-        // fall back to dataset-based preview snapshot
-      }
-      await LstmForecastEngine.publishSnapshot(live);
-
-      if (!mounted) return;
-      setState(() {
-        _deploying = false;
-        _deployMessage =
-            'Model deployed. ${live.length} machines forecast live on every '
-            'Production Manager dashboard.';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _deploying = false;
-        _deployMessage = 'Deploy failed: $e';
-      });
-    }
+    if (bytes == null) return;
+    await _controller.loadDataset(fileName: file.name, bytes: bytes);
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = _controller;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Center(
@@ -289,15 +137,15 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
               _buildDeployedModelPanel(),
               const SizedBox(height: 16),
               _buildUploadPanel(),
-              if (_dataset != null) ...[
+              if (c.dataset != null) ...[
                 const SizedBox(height: 16),
                 _buildHyperparamsPanel(),
               ],
-              if (_lastUpdate != null || _training) ...[
+              if (c.lastUpdate != null || c.training || c.remoteActive) ...[
                 const SizedBox(height: 16),
                 _buildTrainingMonitor(),
               ],
-              if (_result != null) ...[
+              if (c.result != null) ...[
                 const SizedBox(height: 16),
                 _buildForecastPreview(),
               ],
@@ -313,6 +161,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
 
   Widget _buildDeployedModelPanel() {
     final m = _deployedModel;
+    final acc = _accuracy;
     return GlassPanel(
       accent: m == null ? Sa.amber : (m.learning ? Sa.green : Sa.amber),
       glow: m != null,
@@ -323,11 +172,11 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
             icon: Icons.hub_outlined,
             title: 'DEPLOYED FORECAST MODEL',
             subtitle: m == null
-                ? 'No LSTM deployed yet — every dashboard is waiting for its first model.'
-                : 'Serving live next-24h forecasts on all Production Manager dashboards.',
+                ? 'No model deployed yet — every dashboard is waiting for its first model.'
+                : 'Gradient-boosted trees serving live next-24h forecasts on all Production Manager dashboards.',
             accent: m == null ? Sa.amber : Sa.green,
             trailing: m == null
-                ? const GlowChip(label: 'OFFLINE', color: Sa.amber, icon: Icons.cloud_off)
+                ? GlowChip(label: 'OFFLINE', color: Sa.amber, icon: Icons.cloud_off)
                 : GlowChip(
                     label: m.learning ? 'LEARNING VERIFIED' : 'DEPLOYED',
                     color: m.learning ? Sa.green : Sa.cyan,
@@ -353,13 +202,13 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
                   color: Sa.green,
                 ),
                 SaStatTile(
-                  label: 'hidden units',
-                  value: '${m.network.hiddenSize}',
-                  icon: Icons.grain,
+                  label: 'trees',
+                  value: '${m.model.treeCount}',
+                  icon: Icons.park_outlined,
                   color: Sa.violet,
                 ),
                 SaStatTile(
-                  label: 'windows trained',
+                  label: 'samples trained',
                   value: '${m.sampleCount}',
                   icon: Icons.view_timeline_outlined,
                   color: Sa.blue,
@@ -379,7 +228,94 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
                   ),
               ],
             ),
+            const SizedBox(height: 14),
+            _buildContinuousLearningStrip(m, acc),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Self-evaluation + adaptation status: the model grades yesterday's
+  /// forecasts against what actually happened and keeps boosting new trees
+  /// on fresh production data.
+  Widget _buildContinuousLearningStrip(
+      TrainedForecastModel m, ForecastAccuracy? acc) {
+    final graded = acc != null && acc.gradedPairs > 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Sa.cyan.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Sa.cyan.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.all_inclusive, size: 16, color: Sa.cyan),
+              const SizedBox(width: 8),
+              Text('CONTINUOUS LEARNING',
+                  style: Sa.heading(size: 12.5, color: Sa.cyan)),
+              const Spacer(),
+              GlowChip(
+                label: m.model.adaptedRounds > 0
+                    ? 'ADAPTED +${m.model.adaptedRounds} ROUNDS'
+                    : 'ARMED',
+                color: m.model.adaptedRounds > 0 ? Sa.green : Sa.cyan,
+                icon: Icons.autorenew,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SaStatTile(
+                label: 'forecasts graded',
+                value: graded ? '${acc.gradedPairs}' : '—',
+                icon: Icons.fact_check_outlined,
+                color: Sa.blue,
+              ),
+              SaStatTile(
+                label: 'live precision',
+                value:
+                    graded ? '${(acc.precision * 100).toStringAsFixed(0)}%' : '—',
+                icon: Icons.gps_fixed,
+                color: Sa.green,
+              ),
+              SaStatTile(
+                label: 'live recall',
+                value:
+                    graded ? '${(acc.recall * 100).toStringAsFixed(0)}%' : '—',
+                icon: Icons.radar,
+                color: Sa.violet,
+              ),
+              SaStatTile(
+                label: 'brier score',
+                value: graded ? acc.brierMean.toStringAsFixed(3) : '—',
+                icon: Icons.straighten,
+                color: Sa.amber,
+              ),
+              SaStatTile(
+                label: 'last adapted',
+                value: m.lastAdaptedAt == null ? 'not yet' : _ago(m.lastAdaptedAt),
+                icon: Icons.autorenew,
+                color: Sa.textDim,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Every deployed forecast is graded against the alerts that actually '
+            'happened (hit rate + Brier calibration), and the ensemble boosts a '
+            'few extra trees per day on fresh production data — no manual '
+            'retraining needed until you want a full reset.',
+            style: Sa.body(size: 11, color: Sa.textDim),
+          ),
         ],
       ),
     );
@@ -396,7 +332,8 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
   // ── Upload ───────────────────────────────────────────────────────────────
 
   Widget _buildUploadPanel() {
-    final summary = _dataset?.summary;
+    final c = _controller;
+    final summary = c.dataset?.summary;
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,9 +342,9 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
             icon: Icons.upload_file_outlined,
             title: 'TRAINING DATA INTAKE',
             subtitle:
-                'Feed the LSTM with your company\'s alert history. Any structured export works.',
+                'Dump your company\'s alert history in any structured export — the model handles the rest.',
             accent: Sa.violet,
-            trailing: _dataset == null
+            trailing: c.dataset == null
                 ? null
                 : GlowChip(
                     label: '${summary!.parsedRows} ROWS LOADED',
@@ -417,7 +354,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
           ),
           const SizedBox(height: 16),
           InkWell(
-            onTap: _parsing || _training ? null : _pickFile,
+            onTap: c.parsing || c.training ? null : _pickFile,
             borderRadius: BorderRadius.circular(14),
             child: Container(
               width: double.infinity,
@@ -437,22 +374,25 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
               ),
               child: Column(
                 children: [
-                  if (_parsing) ...[
-                    const SizedBox(
+                  if (c.parsing || c.restoring) ...[
+                    SizedBox(
                       width: 30,
                       height: 30,
                       child: CircularProgressIndicator(
                           strokeWidth: 2.5, color: Sa.violet),
                     ),
                     const SizedBox(height: 12),
-                    Text('Parsing and engineering features…',
+                    Text(
+                        c.restoring
+                            ? 'Restoring previous session…'
+                            : 'Parsing and engineering features…',
                         style: Sa.body(color: Sa.textDim)),
                   ] else ...[
-                    const Icon(Icons.cloud_upload_outlined,
+                    Icon(Icons.cloud_upload_outlined,
                         size: 34, color: Sa.violet),
                     const SizedBox(height: 10),
                     Text(
-                      _dataset == null
+                      c.dataset == null
                           ? 'SELECT A DATA FILE'
                           : 'REPLACE DATASET',
                       style: Sa.heading(size: 14, color: Sa.text),
@@ -467,11 +407,11 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
               ),
             ),
           ),
-          if (_parseError != null) ...[
+          if (c.error != null) ...[
             const SizedBox(height: 12),
-            _InlineNotice(color: Sa.red, icon: Icons.error_outline, text: _parseError!),
+            _InlineNotice(color: Sa.red, icon: Icons.error_outline, text: c.error!),
           ],
-          if (_dataset != null) ...[
+          if (c.dataset != null) ...[
             const SizedBox(height: 16),
             Wrap(
               spacing: 10,
@@ -496,8 +436,8 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
                   color: Sa.blue,
                 ),
                 SaStatTile(
-                  label: 'training windows',
-                  value: '${_samples.length}',
+                  label: 'training samples',
+                  value: '${c.samples.length}',
                   icon: Icons.view_timeline_outlined,
                   color: Sa.green,
                 ),
@@ -510,10 +450,12 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
               ],
             ),
             const SizedBox(height: 14),
-            _TypeDistribution(typeCounts: summary.typeCounts, total: summary.parsedRows),
-            for (final w in _dataset!.warnings) ...[
+            _TypeDistribution(
+                typeCounts: summary.typeCounts, total: summary.parsedRows),
+            for (final w in c.dataset!.warnings) ...[
               const SizedBox(height: 10),
-              _InlineNotice(color: Sa.amber, icon: Icons.warning_amber_outlined, text: w),
+              _InlineNotice(
+                  color: Sa.amber, icon: Icons.warning_amber_outlined, text: w),
             ],
           ],
         ],
@@ -524,6 +466,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
   // ── Hyperparameters ─────────────────────────────────────────────────────
 
   Widget _buildHyperparamsPanel() {
+    final c = _controller;
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -532,27 +475,37 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
             icon: Icons.tune,
             title: 'HYPERPARAMETERS',
             subtitle:
-                'Auto-tuned from the dataset shape (${_samples.length} windows). Adjust if you know what you\'re doing.',
+                'Auto-tuned from the dataset shape (${c.samples.length} samples). Adjust if you know what you\'re doing.',
             accent: Sa.cyan,
             trailing: TextButton.icon(
-              onPressed: _training
+              onPressed: c.training
                   ? null
-                  : () => setState(() {
-                        _config = LstmTrainingConfig.auto(_samples.length);
-                        _syncConfigFields();
-                      }),
-              icon: const Icon(Icons.auto_fix_high, size: 15, color: Sa.violet),
-              label: Text('AUTO-TUNE', style: Sa.mono(size: 10.5, color: Sa.violet)),
+                  : () {
+                      c.setConfig(
+                          ForecastTrainingConfig.auto(c.samples.length));
+                    },
+              icon: Icon(Icons.auto_fix_high, size: 15, color: Sa.violet),
+              label:
+                  Text('AUTO-TUNE', style: Sa.mono(size: 10.5, color: Sa.violet)),
             ),
           ),
           const SizedBox(height: 16),
           LayoutBuilder(builder: (context, constraints) {
             final narrow = constraints.maxWidth < 760;
             final fields = [
-              _paramField('HIDDEN UNITS', _hiddenCtrl, 'LSTM memory width'),
-              _paramField('EPOCHS', _epochsCtrl, 'Full passes over the data'),
-              _paramField('LEARNING RATE', _lrCtrl, 'Adam step size'),
-              _paramField('BATCH SIZE', _batchCtrl, 'Windows per update'),
+              _paramField('BOOSTING ROUNDS', _roundsCtrl,
+                  'Trees grown per alert type'),
+              _paramField('LEARNING RATE', _lrCtrl, 'Shrinkage per tree'),
+              _paramField('MAX TREE DEPTH', _depthCtrl,
+                  'Interaction depth per tree'),
+              _paramField('MIN LEAF SAMPLES', _leafCtrl,
+                  'Smallest allowed leaf'),
+              _paramField('SUBSAMPLE', _subsampleCtrl,
+                  'Row fraction per tree (0.3–1)'),
+              _paramField('L2 REGULARIZATION', _l2Ctrl,
+                  'Leaf-weight damping (λ)'),
+              _paramField('POS-CLASS WEIGHT CAP', _posWeightCapCtrl,
+                  'Max miss-vs-false-alarm penalty ratio (1–200)'),
             ];
             return Wrap(
               spacing: 12,
@@ -565,30 +518,45 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
           }),
           const SizedBox(height: 8),
           Text(
-            'Fixed: sequence window 14 days · ${kLstmFeatureCols.length} features/day · '
-            '4 sigmoid outputs (one per alert type) · weighted BCE loss · '
-            'gradient clipping · early stopping (patience ${_config.patience}).',
+            'Engine: XGBoost-class gradient-boosted decision trees · '
+            '${kForecastFeatureCols.length} engineered features (lags, rolling '
+            'counts, recency, calendar) · 4 ensembles (one per alert type) · '
+            'second-order logistic boosting · histogram splits · '
+            'class-imbalance weighting · early stopping (patience '
+            '${c.config.patience}).',
             style: Sa.mono(size: 10, color: Sa.muted),
           ),
           const SizedBox(height: 16),
           Row(
             children: [
               SaButton(
-                label: _training ? 'TRAINING…' : 'START TRAINING',
+                label: c.training ? 'TRAINING…' : 'START TRAINING',
                 icon: Icons.play_arrow_rounded,
-                busy: _training,
-                onPressed: _samples.isEmpty || _training ? null : _startTraining,
+                busy: c.training,
+                onPressed: c.samples.isEmpty || c.runActive
+                    ? null
+                    : () => c.startTraining(_configFromFields()),
               ),
               const SizedBox(width: 12),
-              if (_training)
+              if (c.training)
                 SaButton(
                   label: 'STOP',
                   icon: Icons.stop_rounded,
                   color: Sa.red,
                   outlined: true,
-                  onPressed: () => _trainer.cancel(),
+                  onPressed: c.cancelTraining,
                 ),
             ],
+          ),
+          const SizedBox(height: 12),
+          _InlineNotice(
+            color: Sa.cyan,
+            icon: Icons.all_inclusive,
+            text:
+                'Training is autonomous: it keeps running if you switch tabs, '
+                'work elsewhere in the console, or sign out while the app stays '
+                'open. If this tab or browser is closed mid-run, the checkpoint '
+                'resumes automatically the next time the command center opens.',
           ),
         ],
       ),
@@ -596,6 +564,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
   }
 
   Widget _paramField(String label, TextEditingController ctrl, String hint) {
+    final training = _controller.training;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -603,7 +572,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
-          enabled: !_training,
+          enabled: !training,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: Sa.mono(size: 13, color: Sa.cyan),
           cursorColor: Sa.cyan,
@@ -616,11 +585,11 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Sa.border),
+              borderSide: BorderSide(color: Sa.border),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Sa.cyan),
+              borderSide: BorderSide(color: Sa.cyan),
             ),
             disabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
@@ -635,11 +604,12 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
   // ── Training monitor ────────────────────────────────────────────────────
 
   Widget _buildTrainingMonitor() {
-    final update = _lastUpdate;
-    final epochs = update?.epochs ?? const <EpochStat>[];
+    final c = _controller;
+    final update = c.lastUpdate;
+    final rounds = update?.rounds ?? const <RoundStat>[];
     final learning = update?.isLearning ?? false;
     final progress = update?.progress ?? 0;
-    final running = _training;
+    final running = c.training || c.remoteActive;
 
     return GlassPanel(
       accent: learning ? Sa.green : Sa.cyan,
@@ -650,14 +620,29 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
           SaSectionHeader(
             icon: Icons.monitor_heart_outlined,
             title: 'TRAINING MONITOR',
-            subtitle: update?.message ?? 'Waiting for first epoch…',
+            subtitle: update?.message ?? 'Waiting for first round…',
             accent: learning ? Sa.green : Sa.cyan,
-            trailing: GlowChip(
-              label: running
-                  ? (learning ? 'LEARNING' : 'WARMING UP')
-                  : (learning ? 'LEARNING VERIFIED' : 'NOT LEARNING'),
-              color: learning ? Sa.green : (running ? Sa.amber : Sa.red),
-              pulse: running,
+            trailing: Wrap(
+              spacing: 6,
+              children: [
+                if (c.remoteActive)
+                  GlowChip(
+                      label: 'LIVE · ANOTHER SESSION',
+                      color: Sa.blue,
+                      pulse: true)
+                else if (c.resumedRun)
+                  GlowChip(
+                      label: 'RESUMED FROM CHECKPOINT',
+                      color: Sa.violet,
+                      icon: Icons.restore),
+                GlowChip(
+                  label: running
+                      ? (learning ? 'LEARNING' : 'WARMING UP')
+                      : (learning ? 'LEARNING VERIFIED' : 'NOT LEARNING'),
+                  color: learning ? Sa.green : (running ? Sa.amber : Sa.red),
+                  pulse: running,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -667,34 +652,34 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                epochs.isEmpty
-                    ? 'EPOCH 0'
-                    : 'EPOCH ${epochs.last.epoch} / ${_config.epochs}',
+                rounds.isEmpty
+                    ? 'ROUND 0'
+                    : 'ROUND ${rounds.last.round} / ${c.config.rounds}',
                 style: Sa.mono(size: 10.5, color: Sa.textDim),
               ),
               Text('${(progress * 100).toStringAsFixed(0)}%',
                   style: Sa.mono(size: 10.5, color: Sa.cyan)),
             ],
           ),
-          if (epochs.isNotEmpty) ...[
+          if (rounds.isNotEmpty) ...[
             const SizedBox(height: 18),
             LayoutBuilder(builder: (context, constraints) {
               final narrow = constraints.maxWidth < 860;
               final lossChart = _ChartCard(
                 title: 'LOSS CURVES',
-                legend: const [
+                legend: [
                   (label: 'train', color: Sa.cyan),
                   (label: 'validation', color: Sa.violet),
                 ],
-                child: _lossChart(epochs),
+                child: _lossChart(rounds),
               );
               final accChart = _ChartCard(
                 title: 'VALIDATION ACCURACY / F1',
-                legend: const [
+                legend: [
                   (label: 'accuracy', color: Sa.green),
                   (label: 'macro-F1', color: Sa.amber),
                 ],
-                child: _accuracyChart(epochs),
+                child: _accuracyChart(rounds),
               );
               if (narrow) {
                 return Column(children: [
@@ -716,38 +701,43 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
               children: [
                 SaStatTile(
                   label: 'train loss',
-                  value: epochs.last.trainLoss.toStringAsFixed(4),
+                  value: rounds.last.trainLoss.toStringAsFixed(4),
                   icon: Icons.south_east,
                   color: Sa.cyan,
                 ),
                 SaStatTile(
                   label: 'val loss',
-                  value: epochs.last.valLoss.toStringAsFixed(4),
+                  value: rounds.last.valLoss.toStringAsFixed(4),
                   icon: Icons.south_east,
                   color: Sa.violet,
                 ),
                 SaStatTile(
                   label: 'val accuracy',
                   value:
-                      '${(epochs.last.valAccuracy * 100).toStringAsFixed(1)}%',
+                      '${(rounds.last.valAccuracy * 100).toStringAsFixed(1)}%',
                   icon: Icons.verified_outlined,
                   color: Sa.green,
                 ),
                 SaStatTile(
                   label: 'macro F1',
-                  value: epochs.last.valF1.toStringAsFixed(3),
+                  value: rounds.last.valF1.toStringAsFixed(3),
                   icon: Icons.balance,
                   color: Sa.amber,
                 ),
               ],
             ),
           ],
+          if (!running && c.result != null && !c.result!.isLearning &&
+              c.diagnostics.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _DiagnosisPanel(reasons: c.diagnostics),
+          ],
         ],
       ),
     );
   }
 
-  Widget _lossChart(List<EpochStat> epochs) {
+  Widget _lossChart(List<RoundStat> rounds) {
     LineChartBarData line(List<FlSpot> spots, Color color) => LineChartBarData(
           spots: spots,
           color: color,
@@ -772,18 +762,18 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
           show: true,
           drawVerticalLine: false,
           getDrawingHorizontalLine: (_) =>
-              const FlLine(color: Sa.border, strokeWidth: 0.6),
+              FlLine(color: Sa.border, strokeWidth: 0.6),
         ),
         titlesData: _chartTitles(),
         borderData: FlBorderData(show: false),
         lineTouchData: const LineTouchData(enabled: false),
         lineBarsData: [
           line(
-            [for (final e in epochs) FlSpot(e.epoch.toDouble(), e.trainLoss)],
+            [for (final e in rounds) FlSpot(e.round.toDouble(), e.trainLoss)],
             Sa.cyan,
           ),
           line(
-            [for (final e in epochs) FlSpot(e.epoch.toDouble(), e.valLoss)],
+            [for (final e in rounds) FlSpot(e.round.toDouble(), e.valLoss)],
             Sa.violet,
           ),
         ],
@@ -792,7 +782,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
     );
   }
 
-  Widget _accuracyChart(List<EpochStat> epochs) {
+  Widget _accuracyChart(List<RoundStat> rounds) {
     LineChartBarData line(List<FlSpot> spots, Color color) => LineChartBarData(
           spots: spots,
           color: color,
@@ -811,7 +801,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
           show: true,
           drawVerticalLine: false,
           getDrawingHorizontalLine: (_) =>
-              const FlLine(color: Sa.border, strokeWidth: 0.6),
+              FlLine(color: Sa.border, strokeWidth: 0.6),
         ),
         titlesData: _chartTitles(),
         borderData: FlBorderData(show: false),
@@ -819,13 +809,13 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
         lineBarsData: [
           line(
             [
-              for (final e in epochs)
-                FlSpot(e.epoch.toDouble(), e.valAccuracy)
+              for (final e in rounds)
+                FlSpot(e.round.toDouble(), e.valAccuracy)
             ],
             Sa.green,
           ),
           line(
-            [for (final e in epochs) FlSpot(e.epoch.toDouble(), e.valF1)],
+            [for (final e in rounds) FlSpot(e.round.toDouble(), e.valF1)],
             Sa.amber,
           ),
         ],
@@ -864,8 +854,9 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
   // ── Forecast preview + deploy ───────────────────────────────────────────
 
   Widget _buildForecastPreview() {
-    final result = _result!;
-    final top = _previewForecasts.take(8).toList();
+    final c = _controller;
+    final result = c.result!;
+    final top = c.previewForecasts.take(8).toList();
     return GlassPanel(
       accent: Sa.green,
       glow: result.isLearning,
@@ -876,7 +867,7 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
             icon: Icons.online_prediction,
             title: 'FORECAST PREVIEW — NEXT 24H',
             subtitle:
-                'Inference on the uploaded history with the freshly trained weights.',
+                'Inference on the uploaded history with the freshly trained ensemble.',
             accent: Sa.green,
             trailing: GlowChip(
               label: result.isLearning ? 'READY TO DEPLOY' : 'WEAK MODEL',
@@ -896,20 +887,20 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
           Row(
             children: [
               SaButton(
-                label: _deploying ? 'DEPLOYING…' : 'DEPLOY TO PRODUCTION',
+                label: c.deploying ? 'DEPLOYING…' : 'DEPLOY TO PRODUCTION',
                 icon: Icons.rocket_launch_outlined,
                 color: Sa.green,
-                busy: _deploying,
-                onPressed: _deploying ? null : _deploy,
+                busy: c.deploying,
+                onPressed: c.deploying ? null : c.deploy,
               ),
               const SizedBox(width: 14),
-              if (_deployMessage != null)
+              if (c.deployMessage != null)
                 Expanded(
                   child: Text(
-                    _deployMessage!,
+                    c.deployMessage!,
                     style: Sa.body(
                       size: 12,
-                      color: _deployMessage!.startsWith('Deploy failed')
+                      color: c.deployMessage!.startsWith('Deploy failed')
                           ? Sa.red
                           : Sa.green,
                     ),
@@ -925,11 +916,77 @@ class _LstmTrainingTabState extends State<LstmTrainingTab> {
 
 // ── Small shared widgets ─────────────────────────────────────────────────
 
+/// Post-run analysis shown when the verdict is NOT LEARNING: what the data
+/// and loss trajectory show, and what to change before retraining.
+class _DiagnosisPanel extends StatelessWidget {
+  final List<String> reasons;
+  const _DiagnosisPanel({required this.reasons});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Sa.amber.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Sa.amber.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.troubleshoot_outlined, size: 16, color: Sa.amber),
+              const SizedBox(width: 8),
+              Text("WHY THE MODEL DIDN'T LEARN",
+                  style: Sa.heading(size: 13, color: Sa.amber)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final r in reasons)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Sa.amber,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(r, style: Sa.body(size: 12, color: Sa.text)),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 2),
+          Text(
+            'Fix the points above, replace or extend the dataset, and retrain. '
+            'A model that is not learning is not blocked from deployment, but '
+            'its forecasts will be close to guesswork.',
+            style: Sa.body(size: 11, color: Sa.textDim),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InlineNotice extends StatelessWidget {
   final Color color;
   final IconData icon;
   final String text;
-  const _InlineNotice({required this.color, required this.icon, required this.text});
+  const _InlineNotice(
+      {required this.color, required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -956,15 +1013,16 @@ class _TypeDistribution extends StatelessWidget {
   final int total;
   const _TypeDistribution({required this.typeCounts, required this.total});
 
-  static const _colors = {
-    'qualite': Sa.cyan,
-    'maintenance': Sa.amber,
-    'defaut_produit': Sa.red,
-    'manque_ressource': Sa.violet,
-  };
+  static Map<String, Color> get _colors => {
+        'qualite': Sa.cyan,
+        'maintenance': Sa.amber,
+        'defaut_produit': Sa.red,
+        'manque_ressource': Sa.violet,
+      };
 
   @override
   Widget build(BuildContext context) {
+    final colors = _colors;
     final entries = typeCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return Column(
@@ -991,7 +1049,7 @@ class _TypeDistribution extends StatelessWidget {
                       value: total == 0 ? 0 : e.value / total,
                       minHeight: 7,
                       backgroundColor: Sa.bgRaised,
-                      color: _colors[e.key] ?? Sa.blue,
+                      color: colors[e.key] ?? Sa.blue,
                     ),
                   ),
                 ),
@@ -1029,11 +1087,15 @@ class _GradientProgressBar extends StatelessWidget {
             child: Container(
               height: 10,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [Sa.cyan, Sa.violet, Sa.pink],
                 ),
                 boxShadow: active
-                    ? [BoxShadow(color: Sa.cyan.withValues(alpha: 0.5), blurRadius: 10)]
+                    ? [
+                        BoxShadow(
+                            color: Sa.cyan.withValues(alpha: 0.5),
+                            blurRadius: 10)
+                      ]
                     : null,
               ),
             ),
@@ -1060,7 +1122,7 @@ class _ChartCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Sa.bgRaised.withValues(alpha: 0.55),
+        color: Sa.bgRaised.withValues(alpha: Sa.isDark ? 0.55 : 0.85),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Sa.border),
       ),
@@ -1097,15 +1159,16 @@ class _ForecastRow extends StatelessWidget {
   final MachineForecast forecast;
   const _ForecastRow({required this.forecast});
 
-  static const _typeColors = {
-    'qualite': Sa.cyan,
-    'maintenance': Sa.amber,
-    'defaut_produit': Sa.red,
-    'manque_ressource': Sa.violet,
-  };
+  static Map<String, Color> get _typeColors => {
+        'qualite': Sa.cyan,
+        'maintenance': Sa.amber,
+        'defaut_produit': Sa.red,
+        'manque_ressource': Sa.violet,
+      };
 
   @override
   Widget build(BuildContext context) {
+    final typeColors = _typeColors;
     final any = forecast.anyProbability;
     final riskColor = any >= 0.66
         ? Sa.red
@@ -1116,7 +1179,7 @@ class _ForecastRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Sa.bgRaised.withValues(alpha: 0.5),
+        color: Sa.bgRaised.withValues(alpha: Sa.isDark ? 0.5 : 0.85),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Sa.border),
       ),
@@ -1161,7 +1224,7 @@ class _ForecastRow extends StatelessWidget {
                                 minHeight: 5,
                                 backgroundColor:
                                     Sa.border.withValues(alpha: 0.4),
-                                color: _typeColors[entry.key] ?? Sa.blue,
+                                color: typeColors[entry.key] ?? Sa.blue,
                               ),
                             ),
                           ),
@@ -1175,7 +1238,7 @@ class _ForecastRow extends StatelessWidget {
           const SizedBox(width: 10),
           GlowChip(
             label: forecast.topType.toUpperCase(),
-            color: _typeColors[forecast.topType] ?? Sa.blue,
+            color: typeColors[forecast.topType] ?? Sa.blue,
           ),
         ],
       ),
