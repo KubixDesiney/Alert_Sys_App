@@ -5,7 +5,7 @@ import 'package:csv/csv.dart';
 import 'package:excel/excel.dart' as xls;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-import 'lstm_types.dart';
+import 'forecast_types.dart';
 
 /// Result of ingesting one uploaded file.
 class ParsedDataset {
@@ -23,7 +23,7 @@ class ParsedDataset {
 /// Universal alert-history ingester. Accepts CSV, JSON (including Firebase
 /// RTDB exports), Excel (.xlsx), SQL dumps (MySQL/MariaDB `INSERT` scripts)
 /// and PDF tables, and normalizes everything into [AlertRecord]s ready for
-/// LSTM feature engineering.
+/// forecast feature engineering.
 class AlertRecordParser {
   static const _timestampKeys = {
     'timestamp', 'date', 'datetime', 'created_at', 'createdat', 'time', 'ts',

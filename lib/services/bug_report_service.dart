@@ -72,7 +72,10 @@ class BugReportService {
       return 'voice';
     }
     if (t.contains('shift')) return 'shifts';
-    if (t.contains('lstm') || t.contains(' ai ') || t.startsWith('ai')) {
+    if (t.contains('forecast') ||
+        t.contains('gbdt') ||
+        t.contains(' ai ') ||
+        t.startsWith('ai')) {
       return 'ai';
     }
     return 'app';

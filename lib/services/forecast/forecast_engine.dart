@@ -1,43 +1,41 @@
 import 'package:firebase_database/firebase_database.dart';
 
-import 'lstm_feature_engineer.dart';
-import 'lstm_model_store.dart';
-import 'lstm_types.dart';
+import 'forecast_feature_engineer.dart';
+import 'forecast_model_store.dart';
+import 'forecast_types.dart';
 
-/// Runs on-device LSTM inference over recent alert history.
+/// Runs on-device gradient-boosting inference over recent alert history.
 ///
 /// This is what makes the Production Manager forecasts genuinely live: every
-/// dashboard rebuilds the latest 14-day window per machine from the alert
-/// stream it already has and pushes it through the trained network locally —
-/// no external inference service involved.
-class LstmForecastEngine {
+/// dashboard rebuilds the latest engineered feature row per machine from the
+/// alert stream it already has and pushes it through the deployed trees
+/// locally — no external inference service involved.
+class ForecastEngine {
   /// Computes next-24h forecasts for every machine present in [records].
   static List<MachineForecast> computeForecasts(
-    TrainedLstmModel model,
+    TrainedForecastModel model,
     List<AlertRecord> records, {
     DateTime? now,
   }) {
     if (records.isEmpty) return const [];
-    final rows = LstmFeatureEngineer.buildDailyRows(records);
-    final windows = LstmFeatureEngineer.buildInferenceWindows(
+    final rows = ForecastFeatureEngineer.buildDailyRows(records);
+    final features = ForecastFeatureEngineer.buildInferenceFeatures(
       rows,
-      model.scaler,
-      model.seqLen,
       today: now,
     );
 
     final forecasts = <MachineForecast>[];
-    windows.forEach((machineKey, window) {
+    features.forEach((machineKey, x) {
       final parts = machineKey.split('|');
-      final probs = model.network.predict(window);
+      final probs = model.model.predict(x);
       forecasts.add(MachineForecast(
         usine: parts.isNotEmpty ? parts[0] : '',
         convoyeur: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
         poste: parts.length > 2 ? int.tryParse(parts[2]) ?? 0 : 0,
         typeProbabilities: {
-          for (var k = 0; k < kLstmAlertTypes.length; k++)
-            kLstmAlertTypes[k]: double.parse(
-                probs[k].clamp(0, 1).toStringAsFixed(4)),
+          for (var k = 0; k < kForecastAlertTypes.length; k++)
+            kForecastAlertTypes[k]:
+                double.parse(probs[k].clamp(0, 1).toStringAsFixed(4)),
         },
       ));
     });
@@ -63,15 +61,15 @@ class LstmForecastEngine {
     return records;
   }
 
-  /// Publishes a forecast snapshot to `ai_predictions/lstm` so the rest of
-  /// the platform (workers, briefings) can consume the on-device output.
+  /// Publishes a forecast snapshot to `ai_predictions/forecast` so the rest
+  /// of the platform (workers, briefings) can consume the on-device output.
   static Future<void> publishSnapshot(
     List<MachineForecast> forecasts, {
     FirebaseDatabase? database,
-    String source = 'on_device_lstm',
+    String source = 'on_device_gbdt',
   }) async {
     final db = database ?? FirebaseDatabase.instance;
-    await db.ref('ai_predictions/lstm').set({
+    await db.ref('ai_predictions/forecast').set({
       'generatedAt': DateTime.now().toUtc().toIso8601String(),
       'source': source,
       'machineCount': forecasts.length,

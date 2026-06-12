@@ -16,8 +16,8 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - Offline-aware startup, cached account role data, queued worker triggers, and background sync.
 - Voice command and voice claim flows with Android-native lock-screen capture, Sherpa ONNX STT, TFLite speaker verification, and fallback stubs for non-Android platforms.
 - Factory hierarchy, assets, custom plant maps, station QR scanning, location tracking, and locator routing.
-- SuperAdmin command console (role `superadmin`/`SuperAdmin`) with on-device LSTM training/deployment, Production Manager account provisioning, platform-wide logs/bugs/security/cron/database observability, and a reserved hardware tab.
-- Pure-Dart LSTM forecaster (no external inference service) that trains on uploaded company alert history (CSV/Excel/JSON/SQL dump/PDF) and serves live next-24h machine risk on every Production Manager dashboard.
+- SuperAdmin command console (role `superadmin`/`SuperAdmin`) with on-device forecaster training/deployment, an AI Agent Fleet console (per-agent on/off toggles, action logs, stats decks, AI-assist prompt editing, security defense toggles, predictive learning telemetry), Production Manager account provisioning, platform-wide logs/bugs/security/cron/database observability, and a reserved hardware tab.
+- Pure-Dart gradient-boosted decision tree (GBDT) forecaster (no external inference service) that trains in seconds on uploaded company alert history (CSV/Excel/JSON/SQL dump/PDF), serves live next-24h machine risk on every Production Manager dashboard, grades its own forecasts against realized alerts, and adapts daily on fresh production data.
 
 ## Current Versions
 
@@ -40,11 +40,11 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - `lib/providers/alert_provider.dart`: Main app state facade for alert streams, per-supervisor alert buckets, actions, comments, critical flags, help, and assistance.
 - `lib/services/`: Firebase, alerts, auth, FCM, voice, AI, predictions, shifts, hierarchy, location, offline, PDF, and worker queue services.
 - `lib/services/ai/`: Dart AI scoring engine, state manager, feedback repository, and score adjuster.
-- `lib/services/lstm/`: Pure-Dart LSTM stack — multi-format dataset parser, feature engineer, network (BPTT + Adam), trainer, RTDB model store, and forecast engine.
+- `lib/services/forecast/`: Pure-Dart GBDT forecaster stack — multi-format dataset parser, tabular feature engineer, histogram gradient-boosting engine, resumable trainer (+ learning diagnosis), app-global training controller (background runs + checkpoint auto-resume), RTDB model store, forecast engine, continuous-learning service (outcome grading + adaptation boosting), and the overview engine that adapts forecasts into the PM dashboard's predictive cards.
 - `lib/services/superadmin_service.dart`: Production Manager account provisioning via a secondary Firebase app.
 - `lib/services/bug_report_service.dart`: Deduplicated client error reporting into `bugs/client`.
 - `lib/screens/`: Admin, supervisor, alert tree, detail, scan, mapping, locator, collaboration, voice, dashboard, hierarchy, and escalation screens.
-- `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, Production Managers, Logs, Hardware tabs).
+- `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, AI Agents, Production Managers, Logs, Hardware tabs).
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
 - `android/app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/`: Native Android method channels and lock-screen voice capture.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
@@ -343,7 +343,7 @@ Important RTDB roots from `database.rules.json` and code:
 - `security/actions`
 - `workers/health`
 - `cron_lock`
-- `ai_lstm` (model weights, scaler, training telemetry, run history)
+- `ai_forecast` (GBDT model trees/metadata, training telemetry, resumable run checkpoint and persisted training dataset under `ai_forecast/training/*`, run history, self-evaluation ledger under `ai_forecast/accuracy/*`, adaptation lock under `ai_forecast/learning/lock`)
 - `bugs/client` (deduplicated app error reports) and `bugs/agent` (autonomous agent run outcomes)
 
 Alert fields used across app and workers:
@@ -371,7 +371,7 @@ User fields used across app and workers:
 
 Role conventions:
 
-- `superadmin` (also accepted as `SuperAdmin` — role matching is case-insensitive in the app): SuperAdmin command console with LSTM training, Production Manager provisioning, and platform observability. Database rules check both literal spellings.
+- `superadmin` (also accepted as `SuperAdmin` — role matching is case-insensitive in the app): SuperAdmin command console with forecaster training, Production Manager provisioning, and platform observability. Database rules check both literal spellings.
 - `admin`: Production Manager — admin dashboard, broad database access, can manage hierarchy, supervisors, settings, shifts, collaborations.
 - `supervisor`: dashboard, alert handling, collaboration/help, voice claim, location tracking.
 - Other roles can log in if role is valid, but non-admin routing currently lands on supervisor dashboard.
@@ -599,7 +599,7 @@ Worker Jest tests:
 - `scoring.test.js`
 - `security_prompt_injection.test.js`
 - `validation.test.js`
-- `database_rules_security.test.js` (security/workers/bugs/ai_lstm rule policy)
+- `database_rules_security.test.js` (security/workers/bugs/ai_forecast rule policy)
 - `haversine.test.js`
 
 Flutter tests:
@@ -609,14 +609,14 @@ Flutter tests:
 - `widget_test.dart`
 - Model tests for alert, collaboration, predictive, shift, and user models.
 - Service tests for AI scoring, alert actions, alert stream, collaboration, offline account cache, predictive scope, AI score adjuster, and reinforcement.
-- LSTM tests: `lstm_network_test.dart` (loss decreases on a learnable task, serialization, clone), `lstm_feature_engineer_test.dart` (daily rows, scaler, windows), `lstm_trainer_test.dart` (end-to-end learning verdict, cancel, small-dataset rejection), `alert_record_parser_test.dart` (CSV/JSON/SQL/PDF/timestamps/type normalization).
+- Forecaster tests: `gradient_boost_test.dart` (loss beats the prior baseline on a separable task, learned rules hold, serialization round-trip, truncation, clone), `forecast_feature_engineer_test.dart` (daily rows, tabular samples, lags/trend/recency, padded inference features), `forecast_trainer_test.dart` (end-to-end learning verdict, cancel, small-dataset rejection, checkpoint resume, adaptation boosting), `alert_record_parser_test.dart` (CSV/JSON/SQL/PDF/timestamps/type normalization), `forecast_overview_engine_test.dart` (forecast→PredictiveModel adapter math, bucket decomposition, learning diagnosis, learning-verdict rule).
 - Utility tests for alert metadata and factory ids.
 - Widget tests for admin dashboard, factory location picker, and locator painter.
 
-Current verified results (2026-06-10):
+Current verified results (2026-06-12, after the AI Agent Fleet console, worker agent control plane, and PM predictive-card fix):
 
-- `npm test`: 14 suites passed, 180 tests passed.
-- `flutter test`: 264 tests passed.
+- `npm test`: 15 suites passed, 187 tests passed (new: `agent_control.test.js`).
+- `flutter test`: 278 tests passed.
 - `flutter analyze --no-fatal-infos --no-fatal-warnings`: clean (style infos only).
 - `flutter build web --release --no-wasm-dry-run`: succeeds.
 
@@ -696,40 +696,68 @@ On 2026-05-15, the notification push lock behavior was fixed:
 - `npm test` passes all worker tests after the change.
 
 
-## SuperAdmin Console And On-Device LSTM (2026-06-10)
+## SuperAdmin Console And On-Device Gradient-Boosted Forecaster (2026-06-10, GBDT swap 2026-06-11)
 
-A full SuperAdmin tier was added on top of the existing admin/supervisor roles, together with a working, trainable LSTM forecaster and a platform-wide observability surface.
+A full SuperAdmin tier was added on top of the existing admin/supervisor roles, together with a working, trainable machine-learning forecaster and a platform-wide observability surface. On 2026-06-11 the original pure-Dart LSTM was replaced end-to-end by an XGBoost-class gradient-boosted decision tree (GBDT) engine with continuous learning — better accuracy on tabular alert history, trains in seconds instead of minutes, no scaler/window fragility, and it grades its own forecasts against reality.
 
 ### Role And Routing
 
 - New role `superadmin` (case-insensitive in the app; rules accept both `superadmin` and `SuperAdmin` literals). Create the account record manually in Firebase: `users/{uid}/role = "SuperAdmin"`.
 - `RoleRouter` (lib/main.dart) normalizes the role and routes superadmin to `SuperAdminDashboardScreen`; `OfflineAccountCache.normalizeRole` persists the canonical lowercase form for offline startup.
-- Database rules: superadmin can read/write `users/{uid}` (for Production Manager provisioning), read `security/*`, `workers/*`, `bugs`, and write `ai_lstm`. Plain `admin` (Production Manager) accounts remain excluded from `security/*` and `workers/*` reads — enforced by `worker_test/database_rules_security.test.js`.
+- Database rules: superadmin can read/write `users/{uid}` (for Production Manager provisioning), read `security/*`, `workers/*`, `bugs`, and write `ai_forecast`. Plain `admin` (Production Manager) accounts remain excluded from `security/*` and `workers/*` reads — enforced by `worker_test/database_rules_security.test.js`.
 - Deploy rules after pulling: `firebase deploy --only database`.
 
 ### SuperAdmin Console (lib/screens/superadmin/)
 
-Always-dark futuristic command-center design with an animated neural-mesh vector background (`superadmin_theme.dart`: `NeuralBackground`, `GlassPanel`, `GlowChip`, `PulseDot`, `SaButton`, …). Four tabs:
+Futuristic "Command Center" design with an animated neural-mesh vector background (`superadmin_theme.dart`: `SaPalette`, `NeuralBackground`, `GlassPanel`, `GlowChip`, `PulseDot`, `SaButton`, …). Since 2026-06-11 the console follows the app-wide `ThemeProvider` (light/dark): the dashboard build calls `Sa.setDark(...)` and a sun/moon toggle sits in the console header. `Sa` color tokens are palette *getters* (deep-space dark + arctic light), so never capture `Sa.*` colors inside `const` expressions. Terminal-style surfaces (console viewer, raw JSON blocks, DB schema map) intentionally stay dark in both themes via the fixed `Sa.term*` constants. Decorative painters (neural mesh, DB map) are throttled to ~25–30fps behind RepaintBoundaries, the header clock/status chips are isolated self-refreshing widgets, and `PulseDot` paints its ripple outside a fixed-size box so status chips never shift layout. Five tabs:
 
-1. **AI Training** (`lstm_training_tab.dart`): upload company alert history, watch deployed-model status, auto-tuned editable hyperparameters, live training monitor (gradient progress bar, train/val loss curves, accuracy/F1 curves, LEARNING/NOT-LEARNING verdict), next-24h forecast preview, one-click deploy.
-2. **Production Managers** (`production_managers_tab.dart`): provision/revoke Production Manager (`role: admin`) accounts and send password resets. Account creation runs through a secondary Firebase app (`superadmin_service.dart`) so the SuperAdmin session is never replaced.
-3. **Logs** (`logs_tab.dart`): five live sections — Bugs (client errors + autonomous agent runs with AI FIXED / ESCALATED status and GitHub issue links), Console (AppLogBuffer live viewer with level filters), Security (enforcement actions + anomaly observations from `security/*`), Cron Health (both workers' pulses with freshness/staleness states and raw pulse view), Database (animated live topology map of RTDB roots with shallow-count probing via the REST API and per-node health).
-4. **Hardware** (`hardware_tab.dart`): reserved placeholder with radar-sweep animation.
+1. **AI Training** (`ai_training_tab.dart`): upload company alert history, watch deployed-model status plus the live continuous-learning ledger (forecasts graded, precision/recall, Brier score, last adaptation), auto-tuned but always-visible/editable hyperparameters (boosting rounds, learning rate, max depth, min leaf samples, subsample, L2 — AUTO-TUNE recomputes them from the dataset shape), live training monitor (gradient progress bar, train/val loss curves, accuracy/F1 curves, LEARNING/NOT-LEARNING verdict), next-24h forecast preview, one-click deploy.
+2. **AI Agents** (`ai_agents_tab.dart`, added 2026-06-12): the AI Agent Fleet console — see "AI Agent Fleet" section below.
+3. **Production Managers** (`production_managers_tab.dart`): provision/revoke Production Manager (`role: admin`) accounts and send password resets. Account creation runs through a secondary Firebase app (`superadmin_service.dart`) so the SuperAdmin session is never replaced.
+4. **Logs** (`logs_tab.dart`): five live sections — Bugs (client errors only since 2026-06-12; the autonomous-agent run feed moved out of this tab — `bugs/agent` is still written by the bugfix workflow but no longer rendered), Console (AppLogBuffer live viewer with level filters), Security (enforcement actions + anomaly observations from `security/*`), Cron Health (both workers' pulses with freshness/staleness states and raw pulse view), Database (animated live topology map of RTDB roots with shallow-count probing via the REST API and per-node health).
+5. **Hardware** (`hardware_tab.dart`): reserved placeholder with radar-sweep animation.
 
-### Pure-Dart LSTM (lib/services/lstm/)
+### AI Agent Fleet (2026-06-12)
 
-The forecaster is a real recurrent network trained on-device — no HuggingFace or external inference dependency:
+`lib/screens/superadmin/ai_agents_tab.dart` presents six named agents as a fleet (horizontal agent cards + per-agent detail panels), each with an on/off toggle, an in-depth action log (tap any row for the full record), and a stats deck. Master switches and settings live under `ai_agents/{id}` in RTDB (`enabled`, `settings/*`, `promptTemplate`, worker-written `stats/*` + `logs/*`); the AI worker honors them through a 60-second cached control plane (`_loadAgentControl` in `cloudflare_ai_worker.js`) that **fails open** — a control-plane read error never takes agents down. Rules: `ai_agents` is readable by any authed client (PM dashboards/learner read switches) but writable only by superadmin or the worker service token (enforced in `worker_test/database_rules_security.test.js`).
 
+- **Shift Commander (`shift`)**: flattened `shift_ai_logs` activity with kind breakdown bars and health-pulse stats. Disabling gates `runAIAssignments`, `processShiftCollaborations`, `processShiftEnding`, and `runShiftPresenceCheck` in the cron and the manual trigger (escalation checks always run — platform safety, not an agent). Worker bumps `ai_agents/shift/stats` per cron with atomic increments.
+- **Briefing Officer (`briefing`)**: latest dispatch view, archive/factory-scope counts, REGENERATE NOW button (GET `briefingEndpoint?force=1`). Disabling makes `/briefing` serve the cached latest (any date) and never spend a Llama run; generation bumps `ai_agents/briefing/stats` and logs a row.
+- **AI Assist (`assist`)**: Prompt Lab — the exact Llama prompt template is editable and deployable to `ai_agents/assist/promptTemplate` (placeholders `{type} {description} {usine} {convoyeur} {poste} {history}`, filled by `_assistFillPrompt`; override is sanitized + capped at 8KB; revert deletes the node). Knowledge Base shows the validated resolutions the agent cites (query `alerts` by `status == validee` with `resolutionReason`). Service log + served counter come from worker writes in `handleAiSuggest`. Disabling returns the static fallback suggestion with `agentDisabled: true`.
+- **Security Sentinel (`security`)**: Defense Grid toggles under `ai_agents/security/settings/{promptInjection,rateLimiting,sanitization,anomalyScan,siemExport}` — `_securityGuard` checks them per-request (rate limit / injection scan / sanitize each individually gated), the cron gates the anomaly scan and SIEM flush. Threat mix bars + enforcement log from `security/actions`.
+- **Predictive Core (`predictive`)**: model identity card (reads `ai_forecast/model/*` metadata children individually — the weights blob never enters the screen; refreshes on `version` bumps), precision/recall/Brier ring gauges from `ai_forecast/accuracy/latest`, Brier-per-day trend chart from `accuracy/history`, adaptation-budget bar (adaptedRounds/60), graded-day log. Settings `ai_agents/predictive/settings/{adaptationEnabled,outcomeGrading}`: `adaptationEnabled` is honored by the Dart `ForecastContinuousLearner` (via `ForecastModelStore.predictiveAgentFlag`), `outcomeGrading` by the worker learner.
+- **Guardian (`guardian`)**: under-maintenance placeholder with radar-scan animation; toggle disabled.
+
+### Worker-Side Forecast Outcome Learner (2026-06-12)
+
+`_runForecastOutcomeCycle` in `cloudflare_ai_worker.js` (cron, every 30 min on the validation cadence, gated by the predictive agent + `outcomeGrading`) makes the GBDT continuous-learning loop survive with zero dashboards open: it (1) snapshots tomorrow's pending outcome from the latest `ai_predictions/forecast` publish into `ai_forecast/accuracy/pending/{yyyy-MM-dd}` (first write wins, same `usine~conv~poste` key scheme as the Dart learner), and (2) grades fully elapsed pending days against `alertsMap` using the tuned per-type decision thresholds the console mirrors to `ai_forecast/model/thresholds` at deploy/adapt time (added to `ForecastModelStore.saveModel`/`saveAdaptedModel`), folding hits/misses + Brier into the same `ai_forecast/accuracy/{latest,history}` ledger. Adaptation boosting itself stays on-device in Dart — the worker only grades.
+
+### PM Predictive-Card Fix (2026-06-12)
+
+The PM "not enough data" bug had three causes, all fixed in `forecast_overview_engine.dart`: (1) live inference fed **raw** `AlertModel.type` strings into features trained on canonical types — `updateAlerts` now routes through `AlertRecordParser.normalizeType`; (2) `overlayFor` discarded the whole AI overlay when no machine crossed the 0.2 failure floor, silently falling back to the often-absent statistical model — the overlay (risk curves are always real model output) is now kept, and when the plant is calm the failure list falls back to the top entries above a relaxed `kQuietFloor` (0.01) so the PM always sees ranked live forecasts; (3) the alert-stream change detector compared only list length — it now uses a length+newest-timestamp signature. Factory scoping is also case/whitespace-insensitive now.
+
+### Pure-Dart Gradient-Boosted Forecaster (lib/services/forecast/)
+
+The forecaster is a real second-order (Newton) gradient-boosting engine trained on-device — the same formulation XGBoost/LightGBM use, with no HuggingFace or external inference dependency:
+
+- `forecast_types.dart`: canonical types (`kForecastAlertTypes`), the 8 base daily columns (`kDailyFeatureCols`, mirrors the worker's daily schema), the 25 engineered tabular columns (`kForecastFeatureCols`), `AlertRecord`/`DatasetSummary`/`FeatureSample`, `ForecastTrainingConfig` (auto-tuned from sample count; rounds/lr/depth/minLeaf/subsample/colsample/L2/patience/`posWeightCap` all visible+editable), `RoundStat` (round 0 = pre-boosting baseline), `MachineForecast`.
 - `alert_record_parser.dart`: ingests CSV/TSV, JSON (incl. Firebase RTDB exports), Excel (.xlsx), MySQL dumps (.sql INSERT parsing with CREATE TABLE fallback), and PDFs (table extraction via Syncfusion + heuristic line scan). Header-synonym mapping (EN/FR), flexible timestamps (ISO, epoch s/ms, dd/MM/yyyy, Excel serial), type normalization onto the four canonical types.
-- `lstm_feature_engineer.dart`: mirrors the worker's `_buildDailyFeatures` — per-machine gap-free daily rows with the 8 `kLstmFeatureCols` features, min/max scaler (persisted with the model), 14-day windows with next-day multi-label targets, and padded inference windows for quiet machines.
-- `lstm_network.dart`: single-layer LSTM + sigmoid head, full BPTT, Adam, global-norm gradient clipping, weighted BCE for class imbalance, forget-gate bias init, JSON (de)serialization.
-- `lstm_trainer.dart`: stratified split, per-class positive weights, early stopping with best-weights snapshot, cooperative yielding (UI stays smooth on web and mobile), streams `EpochStat`s that drive the live curves, and a quantitative learning verdict (best val loss <= 97% of starting val loss).
-- `lstm_model_store.dart`: persists weights/scaler/metadata to `ai_lstm/model`, run history to `ai_lstm/history`, live training telemetry to `ai_lstm/training/latest`.
-- `lstm_forecast_engine.dart`: on-device inference over recent alerts; publishes throttled snapshots to `ai_predictions/lstm`.
+- `forecast_feature_engineer.dart`: per-machine gap-free daily rows (same `_buildDailyFeatures` schema as the worker), then tabular samples per machine-day: today's snapshot, tomorrow's calendar context, total lags (t-1/t-2), per-type 7d rolling counts, 7/14d totals, week-over-week trend, per-type recency (capped 30d), critical pressure. No scaler — trees are scale-invariant. `buildInferenceFeatures` pads quiet machines to today.
+- `gradient_boost.dart`: `BoostTree` (flat-array regression tree), `GradientBoostModel` (per-type ensembles + prior log-odds base scores, per-type `thresholds` for "alert called" classification, `truncated()` best-round snapshots, JSON (de)serialization, `baseRounds`/`adaptedRounds` bookkeeping), and `GbdtBooster` (histogram split finding with ≤64 quantile bins, leaf weights `-G/(H+λ)`, gain pruning, row/feature subsampling, shrinkage folded into leaves, class-imbalance weighting via per-type pos-weights capped at `config.posWeightCap`, `bestValThresholds()` grid-searches per-type decision thresholds that maximize validation F1, weighted-BCE/accuracy/macro-F1 eval from cached margins using those thresholds instead of a fixed 0.5).
+- `forecast_trainer.dart`: deterministic seeded train/val split, a round-0 baseline stat so curves show the real improvement over the prior, one tree per type per round with ~10ms cooperative yielding (UI stays smooth on web/mobile), early stopping with best-round truncation, a quantitative learning verdict (best val loss <= 97% of the round-0 baseline), `diagnose()` for NOT-LEARNING explanations, checkpoint resume (`resumeModel`/`startRound`/`resumeStats`), and `adapt()` — the continuous-learning entry point that boosts a few stiffly-regularized extra trees onto a deployed model. After training, the final model's `thresholds` are set from `bestValThresholds()` on the held-out validation set, and live `RoundStat.valF1` curves use those same tuned thresholds (not a fixed 0.5) so F1 reflects genuine probability separation under class imbalance.
+- `forecast_training_controller.dart`: app-global `ChangeNotifier` singleton (`ForecastTrainingController.instance`) that *owns* the dataset + training run; the AI Training tab is only a view of it. Training survives tab switches, console navigation, and sign-out while the app stays open. It checkpoints trees + round stats + config to `ai_forecast/training/checkpoint` (every ~10s) and persists the uploaded dataset (compact row encoding) to `ai_forecast/training/dataset`, so a closed browser tab/app auto-resumes the run on the next console open (`ensureResumed()`, called from `SuperAdminDashboardScreen.initState`). If another live session owns the run it spectates via `ai_forecast/training/latest` telemetry and takes over when the owner's heartbeat goes stale (>150s). A finished-but-undeployed run is restored from the checkpoint for one-click deploy; deploying clears the checkpoint (the dataset blob is kept for retraining).
+- `forecast_model_store.dart`: persists the ensemble/metadata to `ai_forecast/model`, run history to `ai_forecast/history`, live training telemetry to `ai_forecast/training/latest`, the resumable checkpoint to `ai_forecast/training/checkpoint`, the persisted dataset to `ai_forecast/training/dataset`, the self-evaluation ledger to `ai_forecast/accuracy/{latest,history,pending}`, and the cross-dashboard adaptation lock to `ai_forecast/learning/lock`. Deploying a fresh model resets the accuracy ledger.
+- `forecast_engine.dart`: on-device inference over recent alerts; publishes throttled snapshots to `ai_predictions/forecast`.
+- `forecast_learning_service.dart` (`ForecastContinuousLearner`): the continuous-learning loop, driven opportunistically from open PM dashboards (self-throttled to one cycle per 30 min, no server component). (1) **Self-evaluation** — each day the engine snapshots what the model predicts for tomorrow under `accuracy/pending/{yyyy-MM-dd}`; once that day elapses, any dashboard grades it against the alerts that actually happened (hit/miss at p>=0.5 + Brier score) and folds the result into the rolling `accuracy/latest` ledger shown in the console. (2) **Adaptation** — at most once per ~20h (lock + re-read after claim), it boosts 6 extra trees per type onto the deployed ensemble from the last 120 days of live alerts (small lr, stiff L2, capped at +60 adaptive rounds until the next full retrain), bumping the model `version` so every dashboard streams the update.
 
 ### Production Manager Dashboard Integration
 
-`lib/widgets/overview/overview_lstm_forecast_card.dart` (`LstmForecastCard`) is embedded in the admin Overview tab (both wide and narrow layouts). It streams `ai_lstm/model`, re-runs inference whenever the alert stream changes (throttled to 15s), scopes to the selected factory, renders animated per-machine risk rings and per-type probability bars, and keeps `ai_predictions/lstm` fresh (one write per 10 minutes across all open dashboards). With no deployed model it shows a guidance empty state.
+The deployed forecaster feeds the two existing predictive cards on the admin Overview tab directly:
+
+- `lib/services/forecast/forecast_overview_engine.dart` (`ForecastOverviewEngine`, a `ChangeNotifier` owned by `AdminOverviewTab`) streams `ai_forecast/model`, re-runs on-device inference whenever the alert stream changes (throttled to 15s), keeps `ai_predictions/forecast` fresh (one write per 10 minutes across all open dashboards), and drives the `ForecastContinuousLearner` cycle.
+- Its `overlayFor(selectedUsine, statisticalModel)` adapter converts per-machine `MachineForecast`s into the `PredictiveModel` shape both cards already render: one `PredictedFailure` per machine-type above a 0.2 probability floor (confidence = model probability, ETA heuristic `(1-p)*24h`, past/critical counts and last-seen from local alert history), and per-type `RiskCurve`s where the plant-wide day probability `1-Π(1-p_machine)` is decomposed exactly over twelve 2h buckets along the statistical curve's intra-day shape (falling back to the hour-of-day histogram, then uniform).
+- `PredictiveFailureCard` and `PredictiveRiskHeatmap` take a `forecastLive` flag: subtitle and badge switch to "AI · LIVE"/"AI", and the statistical validated-accuracy badge hides (it doesn't describe the forecaster). With no deployed model — or no machine forecasts in the selected scope — both cards keep the statistical edge model as fallback.
+- Adapter math and the learning diagnosis are covered by `test/services/forecast_overview_engine_test.dart`.
 
 ### Bugs Pipeline
 
@@ -746,10 +774,12 @@ The forecaster is a real recurrent network trained on-device — no HuggingFace 
 - Deleted: `android_old/`, `android_backup/`, `.idea/`, `alertsysapp.iml`, `lib/screens/admin/developer_tab.dart` (orphaned; superseded by the SuperAdmin Logs tab), root duplicate `firebase_options.dart` (app uses `lib/firebase_options.dart`), `WORKER_UPDATE_FILTER_CLAIMED.js`, debug exports (`__*.json`, `temp_error.json`, mangled `C:Users…` file), one-off scripts (`boost.cjs`, `trigger_flood.cjs`, `cleanup_flood.cjs`, `reset_push_sent.cjs`), and stale `flutter_*.log` / `.codex-*.log` files.
 - `.gitignore` rewritten as clean UTF-8 (it contained a corrupted UTF-16 line) and extended with `__*.json`, `temp_error.json`, `service-account.json`.
 
-### Operational Sequence: Train And Serve The LSTM
+### Operational Sequence: Train And Serve The Forecaster
 
 1. SuperAdmin signs in (role `SuperAdmin`) and lands on the console.
-2. AI Training tab → upload an alert-history export (CSV/Excel/JSON/SQL/PDF). The parser reports rows/machines/span/type distribution and engineering yields N training windows.
-3. Hyperparameters are auto-tuned from dataset size; Start Training runs genuine BPTT with live loss/accuracy curves and a learning verdict.
-4. Deploy to Production writes weights+scaler to `ai_lstm/model` and an immediate live snapshot to `ai_predictions/lstm` computed from production alerts.
-5. Every Production Manager dashboard's `LstmForecastCard` picks the model up via stream and starts on-device, real-time next-24h forecasting that refreshes as alerts arrive.
+2. AI Training tab → upload an alert-history export (CSV/Excel/JSON/SQL/PDF). The parser reports rows/machines/span/type distribution and engineering yields N training samples. The dataset is also persisted to `ai_forecast/training/dataset` so it survives reloads.
+3. Hyperparameters are auto-tuned from dataset size (and always displayed/editable); Start Training runs genuine second-order gradient boosting with live loss/accuracy curves and a learning verdict — typically seconds, not minutes. The run is owned by `ForecastTrainingController` (app-global): switching tabs, navigating the console, or signing out does not interrupt it, and mid-run checkpoints land in `ai_forecast/training/checkpoint`. A NOT-LEARNING verdict renders a "Why the model didn't learn" panel (`ForecastTrainer.diagnose`): dataset volume/span, label sparsity/missing types, and loss-trajectory reasons with concrete fixes.
+4. If the browser tab/app is closed mid-run, the next console session auto-resumes the run from the checkpoint round (`ensureResumed()`); a finished-but-undeployed run is likewise restored for review/deploy.
+5. Deploy to Production writes the ensemble to `ai_forecast/model`, an immediate live snapshot to `ai_predictions/forecast` computed from production alerts, clears the run checkpoint, and resets the self-evaluation ledger.
+6. Every Production Manager dashboard picks the model up via stream (`ForecastOverviewEngine`): the Predictive Failure Alerts card and the Predictive Risk · Next 24h heatmap switch from the statistical edge model to live on-device forecasts (badged "AI · LIVE"), refreshing as alerts arrive.
+7. From then on the model learns continuously: open dashboards snapshot tomorrow's forecast daily, grade elapsed snapshots against realized alerts (precision/recall/Brier in the console's CONTINUOUS LEARNING strip), and boost a few adaptation trees per ~day on recent production data behind a cross-dashboard lock — until the SuperAdmin runs a full retrain.
