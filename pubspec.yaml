@@ -88,3 +88,8 @@ flutter:
     - assets/fonts/NotoSans-Italic.ttf
     - assets/fonts/NotoSans-BoldItalic.ttf
     - assets/fonts/NotoSansArabic-Regular.ttf
+    - media/shift_agent_logo.png
+    - media/briefing_agent_logo.png
+    - media/assist_agent_logo.png
+    - media/predective_agent_logo.png
+    - media/guardian_agent_logo.png

@@ -59,4 +59,17 @@ describe('security database rules', () => {
     // Plain app-admin role must not be able to rewrite agent prompts.
     expect(agents['.write']).not.toContain("child('role').val() === 'admin'");
   });
+
+  test('ai_agent_secrets credential vault is superadmin-only, even for the worker service token', () => {
+    const secrets = rules.ai_agent_secrets;
+    const superadminOnly =
+      "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')";
+
+    expect(secrets['.read']).toBe(superadminOnly);
+    expect(secrets['.write']).toBe(superadminOnly);
+    // Plain app-admin role and the worker service token must never unlock
+    // custom-agent API tokens.
+    expect(JSON.stringify(secrets)).not.toContain("val() === 'admin'");
+    expect(JSON.stringify(secrets)).not.toContain('auth.token.role');
+  });
 });
