@@ -298,6 +298,15 @@
       }
     },
 
+    "ai_agent_secrets": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "$agentId": {
+        "apiToken": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isString()" }
+      }
+    },
+
     "ai_forecast": {
       ".read": "auth != null",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",

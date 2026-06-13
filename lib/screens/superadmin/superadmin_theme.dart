@@ -438,6 +438,10 @@ class SaSectionHeader extends StatelessWidget {
   final Color? accent;
   final Widget? trailing;
 
+  /// Optional custom leading widget rendered inside the accent tile in place
+  /// of [icon] — used to surface an agent's brand logo in its panel header.
+  final Widget? leading;
+
   const SaSectionHeader({
     super.key,
     required this.icon,
@@ -445,6 +449,7 @@ class SaSectionHeader extends StatelessWidget {
     this.subtitle,
     this.accent,
     this.trailing,
+    this.leading,
   });
 
   @override
@@ -464,7 +469,7 @@ class SaSectionHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: a.withValues(alpha: 0.5)),
           ),
-          child: Icon(icon, color: a, size: 18),
+          child: leading ?? Icon(icon, color: a, size: 18),
         ),
         const SizedBox(width: 12),
         Expanded(

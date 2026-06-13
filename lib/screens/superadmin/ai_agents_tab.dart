@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../../config/app_config.dart';
@@ -30,6 +35,11 @@ class AiAgentsTab extends StatefulWidget {
 }
 
 /// Static identity of one fleet agent.
+///
+/// Built-in agents are declared in [_kAgents] with a bundled PNG [logoAsset].
+/// Operator-created agents are reconstructed from `ai_agents/registry/{id}` via
+/// [_AgentSpec.custom] — they carry an uploaded base64 [logoData] (or a chosen
+/// [iconCode] + [accentHex]) and an attached LLM provider + credential.
 class _AgentSpec {
   final String id;
   final String name;
@@ -38,6 +48,25 @@ class _AgentSpec {
   final IconData icon;
   final bool maintenance;
 
+  /// Bundled brand logo for a built-in agent (asset path), or null.
+  final String? logoAsset;
+
+  /// True for operator-created agents (deletable, generic detail panel).
+  final bool custom;
+
+  /// Custom-agent payload (all null for built-ins).
+  final String? logoData; // base64 PNG of the uploaded logo
+  final String? accentHex; // chosen accent for custom agents
+  final String? description;
+  final String? tasks;
+  final String? tasksFile;
+  final String? skills;
+  final String? skillsFile;
+  final String? provider; // provider id (openai/anthropic/…)
+  final String? model;
+  final String? apiToken;
+  final String? createdAt;
+
   const _AgentSpec({
     required this.id,
     required this.name,
@@ -45,16 +74,86 @@ class _AgentSpec {
     required this.codename,
     required this.icon,
     this.maintenance = false,
+    this.logoAsset,
+    this.custom = false,
+    this.logoData,
+    this.accentHex,
+    this.description,
+    this.tasks,
+    this.tasksFile,
+    this.skills,
+    this.skillsFile,
+    this.provider,
+    this.model,
+    this.apiToken,
+    this.createdAt,
   });
 
-  Color get accent => switch (id) {
-        'shift' => Sa.cyan,
-        'briefing' => Sa.blue,
-        'assist' => Sa.green,
-        'security' => Sa.red,
-        'predictive' => Sa.violet,
-        _ => Sa.amber,
-      };
+  /// Rebuilds a custom agent spec from its registry record. [apiToken] is
+  /// supplied separately from `ai_agent_secrets/{id}` — the registry record
+  /// itself never holds the credential.
+  factory _AgentSpec.fromRegistry(String id, Map<String, dynamic> m,
+      {String? apiToken}) {
+    return _AgentSpec(
+      id: id,
+      name: (m['name'] ?? 'AGENT').toString(),
+      codename: (m['codename'] ?? 'CUSTOM UNIT').toString(),
+      role: (m['role'] ?? m['description'] ?? 'Operator-deployed agent')
+          .toString(),
+      icon: _kAgentIcons[(m['iconKey'] ?? '').toString()] ??
+          Icons.smart_toy_outlined,
+      custom: true,
+      logoData: (m['logoData'] ?? '').toString().isEmpty
+          ? null
+          : m['logoData'].toString(),
+      accentHex: (m['accentHex'] ?? '').toString().isEmpty
+          ? null
+          : m['accentHex'].toString(),
+      description: (m['description'] ?? '').toString(),
+      tasks: (m['tasks'] ?? '').toString(),
+      tasksFile: (m['tasksFile'] ?? '').toString().isEmpty
+          ? null
+          : m['tasksFile'].toString(),
+      skills: (m['skills'] ?? '').toString(),
+      skillsFile: (m['skillsFile'] ?? '').toString().isEmpty
+          ? null
+          : m['skillsFile'].toString(),
+      provider: (m['provider'] ?? '').toString(),
+      model: (m['model'] ?? '').toString(),
+      apiToken: apiToken ?? '',
+      createdAt: (m['createdAt'] ?? '').toString(),
+    );
+  }
+
+  Color get accent {
+    if (custom) {
+      final hex = accentHex;
+      if (hex != null && hex.isNotEmpty) {
+        final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
+        if (v != null) return Color(0xFF000000 | v);
+      }
+      return _Providers.of(provider).color;
+    }
+    return switch (id) {
+      'shift' => Sa.cyan,
+      'briefing' => Sa.blue,
+      'assist' => Sa.green,
+      'security' => Sa.red,
+      'predictive' => Sa.violet,
+      _ => Sa.amber,
+    };
+  }
+
+  /// Decoded logo bytes for a custom agent (or null).
+  Uint8List? get logoBytes {
+    final d = logoData;
+    if (d == null || d.isEmpty) return null;
+    try {
+      return base64Decode(d.contains(',') ? d.split(',').last : d);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 const List<_AgentSpec> _kAgents = [
@@ -64,6 +163,7 @@ const List<_AgentSpec> _kAgents = [
     codename: 'UNIT-01 · ORCHESTRA',
     role: 'Runs shifts: AI assignments, collaborations, handovers',
     icon: Icons.military_tech_outlined,
+    logoAsset: 'media/shift_agent_logo.png',
   ),
   _AgentSpec(
     id: 'briefing',
@@ -71,6 +171,7 @@ const List<_AgentSpec> _kAgents = [
     codename: 'UNIT-02 · HERALD',
     role: 'Writes the morning briefings every PM reads',
     icon: Icons.campaign_outlined,
+    logoAsset: 'media/briefing_agent_logo.png',
   ),
   _AgentSpec(
     id: 'assist',
@@ -78,6 +179,7 @@ const List<_AgentSpec> _kAgents = [
     codename: 'UNIT-03 · MENTOR',
     role: 'Suggests resolutions to supervisors from past fixes',
     icon: Icons.support_agent_outlined,
+    logoAsset: 'media/assist_agent_logo.png',
   ),
   _AgentSpec(
     id: 'security',
@@ -92,6 +194,7 @@ const List<_AgentSpec> _kAgents = [
     codename: 'UNIT-05 · ORACLE',
     role: 'Forecasts machine failures and grades itself daily',
     icon: Icons.online_prediction_outlined,
+    logoAsset: 'media/predective_agent_logo.png',
   ),
   _AgentSpec(
     id: 'guardian',
@@ -99,15 +202,431 @@ const List<_AgentSpec> _kAgents = [
     codename: 'UNIT-06 · CLASSIFIED',
     role: 'Under maintenance — capabilities not yet disclosed',
     icon: Icons.shield_moon_outlined,
+    logoAsset: 'media/guardian_agent_logo.png',
     maintenance: true,
   ),
 ];
 
+/// The rounded gradient tile that fronts every agent — shows the brand logo
+/// (asset for built-ins, uploaded bytes for custom agents) or falls back to a
+/// themed icon. Reused on fleet cards and inside panel headers.
+class _AgentAvatar extends StatelessWidget {
+  final _AgentSpec spec;
+  final double size;
+  final double radius;
+
+  const _AgentAvatar({required this.spec, this.size = 32, this.radius = 9});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = spec.accent;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [
+          accent.withValues(alpha: 0.30),
+          accent.withValues(alpha: 0.08),
+        ]),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: accent.withValues(alpha: 0.55)),
+      ),
+      child: Center(
+          child: _AgentGlyph(spec: spec, size: size, radius: radius)),
+    );
+  }
+}
+
+/// Just the brand glyph (asset logo / uploaded bytes / themed icon) with no
+/// surrounding tile — used inside [_AgentAvatar] and as the [SaSectionHeader]
+/// leading so panel hero headers carry the agent's logo.
+class _AgentGlyph extends StatelessWidget {
+  final _AgentSpec spec;
+  final double size;
+  final double radius;
+  const _AgentGlyph({required this.spec, this.size = 32, this.radius = 9});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = spec.accent;
+    final bytes = spec.logoBytes;
+    if (spec.logoAsset != null) {
+      return Padding(
+        padding: EdgeInsets.all(size * 0.12),
+        child: Image.asset(spec.logoAsset!,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (_, __, ___) =>
+                Icon(spec.icon, size: size * 0.52, color: accent)),
+      );
+    }
+    if (bytes != null) {
+      return Padding(
+        padding: EdgeInsets.all(size * 0.1),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(radius * 0.6),
+          child: Image.memory(bytes,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) =>
+                  Icon(spec.icon, size: size * 0.52, color: accent)),
+        ),
+      );
+    }
+    return Icon(spec.icon, size: size * 0.52, color: accent);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LLM PROVIDER BRANDS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// A selectable model provider with brand color, a hand-drawn logo mark and a
+/// short credential hint. Logos are painted in [_ProviderMark] so no binary
+/// brand assets need to ship with the app.
+class _Provider {
+  final String id;
+  final String name;
+  final Color color;
+  final String tokenHint;
+  final String defaultModel;
+
+  const _Provider({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.tokenHint,
+    required this.defaultModel,
+  });
+}
+
+class _Providers {
+  static const list = <_Provider>[
+    _Provider(
+      id: 'anthropic',
+      name: 'Anthropic',
+      color: Color(0xFFD97757),
+      tokenHint: 'sk-ant-…',
+      defaultModel: 'claude-opus-4-8',
+    ),
+    _Provider(
+      id: 'openai',
+      name: 'OpenAI',
+      color: Color(0xFF10A37F),
+      tokenHint: 'sk-…',
+      defaultModel: 'gpt-4o',
+    ),
+    _Provider(
+      id: 'gemini',
+      name: 'Google Gemini',
+      color: Color(0xFF4285F4),
+      tokenHint: 'AIza…',
+      defaultModel: 'gemini-2.0-flash',
+    ),
+    _Provider(
+      id: 'deepseek',
+      name: 'DeepSeek',
+      color: Color(0xFF4D6BFE),
+      tokenHint: 'sk-…',
+      defaultModel: 'deepseek-chat',
+    ),
+    _Provider(
+      id: 'mistral',
+      name: 'Mistral AI',
+      color: Color(0xFFFA520F),
+      tokenHint: 'API key',
+      defaultModel: 'mistral-large-latest',
+    ),
+    _Provider(
+      id: 'xai',
+      name: 'xAI Grok',
+      color: Color(0xFF111827),
+      tokenHint: 'xai-…',
+      defaultModel: 'grok-2',
+    ),
+    _Provider(
+      id: 'meta',
+      name: 'Meta Llama',
+      color: Color(0xFF0866FF),
+      tokenHint: 'API key',
+      defaultModel: 'llama-3.3-70b',
+    ),
+    _Provider(
+      id: 'cohere',
+      name: 'Cohere',
+      color: Color(0xFF39594D),
+      tokenHint: 'API key',
+      defaultModel: 'command-r-plus',
+    ),
+    _Provider(
+      id: 'perplexity',
+      name: 'Perplexity',
+      color: Color(0xFF20808D),
+      tokenHint: 'pplx-…',
+      defaultModel: 'sonar-pro',
+    ),
+    _Provider(
+      id: 'azure',
+      name: 'Azure OpenAI',
+      color: Color(0xFF0078D4),
+      tokenHint: 'API key',
+      defaultModel: 'gpt-4o',
+    ),
+    _Provider(
+      id: 'cloudflare',
+      name: 'Cloudflare AI',
+      color: Color(0xFFF6821F),
+      tokenHint: 'API token',
+      defaultModel: '@cf/meta/llama-3.1-8b',
+    ),
+    _Provider(
+      id: 'other',
+      name: 'Other / Custom',
+      color: Color(0xFF64748B),
+      tokenHint: 'API key',
+      defaultModel: '',
+    ),
+  ];
+
+  static _Provider of(String? id) {
+    return list.firstWhere((p) => p.id == id,
+        orElse: () => list.last); // 'other'
+  }
+}
+
+/// Hand-drawn brand mark for a provider, sized to [size]. Recognizable
+/// geometry per brand (OpenAI blossom, Gemini spark, Mistral bands, …) with a
+/// tasteful monogram fallback.
+class _ProviderMark extends StatelessWidget {
+  final String id;
+  final double size;
+  final Color? color;
+  const _ProviderMark({required this.id, this.size = 22, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _Providers.of(id);
+    final c = color ?? p.color;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _ProviderMarkPainter(id: id, color: c)),
+    );
+  }
+}
+
+class _ProviderMarkPainter extends CustomPainter {
+  final String id;
+  final Color color;
+  _ProviderMarkPainter({required this.id, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2;
+    final fill = Paint()..color = color..isAntiAlias = true;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.4, r * 0.16)
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+
+    switch (id) {
+      case 'openai':
+        // Six-lobed blossom approximated by six rotated rounded petals.
+        for (var i = 0; i < 6; i++) {
+          final a = i * math.pi / 3;
+          final p = c + Offset(math.cos(a), math.sin(a)) * r * 0.46;
+          canvas.drawCircle(p, r * 0.42, fill..color = color.withValues(alpha: 0.85));
+        }
+        canvas.drawCircle(c, r * 0.30,
+            Paint()..color = color.withValues(alpha: 0.0001)..blendMode = BlendMode.clear);
+        break;
+      case 'gemini':
+        // Four-point spark (Google Gemini star).
+        final path = Path();
+        for (var i = 0; i < 4; i++) {
+          final a = i * math.pi / 2;
+          final tip = c + Offset(math.cos(a), math.sin(a)) * r;
+          final l = c + Offset(math.cos(a + math.pi / 4), math.sin(a + math.pi / 4)) * r * 0.30;
+          if (i == 0) {
+            path.moveTo(tip.dx, tip.dy);
+          } else {
+            path.lineTo(tip.dx, tip.dy);
+          }
+          path.lineTo(l.dx, l.dy);
+        }
+        path.close();
+        canvas.drawPath(path, fill);
+        break;
+      case 'mistral':
+        // Stacked color bands echoing the pixel-M logo.
+        final bands = [
+          color,
+          color.withValues(alpha: 0.78),
+          color.withValues(alpha: 0.55),
+        ];
+        final h = size.height / 3;
+        for (var i = 0; i < 3; i++) {
+          canvas.drawRect(
+            Rect.fromLTWH(size.width * 0.12, i * h + h * 0.12,
+                size.width * 0.76, h * 0.76),
+            Paint()..color = bands[i],
+          );
+        }
+        break;
+      case 'anthropic':
+        // Radiating sunburst.
+        for (var i = 0; i < 10; i++) {
+          final a = i * math.pi / 5;
+          canvas.drawLine(
+              c, c + Offset(math.cos(a), math.sin(a)) * r * 0.92, stroke);
+        }
+        canvas.drawCircle(c, r * 0.20, fill);
+        break;
+      case 'deepseek':
+        // Orbit: ring + traveling node.
+        canvas.drawCircle(c, r * 0.55, stroke);
+        canvas.drawCircle(c, r * 0.18, fill);
+        canvas.drawCircle(c + Offset(r * 0.78, -r * 0.2), r * 0.16, fill);
+        break;
+      case 'xai':
+        // Sharp X.
+        canvas.drawLine(c + Offset(-r * 0.6, -r * 0.6),
+            c + Offset(r * 0.6, r * 0.6), stroke);
+        canvas.drawLine(c + Offset(r * 0.6, -r * 0.6),
+            c + Offset(-r * 0.6, r * 0.6), stroke);
+        break;
+      case 'cloudflare':
+        // Cloud arc.
+        canvas.drawCircle(c + Offset(-r * 0.25, r * 0.1), r * 0.4, fill);
+        canvas.drawCircle(c + Offset(r * 0.3, r * 0.15), r * 0.5, fill);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.18, size.height * 0.5,
+                size.width * 0.7, size.height * 0.28),
+            Radius.circular(r * 0.3),
+          ),
+          fill,
+        );
+        break;
+      default:
+        // Monogram fallback (Meta, Cohere, Perplexity, Azure, Other).
+        final letter = (_Providers.of(id).name.isNotEmpty
+                ? _Providers.of(id).name[0]
+                : '?')
+            .toUpperCase();
+        canvas.drawCircle(c, r * 0.92, stroke..strokeWidth = math.max(1.2, r * 0.12));
+        final tp = TextPainter(
+          text: TextSpan(
+            text: letter,
+            style: TextStyle(
+              color: color,
+              fontSize: r * 1.05,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProviderMarkPainter old) =>
+      old.id != id || old.color != color;
+}
+
+/// Square brand tile (logo mark + name) used in the provider picker grid and
+/// the credential card.
+class _ProviderTile extends StatelessWidget {
+  final _Provider provider;
+  final bool selected;
+  final VoidCallback? onTap;
+  const _ProviderTile({
+    required this.provider,
+    this.selected = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = provider.color == const Color(0xFF111827) && !Sa.isDark
+        ? const Color(0xFF334155)
+        : provider.color;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: 116,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? c.withValues(alpha: Sa.isDark ? 0.16 : 0.10)
+              : Sa.bgRaised.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? c : Sa.border,
+            width: selected ? 1.4 : 1,
+          ),
+          boxShadow: [
+            if (selected) BoxShadow(color: c.withValues(alpha: 0.3), blurRadius: 14),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: c.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: c.withValues(alpha: 0.4)),
+              ),
+              child: Center(child: _ProviderMark(id: provider.id, size: 22, color: c)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              provider.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Sa.mono(
+                size: 9.5,
+                color: selected ? Sa.text : Sa.textDim,
+                weight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Lets the fleet rail be dragged horizontally with a mouse / trackpad / touch
+/// — the default web/desktop behavior only scrolls a horizontal list with a
+/// shift+wheel, which is why agents past the fold (Guardian) felt unreachable.
+class _DragScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
+}
+
 class _AiAgentsTabState extends State<AiAgentsTab> {
-  int _selected = 0;
+  String _selectedId = 'shift';
   final Map<String, bool> _enabled = {};
   final List<StreamSubscription<DatabaseEvent>> _subs = [];
+  List<_AgentSpec> _custom = const [];
+  Map<String, Map<String, dynamic>> _registryRaw = {};
+  Map<String, String> _secrets = {};
   Map<String, dynamic>? _health;
+  final ScrollController _railCtrl = ScrollController();
 
   @override
   void initState() {
@@ -122,6 +641,40 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
         }
       }, onError: (_) {}));
     }
+    // Operator-created agents live in a lightweight registry so discovery never
+    // streams the heavy worker logs/stats under the built-in agent nodes. The
+    // API token never lives in this record — it is stored separately under
+    // `ai_agent_secrets/{id}`, which only superadmin can read.
+    _subs.add(FirebaseDatabase.instance
+        .ref('ai_agents/registry')
+        .onValue
+        .listen((event) {
+      final v = event.snapshot.value;
+      final raw = <String, Map<String, dynamic>>{};
+      if (v is Map) {
+        v.forEach((k, val) {
+          if (val is Map) raw[k.toString()] = Map<String, dynamic>.from(val);
+        });
+      }
+      _registryRaw = raw;
+      _rebuildCustom();
+    }, onError: (_) {}));
+    _subs.add(FirebaseDatabase.instance
+        .ref('ai_agent_secrets')
+        .onValue
+        .listen((event) {
+      final v = event.snapshot.value;
+      final secrets = <String, String>{};
+      if (v is Map) {
+        v.forEach((k, val) {
+          if (val is Map && val['apiToken'] != null) {
+            secrets[k.toString()] = val['apiToken'].toString();
+          }
+        });
+      }
+      _secrets = secrets;
+      _rebuildCustom();
+    }, onError: (_) {}));
     _subs.add(FirebaseDatabase.instance
         .ref('workers/health/lastRun')
         .onValue
@@ -133,20 +686,38 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
     }, onError: (_) {}));
   }
 
+  /// Recomputes [_custom] from the latest registry + secrets snapshots.
+  void _rebuildCustom() {
+    final list = <_AgentSpec>[];
+    _registryRaw.forEach((id, val) {
+      final spec = _AgentSpec.fromRegistry(id, val, apiToken: _secrets[id]);
+      list.add(spec);
+      _enabled[spec.id] = val['enabled'] != false;
+    });
+    list.sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
+    if (mounted) setState(() => _custom = list);
+  }
+
   @override
   void dispose() {
     for (final s in _subs) {
       s.cancel();
     }
+    _railCtrl.dispose();
     super.dispose();
   }
+
+  List<_AgentSpec> get _agents => [..._kAgents, ..._custom];
 
   bool _isEnabled(String id) => _enabled[id] ?? true;
 
   Future<void> _setEnabled(_AgentSpec agent, bool value) async {
     setState(() => _enabled[agent.id] = value);
+    final path = agent.custom
+        ? 'ai_agents/registry/${agent.id}'
+        : 'ai_agents/${agent.id}';
     try {
-      await FirebaseDatabase.instance.ref('ai_agents/${agent.id}').update({
+      await FirebaseDatabase.instance.ref(path).update({
         'enabled': value,
         'updatedAt': DateTime.now().toUtc().toIso8601String(),
       });
@@ -173,11 +744,106 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
     }
   }
 
+  Future<void> _openEditor({_AgentSpec? editing}) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (_) => _AgentEditorDialog(editing: editing),
+    );
+    if (result == null) return;
+    final id = editing?.id ??
+        'custom_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final apiToken = (result['apiToken'] ?? '').toString().trim();
+    final record = <String, dynamic>{
+      ...result,
+      'custom': true,
+      'enabled': editing == null ? true : _isEnabled(editing.id),
+      'createdAt':
+          editing?.createdAt ?? DateTime.now().toUtc().toIso8601String(),
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+    // The API token is a credential — it never lands in the registry record,
+    // which is readable by any authenticated user. It lives in
+    // `ai_agent_secrets/{id}`, which only superadmin can read or write.
+    record.remove('apiToken');
+    try {
+      final secretRef = FirebaseDatabase.instance.ref('ai_agent_secrets/$id');
+      await Future.wait([
+        FirebaseDatabase.instance.ref('ai_agents/registry/$id').set(record),
+        apiToken.isEmpty
+            ? secretRef.remove()
+            : secretRef.set({
+                'apiToken': apiToken,
+                'updatedAt': DateTime.now().toUtc().toIso8601String(),
+              }),
+      ]);
+      if (mounted) {
+        setState(() => _selectedId = id);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: Sa.panelSolid,
+          content: Text(
+            editing == null
+                ? '${record['name']} deployed to the fleet.'
+                : '${record['name']} updated.',
+            style: Sa.body(size: 12.5),
+          ),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: Sa.panelSolid,
+          content: Text('Could not save agent: $e',
+              style: Sa.body(size: 12.5, color: Sa.red)),
+        ));
+      }
+    }
+  }
+
+  Future<void> _deleteAgent(_AgentSpec agent) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.72),
+      builder: (_) => _DeleteAgentDialog(agent: agent),
+    );
+    if (confirmed != true) return;
+    try {
+      await Future.wait([
+        FirebaseDatabase.instance
+            .ref('ai_agents/registry/${agent.id}')
+            .remove(),
+        FirebaseDatabase.instance
+            .ref('ai_agent_secrets/${agent.id}')
+            .remove(),
+      ]);
+      if (mounted) {
+        setState(() {
+          if (_selectedId == agent.id) _selectedId = 'shift';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: Sa.panelSolid,
+          content: Text('${agent.name} decommissioned and wiped.',
+              style: Sa.body(size: 12.5, color: Sa.red)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: Sa.panelSolid,
+          content: Text('Delete failed: $e',
+              style: Sa.body(size: 12.5, color: Sa.red)),
+        ));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final agent = _kAgents[_selected];
+    final agents = _agents;
+    final agent =
+        agents.firstWhere((a) => a.id == _selectedId, orElse: () => agents.first);
     final online =
-        _kAgents.where((a) => !a.maintenance && _isEnabled(a.id)).length;
+        agents.where((a) => !a.maintenance && _isEnabled(a.id)).length;
     final cronAt = DateTime.tryParse((_health?['timestamp'] ?? '').toString());
     final cronFresh = cronAt != null &&
         DateTime.now().toUtc().difference(cronAt.toUtc()).inMinutes <= 3;
@@ -188,7 +854,7 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
           child: _FleetStrip(
             online: online,
-            total: _kAgents.length,
+            total: agents.length,
             cronFresh: cronFresh,
             health: _health,
             enabledOf: _isEnabled,
@@ -197,23 +863,35 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           child: SizedBox(
-            height: 132,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _kAgents.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, i) {
-                final a = _kAgents[i];
-                return _AgentCard(
-                  spec: a,
-                  selected: i == _selected,
-                  enabled: _isEnabled(a.id),
-                  onTap: () => setState(() => _selected = i),
-                  onToggle: a.maintenance
-                      ? null
-                      : (v) => _setEnabled(a, v),
-                );
-              },
+            height: 144,
+            child: ScrollConfiguration(
+              behavior: _DragScrollBehavior(),
+              child: Scrollbar(
+                controller: _railCtrl,
+                thumbVisibility: true,
+                child: ListView.separated(
+                  controller: _railCtrl,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: agents.length + 1,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) {
+                    if (i == agents.length) {
+                      return _AddAgentCard(onTap: () => _openEditor());
+                    }
+                    final a = agents[i];
+                    return _AgentCard(
+                      spec: a,
+                      selected: a.id == _selectedId,
+                      enabled: _isEnabled(a.id),
+                      onTap: () => setState(() => _selectedId = a.id),
+                      onToggle: a.maintenance ? null : (v) => _setEnabled(a, v),
+                      onDelete:
+                          a.custom ? () => _deleteAgent(a) : null,
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),
@@ -226,15 +904,21 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
               child: switch (agent.id) {
                 'shift' => _ShiftAgentPanel(
                     spec: agent, enabled: _isEnabled('shift'), health: _health),
-                'briefing' =>
-                  _BriefingAgentPanel(spec: agent, enabled: _isEnabled('briefing')),
+                'briefing' => _BriefingAgentPanel(
+                    spec: agent, enabled: _isEnabled('briefing')),
                 'assist' =>
                   _AssistAgentPanel(spec: agent, enabled: _isEnabled('assist')),
                 'security' => _SecurityAgentPanel(
                     spec: agent, enabled: _isEnabled('security'), health: _health),
                 'predictive' => _PredictiveAgentPanel(
                     spec: agent, enabled: _isEnabled('predictive')),
-                _ => _GuardianAgentPanel(spec: agent),
+                'guardian' => _GuardianAgentPanel(spec: agent),
+                _ => _CustomAgentPanel(
+                    spec: agent,
+                    enabled: _isEnabled(agent.id),
+                    onEdit: () => _openEditor(editing: agent),
+                    onDelete: () => _deleteAgent(agent),
+                  ),
               },
             ),
           ),
@@ -403,6 +1087,7 @@ class _AgentCard extends StatefulWidget {
   final bool enabled;
   final VoidCallback onTap;
   final ValueChanged<bool>? onToggle;
+  final VoidCallback? onDelete;
 
   const _AgentCard({
     required this.spec,
@@ -410,6 +1095,7 @@ class _AgentCard extends StatefulWidget {
     required this.enabled,
     required this.onTap,
     required this.onToggle,
+    this.onDelete,
   });
 
   @override
@@ -457,20 +1143,7 @@ class _AgentCardState extends State<_AgentCard> {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        accent.withValues(alpha: 0.30),
-                        accent.withValues(alpha: 0.08),
-                      ]),
-                      borderRadius: BorderRadius.circular(9),
-                      border:
-                          Border.all(color: accent.withValues(alpha: 0.55)),
-                    ),
-                    child: Icon(spec.icon, size: 17, color: accent),
-                  ),
+                  _AgentAvatar(spec: spec, size: 32, radius: 9),
                   const SizedBox(width: 9),
                   Expanded(
                     child: Column(
@@ -487,6 +1160,15 @@ class _AgentCardState extends State<_AgentCard> {
                       ],
                     ),
                   ),
+                  if (widget.onDelete != null && (_hover || widget.selected))
+                    GestureDetector(
+                      onTap: widget.onDelete,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(Icons.delete_outline,
+                            size: 15, color: Sa.red.withValues(alpha: 0.85)),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -502,12 +1184,21 @@ class _AgentCardState extends State<_AgentCard> {
                 children: [
                   if (spec.maintenance)
                     GlowChip(label: 'MAINTENANCE', color: Sa.amber)
+                  else if (spec.custom)
+                    GlowChip(
+                      label: live ? 'ONLINE' : 'OFFLINE',
+                      color: live ? accent : Sa.muted,
+                      pulse: live,
+                    )
                   else
                     GlowChip(
                       label: live ? 'ONLINE' : 'OFFLINE',
                       color: live ? Sa.green : Sa.muted,
                       pulse: live,
                     ),
+                  const SizedBox(width: 6),
+                  if (spec.custom)
+                    Icon(Icons.auto_awesome, size: 11, color: accent),
                   const Spacer(),
                   if (widget.onToggle != null)
                     _NeonToggle(
@@ -517,6 +1208,75 @@ class _AgentCardState extends State<_AgentCard> {
                     ),
                 ],
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The trailing "+ DEPLOY AGENT" tile on the fleet rail.
+class _AddAgentCard extends StatefulWidget {
+  final VoidCallback onTap;
+  const _AddAgentCard({required this.onTap});
+
+  @override
+  State<_AddAgentCard> createState() => _AddAgentCardState();
+}
+
+class _AddAgentCardState extends State<_AddAgentCard> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Sa.cyan;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 150,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _hover
+                ? accent.withValues(alpha: Sa.isDark ? 0.10 : 0.06)
+                : Sa.panel.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _hover ? accent : Sa.border,
+              style: BorderStyle.solid,
+            ),
+            boxShadow: [
+              if (_hover)
+                BoxShadow(color: accent.withValues(alpha: 0.2), blurRadius: 16),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    accent.withValues(alpha: 0.22),
+                    accent.withValues(alpha: 0.02),
+                  ]),
+                  border: Border.all(color: accent.withValues(alpha: 0.5)),
+                ),
+                child: Icon(Icons.add, color: accent, size: 22),
+              ),
+              const SizedBox(height: 10),
+              Text('DEPLOY AGENT', style: Sa.heading(size: 11.5)),
+              const SizedBox(height: 2),
+              Text('Add a unit to the fleet',
+                  textAlign: TextAlign.center,
+                  style: Sa.mono(size: 7.5, color: Sa.muted)),
             ],
           ),
         ),
@@ -1018,6 +1778,7 @@ class _ShiftAgentPanelState extends State<_ShiftAgentPanel> {
           children: [
             SaSectionHeader(
               icon: spec.icon,
+              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
               title: 'COMMAND DECK',
               subtitle:
                   'Every decision the AI commander takes across active shifts — assignments, collaborations, handovers, presence.',
@@ -1261,6 +2022,7 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
           children: [
             SaSectionHeader(
               icon: spec.icon,
+              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
               title: 'BRIEFING DESK',
               subtitle:
                   'Writes the factory-aware morning briefing each Production Manager wakes up to.',
@@ -1572,6 +2334,7 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
           children: [
             SaSectionHeader(
               icon: spec.icon,
+              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
               title: 'CO-PILOT STATUS',
               subtitle:
                   'Serves resolution suggestions to supervisors, grounded in this plant’s real past fixes.',
@@ -2230,6 +2993,7 @@ class _PredictiveAgentPanelState extends State<_PredictiveAgentPanel> {
           children: [
             SaSectionHeader(
               icon: spec.icon,
+              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
               title: 'MODEL CORE',
               subtitle: deployed
                   ? 'On-device gradient-boosted forecaster, live on every Production Manager dashboard.'
@@ -2689,7 +3453,11 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel>
                 child: CustomPaint(
                   painter: _GuardianScanPainter(color: spec.accent, tick: _c),
                   child: Center(
-                    child: Icon(spec.icon, size: 36, color: spec.accent),
+                    child: SizedBox(
+                      width: 56,
+                      height: 56,
+                      child: _AgentGlyph(spec: spec, size: 56, radius: 14),
+                    ),
                   ),
                 ),
               ),
@@ -2765,4 +3533,1182 @@ class _GuardianScanPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GuardianScanPainter old) =>
       old.color != color;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOM AGENTS · ICON PALETTE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Fixed icon palette for operator-created agents. Keys (not raw code points)
+/// are stored in RTDB so every [IconData] used by the app stays const — that
+/// keeps Flutter's release icon tree-shaking working.
+const Map<String, IconData> _kAgentIcons = {
+  'robot': Icons.smart_toy_outlined,
+  'bolt': Icons.bolt,
+  'shield': Icons.shield_outlined,
+  'brain': Icons.psychology_outlined,
+  'radar': Icons.radar,
+  'chat': Icons.forum_outlined,
+  'eye': Icons.visibility_outlined,
+  'gear': Icons.settings_suggest_outlined,
+  'rocket': Icons.rocket_launch_outlined,
+  'chart': Icons.insights_outlined,
+  'flask': Icons.science_outlined,
+  'hub': Icons.hub_outlined,
+  'translate': Icons.translate,
+  'inventory': Icons.inventory_2_outlined,
+  'bug': Icons.bug_report_outlined,
+  'bell': Icons.notifications_active_outlined,
+};
+
+const List<int> _kAccentSwatches = [
+  0x22D3EE,
+  0x3B82F6,
+  0xA78BFA,
+  0x34D399,
+  0xFBBF24,
+  0xF87171,
+  0xF472B6,
+  0xF6821F,
+  0x10A37F,
+  0x64748B,
+];
+
+String _hexOf(int rgb) => rgb.toRadixString(16).padLeft(6, '0');
+
+/// Decode-resize-PNG-encode an uploaded logo to a small base64 string so the
+/// registry record stays light (the screen streams it live). Falls back to the
+/// raw bytes when decoding is unavailable and the file is already small.
+Future<String?> _encodeLogoBase64(Uint8List bytes) async {
+  try {
+    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 192);
+    final frame = await codec.getNextFrame();
+    final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+    frame.image.dispose();
+    if (data != null) return base64Encode(data.buffer.asUint8List());
+  } catch (_) {}
+  if (bytes.length <= 220 * 1024) return base64Encode(bytes);
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOM AGENT · DETAIL PANEL
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _CustomAgentPanel extends StatefulWidget {
+  final _AgentSpec spec;
+  final bool enabled;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _CustomAgentPanel({
+    required this.spec,
+    required this.enabled,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  State<_CustomAgentPanel> createState() => _CustomAgentPanelState();
+}
+
+class _CustomAgentPanelState extends State<_CustomAgentPanel> {
+  bool _reveal = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final spec = widget.spec;
+    final provider = _Providers.of(spec.provider);
+    final token = (spec.apiToken ?? '');
+    final masked = token.isEmpty
+        ? 'NO CREDENTIAL ON FILE'
+        : token.length <= 4
+            ? '••••'
+            : '${'•' * (token.length - 4).clamp(4, 24)}${token.substring(token.length - 4)}';
+
+    return _AgentScroll(children: [
+      if (!widget.enabled) _OfflineBanner(spec: spec),
+      // ── HERO ──────────────────────────────────────────────────────────
+      GlassPanel(
+        accent: spec.accent,
+        glow: widget.enabled,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SaSectionHeader(
+              icon: spec.icon,
+              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
+              title: spec.name,
+              subtitle: spec.codename,
+              accent: spec.accent,
+              trailing: Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  GlowChip(
+                    label: 'CUSTOM UNIT',
+                    color: spec.accent,
+                    icon: Icons.auto_awesome,
+                  ),
+                  GlowChip(
+                    label: widget.enabled ? 'ONLINE' : 'OFFLINE',
+                    color: widget.enabled ? Sa.green : Sa.muted,
+                    pulse: widget.enabled,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SaStatTile(
+                  label: 'Provider',
+                  value: provider.name,
+                  icon: Icons.cloud_outlined,
+                  color: spec.accent,
+                ),
+                SaStatTile(
+                  label: 'Model',
+                  value: (spec.model ?? '').isEmpty ? '—' : spec.model!,
+                  icon: Icons.memory,
+                  color: Sa.blue,
+                ),
+                SaStatTile(
+                  label: 'Credential',
+                  value: token.isEmpty ? 'MISSING' : 'ON FILE',
+                  icon: Icons.vpn_key_outlined,
+                  color: token.isEmpty ? Sa.amber : Sa.green,
+                ),
+                SaStatTile(
+                  label: 'Deployed',
+                  value: _agoIso(spec.createdAt),
+                  icon: Icons.schedule,
+                  color: Sa.muted,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                SaButton(
+                  label: 'EDIT AGENT',
+                  icon: Icons.tune,
+                  color: spec.accent,
+                  outlined: true,
+                  onPressed: widget.onEdit,
+                ),
+                const SizedBox(width: 10),
+                SaButton(
+                  label: 'DELETE',
+                  icon: Icons.delete_forever_outlined,
+                  color: Sa.red,
+                  outlined: true,
+                  onPressed: widget.onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      // ── PROFILE ───────────────────────────────────────────────────────
+      GlassPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SaSectionHeader(
+              icon: Icons.badge_outlined,
+              title: 'PROFILE',
+              subtitle: 'Who this agent is and what it stands for.',
+              accent: spec.accent,
+            ),
+            const SizedBox(height: 12),
+            if ((spec.description ?? '').trim().isEmpty)
+              Text('No description provided.',
+                  style: Sa.body(size: 12, color: Sa.textDim))
+            else
+              Text(spec.description!, style: Sa.body(size: 12.5)),
+          ],
+        ),
+      ),
+      // ── MISSION / TASKS ───────────────────────────────────────────────
+      _CustomDocPanel(
+        icon: Icons.assignment_outlined,
+        title: 'MISSION BRIEF',
+        subtitle: 'The tasks this agent is responsible for.',
+        accent: spec.accent,
+        body: spec.tasks ?? '',
+        fileName: spec.tasksFile,
+        emptyMsg: 'No tasks defined yet — edit the agent to brief it.',
+      ),
+      // ── SKILLS ────────────────────────────────────────────────────────
+      _CustomDocPanel(
+        icon: Icons.school_outlined,
+        title: 'SKILLS & CAPABILITIES',
+        subtitle: 'What this agent knows how to do.',
+        accent: spec.accent,
+        body: spec.skills ?? '',
+        fileName: spec.skillsFile,
+        emptyMsg: 'No skills listed yet.',
+      ),
+      // ── CREDENTIALS ───────────────────────────────────────────────────
+      GlassPanel(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SaSectionHeader(
+              icon: Icons.vpn_key_outlined,
+              title: 'CREDENTIALS',
+              subtitle:
+                  'The LLM provider and API token this agent authenticates with.',
+              accent: spec.accent,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: provider.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: provider.color.withValues(alpha: 0.4)),
+                  ),
+                  child: Center(
+                      child: _ProviderMark(
+                          id: provider.id, size: 28, color: provider.color)),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(provider.name, style: Sa.heading(size: 14)),
+                      Text(
+                        (spec.model ?? '').isEmpty
+                            ? 'Default model'
+                            : spec.model!,
+                        style: Sa.mono(size: 10.5, color: Sa.textDim),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Sa.termBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Sa.termBorder),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.key, size: 14, color: Sa.termMuted),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SelectableText(
+                      _reveal && token.isNotEmpty ? token : masked,
+                      style: Sa.mono(size: 11.5, color: Sa.termText),
+                    ),
+                  ),
+                  if (token.isNotEmpty) ...[
+                    IconButton(
+                      tooltip: _reveal ? 'Hide' : 'Reveal',
+                      onPressed: () => setState(() => _reveal = !_reveal),
+                      icon: Icon(
+                        _reveal
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        size: 16,
+                        color: Sa.termDim,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copy',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: token));
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          backgroundColor: Sa.panelSolid,
+                          content: Text('Token copied to clipboard.',
+                              style: Sa.body(size: 12.5)),
+                        ));
+                      },
+                      icon: const Icon(Icons.copy_all_outlined,
+                          size: 15, color: Sa.termDim),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.info_outline, size: 12, color: Sa.muted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Stored separately in a superadmin-only credential vault. Treat it as a secret — rotate it from EDIT AGENT if it leaks.',
+                    style: Sa.body(size: 10.5, color: Sa.muted),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ]);
+  }
+}
+
+/// Reusable read-only document panel (tasks / skills) with an optional source
+/// file chip.
+class _CustomDocPanel extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final String body;
+  final String? fileName;
+  final String emptyMsg;
+
+  const _CustomDocPanel({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.body,
+    required this.fileName,
+    required this.emptyMsg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBody = body.trim().isNotEmpty;
+    return GlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SaSectionHeader(
+            icon: icon,
+            title: title,
+            subtitle: subtitle,
+            accent: accent,
+            trailing: (fileName ?? '').isEmpty
+                ? null
+                : GlowChip(
+                    label: fileName!.toUpperCase(),
+                    color: accent,
+                    icon: Icons.attach_file,
+                  ),
+          ),
+          const SizedBox(height: 12),
+          if (!hasBody)
+            Text(emptyMsg, style: Sa.body(size: 12, color: Sa.textDim))
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Sa.termBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Sa.termBorder),
+              ),
+              child: SelectableText(body,
+                  style: Sa.mono(size: 11.5, color: Sa.termText)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENT EDITOR DIALOG (add / edit a custom agent)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _AgentEditorDialog extends StatefulWidget {
+  final _AgentSpec? editing;
+  const _AgentEditorDialog({this.editing});
+
+  @override
+  State<_AgentEditorDialog> createState() => _AgentEditorDialogState();
+}
+
+class _AgentEditorDialogState extends State<_AgentEditorDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _codename;
+  late final TextEditingController _description;
+  late final TextEditingController _tasks;
+  late final TextEditingController _skills;
+  late final TextEditingController _model;
+  late final TextEditingController _token;
+
+  String? _logoData;
+  bool _logoBusy = false;
+  String _iconKey = 'robot';
+  String _accentHex = '22D3EE';
+  String? _provider;
+  String? _tasksFile;
+  String? _skillsFile;
+  bool _revealToken = false;
+  bool _modelEdited = false;
+  bool _showError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.editing;
+    _name = TextEditingController(text: e?.name ?? '');
+    _codename = TextEditingController(
+        text: (e?.codename ?? '') == 'CUSTOM UNIT' ? '' : (e?.codename ?? ''));
+    _description = TextEditingController(text: e?.description ?? '');
+    _tasks = TextEditingController(text: e?.tasks ?? '');
+    _skills = TextEditingController(text: e?.skills ?? '');
+    _model = TextEditingController(text: e?.model ?? '');
+    _token = TextEditingController(text: e?.apiToken ?? '');
+    _logoData = e?.logoData;
+    _tasksFile = e?.tasksFile;
+    _skillsFile = e?.skillsFile;
+    _provider = (e?.provider ?? '').isEmpty ? null : e!.provider;
+    _accentHex = (e?.accentHex ?? '').isEmpty ? '22D3EE' : e!.accentHex!;
+    _modelEdited = (e?.model ?? '').isNotEmpty;
+    // Resolve the stored icon back to its palette key.
+    if (e != null) {
+      _kAgentIcons.forEach((k, v) {
+        if (v == e.icon) _iconKey = k;
+      });
+    }
+    _model.addListener(() => _modelEdited = true);
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _codename.dispose();
+    _description.dispose();
+    _tasks.dispose();
+    _skills.dispose();
+    _model.dispose();
+    _token.dispose();
+    super.dispose();
+  }
+
+  Color get _accent {
+    final v = int.tryParse(_accentHex, radix: 16);
+    return v == null ? Sa.cyan : Color(0xFF000000 | v);
+  }
+
+  Future<void> _attachLogo() async {
+    setState(() => _logoBusy = true);
+    try {
+      final res =
+          await FilePicker.pickFiles(type: FileType.image, withData: true);
+      final files = res?.files ?? const [];
+      final bytes = files.isNotEmpty ? files.first.bytes : null;
+      if (bytes != null) {
+        final encoded = await _encodeLogoBase64(bytes);
+        if (encoded != null && mounted) setState(() => _logoData = encoded);
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _logoBusy = false);
+    }
+  }
+
+  Future<void> _attachText({required bool tasks}) async {
+    try {
+      final res = await FilePicker.pickFiles(withData: true);
+      final files = res?.files ?? const [];
+      if (files.isEmpty) return;
+      final f = files.first;
+      String? content;
+      final bytes = f.bytes;
+      if (bytes != null && bytes.length <= 200 * 1024) {
+        try {
+          content = utf8.decode(bytes, allowMalformed: true);
+        } catch (_) {}
+      }
+      setState(() {
+        if (tasks) {
+          _tasksFile = f.name;
+          if (content != null && content.trim().isNotEmpty) {
+            _tasks.text = content;
+          }
+        } else {
+          _skillsFile = f.name;
+          if (content != null && content.trim().isNotEmpty) {
+            _skills.text = content;
+          }
+        }
+      });
+    } catch (_) {}
+  }
+
+  void _save() {
+    final name = _name.text.trim();
+    if (name.isEmpty || _provider == null) {
+      setState(() => _showError = true);
+      return;
+    }
+    final map = <String, dynamic>{
+      'name': name.toUpperCase(),
+      'codename': _codename.text.trim().isEmpty
+          ? 'CUSTOM UNIT'
+          : _codename.text.trim().toUpperCase(),
+      'description': _description.text.trim(),
+      'tasks': _tasks.text.trim(),
+      'skills': _skills.text.trim(),
+      'provider': _provider,
+      'model': _model.text.trim(),
+      'apiToken': _token.text.trim(),
+      'iconKey': _iconKey,
+      'accentHex': _accentHex,
+    };
+    if ((_logoData ?? '').isNotEmpty) map['logoData'] = _logoData;
+    if ((_tasksFile ?? '').isNotEmpty) map['tasksFile'] = _tasksFile;
+    if ((_skillsFile ?? '').isNotEmpty) map['skillsFile'] = _skillsFile;
+    Navigator.pop(context, map);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _accent;
+    final editing = widget.editing != null;
+    final logoBytes = () {
+      final d = _logoData;
+      if (d == null || d.isEmpty) return null;
+      try {
+        return base64Decode(d.contains(',') ? d.split(',').last : d);
+      } catch (_) {
+        return null;
+      }
+    }();
+
+    return Dialog(
+      backgroundColor: Sa.panelSolid,
+      insetPadding: const EdgeInsets.all(20),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 18, 14, 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [
+                  accent.withValues(alpha: Sa.isDark ? 0.18 : 0.10),
+                  Colors.transparent,
+                ]),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        accent.withValues(alpha: 0.3),
+                        accent.withValues(alpha: 0.08),
+                      ]),
+                      borderRadius: BorderRadius.circular(12),
+                      border:
+                          Border.all(color: accent.withValues(alpha: 0.5)),
+                    ),
+                    child: logoBytes != null
+                        ? Padding(
+                            padding: const EdgeInsets.all(5),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(logoBytes,
+                                  fit: BoxFit.cover, gaplessPlayback: true),
+                            ),
+                          )
+                        : Icon(_kAgentIcons[_iconKey], color: accent, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(editing ? 'EDIT AGENT' : 'DEPLOY NEW AGENT',
+                            style: Sa.display(size: 16)),
+                        Text(
+                          'Configure a custom autonomous unit for the fleet',
+                          style: Sa.mono(size: 9, color: Sa.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close, size: 18, color: Sa.muted),
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: Sa.border),
+            // Body
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _label('IDENTITY', accent),
+                    const SizedBox(height: 10),
+                    _textField(_name,
+                        hint: 'Agent name (e.g. Quality Inspector)',
+                        icon: Icons.badge_outlined),
+                    const SizedBox(height: 10),
+                    _textField(_codename,
+                        hint: 'Codename (optional, e.g. UNIT-07 · SENTRY)',
+                        icon: Icons.tag),
+                    const SizedBox(height: 10),
+                    _textField(_description,
+                        hint: 'Short description of what this agent is for',
+                        icon: Icons.notes_outlined,
+                        maxLines: 2),
+                    const SizedBox(height: 20),
+
+                    _label('APPEARANCE', accent),
+                    const SizedBox(height: 10),
+                    _appearanceRow(accent, logoBytes != null),
+                    const SizedBox(height: 20),
+
+                    _label('MISSION · TASKS', accent),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Describe the tasks, or attach a brief / spec file.',
+                      style: Sa.body(size: 10.5, color: Sa.textDim),
+                    ),
+                    const SizedBox(height: 10),
+                    _textField(_tasks,
+                        hint:
+                            'e.g. Review incoming quality alerts, draft a containment checklist…',
+                        maxLines: 4),
+                    const SizedBox(height: 8),
+                    _attachRow(
+                      fileName: _tasksFile,
+                      onAttach: () => _attachText(tasks: true),
+                      onClear: () => setState(() => _tasksFile = null),
+                      accent: accent,
+                    ),
+                    const SizedBox(height: 20),
+
+                    _label('SKILLS · CAPABILITIES', accent),
+                    const SizedBox(height: 6),
+                    Text(
+                      'List the skills, or attach a capability sheet.',
+                      style: Sa.body(size: 10.5, color: Sa.textDim),
+                    ),
+                    const SizedBox(height: 10),
+                    _textField(_skills,
+                        hint:
+                            'e.g. Root-cause analysis, ISO 9001 knowledge, French + English…',
+                        maxLines: 4),
+                    const SizedBox(height: 8),
+                    _attachRow(
+                      fileName: _skillsFile,
+                      onAttach: () => _attachText(tasks: false),
+                      onClear: () => setState(() => _skillsFile = null),
+                      accent: accent,
+                    ),
+                    const SizedBox(height: 20),
+
+                    _label('MODEL PROVIDER', accent),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        for (final p in _Providers.list)
+                          _ProviderTile(
+                            provider: p,
+                            selected: _provider == p.id,
+                            onTap: () => setState(() {
+                              _provider = p.id;
+                              if (!_modelEdited) {
+                                _model.text = p.defaultModel;
+                                _modelEdited = false;
+                              }
+                            }),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _textField(_model,
+                        hint: 'Model id (e.g. ${_providerHint()})',
+                        icon: Icons.memory),
+                    const SizedBox(height: 12),
+                    _textField(
+                      _token,
+                      hint: _provider == null
+                          ? 'API token / key'
+                          : 'API token — ${_Providers.of(_provider).tokenHint}',
+                      icon: Icons.vpn_key_outlined,
+                      obscure: !_revealToken,
+                      suffix: IconButton(
+                        onPressed: () =>
+                            setState(() => _revealToken = !_revealToken),
+                        icon: Icon(
+                          _revealToken
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          size: 16,
+                          color: Sa.muted,
+                        ),
+                      ),
+                    ),
+                    if (_showError) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Icon(Icons.error_outline, size: 14, color: Sa.red),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'A name and a model provider are required.',
+                              style: Sa.body(size: 11.5, color: Sa.red),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Divider(height: 1, color: Sa.border),
+            // Footer
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  SaButton(
+                    label: 'CANCEL',
+                    icon: Icons.close,
+                    color: Sa.muted,
+                    outlined: true,
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 10),
+                  SaButton(
+                    label: editing ? 'SAVE CHANGES' : 'DEPLOY AGENT',
+                    icon: editing ? Icons.save_outlined : Icons.rocket_launch,
+                    color: accent,
+                    onPressed: _save,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _providerHint() =>
+      _provider == null ? 'gpt-4o' : _Providers.of(_provider).defaultModel;
+
+  Widget _label(String text, Color accent) => Row(
+        children: [
+          Container(width: 3, height: 14, color: accent),
+          const SizedBox(width: 8),
+          Text(text, style: Sa.heading(size: 12.5, color: accent)),
+        ],
+      );
+
+  Widget _textField(
+    TextEditingController c, {
+    String? hint,
+    IconData? icon,
+    int maxLines = 1,
+    bool obscure = false,
+    Widget? suffix,
+  }) {
+    return TextField(
+      controller: c,
+      maxLines: obscure ? 1 : maxLines,
+      obscureText: obscure,
+      style: Sa.body(size: 13),
+      cursorColor: _accent,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: Sa.body(size: 12, color: Sa.muted),
+        prefixIcon:
+            icon != null ? Icon(icon, size: 17, color: Sa.muted) : null,
+        suffixIcon: suffix,
+        isDense: true,
+        filled: true,
+        fillColor: Sa.bgRaised.withValues(alpha: 0.6),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Sa.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: _accent),
+        ),
+      ),
+    );
+  }
+
+  Widget _appearanceRow(Color accent, bool hasLogo) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            SaButton(
+              label: hasLogo ? 'REPLACE LOGO' : 'UPLOAD LOGO',
+              icon: Icons.image_outlined,
+              color: accent,
+              outlined: true,
+              busy: _logoBusy,
+              onPressed: _attachLogo,
+            ),
+            const SizedBox(width: 10),
+            if (hasLogo)
+              SaButton(
+                label: 'REMOVE',
+                icon: Icons.delete_outline,
+                color: Sa.red,
+                outlined: true,
+                onPressed: () => setState(() => _logoData = null),
+              ),
+            const Spacer(),
+            Text(hasLogo ? 'Custom logo set' : 'No logo · pick an icon',
+                style: Sa.mono(size: 9, color: Sa.muted)),
+          ],
+        ),
+        if (!hasLogo) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final entry in _kAgentIcons.entries)
+                GestureDetector(
+                  onTap: () => setState(() => _iconKey = entry.key),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: _iconKey == entry.key
+                          ? accent.withValues(alpha: 0.16)
+                          : Sa.bgRaised.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _iconKey == entry.key ? accent : Sa.border,
+                        width: _iconKey == entry.key ? 1.4 : 1,
+                      ),
+                    ),
+                    child: Icon(entry.value,
+                        size: 18,
+                        color: _iconKey == entry.key ? accent : Sa.textDim),
+                  ),
+                ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Text('ACCENT', style: Sa.mono(size: 9, color: Sa.muted)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final rgb in _kAccentSwatches)
+                    GestureDetector(
+                      onTap: () => setState(() => _accentHex = _hexOf(rgb)),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: Color(0xFF000000 | rgb),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _accentHex == _hexOf(rgb)
+                                ? Sa.text
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            if (_accentHex == _hexOf(rgb))
+                              BoxShadow(
+                                  color: Color(0xFF000000 | rgb)
+                                      .withValues(alpha: 0.5),
+                                  blurRadius: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _attachRow({
+    required String? fileName,
+    required VoidCallback onAttach,
+    required VoidCallback onClear,
+    required Color accent,
+  }) {
+    return Row(
+      children: [
+        InkWell(
+          onTap: onAttach,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.upload_file_outlined, size: 15, color: accent),
+                const SizedBox(width: 6),
+                Text('ATTACH FILE',
+                    style: Sa.mono(
+                        size: 9.5, color: accent, weight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+        if ((fileName ?? '').isNotEmpty) ...[
+          const SizedBox(width: 8),
+          Flexible(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Sa.bgRaised.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Sa.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.description_outlined,
+                      size: 12, color: Sa.textDim),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(fileName!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Sa.mono(size: 9.5, color: Sa.textDim)),
+                  ),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: onClear,
+                    child: Icon(Icons.close, size: 12, color: Sa.muted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DELETE CONFIRMATION (blood red)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _DeleteAgentDialog extends StatefulWidget {
+  final _AgentSpec agent;
+  const _DeleteAgentDialog({required this.agent});
+
+  @override
+  State<_DeleteAgentDialog> createState() => _DeleteAgentDialogState();
+}
+
+class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  static const Color _blood = Color(0xFFE11D2E);
+  static const Color _bloodDeep = Color(0xFF7F0E18);
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF1A0608),
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _blood, width: 1.5),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Stack(
+          children: [
+            // Pulsing danger glow.
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _c,
+                builder: (_, __) => DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    gradient: RadialGradient(
+                      center: const Alignment(0, -0.7),
+                      radius: 1.2,
+                      colors: [
+                        _blood.withValues(alpha: 0.12 + 0.10 * _c.value),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedBuilder(
+                    animation: _c,
+                    builder: (_, __) => Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const RadialGradient(
+                          colors: [_blood, _bloodDeep],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _blood
+                                .withValues(alpha: 0.4 + 0.3 * _c.value),
+                            blurRadius: 24 + 10 * _c.value,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.warning_amber_rounded,
+                          color: Colors.white, size: 38),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'DECOMMISSION AGENT',
+                    style: Sa.display(size: 18, color: Colors.white),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _blood.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: _blood.withValues(alpha: 0.6)),
+                    ),
+                    child: Text(
+                      widget.agent.name,
+                      style: Sa.mono(
+                          size: 11,
+                          color: const Color(0xFFFFB4BC),
+                          weight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'This permanently removes the agent, its mission brief, skills and stored API credential from the fleet registry.\n\nThis action cannot be undone.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.5,
+                      color: Color(0xFFE9C4C8),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFE9C4C8),
+                            side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.25)),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text('CANCEL',
+                              style: Sa.heading(
+                                  size: 12.5,
+                                  color: const Color(0xFFE9C4C8))),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _blood,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.delete_forever,
+                                  size: 17, color: Colors.white),
+                              const SizedBox(width: 8),
+                              Text('DELETE PERMANENTLY',
+                                  style: Sa.heading(
+                                      size: 12.5, color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
