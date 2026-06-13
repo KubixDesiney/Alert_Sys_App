@@ -2423,9 +2423,9 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
             const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
-                color: Sa.termBg,
+                color: Sa.termBg.withValues(alpha: 0.95),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Sa.termBorder),
+                border: Border.all(color: Sa.termBorder, width: 1.5),
               ),
               child: TextField(
                 controller: _prompt,
@@ -2436,6 +2436,8 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
                 decoration: const InputDecoration(
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.all(12),
+                  filled: true,
+                  fillColor: Colors.transparent,
                 ),
               ),
             ),
