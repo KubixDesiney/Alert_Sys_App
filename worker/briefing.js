@@ -87,6 +87,13 @@ async function handleBriefing(request, env) {
       ? `\n- Top supervisor this week: ${topSup.name} resolved ${topSup.count} alerts${topSup.topType ? ` (fastest for ${_typeName(topSup.topType)} issues)` : ''}`
       : '';
 
+    const supInstruction = topSup
+      ? `Name the top supervisor (${topSup.name}) and mention their result.`
+      : `Do not name or invent any supervisor — none had qualifying resolved alerts this week, so omit that topic entirely.`;
+    const predInstruction = predictiveInsight?.type
+      ? `Weave in the AI prediction naturally.`
+      : `Do not mention any AI prediction — none is available.`;
+
     const prompt = `You are an industrial operations briefing officer addressing the production manager at the start of the day. Write a single, warm, concise paragraph (3 to 4 sentences, no bullets, no headers, no markdown, no lists). Use these facts from the past 7 days:${factoryLine}
 - Total alerts: ${stats.total}
 - Resolved: ${stats.solved} (${resolutionRate}% resolution rate)
@@ -98,7 +105,7 @@ async function handleBriefing(request, env) {
 - Most active site: ${topFactory ? `${topFactory[0]} (${topFactory[1]})` : 'none'}
 - AI auto-assignments: ${stats.aiAssigned}${accuracyLine}${predLine}${supLine}
 
-Begin with "Good morning". Acknowledge what is going well, name the top supervisor by name if present, weave in the AI prediction if present, and close with a forward-looking sentence about today. Sound calm, professional, and human — not a press release.`;
+Begin with "Good morning". Acknowledge what is going well, or that it has been a quiet period if total alerts is 0. ${supInstruction} ${predInstruction} Close with a forward-looking sentence about today. Sound calm, professional, and human — not a press release. Only reference facts explicitly listed above — never invent names, numbers, or events that are not in the list.`;
 
     let summary = `Good morning. Last week the team handled ${stats.total} alerts with a ${resolutionRate}% resolution rate and an average response of ${stats.avgResolutionMin} minutes. Stay sharp on critical signals today.`;
     let model = 'fallback';
