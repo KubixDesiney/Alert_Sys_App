@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'audit_service.dart';
 import 'fcm_service.dart';
 import 'location_tracking_service.dart';
 import 'offline_account_cache.dart';
@@ -41,10 +44,16 @@ class AuthService {
               role: account['role']?.toString(),
               usine: account['usine']?.toString(),
             );
+            AuditService.instance.setActorRole(uid, account['role']?.toString());
           }
         } catch (e) {
           debugPrint('AuthService.login: account cache skipped: $e');
         }
+        unawaited(AuditService.instance.log(
+          action: AuditAction.authSignIn,
+          targetType: 'user',
+          targetId: uid,
+        ));
         // Initialize FCM after sign-in
         if (!kIsWeb) {
           try {
@@ -70,6 +79,26 @@ class AuthService {
     }
   }
 
+  /// Reads the access-scoped users_private node (email/phone/etc.). Returns an
+  /// empty map for callers without permission (non-admins) so PII simply does
+  /// not surface for them — which is the intended privacy behaviour.
+  Future<Map<dynamic, dynamic>> _fetchPrivateMap() async {
+    try {
+      final s = await _db.child('users_private').get();
+      if (s.value is Map) return s.value as Map;
+    } catch (e) {
+      debugPrint('users_private fetch skipped: $e');
+    }
+    return const {};
+  }
+
+  void _mergePrivate(Map<String, dynamic> user, Object? priv) {
+    if (priv is Map) {
+      if (priv['email'] != null) user['email'] = priv['email'];
+      if (priv['phone'] != null) user['phone'] = priv['phone'];
+    }
+  }
+
   Future<List<UserModel>> getActiveSupervisors() async {
     final snapshot = await _db
         .child('users')
@@ -78,11 +107,13 @@ class AuthService {
         .get();
     if (!snapshot.exists) return [];
     final data = Map<String, dynamic>.from(snapshot.value as Map);
+    final privateData = await _fetchPrivateMap();
     final List<UserModel> list = [];
     data.forEach((key, value) {
       final user = Map<String, dynamic>.from(value as Map);
       if (user['status'] == 'active') {
         user['id'] = key;
+        _mergePrivate(user, privateData[key]);
         list.add(UserModel.fromMap(key, user));
       }
     });
@@ -101,13 +132,14 @@ class AuthService {
       'firstName': firstName,
       'lastName': lastName,
       'fullName': '$firstName $lastName',
-      'phone': phone,
       'usine': usine,
     };
-    if (email != null && email.isNotEmpty) {
-      updates['email'] = email;
-    }
     await _db.child('users/$userId').update(updates);
+    final privateUpdates = <String, dynamic>{'phone': phone};
+    if (email != null && email.isNotEmpty) {
+      privateUpdates['email'] = email;
+    }
+    await _db.child('users_private/$userId').update(privateUpdates);
     if (email != null && email.isNotEmpty) {
       try {
         await _auth.currentUser?.verifyBeforeUpdateEmail(email);
@@ -261,6 +293,14 @@ class AuthService {
     } catch (e) {
       debugPrint('Logout DB error: $e');
     }
+    final signedOutUid = _auth.currentUser?.uid;
+    if (signedOutUid != null) {
+      await AuditService.instance.log(
+        action: AuditAction.authSignOut,
+        targetType: 'user',
+        targetId: signedOutUid,
+      );
+    }
     await _auth.signOut();
   }
 
@@ -294,6 +334,7 @@ class AuthService {
 
       final Map<dynamic, dynamic> data =
           snapshot.value as Map<dynamic, dynamic>;
+      final privateData = await _fetchPrivateMap();
       List<UserModel> supervisors = [];
 
       data.forEach((key, value) {
@@ -301,6 +342,7 @@ class AuthService {
           value as Map,
         );
         userMap['id'] = key.toString();
+        _mergePrivate(userMap, privateData[key]);
         supervisors.add(UserModel.fromMap(key.toString(), userMap));
       });
 
@@ -328,14 +370,25 @@ class AuthService {
         'firstName': firstName,
         'lastName': lastName,
         'fullName': '$firstName $lastName',
-        'email': email,
-        'phone': phone,
         'role': 'supervisor',
         'usine': usine,
         'status': 'active',
         'hiredDate': hiredDate.toIso8601String(),
         'createdAt': DateTime.now().toIso8601String(),
       });
+      // Sensitive PII lives in the access-scoped users_private node, not the
+      // broadly-readable users node (see database.rules.json).
+      await _db.child('users_private/$uid').set({
+        'email': email,
+        'phone': phone,
+      });
+      await AuditService.instance.log(
+        action: AuditAction.accountProvision,
+        targetType: 'user',
+        targetId: uid,
+        factoryId: usine,
+        detail: 'Provisioned supervisor $email',
+      );
       return null; // success
     } on FirebaseAuthException catch (e) {
       return e.message;
@@ -346,6 +399,12 @@ class AuthService {
 
   Future<void> deleteSupervisor(String uid) async {
     await _db.child('users/$uid').remove();
+    await AuditService.instance.log(
+      action: AuditAction.accountRevoke,
+      targetType: 'user',
+      targetId: uid,
+      detail: 'Removed supervisor account',
+    );
   }
 
   // Optional: keep the stream method if needed, but not used anymore

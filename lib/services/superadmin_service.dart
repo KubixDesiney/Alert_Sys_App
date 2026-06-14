@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../firebase_options.dart';
+import 'audit_service.dart';
 
 /// Account administration for the SuperAdmin console.
 ///
@@ -23,12 +24,24 @@ class SuperAdminService {
         .orderByChild('role')
         .equalTo('admin')
         .onValue
-        .map((event) {
+        .asyncMap((event) async {
       final value = event.snapshot.value;
       if (value is! Map) return <Map<String, dynamic>>[];
+      // Merge access-scoped PII (email/phone) from users_private. SuperAdmin is
+      // authorized to read it; a failure degrades to name-only entries.
+      Map private = const {};
+      try {
+        final ps = await _db.child('users_private').get();
+        if (ps.value is Map) private = ps.value as Map;
+      } catch (_) {}
       final list = value.entries.map((e) {
         final m = Map<String, dynamic>.from(e.value as Map);
         m['uid'] = e.key.toString();
+        final p = private[e.key];
+        if (p is Map) {
+          if (p['email'] != null) m['email'] = p['email'];
+          if (p['phone'] != null) m['phone'] = p['phone'];
+        }
         return m;
       }).toList()
         ..sort((a, b) => (a['fullName'] ?? a['email'] ?? '')
@@ -74,14 +87,24 @@ class SuperAdminService {
         'firstName': firstName,
         'lastName': lastName,
         'fullName': '$firstName $lastName',
-        'email': email,
-        'phone': phone,
         'role': 'admin',
         if (usine != null && usine.isNotEmpty) 'usine': usine,
         'status': 'active',
         'createdAt': DateTime.now().toIso8601String(),
         'createdBy': 'superadmin',
       });
+      // Sensitive PII lives in the access-scoped users_private node.
+      await _db.child('users_private/$uid').set({
+        'email': email,
+        'phone': phone,
+      });
+      await AuditService.instance.log(
+        action: AuditAction.accountProvision,
+        targetType: 'user',
+        targetId: uid,
+        factoryId: usine,
+        detail: 'Provisioned Production Manager $email',
+      );
       return null;
     } on FirebaseAuthException catch (e) {
       return e.message ?? e.code;
@@ -94,9 +117,20 @@ class SuperAdminService {
   /// role-based access, matching how supervisor removal works today).
   Future<void> deleteProductionManager(String uid) async {
     await _db.child('users/$uid').remove();
+    await AuditService.instance.log(
+      action: AuditAction.accountRevoke,
+      targetType: 'user',
+      targetId: uid,
+      detail: 'Revoked Production Manager access',
+    );
   }
 
   Future<void> sendPasswordReset(String email) async {
     await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    await AuditService.instance.log(
+      action: AuditAction.passwordReset,
+      targetType: 'user',
+      detail: 'Sent password reset to $email',
+    );
   }
 }

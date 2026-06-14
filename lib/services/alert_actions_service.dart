@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import '../models/alert_model.dart';
 import 'ai_service.dart';
 import 'alert_service.dart';
 import 'app_logger.dart';
+import 'audit_service.dart';
 import 'worker_trigger_queue.dart';
 
 class AlertActionsService {
@@ -43,6 +46,12 @@ class AlertActionsService {
         takenAtTimestamp: DateTime.now(),
       ),
     );
+    unawaited(AuditService.instance.log(
+      action: AuditAction.alertClaim,
+      targetType: 'alert',
+      targetId: alertId,
+      detail: 'Claimed by $superviseurName',
+    ));
   }
 
   Future<void> returnToQueue({
@@ -68,6 +77,13 @@ class AlertActionsService {
       supervisorName,
       reason,
     );
+    unawaited(AuditService.instance.log(
+      action: AuditAction.alertReturn,
+      targetType: 'alert',
+      targetId: alertId,
+      factoryId: alert.usine,
+      detail: reason == null ? 'Returned to queue' : 'Returned to queue: $reason',
+    ));
   }
 
   Future<void> resolveAlert({
@@ -99,6 +115,13 @@ class AlertActionsService {
       assistingSupervisorName: alert.superviseurName,
     );
     await WorkerTriggerQueue.instance.enqueueAiRetry();
+    unawaited(AuditService.instance.log(
+      action: AuditAction.alertResolve,
+      targetType: 'alert',
+      targetId: alertId,
+      factoryId: alert.usine,
+      detail: 'Resolved ($elapsed min): $reason',
+    ));
   }
 
   Future<void> addComment({
@@ -132,6 +155,14 @@ class AlertActionsService {
     if (note != null) {
       await _alertService.setCriticalNote(alertId, note);
     }
+    unawaited(AuditService.instance.log(
+      action: AuditAction.alertCriticalToggle,
+      targetType: 'alert',
+      targetId: alertId,
+      detail: isCritical
+          ? (note != null ? 'Flagged critical: $note' : 'Flagged critical')
+          : 'Cleared critical',
+    ));
   }
 
   Future<List<String>> getPastResolutionsForType(
