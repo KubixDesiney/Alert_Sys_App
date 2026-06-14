@@ -77,7 +77,9 @@ class LocationTrackingService {
           accuracy: LocationAccuracy.high,
         ),
       );
-      await _db.child('users/$uid/currentLocation').set({
+      // Sensitive live GPS lives in the access-scoped users_private node, not
+      // the broadly-readable users node (see database.rules.json).
+      await _db.child('users_private/$uid/currentLocation').set({
         'lat': position.latitude,
         'lng': position.longitude,
         'updatedAt': ServerValue.timestamp,
