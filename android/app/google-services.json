@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "284893821377",
+    "firebase_url": "https://alertappsys-default-rtdb.firebaseio.com",
+    "project_id": "alertappsys",
+    "storage_bucket": "alertappsys.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:284893821377:android:8d898224d4b2914489d740",
+        "android_client_info": {
+          "package_name": "com.example.alertsysapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "284893821377-rt1vu1dedjgfjocggdut9daa1ffuo9u3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.alertsysapp",
+            "certificate_hash": "e0dd116fca1964068f9dd8e670fe83e7e66e095d"
+          }
+        },
+        {
+          "client_id": "284893821377-a262uos9bavor537nhtuc5d92atl7sg3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAEN8VNSnC2PNqEwJexY6mwEnMY3C6T_is"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "284893821377-a262uos9bavor537nhtuc5d92atl7sg3.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "284893821377-f3jndsvig56mkc2nh1jp1fru7r9ltr3h.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.alertsysapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

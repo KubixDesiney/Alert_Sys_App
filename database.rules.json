@@ -398,6 +398,20 @@
       }
     },
 
+    "auth_config": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "sso": {
+        "enabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "type": { ".validate": "!newData.exists() || newData.isString()" },
+        "providerId": { ".validate": "!newData.exists() || newData.isString()" },
+        "label": { ".validate": "!newData.exists() || newData.isString()" },
+        "issuer": { ".validate": "!newData.exists() || newData.isString()" },
+        "template": { ".validate": "!newData.exists() || newData.isString()" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isString()" }
+      }
+    },
+
     ".read": false,
     ".write": false
   }

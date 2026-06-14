@@ -47,6 +47,26 @@ class CompanyConfig {
   static const String expectedFirebaseProjectId =
       String.fromEnvironment('COMPANY_FIREBASE_PROJECT', defaultValue: '');
 
+  // ── Enterprise SSO (the company's own identity provider) ──────────────────
+  /// Identity-Platform provider id for the company's SSO. Examples:
+  /// `oidc.acme-azure` (OIDC / Microsoft Entra), `saml.acme-okta` (SAML / Okta).
+  /// Empty = SSO disabled, email/password only.
+  static const String ssoProviderId =
+      String.fromEnvironment('COMPANY_SSO_PROVIDER', defaultValue: '');
+
+  /// Button label, e.g. "Sign in with ACME SSO".
+  static const String ssoButtonLabel =
+      String.fromEnvironment('COMPANY_SSO_LABEL', defaultValue: 'Sign in with SSO');
+
+  static bool get ssoEnabled => ssoProviderId.isNotEmpty;
+
+  // ── Multi-factor authentication ───────────────────────────────────────────
+  /// When true, users without a second factor are nudged to enrol after login.
+  /// (Hard enforcement is configured in the Identity Platform console; this only
+  /// drives the in-app prompt.)
+  static const bool mfaRequired =
+      bool.fromEnvironment('COMPANY_MFA_REQUIRED', defaultValue: false);
+
   /// True once a real company override is in place (not the demo default).
   static bool get isConfigured => companyId != 'demo';
 
