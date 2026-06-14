@@ -1,4 +1,4 @@
-import { _securityDetectPromptInjection } from '../cloudflare_workerV2.js';
+import { _securityDetectPromptInjection } from '../cloudflare_ai_worker.js';
 
 describe('prompt injection detection', () => {
   test.each([

@@ -13,7 +13,7 @@ import {
 } from '../cloudflare_worker.js';
 import {
   processShiftCollaborations as processShiftCollaborationsV2,
-} from '../cloudflare_workerV2.js';
+} from '../cloudflare_ai_worker.js';
 import worker from '../cloudflare_worker.js';
 
 // ─── shared mock helpers ─────────────────────────────────────────────────────
