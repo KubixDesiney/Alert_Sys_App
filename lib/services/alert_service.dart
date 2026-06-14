@@ -666,7 +666,7 @@ class AlertService {
   }
 
   /// Creates in-app notifications for all supervisors and admins.
-  /// OneSignal pushes are now handled by the Cloudflare Worker.
+  /// Push delivery is handled by the Cloudflare notify worker via FCM.
   Future<void> sendNewAlertNotification(
     String alertId,
     String alertType,

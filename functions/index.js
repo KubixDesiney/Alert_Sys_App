@@ -253,21 +253,12 @@ async function retryFactoryFromEvent(factoryId, trigger) {
   return assignSingleOldestUnassignedAlert({ factoryId, trigger });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Legacy OneSignal push (`sendAlertPush`) removed 2026-06-14.
-//
-// Why removed:
-//   1. SECURITY: it embedded a hard-coded OneSignal REST API key in source.
-//   2. DEAD CODE: the app no longer writes `users/{uid}/onesignalId`, so the
-//      recipient list was always empty and the function never actually sent.
-//   3. SUPERSEDED: push delivery is handled by the Cloudflare notify worker via FCM
-//      (see cloudflare_notify_worker.js).
-//
-// ACTION STILL REQUIRED (cannot be done in source):
-//   • Rotate/revoke the leaked REST key in the OneSignal dashboard — the old key
-//     remains valid until you do, and it is exposed in git history.
-//   • Purge it from git history (git filter-repo / BFG) and force-push.
-// ─────────────────────────────────────────────────────────────────────────────
+// Legacy push Cloud Function (sendAlertPush) was removed 2026-06-14: it was dead
+// code that embedded a hard-coded credential and never actually sent (the app no
+// longer writes the per-user push id it depended on). Push delivery is handled by
+// FCM via the Cloudflare notify worker (cloudflare_notify_worker.js).
+// NOTE: the previously committed credential must still be rotated at its provider
+// and purged from git history. See tool/purge_leaked_secret.sh.
 
 exports.retryAIAssignmentOnAlertAvailable = functions.database
   .ref('/alerts/{alertId}')

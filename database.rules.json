@@ -76,12 +76,12 @@
     },
 
     "alertCounter": {
-      ".read": true,
+      ".read": "auth != null",
       ".write": "auth != null"
     },
 
     "assetCounter": {
-      ".read": true,
+      ".read": "auth != null",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
@@ -116,6 +116,20 @@
       "$userId": {
         ".read": "auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin'",
         ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+        "currentLocation": {
+          ".validate": "newData.hasChildren(['lat','lng']) && newData.child('lat').isNumber() && newData.child('lng').isNumber() && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').isString())"
+        }
+      }
+    },
+
+    "users_private": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+        ".write": "auth != null && (auth.uid === $userId || root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+        "email": { ".validate": "!newData.exists() || newData.isString()" },
+        "phone": { ".validate": "!newData.exists() || newData.isString()" },
+        "fcmToken": { ".validate": "!newData.exists() || newData.isString()" },
         "currentLocation": {
           ".validate": "newData.hasChildren(['lat','lng']) && newData.child('lat').isNumber() && newData.child('lng').isNumber() && (!newData.child('updatedAt').exists() || newData.child('updatedAt').isNumber() || newData.child('updatedAt').isString())"
         }
@@ -169,12 +183,12 @@
 
     "ai_predictions": {
       ".read": "auth != null",
-      ".write": "auth != null"
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "ai_briefing": {
       ".read": "auth != null",
-      ".write": "auth != null"
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')"
     },
 
     "shifts": {
@@ -362,6 +376,25 @@
           "enabled": { ".validate": "newData.isBoolean()" },
           "skippedAlertTtlMinutes": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 240)" }
         }
+      }
+    },
+
+    "audit_log": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'admin' || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      ".indexOn": ["at", "actorId", "action", "targetType", "targetId", "factoryId"],
+      "$entryId": {
+        ".write": "auth != null && !data.exists() && newData.hasChildren(['at','actorId','action']) && (newData.child('actorId').val() === auth.uid || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+        "at": { ".validate": "newData.isString()" },
+        "actorId": { ".validate": "newData.isString()" },
+        "actorName": { ".validate": "!newData.exists() || newData.isString()" },
+        "actorRole": { ".validate": "!newData.exists() || newData.isString()" },
+        "action": { ".validate": "newData.isString()" },
+        "targetType": { ".validate": "!newData.exists() || newData.isString()" },
+        "targetId": { ".validate": "!newData.exists() || newData.isString()" },
+        "factoryId": { ".validate": "!newData.exists() || newData.isString()" },
+        "detail": { ".validate": "!newData.exists() || newData.isString()" },
+        "metadata": { ".validate": "!newData.exists() || newData.isString()" },
+        "$other": { ".validate": false }
       }
     },
 

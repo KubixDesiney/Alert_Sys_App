@@ -52,7 +52,7 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - `worker_test/`: Jest worker test suite. There are currently 14 worker test files.
 - `test/`: Flutter unit/widget tests. There are currently 27 Dart test files.
 - `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Claude fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, optional worker deploy, `bugs/agent` RTDB run records, and GitHub issue escalation on rejection.
-- `functions/`: Firebase Cloud Functions. Includes legacy OneSignal push and AI retry triggers.
+- `functions/`: Firebase Cloud Functions. AI assignment retry triggers (the legacy third-party push function was removed 2026-06-14).
 - `database.rules.json`: Realtime Database security rules and validation.
 - `.github/workflows/ci.yml`: Flutter analysis/tests/build plus Worker Jest/deploy.
 - `.github/workflows/deploy.yml`: Firebase Hosting deploy for Flutter web.
@@ -363,7 +363,6 @@ User fields used across app and workers:
 - `usine`, `factoryId`, `factoryName`
 - `status`, `active`, `isActive`
 - `fcmToken`
-- `onesignalId` in legacy Cloud Functions path
 - `currentLocation`
 - `aiOptOut`
 - `aiCooldownUntil`
@@ -572,16 +571,15 @@ Important validation:
 
 `functions/index.js` exports:
 
-- `sendAlertPush`: legacy OneSignal push on alert creation.
 - `retryAIAssignmentOnAlertAvailable`: retries AI when an alert becomes available/unassigned.
 - `retryAIAssignmentOnSupervisorAvailable`: retries AI when a supervisor becomes active.
 - `retryAIAssignmentOnCooldownSignal`: sleeps until cooldown signal expiry, then retries one factory.
 - `retryAIAssignmentOnUserCooldown`: fallback cooldown expiry watcher.
 - `retryAIAssignmentOnAlertResolved`: retries AI when an alert is validated/resolved.
 
-Operational warning:
+Operational note:
 
-- The legacy OneSignal path contains hard-coded OneSignal credentials in source. Do not copy those values into docs or new code. Prefer Cloudflare/FCM paths and rotate/remove legacy secrets when possible.
+- The legacy third-party push Cloud Function (`sendAlertPush`) was removed on 2026-06-14 — it was dead code that embedded a hard-coded credential and never actually sent. Push is FCM-only via the notify worker. The previously committed credential still needs rotating at its provider and purging from git history (see `tool/purge_leaked_secret.sh`).
 
 ## Testing Inventory
 
