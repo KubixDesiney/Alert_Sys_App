@@ -2287,18 +2287,29 @@ function pickActiveShift(shiftsMap, now = new Date()) {
 // ============ Core data loader ============
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
-  const [alertsRes, usersRes, shiftsRes, factoriesRes, activeClaimsRes] = await Promise.all([
+  const [alertsRes, usersRes, shiftsRes, factoriesRes, activeClaimsRes, usersPrivateRes] = await Promise.all([
     fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}factories.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}supervisor_active_alerts.json?auth=${token}`),
+    fetch(`${env.FB_DB_URL}users_private.json?auth=${token}`),
   ]);
   const shiftsMap = shiftsRes.ok ? ((await shiftsRes.json()) || {}) : {};
+  const usersMap = usersRes.ok ? ((await usersRes.json()) || {}) : {};
+  // Overlay access-scoped private fields onto each user. currentLocation now
+  // lives in users_private (see database.rules.json); fall back to any value
+  // still on /users during the migration window so proximity never goes dark.
+  const usersPrivate = usersPrivateRes?.ok ? ((await usersPrivateRes.json()) || {}) : {};
+  for (const [uid, priv] of Object.entries(usersPrivate)) {
+    if (!priv || typeof priv !== 'object') continue;
+    if (!usersMap[uid] || typeof usersMap[uid] !== 'object') continue;
+    if (priv.currentLocation != null) usersMap[uid].currentLocation = priv.currentLocation;
+  }
   return {
     token,
     alertsMap: alertsRes.ok ? ((await alertsRes.json()) || {}) : {},
-    usersMap: usersRes.ok ? ((await usersRes.json()) || {}) : {},
+    usersMap,
     shiftsMap,
     factoriesMap: factoriesRes.ok ? ((await factoriesRes.json()) || {}) : {},
     supervisorActiveAlertsMap: activeClaimsRes.ok ? ((await activeClaimsRes.json()) || {}) : {},
