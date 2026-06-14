@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
+import 'config/company_config.dart';
 import 'providers/alert_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
@@ -116,6 +117,15 @@ Future<void> _safeInitFirebase() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    // Isolation safety (dedicated-instance model — see PROVISIONING.md): confirm
+    // this build is wired to the company's own Firebase project, so Company A's
+    // app can never come up pointed at Company B's data.
+    final companyMismatch = CompanyConfig.verifyFirebaseProject(
+      DefaultFirebaseOptions.currentPlatform.projectId,
+    );
+    if (companyMismatch != null) {
+      ServiceLocator.instance.logger.error(companyMismatch);
+    }
   } catch (e) {
     // Duplicate app can happen on hot restart/background isolate startup.
     ServiceLocator.instance.logger.info('Firebase init skipped', e);
