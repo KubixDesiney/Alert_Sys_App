@@ -6,7 +6,7 @@ import workerV2, {
   _fitGlobalScaler,
   _scaleFeatures,
   _runLstmForecast,
-} from '../cloudflare_workerV2.js';
+} from '../cloudflare_ai_worker.js';
 
 const recentAlert = (overrides = {}) => ({
   status: 'validee',

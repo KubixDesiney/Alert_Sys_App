@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../../config/app_config.dart';
+import '../../services/predictive_scope.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin tab: the AI AGENT FLEET.
@@ -1929,19 +1930,14 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
   int _historyCount = 0;
   int _factoryCount = 0;
   bool _regenerating = false;
+  List<String> _factories = const [];
+  // null = global (all-factories) briefing.
+  String? _selectedFactory;
 
   @override
   void initState() {
     super.initState();
-    _latestSub = FirebaseDatabase.instance
-        .ref('ai_briefing/latest')
-        .onValue
-        .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted && v is Map) {
-        setState(() => _latest = Map<String, dynamic>.from(v));
-      }
-    }, onError: (_) {});
+    _subscribeLatest();
     _statsSub = FirebaseDatabase.instance
         .ref('ai_agents/briefing/stats')
         .onValue
@@ -1952,12 +1948,46 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
       }
     }, onError: (_) {});
     _probeCounts();
+    _loadFactories();
+  }
+
+  void _subscribeLatest() {
+    _latestSub?.cancel();
+    _latestSub = FirebaseDatabase.instance
+        .ref(predictiveBriefingPath(_selectedFactory))
+        .onValue
+        .listen((event) {
+      final v = event.snapshot.value;
+      if (mounted) {
+        setState(() => _latest = v is Map ? Map<String, dynamic>.from(v) : null);
+      }
+    }, onError: (_) {});
+  }
+
+  Future<void> _loadFactories() async {
+    try {
+      final snap =
+          await FirebaseDatabase.instance.ref('hierarchy/factories').get();
+      if (snap.value is Map && mounted) {
+        final names = (snap.value as Map)
+            .values
+            .whereType<Map>()
+            .map((f) => (f['name'] ?? '').toString())
+            .where((n) => n.isNotEmpty)
+            .toList()
+          ..sort();
+        setState(() => _factories = names);
+      }
+    } catch (_) {}
   }
 
   Future<void> _probeCounts() async {
     try {
-      final hist =
-          await FirebaseDatabase.instance.ref('ai_briefing/history').get();
+      final slug = predictiveFactorySlug(_selectedFactory);
+      final histPath = slug == null
+          ? 'ai_briefing/history'
+          : 'ai_briefing/factory/$slug/history';
+      final hist = await FirebaseDatabase.instance.ref(histPath).get();
       final fact =
           await FirebaseDatabase.instance.ref('ai_briefing/factory').get();
       if (mounted) {
@@ -1969,11 +1999,25 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
     } catch (_) {}
   }
 
+  void _selectFactory(String? factory) {
+    if (factory == _selectedFactory) return;
+    setState(() {
+      _selectedFactory = factory;
+      _latest = null;
+    });
+    _subscribeLatest();
+    _probeCounts();
+  }
+
   Future<void> _regenerate() async {
     setState(() => _regenerating = true);
     try {
+      final scope = normalizePredictiveFactory(_selectedFactory);
+      final factoryQuery = scope != null
+          ? 'factory=${Uri.encodeQueryComponent(scope)}&'
+          : '';
       final res = await http
-          .get(Uri.parse('${AppConfig.briefingEndpoint}?force=1'))
+          .get(Uri.parse('${AppConfig.briefingEndpoint}?${factoryQuery}force=1'))
           .timeout(const Duration(seconds: 25));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2096,11 +2140,20 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            _FactoryScopeBar(
+              factories: _factories,
+              selected: _selectedFactory,
+              onSelect: _selectFactory,
+              accent: spec.accent,
+            ),
             const SizedBox(height: 14),
             if (latest == null)
               SaEmptyState(
                 icon: Icons.hourglass_empty,
-                title: 'No briefing yet today',
+                title: _selectedFactory == null
+                    ? 'No briefing yet today'
+                    : 'No briefing yet for $_selectedFactory',
                 message:
                     'The officer writes the first dispatch when a PM opens their dashboard (or hit REGENERATE NOW).',
                 accent: spec.accent,
@@ -2152,6 +2205,104 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
         ),
       ),
     ]);
+  }
+}
+
+/// Horizontal "ALL FACTORIES" + per-factory chip row letting the SuperAdmin
+/// pick which plant's morning briefing the dispatch panel is showing.
+/// Each factory has its own briefing scope written to
+/// `ai_briefing/factory/{slug}/latest` by the worker (see CLAUDE.md briefing
+/// personalization section); `null` selects the global `ai_briefing/latest`.
+class _FactoryScopeBar extends StatelessWidget {
+  final List<String> factories;
+  final String? selected;
+  final ValueChanged<String?> onSelect;
+  final Color accent;
+
+  const _FactoryScopeBar({
+    required this.factories,
+    required this.selected,
+    required this.onSelect,
+    required this.accent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (factories.isEmpty) return const SizedBox.shrink();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Icon(Icons.tune, size: 14, color: Sa.muted),
+          ),
+          _ScopeChip(
+            label: 'ALL FACTORIES',
+            selected: selected == null,
+            color: accent,
+            onTap: () => onSelect(null),
+          ),
+          for (final f in factories)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: _ScopeChip(
+                label: f.toUpperCase(),
+                selected: selected == f,
+                color: accent,
+                onTap: () => onSelect(f),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ScopeChip({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(99),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          gradient: selected
+              ? LinearGradient(colors: [
+                  color.withValues(alpha: 0.32),
+                  color.withValues(alpha: 0.14),
+                ])
+              : null,
+          color: selected ? null : Sa.termBg,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+            color: selected ? color.withValues(alpha: 0.7) : Sa.termBorder,
+          ),
+        ),
+        child: Text(
+          label,
+          style: Sa.mono(
+            size: 10.5,
+            color: selected ? color : Sa.muted,
+            weight: selected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
   }
 }
 
