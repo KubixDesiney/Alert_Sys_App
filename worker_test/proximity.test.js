@@ -3,7 +3,7 @@ import {
   haversineDistance,
   inferFactoryLocation,
   runAIAssignments,
-} from '../cloudflare_workerV2.js';
+} from '../cloudflare_ai_worker.js';
 
 function jsonRes(data, init = {}) {
   return new Response(JSON.stringify(data), {

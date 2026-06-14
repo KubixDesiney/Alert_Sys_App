@@ -1,6 +1,5 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const axios = require('axios');
 
 admin.initializeApp();
 
@@ -254,60 +253,21 @@ async function retryFactoryFromEvent(factoryId, trigger) {
   return assignSingleOldestUnassignedAlert({ factoryId, trigger });
 }
 
-exports.sendAlertPush = functions.database
-  .ref('/alerts/{alertId}')
-  .onCreate(async (snapshot, context) => {
-    const alert = snapshot.val();
-    const alertId = context.params.alertId;
-
-    // Avoid duplicate sends
-    if (alert.notificationSent) return;
-    await snapshot.ref.update({ notificationSent: true });
-
-    const usine = alert.usine || 'Unknown plant';
-    const alertType = alert.type || 'Alert';
-    const description = alert.description || '';
-
-    // Get all OneSignal player IDs from users
-    const usersSnapshot = await admin.database().ref('users').once('value');
-    const playerIds = [];
-    usersSnapshot.forEach((userSnap) => {
-      const user = userSnap.val();
-      const onesignalId = user.onesignalId;
-      if (onesignalId && (user.role === 'supervisor' || user.role === 'admin')) {
-        playerIds.push(onesignalId);
-      }
-    });
-
-    if (playerIds.length === 0) {
-      console.log('No OneSignal player IDs found');
-      return;
-    }
-
-    const ONESIGNAL_APP_ID = '322abcb7-c4e5-4630-811f-ccea86a6f481';
-    const ONESIGNAL_REST_KEY = 'REMOVED_ROTATED_SECRET';
-
-    const payload = {
-      app_id: ONESIGNAL_APP_ID,
-      include_player_ids: playerIds,
-      headings: { en: `🚨 New Alert: ${alertType}` },
-      contents: { en: `${usine} - ${description}` },
-      data: { alertId, type: alertType, usine },
-      android_channel_id: 'alerts',
-    };
-
-    try {
-      await axios.post('https://onesignal.com/api/v1/notifications', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Basic ${ONESIGNAL_REST_KEY}`,
-        },
-      });
-      console.log('✅ OneSignal push sent');
-    } catch (error) {
-      console.error('❌ OneSignal push failed:', error.response?.data || error.message);
-    }
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy OneSignal push (`sendAlertPush`) removed 2026-06-14.
+//
+// Why removed:
+//   1. SECURITY: it embedded a hard-coded OneSignal REST API key in source.
+//   2. DEAD CODE: the app no longer writes `users/{uid}/onesignalId`, so the
+//      recipient list was always empty and the function never actually sent.
+//   3. SUPERSEDED: push delivery is handled by the Cloudflare notify worker via FCM
+//      (see cloudflare_notify_worker.js).
+//
+// ACTION STILL REQUIRED (cannot be done in source):
+//   • Rotate/revoke the leaked REST key in the OneSignal dashboard — the old key
+//     remains valid until you do, and it is exposed in git history.
+//   • Purge it from git history (git filter-repo / BFG) and force-push.
+// ─────────────────────────────────────────────────────────────────────────────
 
 exports.retryAIAssignmentOnAlertAvailable = functions.database
   .ref('/alerts/{alertId}')
