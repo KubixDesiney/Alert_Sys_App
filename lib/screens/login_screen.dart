@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../config/company_config.dart';
 import '../services/auth_service.dart';
+import '../services/enterprise_auth_service.dart';
+import '../services/sso_config_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
 import '../widgets/common/offline_banner.dart';
@@ -17,10 +21,21 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
+  final _ent = EnterpriseAuthService();
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _error;
   String _language = 'en';
+  SsoConfig _sso = const SsoConfig();
+
+  @override
+  void initState() {
+    super.initState();
+    // Load the IT-configured SSO settings (SuperAdmin -> Access & Identity).
+    SsoConfigService().load().then((c) {
+      if (mounted) setState(() => _sso = c);
+    });
+  }
 
   String _t(String key) {
     const copy = {
@@ -54,12 +69,93 @@ class _LoginScreenState extends State<LoginScreen> {
       _emailController.text.trim(),
       _passwordController.text.trim(),
     );
+    if (error == EnterpriseAuthService.mfaChallenge) {
+      await _completeMfa(_authService.pendingMfaResolver);
+      return;
+    }
     if (mounted) {
       setState(() {
         _isLoading = false;
         _error = error;
       });
     }
+  }
+
+  Future<void> _handleSso() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    final result = await _ent.signInWithSso(
+      providerId: _sso.isUsable ? _sso.providerId : null,
+      type: _sso.isUsable ? _sso.type : null,
+    );
+    if (result == EnterpriseAuthService.mfaChallenge) {
+      await _completeMfa(null); // resolver is held inside EnterpriseAuthService
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _error = result;
+      });
+    }
+  }
+
+  Future<void> _completeMfa(MultiFactorResolver? resolver) async {
+    // SMS second factor: send the code to the enrolled phone, then verify it.
+    final sent = await _ent.startSmsSignIn(resolver: resolver);
+    if (sent.verificationId == null) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = sent.error ?? 'Could not send the verification SMS.';
+        });
+      }
+      return;
+    }
+    final code = await _promptMfaCode();
+    if (code == null || code.isEmpty) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+    final err = await _ent.resolveSmsSignIn(
+      sent.verificationId!,
+      code,
+      resolver: resolver,
+    );
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _error = err;
+      });
+    }
+  }
+
+  Future<String?> _promptMfaCode() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Two-factor code'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '6-digit code'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _downloadApk() async {
@@ -329,6 +425,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                           ),
                         ),
+                        if (_sso.isUsable || CompanyConfig.ssoEnabled) ...[
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: OutlinedButton.icon(
+                              onPressed: _isLoading ? null : _handleSso,
+                              icon: const Icon(Icons.business, size: 20),
+                              label: Text(_sso.isUsable
+                                  ? _sso.label
+                                  : CompanyConfig.ssoButtonLabel),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

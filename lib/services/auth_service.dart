@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../models/user_model.dart'; // ✅ Add this import
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'audit_service.dart';
+import 'enterprise_auth_service.dart';
 import 'fcm_service.dart';
 import 'location_tracking_service.dart';
 import 'offline_account_cache.dart';
@@ -13,6 +14,10 @@ import 'worker_trigger_queue.dart';
 class AuthService {
   final FirebaseAuth _auth;
   final DatabaseReference _db;
+
+  /// Set when a sign-in is challenged for a second factor; the login screen
+  /// completes MFA with it via EnterpriseAuthService.
+  MultiFactorResolver? pendingMfaResolver;
 
   AuthService({FirebaseAuth? auth, DatabaseReference? database})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -69,6 +74,9 @@ class AuthService {
         debugPrint('AuthService.login: sign-in returned null uid');
       }
       return null;
+    } on FirebaseAuthMultiFactorException catch (e) {
+      pendingMfaResolver = e.resolver;
+      return EnterpriseAuthService.mfaChallenge;
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') return 'User not found.';
       if (e.code == 'wrong-password') return 'Incorrect password.';

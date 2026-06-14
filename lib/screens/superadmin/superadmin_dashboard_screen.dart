@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/forecast/forecast_training_controller.dart';
+import 'access_identity_tab.dart';
 import 'ai_agents_tab.dart';
 import 'ai_training_tab.dart';
 import 'hardware_tab.dart';
@@ -34,6 +35,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
     (icon: Icons.psychology_outlined, label: 'AI TRAINING'),
     (icon: Icons.hub_outlined, label: 'AI AGENTS'),
     (icon: Icons.badge_outlined, label: 'PRODUCTION MANAGERS'),
+    (icon: Icons.vpn_key_outlined, label: 'ACCESS & IDENTITY'),
     (icon: Icons.terminal_outlined, label: 'LOGS'),
     (icon: Icons.memory_outlined, label: 'HARDWARE'),
   ];
@@ -113,7 +115,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                             0 => const AiTrainingTab(),
                             1 => const AiAgentsTab(),
                             2 => const ProductionManagersTab(),
-                            3 => const SuperAdminLogsTab(),
+                            3 => const AccessIdentityTab(),
+                            4 => const SuperAdminLogsTab(),
                             _ => const HardwareTab(),
                           },
                         ),

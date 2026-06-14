@@ -1,0 +1,23 @@
+# Serverless daily RTDB backup worker → Cloudflare R2.
+# Deploy:  npx wrangler deploy --config wrangler.backup.toml
+name = "alertsys-backup"
+main = "cloudflare_backup_worker.js"
+compatibility_date = "2025-01-01"
+
+# Object storage for the snapshots. Create this bucket first:
+#   npx wrangler r2 bucket create alertsys-backups
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "alertsys-backups"
+
+# Daily at 02:00 UTC. Change as needed (https://crontab.guru).
+[triggers]
+crons = ["0 2 * * *"]
+
+[vars]
+BACKUP_KEEP = "30"
+
+# Secrets (set with `wrangler secret put NAME --config wrangler.backup.toml`):
+#   FIREBASE_SERVICE_ACCOUNT   the service-account JSON (full admin to export)
+#   FB_DB_URL                  https://<project>-default-rtdb.firebaseio.com/
+#   WORKER_SHARED_SECRET       optional; guards the manual /backup trigger
