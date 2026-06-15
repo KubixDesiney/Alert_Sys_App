@@ -2,7 +2,9 @@
 // Exercises the REAL worker compute hot-paths (buildSupStats + scoreSupervisor)
 // at industrial volume. Measures pure compute scale (not Firebase network I/O).
 //
-//   node tool/load_benchmark.mjs [--sups=300] [--alerts=10000] [--decisions=2000]
+//   node tool/load_benchmark.mjs [--sups=300] [--alerts=10000] [--decisions=2000] [--max-p99=5]
+//
+// --max-p99=<ms>  CI guard: exit non-zero if p99 per-assignment-decision exceeds it.
 //
 import * as W from '../cloudflare_worker.js';
 
@@ -13,6 +15,7 @@ const arg = (k, d) => {
 const NUM_SUPS = arg('sups', 300);
 const NUM_ALERTS = arg('alerts', 10000);
 const NUM_DECISIONS = arg('decisions', 2000);
+const MAX_P99 = arg('max-p99', 0);
 
 const FACTORIES = ['AeroFloat', 'Delta', 'Delice_B', 'Usine A'];
 const TYPES = ['qualite', 'maintenance', 'securite', 'production'];
@@ -45,14 +48,12 @@ console.log('============================================================');
 console.log(` node ${process.version} | supervisors=${fmt(NUM_SUPS)} | history alerts=${fmt(NUM_ALERTS)} | decisions=${fmt(NUM_DECISIONS)}`);
 console.log('');
 
-// Phase 1: build supervisor stats from full alert history
 let t0 = performance.now();
 const stats = W.buildSupStats(alertsMap);
 let t1 = performance.now();
 const statKeys = Object.keys(stats).length;
 console.log(`[1] buildSupStats over ${fmt(NUM_ALERTS)} alerts  -> ${ms(t1 - t0)}  (${fmt(statKeys)} supervisor profiles)`);
 
-// Phase 2: assignment decisions - score EVERY supervisor for each new alert
 const now = Date.now();
 let calls = 0;
 const perDecision = [];
@@ -91,3 +92,12 @@ console.log('============================================================');
 console.log(' VERDICT: one worker invocation can score a ' + fmt(NUM_SUPS) +
             '-supervisor plant in ~' + p(0.5).toFixed(1) + ' ms/alert (p50).');
 console.log('============================================================');
+
+if (MAX_P99 > 0) {
+  const p99 = p(0.99);
+  if (p99 > MAX_P99) {
+    console.error(`\nPERF GATE FAIL: p99 ${p99.toFixed(2)} ms > --max-p99=${MAX_P99} ms`);
+    process.exit(1);
+  }
+  console.log(`\nPERF GATE PASS: p99 ${p99.toFixed(2)} ms <= --max-p99=${MAX_P99} ms`);
+}

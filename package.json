@@ -12,7 +12,10 @@
     "deploy": "npm run deploy:workers",
     "deploy:ai": "wrangler deploy --config wrangler.ai.toml",
     "deploy:notify": "wrangler deploy --config wrangler.notify.toml",
-    "deploy:workers": "npm run deploy:ai && npm run deploy:notify"
+    "deploy:workers": "npm run deploy:ai && npm run deploy:notify",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "bench": "node tool/load_benchmark.mjs",
+    "bench:ci": "node tool/load_benchmark.mjs --sups=1000 --alerts=50000 --decisions=2000 --max-p99=5"
   },
   "devDependencies": {
     "jest": "^29.7.0",
