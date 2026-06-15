@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'config/company_config.dart';
+
 // Static light-mode palette (kept for backward-compat const references)
 class AppColors {
   static const Color navy = Color(0xFF0D4A75);
@@ -74,27 +76,37 @@ extension AppThemeExtension on BuildContext {
 
 // ── Shared ThemeData definitions ─────────────────────────────────────────────
 
+/// The per-company brand color adapted to the active brightness. Dark themes
+/// get a lightened brand so even a dark corporate color still reads on a dark
+/// surface; light themes use the brand color as-is.
+Color _brandFor(Brightness brightness) {
+  final brand = CompanyConfig.brandColor;
+  if (brightness == Brightness.light) return brand;
+  final hsl = HSLColor.fromColor(brand);
+  return hsl.withLightness((hsl.lightness + 0.25).clamp(0.45, 0.85)).toColor();
+}
+
 ThemeData buildLightTheme() => ThemeData(
       brightness: Brightness.light,
       scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-      colorScheme: const ColorScheme.light(
-        primary: Color(0xFF0D4A75),
-        secondary: Color(0xFF0D4A75),
+      colorScheme: ColorScheme.light(
+        primary: _brandFor(Brightness.light),
+        secondary: _brandFor(Brightness.light),
         surface: Colors.white,
-        error: Color(0xFFE31E24),
+        error: const Color(0xFFE31E24),
         onPrimary: Colors.white,
-        onSurface: Color(0xFF1E293B),
+        onSurface: const Color(0xFF1E293B),
         onError: Colors.white,
       ),
       cardTheme: const CardThemeData(color: Colors.white, elevation: 0),
       dialogTheme: const DialogThemeData(backgroundColor: Colors.white),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.white,
-        foregroundColor: Color(0xFF1E293B),
+        foregroundColor: const Color(0xFF1E293B),
         elevation: 0,
-        iconTheme: IconThemeData(color: Color(0xFF0D4A75)),
+        iconTheme: IconThemeData(color: _brandFor(Brightness.light)),
       ),
-      iconTheme: const IconThemeData(color: Color(0xFF0D4A75)),
+      iconTheme: IconThemeData(color: _brandFor(Brightness.light)),
       dividerColor: const Color(0xFFE2E8F0),
       snackBarTheme: const SnackBarThemeData(
         contentTextStyle: TextStyle(color: Colors.white),
@@ -107,10 +119,10 @@ ThemeData buildLightTheme() => ThemeData(
         filled: true,
         fillColor: Colors.white,
       ),
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: Colors.white,
-        selectedItemColor: Color(0xFF0D4A75),
-        unselectedItemColor: Color(0xFF6B7280),
+        selectedItemColor: _brandFor(Brightness.light),
+        unselectedItemColor: const Color(0xFF6B7280),
         elevation: 0,
       ),
       dropdownMenuTheme: const DropdownMenuThemeData(
@@ -123,13 +135,13 @@ ThemeData buildLightTheme() => ThemeData(
 ThemeData buildDarkTheme() => ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: const Color(0xFF0F172A),
-      colorScheme: const ColorScheme.dark(
-        primary: Color(0xFF60A5FA),
-        secondary: Color(0xFF60A5FA),
-        surface: Color(0xFF1E293B),
-        error: Color(0xFFF87171),
+      colorScheme: ColorScheme.dark(
+        primary: _brandFor(Brightness.dark),
+        secondary: _brandFor(Brightness.dark),
+        surface: const Color(0xFF1E293B),
+        error: const Color(0xFFF87171),
         onPrimary: Colors.white,
-        onSurface: Color(0xFFF1F5F9),
+        onSurface: const Color(0xFFF1F5F9),
         onError: Colors.white,
       ),
       cardTheme: const CardThemeData(color: Color(0xFF1E293B), elevation: 0),

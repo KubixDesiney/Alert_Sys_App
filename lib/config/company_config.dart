@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 /// Per-company identity for the **dedicated-instance** deployment model.
 ///
 /// Each customer runs in its own Firebase project (wired via
@@ -37,6 +39,16 @@ class CompanyConfig {
   static const String _brandHex =
       String.fromEnvironment('COMPANY_BRAND_COLOR', defaultValue: '0xFF1565C0');
   static int get brandColorValue => int.tryParse(_brandHex) ?? 0xFF1565C0;
+
+  /// Primary brand color as a Flutter [Color], driving the app's primary/accent
+  /// across the theme (buttons, nav, switches, login glyph).
+  static Color get brandColor => Color(brandColorValue);
+
+  /// Optional company logo shown on the login screen and shell. HTTPS URL to a
+  /// raster image; empty = fall back to the default factory glyph (tinted with
+  /// the brand color).
+  static const String logoUrl =
+      String.fromEnvironment('COMPANY_LOGO_URL', defaultValue: '');
 
   /// Support contact surfaced in error / empty states (optional).
   static const String supportEmail =
