@@ -149,6 +149,27 @@ async function scimAudit(env, token, op, detail) {
   } catch (_) { /* non-fatal */ }
 }
 
+// Throttled auth-failure signal -> security/logs (kind 'auth_failure'); the AI
+// worker's Security Sentinel anomaly scan already aggregates these per fingerprint
+// and raises 'auth_failure_surge' in the SuperAdmin console.
+export function scimAuthLogThrottle(lastMs, nowMs, minGapMs) {
+  return nowMs - lastMs >= minGapMs;
+}
+let _lastAuthFailLog = 0;
+async function scimLogAuthFailure(env, fingerprint, reason) {
+  const now = Date.now();
+  if (!scimAuthLogThrottle(_lastAuthFailLog, now, 5000)) return; // amplification guard
+  _lastAuthFailLog = now;
+  try {
+    const token = await getAccessToken(env);
+    const at = new Date().toISOString();
+    const key = at.replace(/[.:#$\[\]/]/g, '-') + '-' + Math.random().toString(36).slice(2, 8);
+    await rtdbPut(env, token, `security/logs/${key}`, {
+      at, kind: 'auth_failure', fingerprint, source: 'scim', reason,
+    });
+  } catch (_) { /* non-fatal */ }
+}
+
 export function emailKey(email) {
   return String(email || '').trim().toLowerCase().replace(/[.#$\[\]/]/g, '_');
 }
@@ -323,12 +344,14 @@ export default {
     // Per-IP rate limit (before auth, to throttle token brute-force and floods).
     const fp = clientFingerprint(req);
     if (!scimRateLimit(SCIM_RL, fp, Number(env.SCIM_RATE_LIMIT || 300), 60000).allowed) {
+      if (ctx && ctx.waitUntil) ctx.waitUntil(scimLogAuthFailure(env, fp, 'rate_limited'));
       return scimError(429, 'Rate limit exceeded', { 'Retry-After': '60' });
     }
     // Bearer auth: constant-time compare; fail closed if the token is unset.
     const auth = req.headers.get('authorization') || '';
     const presented = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     if (!env.SCIM_TOKEN || !timingSafeEqual(presented, env.SCIM_TOKEN)) {
+      if (ctx && ctx.waitUntil) ctx.waitUntil(scimLogAuthFailure(env, fp, 'bad_or_missing_bearer'));
       return scimError(401, 'Unauthorized', { 'WWW-Authenticate': 'Bearer realm="scim"' });
     }
     // Body-size cap for writes.
