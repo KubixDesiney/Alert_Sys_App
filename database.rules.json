@@ -418,6 +418,17 @@
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')"
     },
 
+    "branding_config": {
+      ".read": true,
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "primaryColor": { ".validate": "!newData.exists() || newData.isString()" },
+      "accentColor": { ".validate": "!newData.exists() || newData.isString()" },
+      "logoUrl": { ".validate": "!newData.exists() || newData.isString()" },
+      "logoBackgroundless": { ".validate": "!newData.exists() || newData.isBoolean()" },
+      "defaultDark": { ".validate": "!newData.exists() || newData.isBoolean()" },
+      "updatedAt": { ".validate": "!newData.exists() || newData.isString()" }
+    },
+
     "scim": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": false

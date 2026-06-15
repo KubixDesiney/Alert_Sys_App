@@ -79,19 +79,19 @@ extension AppThemeExtension on BuildContext {
 /// The per-company brand color adapted to the active brightness. Dark themes
 /// get a lightened brand so even a dark corporate color still reads on a dark
 /// surface; light themes use the brand color as-is.
-Color _brandFor(Brightness brightness) {
-  final brand = CompanyConfig.brandColor;
+Color _brandFor(Brightness brightness, [Color? override]) {
+  final brand = override ?? CompanyConfig.brandColor;
   if (brightness == Brightness.light) return brand;
   final hsl = HSLColor.fromColor(brand);
   return hsl.withLightness((hsl.lightness + 0.25).clamp(0.45, 0.85)).toColor();
 }
 
-ThemeData buildLightTheme() => ThemeData(
+ThemeData buildLightTheme({Color? brand}) => ThemeData(
       brightness: Brightness.light,
       scaffoldBackgroundColor: const Color(0xFFF8FAFC),
       colorScheme: ColorScheme.light(
-        primary: _brandFor(Brightness.light),
-        secondary: _brandFor(Brightness.light),
+        primary: _brandFor(Brightness.light, brand),
+        secondary: _brandFor(Brightness.light, brand),
         surface: Colors.white,
         error: const Color(0xFFE31E24),
         onPrimary: Colors.white,
@@ -104,9 +104,9 @@ ThemeData buildLightTheme() => ThemeData(
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF1E293B),
         elevation: 0,
-        iconTheme: IconThemeData(color: _brandFor(Brightness.light)),
+        iconTheme: IconThemeData(color: _brandFor(Brightness.light, brand)),
       ),
-      iconTheme: IconThemeData(color: _brandFor(Brightness.light)),
+      iconTheme: IconThemeData(color: _brandFor(Brightness.light, brand)),
       dividerColor: const Color(0xFFE2E8F0),
       snackBarTheme: const SnackBarThemeData(
         contentTextStyle: TextStyle(color: Colors.white),
@@ -121,7 +121,7 @@ ThemeData buildLightTheme() => ThemeData(
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: Colors.white,
-        selectedItemColor: _brandFor(Brightness.light),
+        selectedItemColor: _brandFor(Brightness.light, brand),
         unselectedItemColor: const Color(0xFF6B7280),
         elevation: 0,
       ),
@@ -132,12 +132,12 @@ ThemeData buildLightTheme() => ThemeData(
       ),
     );
 
-ThemeData buildDarkTheme() => ThemeData(
+ThemeData buildDarkTheme({Color? brand}) => ThemeData(
       brightness: Brightness.dark,
       scaffoldBackgroundColor: const Color(0xFF0F172A),
       colorScheme: ColorScheme.dark(
-        primary: _brandFor(Brightness.dark),
-        secondary: _brandFor(Brightness.dark),
+        primary: _brandFor(Brightness.dark, brand),
+        secondary: _brandFor(Brightness.dark, brand),
         surface: const Color(0xFF1E293B),
         error: const Color(0xFFF87171),
         onPrimary: Colors.white,
