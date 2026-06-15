@@ -36,8 +36,8 @@ the worker-logic port are scoped here as defined engineering work, not yet shipp
    interface with a Firebase adapter (delegates to `AlertService`, zero behaviour change) and
    a PocketBase adapter, selectable via `--dart-define=SIA_BACKEND`. Remaining: switch callers
    (`AlertProvider`/services) from Firebase-direct to `DataStore`.
-2. **Port `database.rules.json`** authorization to PocketBase API rules (RBAC is the same
-   model: superadmin/admin/supervisor).
+2. **Port `database.rules.json`** authorization to PocketBase API rules - DONE
+   (`deploy/onprem/pocketbase/RULES_PORT.md` + importable `pb_schema.json`).
 3. **Port worker logic** to `worker-runner`. DONE for AI assignment: `runAssignmentCycle`
    reuses the cloud's pure `buildSupStats`/`scoreSupervisor` against a `PocketBaseStore`
    (tested in `worker_test/onprem_assignment.test.js`). Escalation + LAN notifications DONE too.
