@@ -401,6 +401,7 @@
     "auth_config": {
       ".read": true,
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "mfaRequired": { ".validate": "!newData.exists() || newData.isBoolean()" },
       "sso": {
         "enabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "type": { ".validate": "!newData.exists() || newData.isString()" },
@@ -415,6 +416,18 @@
     "monitoring_config": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')"
+    },
+
+    "scim": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": false
+    },
+    "provisioning": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": false,
+      "$key": {
+        ".read": "auth != null && (!data.exists() || data.child('email').val() === auth.token.email || root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')"
+      }
     },
 
     ".read": false,

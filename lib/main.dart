@@ -10,6 +10,8 @@ import 'providers/alert_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'screens/mfa_enrollment_screen.dart';
+import 'services/enterprise_auth_service.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'screens/admin_dashboard_screen.dart';
 import 'screens/superadmin/superadmin_dashboard_screen.dart';
@@ -217,6 +219,7 @@ class _RoleRouterState extends State<RoleRouter> {
   String? _role;
   bool _loading = true;
   bool _offlineAccountUnavailable = false;
+  bool _needsMfa = false;
   static const _accountLoadTimeout = Duration(seconds: 8);
 
   @override
@@ -269,7 +272,43 @@ class _RoleRouterState extends State<RoleRouter> {
       }
 
       final data = Map<String, dynamic>.from(accountSnapshot.value as Map);
-      final role = data['role']?.toString();
+      var role = data['role']?.toString();
+      var usine = data['usine']?.toString();
+
+      // SCIM provisioning overlay: the customer's IdP writes provisioning/{email}.
+      // Offboarding (active:false) revokes access here; a provisioned role is
+      // granted to a user who has none yet (e.g. their first SSO login).
+      final prov = await _provisioningFor();
+      if (prov != null) {
+        if (!prov.active) {
+          ServiceLocator.instance.logger
+              .warning('Account deprovisioned via SCIM. Signing out.');
+          await LocationTrackingService.instance.stop();
+          await FirebaseAuth.instance.signOut();
+          if (!mounted) return;
+          setState(() {
+            _loading = false;
+            _role = null;
+            _offlineAccountUnavailable = false;
+          });
+          return;
+        }
+        if (!OfflineAccountCache.isValidRole(role) &&
+            OfflineAccountCache.isValidRole(prov.role)) {
+          role = prov.role;
+          if (prov.factory != null && prov.factory!.isNotEmpty) {
+            usine = prov.factory;
+          }
+          try {
+            await FirebaseDatabase.instance.ref('users/${widget.uid}').update({
+              'role': role,
+              if (usine != null) 'usine': usine,
+              'provisionedBy': 'scim',
+            });
+          } catch (_) {/* best-effort; role still applies this session */}
+        }
+      }
+
       if (!OfflineAccountCache.isValidRole(role)) {
         ServiceLocator.instance.logger
             .warning('Invalid role value for account. Signing out.');
@@ -286,15 +325,17 @@ class _RoleRouterState extends State<RoleRouter> {
       await OfflineAccountCache.save(
         uid: widget.uid,
         role: role,
-        usine: data['usine']?.toString(),
+        usine: usine,
       );
       unawaited(LocationTrackingService.instance.updateForRole(
         uid: widget.uid,
         role: role,
       ));
+      final needsMfa = await _checkMfaRequired();
       if (!mounted) return;
       setState(() {
         _role = role;
+        _needsMfa = needsMfa;
         _loading = false;
         _offlineAccountUnavailable = false;
       });
@@ -330,6 +371,53 @@ class _RoleRouterState extends State<RoleRouter> {
         _role = null;
         _offlineAccountUnavailable = !connected;
       });
+    }
+  }
+
+  /// Hard MFA gate: returns true when this company requires a second factor
+  /// (build-time [CompanyConfig.mfaRequired] or the IT-set
+  /// `auth_config/mfaRequired`) AND the signed-in user has none enrolled.
+  Future<bool> _checkMfaRequired() async {
+    var required = CompanyConfig.mfaRequired;
+    if (!required) {
+      try {
+        final snap = await FirebaseDatabase.instance
+            .ref('auth_config/mfaRequired')
+            .get()
+            .timeout(const Duration(seconds: 3));
+        required = snap.value == true;
+      } catch (_) {
+        required = false; // runtime flag is best-effort; build flag is absolute
+      }
+    }
+    if (!required) return false;
+    final enrolled = await EnterpriseAuthService().hasEnrolledMfa();
+    return !enrolled;
+  }
+
+  /// Reads this user's SCIM provisioning record (provisioning/{emailKey}). Used
+  /// to grant a provisioned role on first login and to revoke deprovisioned
+  /// accounts. Fail-safe: returns null on any error so a provisioning read can
+  /// never block a legitimate login.
+  Future<({bool active, String? role, String? factory})?> _provisioningFor() async {
+    try {
+      final email = FirebaseAuth.instance.currentUser?.email;
+      if (email == null || email.trim().isEmpty) return null;
+      final key =
+          email.trim().toLowerCase().replaceAll(RegExp(r'[.#$\[\]/]'), '_');
+      final snap = await FirebaseDatabase.instance
+          .ref('provisioning/$key')
+          .get()
+          .timeout(const Duration(seconds: 3));
+      if (!snap.exists || snap.value == null) return null;
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      return (
+        active: m['active'] != false,
+        role: m['role']?.toString(),
+        factory: m['factory']?.toString(),
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -398,6 +486,12 @@ class _RoleRouterState extends State<RoleRouter> {
       return const LoginScreen();
     }
     final normalizedRole = _role?.trim().toLowerCase();
+    if (_needsMfa) {
+      return MfaEnrollmentScreen(
+        mandatory: true,
+        onCompleted: () => setState(() => _needsMfa = false),
+      );
+    }
     if (normalizedRole == 'superadmin') {
       return const SuperAdminDashboardScreen();
     }
