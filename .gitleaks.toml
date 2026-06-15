@@ -14,4 +14,5 @@ paths = [
   '''(^|/)build/''',
   '''(^|/)\.dart_tool/''',
   '''(^|/)deploy/onprem/worker-runner/vendor/''',
+  '''(^|/)\.env\.example$''',
 ]

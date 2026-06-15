@@ -27,7 +27,14 @@ jobs:
       - name: Secret scan - current tree (blocking)
         run: gitleaks detect --no-git --config .gitleaks.toml --redact --no-banner --exit-code 1
       - name: Secret scan - full history (informational)
-        run: gitleaks detect --config .gitleaks.toml --redact --no-banner --exit-code 0 || true
+        run: gitleaks detect --config .gitleaks.toml --redact --no-banner --report-path gitleaks-history.json --exit-code 0 || true
+      - name: Upload history scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-history-report
+          path: gitleaks-history.json
+          if-no-files-found: ignore
 
   dependency-audit:
     name: Dependency audit (npm)
