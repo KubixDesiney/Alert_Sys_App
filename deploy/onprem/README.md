@@ -11,8 +11,10 @@ worker-runner (Node cron logic). Full plan in ../../ONPREM.md.
 
 ## Status
 - Caddy + PocketBase + worker-runner come up healthy out of the box.
-- Remaining engineering (see ONPREM.md): the Firebase->PocketBase data-layer port and the
-  worker-logic port. The runner currently ticks + serves `/health` as the placeholder.
+- worker-runner runs cloud-parity **AI assignment** + **escalation** every cycle and pushes
+  `assignment`/`escalation` events to LAN devices over **SSE** (`/events?uid=`, token-gated).
+- Remaining engineering (see ONPREM.md): the Firebase->PocketBase **data-layer port** (so the
+  Flutter app reads/writes PocketBase) and the **rules port**.
 
 ## Air-gap notes
 - Vendor all images (caddy, pocketbase, node) into your internal registry.

@@ -38,8 +38,9 @@ the worker-logic port are scoped here as defined engineering work, not yet shipp
    model: superadmin/admin/supervisor).
 3. **Port worker logic** to `worker-runner`. DONE for AI assignment: `runAssignmentCycle`
    reuses the cloud's pure `buildSupStats`/`scoreSupervisor` against a `PocketBaseStore`
-   (tested in `worker_test/onprem_assignment.test.js`). Remaining: escalation + notifications.
-4. **Replace push** with LAN WebSocket/SSE; keep FCM as an optional path for internet sites.
+   (tested in `worker_test/onprem_assignment.test.js`). Escalation + LAN notifications DONE too.
+4. **Replace push** - DONE: LAN SSE hub in the worker-runner (`/events?uid=`), token-gated;
+   FCM remains an optional path for internet-connected sites.
 5. **Package** with the `deploy/onprem/` compose; ship as an appliance image.
 
 ## Data residency & security benefits (sell these)
