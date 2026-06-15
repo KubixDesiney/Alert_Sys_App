@@ -73,16 +73,35 @@ async function getAccessToken(env) {
 async function runBackup(env) {
   const token = await getAccessToken(env);
   const base = env.FB_DB_URL.endsWith('/') ? env.FB_DB_URL : env.FB_DB_URL + '/';
-  const res = await fetch(`${base}.json?access_token=${token}`);
-  if (!res.ok) throw new Error('RTDB export failed: ' + res.status);
-  const body = await res.text();
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  const objKey = `rtdb/${stamp}.json`;
-  await env.BACKUPS.put(objKey, body, {
-    httpMetadata: { contentType: 'application/json' },
+  try {
+    const res = await fetch(`${base}.json?access_token=${token}`);
+    if (!res.ok) throw new Error('RTDB export failed: ' + res.status);
+    const body = await res.text();
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const objKey = `rtdb/${stamp}.json`;
+    await env.BACKUPS.put(objKey, body, {
+      httpMetadata: { contentType: 'application/json' },
+    });
+    await prune(env, Number(env.BACKUP_KEEP || 30));
+    // Health beacon so the monitor / SuperAdmin console can see backups happen.
+    await writeBeacon(base, token, {
+      at: new Date().toISOString(), ok: true, key: objKey, bytes: body.length,
+    });
+    return { key: objKey, bytes: body.length };
+  } catch (e) {
+    await writeBeacon(base, token, {
+      at: new Date().toISOString(), ok: false, error: String((e && e.message) || e),
+    }).catch(() => {});
+    throw e;
+  }
+}
+
+async function writeBeacon(base, token, payload) {
+  await fetch(`${base}workers/health/backup.json?access_token=${token}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
-  await prune(env, Number(env.BACKUP_KEEP || 30));
-  return { key: objKey, bytes: body.length };
 }
 
 async function prune(env, keep) {
