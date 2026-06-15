@@ -32,8 +32,10 @@ the worker-logic port are scoped here as defined engineering work, not yet shipp
 - (Large sites) swap PocketBase for **Supabase** self-hosted (Postgres + Realtime + GoTrue).
 
 ## Phased migration
-1. **Abstract the data layer** in the Flutter app behind an interface (today it calls
-   Firebase directly). Add a PocketBase implementation alongside the Firebase one.
+1. **Abstract the data layer** - DONE (additive): `lib/services/data/` ships a `DataStore`
+   interface with a Firebase adapter (delegates to `AlertService`, zero behaviour change) and
+   a PocketBase adapter, selectable via `--dart-define=SIA_BACKEND`. Remaining: switch callers
+   (`AlertProvider`/services) from Firebase-direct to `DataStore`.
 2. **Port `database.rules.json`** authorization to PocketBase API rules (RBAC is the same
    model: superadmin/admin/supervisor).
 3. **Port worker logic** to `worker-runner`. DONE for AI assignment: `runAssignmentCycle`
