@@ -162,8 +162,8 @@ class SmartIndustrialAlertApp extends StatelessWidget {
           title: 'Smart Industrial Alert - SIA',
           debugShowCheckedModeBanner: false,
           themeMode: themeProvider.mode,
-          theme: buildLightTheme(),
-          darkTheme: buildDarkTheme(),
+          theme: buildLightTheme(brand: themeProvider.brandColor),
+          darkTheme: buildDarkTheme(brand: themeProvider.brandColor),
           navigatorKey: FcmService.navigatorKey,
           localizationsDelegates: const [
             AppLocalizations.delegate,
