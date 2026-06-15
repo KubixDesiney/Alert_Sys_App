@@ -24,10 +24,13 @@ services:
       - pb_data:/pb_data
 
   worker-runner:
-    build: ./worker-runner
+    build:
+      context: ../..
+      dockerfile: deploy/onprem/worker-runner/Dockerfile
     restart: unless-stopped
     environment:
       - PB_URL=http://pocketbase:8090
+      - PB_TOKEN=${PB_TOKEN:-}
       - WORKER_SHARED_SECRET=${WORKER_SHARED_SECRET}
       - CRON_INTERVAL_MS=${CRON_INTERVAL_MS:-60000}
     depends_on: [pocketbase]
