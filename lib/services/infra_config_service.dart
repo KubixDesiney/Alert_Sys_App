@@ -135,28 +135,36 @@ class InfraConfigService {
   /// off to a webhook (e.g. a GitHub Actions repository_dispatch endpoint).
   Future<({bool ok, String message})> deploy({
     required InfraConfig config,
-    required Map<String, String> secrets,
     String? authToken,
   }) async {
     final url = config.deployWebhookUrl.trim();
     if (url.isEmpty) {
       return (ok: false, message: 'Set a deploy webhook URL first.');
     }
-    final cleanSecrets = Map<String, String>.fromEntries(
-        secrets.entries.where((e) => e.value.trim().isNotEmpty));
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.isAbsolute) {
+      return (ok: false, message: 'Deploy webhook URL is not a valid absolute URL.');
+    }
+    if (uri.scheme != 'https') {
+      // Never transmit the deploy Bearer token over cleartext HTTP.
+      return (ok: false, message: 'Refusing to deploy: the webhook URL must use HTTPS.');
+    }
     try {
       final res = await http
           .post(
-            Uri.parse(url),
+            uri,
             headers: {
               'Content-Type': 'application/json',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
               if (authToken != null && authToken.trim().isNotEmpty)
                 'Authorization': 'Bearer ${authToken.trim()}',
             },
+            // GitHub repository_dispatch: only NON-secret config travels here.
+            // Secrets live in the repo's GitHub Actions secrets, not in transit.
             body: jsonEncode({
-              'event': 'deploy_instance',
-              'config': config.toMap(),
-              'secrets': cleanSecrets,
+              'event_type': 'deploy_instance',
+              'client_payload': config.toMap(),
             }),
           )
           .timeout(const Duration(seconds: 20));
