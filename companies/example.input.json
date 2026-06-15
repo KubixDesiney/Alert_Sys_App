@@ -1,0 +1,14 @@
+{
+  "id": "acme",
+  "name": "ACME Manufacturing",
+  "title": "ACME Alerts",
+  "project": "acme-alerts",
+  "account": "<your-cloudflare-account-id>",
+  "subdomain": "<your-workers-subdomain>",
+  "brand": "0xFFEA580C",
+  "logo": "https://acme.com/logo.png",
+  "support": "ops@acme.com",
+  "sso": "oidc.acme-azure",
+  "sso-label": "Sign in with ACME SSO",
+  "mfa": true
+}
