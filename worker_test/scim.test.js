@@ -5,6 +5,8 @@ import {
   recordToScim,
   parseFilter,
   applyPatch,
+  timingSafeEqual,
+  scimRateLimit,
 } from '../cloudflare_scim_worker.js';
 
 const ENTERPRISE = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
@@ -148,5 +150,39 @@ describe('applyPatch', () => {
     const snapshot = JSON.stringify(base);
     applyPatch(base, { Operations: [{ op: 'replace', path: 'active', value: false }] });
     expect(JSON.stringify(base)).toBe(snapshot);
+  });
+});
+
+
+describe('timingSafeEqual', () => {
+  test('true only for identical strings', () => {
+    expect(timingSafeEqual('secret-token', 'secret-token')).toBe(true);
+  });
+  test('false for different content or length', () => {
+    expect(timingSafeEqual('secret-token', 'secret-tokenX')).toBe(false);
+    expect(timingSafeEqual('abc', 'abd')).toBe(false);
+    expect(timingSafeEqual('', 'x')).toBe(false);
+    expect(timingSafeEqual(undefined, '')).toBe(true);
+  });
+});
+
+describe('scimRateLimit', () => {
+  test('allows up to the limit then blocks within the window', () => {
+    const b = new Map();
+    let last;
+    for (let i = 0; i < 3; i++) last = scimRateLimit(b, 'ip1', 3, 60000, 1000 + i);
+    expect(last.allowed).toBe(true);
+    expect(scimRateLimit(b, 'ip1', 3, 60000, 1003).allowed).toBe(false);
+  });
+  test('window slides so old hits expire', () => {
+    const b = new Map();
+    scimRateLimit(b, 'ip2', 1, 1000, 0);
+    expect(scimRateLimit(b, 'ip2', 1, 1000, 500).allowed).toBe(false);
+    expect(scimRateLimit(b, 'ip2', 1, 1000, 2000).allowed).toBe(true);
+  });
+  test('keys are independent', () => {
+    const b = new Map();
+    scimRateLimit(b, 'a', 1, 60000, 0);
+    expect(scimRateLimit(b, 'b', 1, 60000, 0).allowed).toBe(true);
   });
 });
