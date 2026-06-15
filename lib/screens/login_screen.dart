@@ -7,6 +7,7 @@ import '../services/enterprise_auth_service.dart';
 import '../services/sso_config_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
+import '../widgets/branded_logo.dart';
 import '../widgets/common/offline_banner.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -243,16 +244,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // Logo / Title (white-labeled per company)
-                  if (CompanyConfig.logoUrl.isNotEmpty)
-                    Image.network(
-                      CompanyConfig.logoUrl,
-                      height: 64,
-                      errorBuilder: (_, __, ___) => Icon(Icons.factory,
-                          size: 56, color: CompanyConfig.brandColor),
-                    )
-                  else
-                    Icon(Icons.factory, size: 56, color: CompanyConfig.brandColor),
+                  // Logo (runtime branding from the studio overrides build defaults)
+                  Builder(builder: (ctx) {
+                    final tp = ctx.watch<ThemeProvider>();
+                    final logo =
+                        tp.logoUrl.isNotEmpty ? tp.logoUrl : CompanyConfig.logoUrl;
+                    return BrandedLogo(
+                      value: logo,
+                      backgroundless: tp.logoBackgroundless,
+                      primary: tp.brandColor ?? CompanyConfig.brandColor,
+                      size: 72,
+                    );
+                  }),
                   const SizedBox(height: 16),
                   Text(
                     CompanyConfig.isConfigured
@@ -411,7 +414,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _login,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: t.red,
+                              backgroundColor: t.navy,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(

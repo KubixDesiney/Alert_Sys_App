@@ -20,8 +20,8 @@ import '../../widgets/common/app_loading_indicator.dart';
 import 'admin/admin_dashboard_shared.dart';
 import 'admin_escalation_screen.dart' show CollaborationsTab;
 
-const _navy = adminNavy;
-const _navyLt = adminNavyLt;
+Color get _navy => adminNavy;
+Color get _navyLt => adminNavyLt;
 const _red = adminRed;
 const _white = adminWhite;
 const _border = adminBorder;
@@ -6130,7 +6130,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Delete Supervisor',
                       style: TextStyle(
                         fontSize: 18,
@@ -6193,7 +6193,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   ),
                   TextSpan(
                     text: sup.fullName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: _navy,
                     ),
@@ -6201,7 +6201,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                   const TextSpan(text: ' from '),
                   TextSpan(
                     text: sup.usine,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: _navy,
                     ),
@@ -6500,7 +6500,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           Expanded(
                             child: Text(
                               sup.fullName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
                                 color: _navy,
@@ -6618,7 +6618,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                       ),
                     IconButton(
                       onPressed: () => _showModifyDialog(context),
-                      icon: const Icon(Icons.edit, color: _navy, size: 20),
+                      icon: Icon(Icons.edit, color: _navy, size: 20),
                       tooltip: 'Modify Supervisor',
                     ),
                     IconButton(
@@ -6678,7 +6678,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                               children: [
                                 Text(
                                   '${_typeLabel(a.type)} — ${a.description}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                     color: _navy,
@@ -6838,7 +6838,7 @@ class SheetField extends StatelessWidget {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(9),
-            borderSide: const BorderSide(color: _navy, width: 1.5),
+            borderSide: BorderSide(color: _navy, width: 1.5),
           ),
         ),
       ),

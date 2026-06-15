@@ -96,4 +96,7 @@ class BrandingConfigService {
   }
 
   Future<void> save(BrandingConfig config) => _ref.update(config.toMap());
+
+  /// Clears branding back to product defaults.
+  Future<void> reset() => _ref.remove();
 }
