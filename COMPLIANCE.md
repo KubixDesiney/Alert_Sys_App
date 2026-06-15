@@ -32,7 +32,7 @@ restricted to superadmin + worker service token).
 | A1 Availability | DR + backups (`DISASTER_RECOVERY.md`), monitoring, load proof + SLOs (`LOAD_TESTING.md`) | Partial (run tested DR + uptime monitor) |
 | C1 Confidentiality | Per-tenant isolation; secret handling (no secrets in source) | Done |
 | PI1 Processing integrity | RTDB transactions/locks, rules validation, 188 worker + Flutter tests | Done |
-| P (Privacy) | PII migration tooling (`tool/migrate_user_pii.mjs`); minimal data model | Partial (document retention + deletion) |
+| P (Privacy) | Data retention & privacy policy (`docs/policies/`); PII tooling; minimal data model | Done (defaults; controller may tune) |
 
 ## Security questionnaire — quick answers
 - **Where is data stored?** Customer's own Firebase (Google Cloud) project; region selectable at project creation.
@@ -48,7 +48,7 @@ restricted to superadmin + worker service token).
 1. Write formal policies: information security, access control, incident response, change management.
 2. Enable GitHub branch protection on `main` with required PR review + required status checks.
 3. Centralize audit-log retention (>= 1 year) and wire SIEM export.
-4. Commission a third-party penetration test; remediate findings.
+4. Commission a third-party penetration test; remediate findings (scope ready: `docs/PENTEST_SCOPE.md`).
 5. Publish sub-processor list + sign DPAs (Google, Cloudflare).
-6. Document data retention, deletion, and data-subject-request (DSR) handling.
+6. ~~Document data retention/deletion/DSR handling~~ - DONE (`docs/policies/data_retention_privacy_policy.md`).
 7. Engage a SOC 2 auditor (e.g. via Vanta/Drata) for a Type I, then a Type II observation window.
