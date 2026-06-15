@@ -1,0 +1,95 @@
+[
+  {
+    "name": "alerts",
+    "type": "base",
+    "listRule": "@request.auth.id != \"\"",
+    "viewRule": "@request.auth.id != \"\"",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "@request.auth.id != \"\"",
+    "deleteRule": null,
+    "schema": [
+      { "name": "alertNumber", "type": "number", "required": false, "options": {} },
+      { "name": "type", "type": "text", "required": false, "options": {} },
+      { "name": "usine", "type": "text", "required": false, "options": {} },
+      { "name": "convoyeur", "type": "number", "required": false, "options": {} },
+      { "name": "poste", "type": "number", "required": false, "options": {} },
+      { "name": "adresse", "type": "text", "required": false, "options": {} },
+      { "name": "status", "type": "text", "required": false, "options": {} },
+      { "name": "superviseurId", "type": "text", "required": false, "options": {} },
+      { "name": "superviseurName", "type": "text", "required": false, "options": {} },
+      { "name": "assistantId", "type": "text", "required": false, "options": {} },
+      { "name": "isCritical", "type": "bool", "required": false, "options": {} },
+      { "name": "isEscalated", "type": "bool", "required": false, "options": {} },
+      { "name": "timestamp", "type": "text", "required": false, "options": {} },
+      { "name": "takenAtTimestamp", "type": "text", "required": false, "options": {} },
+      { "name": "resolvedAt", "type": "text", "required": false, "options": {} },
+      { "name": "elapsedTime", "type": "number", "required": false, "options": {} },
+      { "name": "resolutionReason", "type": "text", "required": false, "options": {} },
+      { "name": "aiAssigned", "type": "bool", "required": false, "options": {} },
+      { "name": "aiAssignmentReason", "type": "text", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "supervisor_active_alerts",
+    "type": "base",
+    "listRule": "@request.auth.id != \"\"",
+    "viewRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
+    "createRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
+    "updateRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
+    "deleteRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
+    "schema": [
+      { "name": "supervisorId", "type": "text", "required": true, "options": {} },
+      { "name": "alertId", "type": "text", "required": false, "options": {} },
+      { "name": "status", "type": "text", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "notifications",
+    "type": "base",
+    "listRule": "recipientId = @request.auth.id || @request.auth.role = \"admin\"",
+    "viewRule": "recipientId = @request.auth.id || @request.auth.role = \"admin\"",
+    "createRule": "@request.auth.id != \"\"",
+    "updateRule": "recipientId = @request.auth.id || @request.auth.role = \"admin\"",
+    "deleteRule": null,
+    "schema": [
+      { "name": "recipientId", "type": "text", "required": true, "options": {} },
+      { "name": "notifType", "type": "text", "required": false, "options": {} },
+      { "name": "alertId", "type": "text", "required": false, "options": {} },
+      { "name": "pushSent", "type": "bool", "required": false, "options": {} },
+      { "name": "createdAt", "type": "text", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "escalation_settings",
+    "type": "base",
+    "listRule": "@request.auth.id != \"\"",
+    "viewRule": "@request.auth.id != \"\"",
+    "createRule": "@request.auth.role = \"admin\"",
+    "updateRule": "@request.auth.role = \"admin\"",
+    "deleteRule": "@request.auth.role = \"admin\"",
+    "schema": [
+      { "name": "settings", "type": "json", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "security_logs",
+    "type": "base",
+    "listRule": "@request.auth.role = \"superadmin\"",
+    "viewRule": "@request.auth.role = \"superadmin\"",
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
+    "schema": [
+      { "name": "at", "type": "text", "required": false, "options": {} },
+      { "name": "kind", "type": "text", "required": false, "options": {} },
+      { "name": "fingerprint", "type": "text", "required": false, "options": {} },
+      { "name": "source", "type": "text", "required": false, "options": {} },
+      { "name": "reason", "type": "text", "required": false, "options": {} }
+    ],
+    "indexes": []
+  }
+]
