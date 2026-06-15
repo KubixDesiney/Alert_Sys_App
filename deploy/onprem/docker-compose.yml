@@ -1,0 +1,38 @@
+# SIA on-prem scaffold - air-gapped infrastructure.
+# PocketBase (data/auth/realtime) + worker-runner (Node cron logic) + Caddy (TLS/proxy/static).
+# See ../../ONPREM.md for the full plan. Vendor all images into an internal registry for true air-gap.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      - SIA_HOST=${SIA_HOST:-sia.local}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [pocketbase, worker-runner]
+
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:0.22.0
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - pb_data:/pb_data
+
+  worker-runner:
+    build: ./worker-runner
+    restart: unless-stopped
+    environment:
+      - PB_URL=http://pocketbase:8090
+      - WORKER_SHARED_SECRET=${WORKER_SHARED_SECRET}
+      - CRON_INTERVAL_MS=${CRON_INTERVAL_MS:-60000}
+    depends_on: [pocketbase]
+
+volumes:
+  pb_data:
+  caddy_data:
+  caddy_config:
