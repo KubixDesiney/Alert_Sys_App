@@ -21,6 +21,8 @@
  *          SCIM_DEFAULT_ROLE          (optional; default "supervisor")
  *          SCIM_GRANTABLE_ROLES       (optional CSV; default "admin,supervisor")
  *          SCIM_DEFAULT_FACTORY       (optional)
+ *          SCIM_RATE_LIMIT            (optional; requests/min per IP, default 300)
+ *          SCIM_MAX_BODY              (optional; max write-body bytes, default 1048576)
  *
  * IdP base URL:  https://<worker>/scim/v2
  */
@@ -107,6 +109,46 @@ async function rtdbPatch(env, token, path, value) {
 }
 
 // ── pure mapping helpers (exported for tests) ─────────────────────────────────
+// ── hardening: constant-time auth, rate limit, audit ──────────────────
+/** Constant-time string compare so the bearer token can't be guessed via timing. */
+export function timingSafeEqual(a, b) {
+  const sa = String(a == null ? '' : a);
+  const sb = String(b == null ? '' : b);
+  let diff = sa.length ^ sb.length;
+  const n = Math.max(sa.length, sb.length);
+  for (let i = 0; i < n; i++) diff |= (sa.charCodeAt(i) || 0) ^ (sb.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
+// In-memory sliding-window limiter (per worker isolate).
+const SCIM_RL = new Map();
+/** Pure sliding-window check. `buckets` is a Map<key, number[]> of hit timestamps. */
+export function scimRateLimit(buckets, key, limit, windowMs, now = Date.now()) {
+  const arr = (buckets.get(key) || []).filter((t) => now - t < windowMs);
+  arr.push(now);
+  buckets.set(key, arr);
+  if (buckets.size > 5000) {
+    const oldest = buckets.keys().next().value;
+    if (oldest !== key) buckets.delete(oldest);
+  }
+  return { allowed: arr.length <= limit, count: arr.length, limit };
+}
+
+function clientFingerprint(req) {
+  return req.headers.get('cf-connecting-ip')
+    || (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
+    || 'unknown';
+}
+
+/** Append-only audit trail of provisioning events (reuses the request's RTDB token). */
+async function scimAudit(env, token, op, detail) {
+  try {
+    const at = new Date().toISOString();
+    const key = at.replace(/[.:#$\[\]/]/g, '-') + '-' + Math.random().toString(36).slice(2, 8);
+    await rtdbPut(env, token, `scim/audit/${key}`, { at, op, ...detail });
+  } catch (_) { /* non-fatal */ }
+}
+
 export function emailKey(email) {
   return String(email || '').trim().toLowerCase().replace(/[.#$\[\]/]/g, '_');
 }
@@ -207,13 +249,13 @@ export function applyPatch(rec, patchBody) {
 }
 
 // ── SCIM responses ────────────────────────────────────────────────────────────
-function scimJson(obj, status = 200) {
+function scimJson(obj, status = 200, headers = {}) {
   return new Response(JSON.stringify(obj), {
-    status, headers: { 'Content-Type': 'application/scim+json' },
+    status, headers: { 'Content-Type': 'application/scim+json', ...headers },
   });
 }
-function scimError(status, detail) {
-  return scimJson({ schemas: [ERROR], detail, status: String(status) }, status);
+function scimError(status, detail, headers = {}) {
+  return scimJson({ schemas: [ERROR], detail, status: String(status) }, status, headers);
 }
 function serviceProviderConfig() {
   return {
@@ -278,10 +320,23 @@ export default {
     if (!path.startsWith('/scim/v2')) {
       return new Response('alertsys SCIM worker');
     }
-    // Bearer auth.
+    // Per-IP rate limit (before auth, to throttle token brute-force and floods).
+    const fp = clientFingerprint(req);
+    if (!scimRateLimit(SCIM_RL, fp, Number(env.SCIM_RATE_LIMIT || 300), 60000).allowed) {
+      return scimError(429, 'Rate limit exceeded', { 'Retry-After': '60' });
+    }
+    // Bearer auth: constant-time compare; fail closed if the token is unset.
     const auth = req.headers.get('authorization') || '';
-    if (!env.SCIM_TOKEN || auth !== `Bearer ${env.SCIM_TOKEN}`) {
-      return scimError(401, 'Unauthorized');
+    const presented = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (!env.SCIM_TOKEN || !timingSafeEqual(presented, env.SCIM_TOKEN)) {
+      return scimError(401, 'Unauthorized', { 'WWW-Authenticate': 'Bearer realm="scim"' });
+    }
+    // Body-size cap for writes.
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      const maxBody = Number(env.SCIM_MAX_BODY || 1048576);
+      if (Number(req.headers.get('content-length') || 0) > maxBody) {
+        return scimError(413, 'Payload too large');
+      }
     }
 
     const sub = path.slice('/scim/v2'.length); // e.g. '', '/Users', '/Users/{id}'
@@ -330,6 +385,7 @@ export default {
           rec.createdAt = new Date().toISOString();
           const stored = await writeUser(env, token, newId, rec);
           ctx.waitUntil(beacon(env, 'create', true));
+          ctx.waitUntil(scimAudit(env, token, 'create', { target: emailKey(rec.email), scimId: newId, role: rec.role, active: rec.active !== false, ip: fp, status: 201 }));
           return scimJson(recordToScim(newId, stored, await provisionLocation(req, newId)), 201);
         }
         return scimError(405, 'Method not allowed');
@@ -348,6 +404,7 @@ export default {
         const rec = { ...current, ...scimToRecord(body, env), createdAt: current.createdAt };
         const stored = await writeUser(env, token, id, rec);
         ctx.waitUntil(beacon(env, 'replace', true));
+        ctx.waitUntil(scimAudit(env, token, 'replace', { target: emailKey(rec.email), scimId: id, role: rec.role, active: rec.active !== false, ip: fp, status: 200 }));
         return scimJson(recordToScim(id, stored, await provisionLocation(req, id)));
       }
       if (req.method === 'PATCH') {
@@ -355,6 +412,7 @@ export default {
         const rec = applyPatch(current, body);
         const stored = await writeUser(env, token, id, rec);
         ctx.waitUntil(beacon(env, 'patch', true));
+        ctx.waitUntil(scimAudit(env, token, 'patch', { target: emailKey(rec.email), scimId: id, active: rec.active !== false, ip: fp, status: 200 }));
         return scimJson(recordToScim(id, stored, await provisionLocation(req, id)));
       }
       if (req.method === 'DELETE') {
@@ -362,6 +420,7 @@ export default {
         const stored = await writeUser(env, token, id, { ...current, active: false });
         await rtdbPatch(env, token, `scim/Users/${id}`, { deletedAt: new Date().toISOString() });
         ctx.waitUntil(beacon(env, 'delete', true));
+        ctx.waitUntil(scimAudit(env, token, 'deactivate', { scimId: id, active: false, ip: fp, status: 204 }));
         return new Response(null, { status: 204 });
       }
       return scimError(405, 'Method not allowed');
