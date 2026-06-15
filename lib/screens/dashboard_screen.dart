@@ -29,7 +29,7 @@ import 'supervisor_collaboration_screen.dart' as collab;
 import '../models/collaboration_model.dart';
 import '../services/collaboration_service.dart';
 
-const _navy = AppColors.navy;
+Color get _navy => brandPrimary(false);
 const _white = AppColors.white;
 const _muted = AppColors.textMuted;
 
@@ -219,11 +219,11 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                   // Dashboard Title
                   Row(
                     children: [
-                      const Icon(Icons.dashboard, color: _navy, size: 20),
+                      Icon(Icons.dashboard, color: _navy, size: 20),
                       const SizedBox(width: 8),
                       Text(
                         AppLocalizations.of(context).dashboardHeaderTitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: _navy),
@@ -2694,7 +2694,7 @@ class _AlertRow extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(typeMeta(alert.type, context.appTheme).label,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: _navy))),
@@ -2704,10 +2704,10 @@ class _AlertRow extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                        color: const Color(0xFFE8F0F8),
+                        color: brandPrimaryTint(false),
                         borderRadius: BorderRadius.circular(99)),
                     child: Text(alert.alertLabel,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: _navy,

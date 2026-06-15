@@ -1,0 +1,199 @@
+name: Deploy company instance
+
+# Receives the SuperAdmin → Infrastructure "Deploy" trigger (repository_dispatch)
+# or a manual run, and stands up a company's dedicated backend:
+#   provision per-company configs → deploy the 5 Cloudflare workers (+ secrets)
+#   → create the R2 backup bucket → deploy the Firebase Realtime Database rules.
+#
+# SECURITY: all credentials come from this repo's GitHub Actions secrets — never
+# from the trigger payload. The Infrastructure tab only sends NON-secret config
+# in client_payload. Set these secrets once (Settings → Secrets and variables →
+# Actions), or with the `gh secret set` commands the tab can copy:
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+#   FIREBASE_SERVICE_ACCOUNT (full JSON), FB_DB_URL, FB_API_KEY,
+#   WORKER_SHARED_SECRET, SCIM_TOKEN
+#
+# Note: this deploys the BACKEND (workers + R2 + DB rules). The Flutter app is
+# built/hosted separately with the matching --dart-define worker URLs (see the
+# build command the provisioning step prints / companies/<id>/build.sh).
+
+on:
+  repository_dispatch:
+    types: [deploy_instance]
+  workflow_dispatch:
+    inputs:
+      firebaseProjectId:
+        description: Company Firebase project id
+        required: true
+      firebaseDbUrl:
+        description: Realtime Database URL (https://<proj>-default-rtdb.firebaseio.com)
+        required: false
+      workersSubdomain:
+        description: workers.dev subdomain (the part before .workers.dev)
+        required: true
+      r2Bucket:
+        description: R2 backup bucket name
+        required: false
+      companyId:
+        description: Slug for worker name prefixes (defaults to the project id)
+        required: false
+      companyName:
+        description: Display name
+        required: false
+      brandColor:
+        description: Brand color, e.g. 0xFF1565C0
+        required: false
+
+concurrency:
+  group: deploy-instance-${{ github.event.client_payload.firebaseProjectId || github.event.inputs.firebaseProjectId }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Read config from whichever trigger fired, via env (never inline — avoids
+      # script injection from the dispatch payload).
+      - name: Resolve config
+        env:
+          CP_PROJECT: ${{ github.event.client_payload.firebaseProjectId }}
+          IN_PROJECT: ${{ github.event.inputs.firebaseProjectId }}
+          CP_DBURL: ${{ github.event.client_payload.firebaseDbUrl }}
+          IN_DBURL: ${{ github.event.inputs.firebaseDbUrl }}
+          CP_SUB: ${{ github.event.client_payload.workersSubdomain }}
+          IN_SUB: ${{ github.event.inputs.workersSubdomain }}
+          CP_R2: ${{ github.event.client_payload.r2Bucket }}
+          IN_R2: ${{ github.event.inputs.r2Bucket }}
+          CP_ID: ${{ github.event.client_payload.companyId }}
+          IN_ID: ${{ github.event.inputs.companyId }}
+          CP_NAME: ${{ github.event.client_payload.companyName }}
+          IN_NAME: ${{ github.event.inputs.companyName }}
+          CP_BRAND: ${{ github.event.client_payload.brandColor }}
+          IN_BRAND: ${{ github.event.inputs.brandColor }}
+        run: |
+          set -euo pipefail
+          PROJECT="${CP_PROJECT:-$IN_PROJECT}"
+          if [ -z "$PROJECT" ]; then echo "::error::firebaseProjectId is required"; exit 1; fi
+          SUB="${CP_SUB:-$IN_SUB}"
+          if [ -z "$SUB" ]; then echo "::error::workersSubdomain is required"; exit 1; fi
+          # Derive a safe slug id from the explicit id or the project id.
+          RAWID="${CP_ID:-${IN_ID:-$PROJECT}}"
+          ID="$(echo "$RAWID" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/^-*//;s/-*$//')"
+          DBURL="${CP_DBURL:-${IN_DBURL:-https://${PROJECT}-default-rtdb.firebaseio.com}}"
+          R2="${CP_R2:-${IN_R2:-${ID}-alertsys-backups}}"
+          NAME="${CP_NAME:-${IN_NAME:-$PROJECT}}"
+          BRAND="${CP_BRAND:-${IN_BRAND:-0xFF1565C0}}"
+          {
+            echo "PROJECT=$PROJECT"
+            echo "SUB=$SUB"
+            echo "ID=$ID"
+            echo "DBURL=$DBURL"
+            echo "R2=$R2"
+            echo "NAME=$NAME"
+            echo "BRAND=$BRAND"
+          } >> "$GITHUB_ENV"
+          echo "Resolved: id=$ID project=$PROJECT subdomain=$SUB r2=$R2"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm ci || npm install
+
+      - name: Provision per-company configs
+        env:
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          node tool/provision_company.mjs \
+            --id="$ID" --name="$NAME" --project="$PROJECT" \
+            --account="${CF_ACCOUNT:-unknown}" --subdomain="$SUB" \
+            --brand="$BRAND" --dburl="$DBURL"
+          echo "Generated:" && ls -1 "companies/$ID"
+
+      - name: Create R2 bucket (idempotent)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler r2 bucket create "$R2" || echo "bucket exists or create skipped"
+
+      - name: Deploy workers + set secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FB_DB_URL: ${{ secrets.FB_DB_URL }}
+          FB_API_KEY: ${{ secrets.FB_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          SCIM_TOKEN: ${{ secrets.SCIM_TOKEN }}
+        run: |
+          set -euo pipefail
+          DIR="companies/$ID"
+          DBURL_EFF="${FB_DB_URL:-$DBURL}"
+          put() { # name value config
+            if [ -n "$2" ]; then printf '%s' "$2" | npx wrangler secret put "$1" --config "$3" >/dev/null && echo "  set $1"; fi
+          }
+          deploy() { # key
+            local cfg="$DIR/wrangler.$1.toml"
+            echo "::group::deploy $1 ($cfg)"
+            npx wrangler deploy --config "$cfg"
+            echo "::endgroup::"
+          }
+
+          deploy ai
+          put FB_DB_URL "$DBURL_EFF" "$DIR/wrangler.ai.toml"
+          put FB_API_KEY "$FB_API_KEY" "$DIR/wrangler.ai.toml"
+          put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT" "$DIR/wrangler.ai.toml"
+          put WORKER_SHARED_SECRET "$WORKER_SHARED_SECRET" "$DIR/wrangler.ai.toml"
+          put NOTIFY_WORKER_URL "https://${ID}-alertsys.${SUB}.workers.dev/notify" "$DIR/wrangler.ai.toml"
+
+          deploy notify
+          put FB_DB_URL "$DBURL_EFF" "$DIR/wrangler.notify.toml"
+          put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT" "$DIR/wrangler.notify.toml"
+          put WORKER_SHARED_SECRET "$WORKER_SHARED_SECRET" "$DIR/wrangler.notify.toml"
+
+          deploy backup
+          put FB_DB_URL "$DBURL_EFF" "$DIR/wrangler.backup.toml"
+          put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT" "$DIR/wrangler.backup.toml"
+          put WORKER_SHARED_SECRET "$WORKER_SHARED_SECRET" "$DIR/wrangler.backup.toml"
+
+          deploy monitor
+          put FB_DB_URL "$DBURL_EFF" "$DIR/wrangler.monitor.toml"
+          put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT" "$DIR/wrangler.monitor.toml"
+
+          deploy scim
+          put FB_DB_URL "$DBURL_EFF" "$DIR/wrangler.scim.toml"
+          put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT" "$DIR/wrangler.scim.toml"
+          put SCIM_TOKEN "$SCIM_TOKEN" "$DIR/wrangler.scim.toml"
+
+      - name: Deploy Firebase Database rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT not set — skipping rules deploy"; exit 0
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npm i -g firebase-tools >/dev/null 2>&1
+          firebase deploy --only database --project "$PROJECT" --non-interactive
+          rm -f "$RUNNER_TEMP/sa.json"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Instance deploy — $NAME ($ID)"
+            echo ""
+            echo "- Project: \`$PROJECT\`"
+            echo "- Workers subdomain: \`$SUB\`"
+            echo "- R2 bucket: \`$R2\`"
+            echo "- Workers: ${ID}-alert-notifier, ${ID}-alertsys, ${ID}-alertsys-backup, ${ID}-alertsys-monitor, ${ID}-alertsys-scim"
+            echo "- SCIM base: https://${ID}-alertsys-scim.${SUB}.workers.dev/scim/v2"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -102,12 +102,6 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
     setState(() => _deploying = true);
     final r = await _service.deploy(
       config: _current(),
-      secrets: {
-        'FIREBASE_SERVICE_ACCOUNT': _serviceAccount.text,
-        'CLOUDFLARE_API_TOKEN': _cfToken.text,
-        'SCIM_TOKEN': _scimToken.text,
-        'WORKER_SHARED_SECRET': _sharedSecret.text,
-      },
       authToken: _deployToken.text,
     );
     if (!mounted) return;
@@ -362,15 +356,23 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
           _sectionHeader(Icons.rocket_launch_outlined, 'DEPLOY'),
           const SizedBox(height: 6),
           Text(
-            'The app cannot run wrangler itself, so Deploy POSTs this config + '
-            'secrets to your CI webhook (e.g. GitHub Actions), which runs the '
-            'real wrangler + firebase deploy. Secrets are sent write-only.',
+            'Deploy fires a GitHub repository_dispatch to the deploy-instance '
+            'workflow, which provisions and deploys your 5 workers + R2 + '
+            'database rules. Only non-secret config is sent — set the secrets '
+            'once in GitHub Actions with the button below.',
             style: Sa.body(size: 11.5, color: Sa.muted),
           ),
           const SizedBox(height: 14),
           _field('Deploy webhook URL', _webhook,
               hint: 'https://api.github.com/repos/acme/sia/dispatches'),
-          _SecretField(label: 'Webhook auth token', controller: _deployToken),
+          _SecretField(label: 'GitHub token (repo scope)', controller: _deployToken),
+          const SizedBox(height: 4),
+          SaButton(
+            label: 'Copy GitHub secret commands',
+            icon: Icons.key_outlined,
+            outlined: true,
+            onPressed: _copySecretCommands,
+          ),
           if (_lastDeployAt.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text('Last deploy: $_lastDeployAt · $_lastDeployStatus',
@@ -474,6 +476,31 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
   void _copy(String v) {
     Clipboard.setData(ClipboardData(text: v));
     _toast('Copied.', Sa.cyan);
+  }
+
+  /// Builds `gh secret set` commands from the entered values so IT can set the
+  /// GitHub Actions secrets the workflow reads (secrets never leave the device
+  /// via the app — they go straight to GitHub).
+  void _copySecretCommands() {
+    String q(String v) => v.trim().replaceAll("'", "'\\''");
+    final lines = <String>[
+      '# Run in your instance repo with the GitHub CLI (gh auth login first):',
+      if (_cfToken.text.trim().isNotEmpty)
+        "gh secret set CLOUDFLARE_API_TOKEN --body '${q(_cfToken.text)}'",
+      if (_accountId.text.trim().isNotEmpty)
+        "gh secret set CLOUDFLARE_ACCOUNT_ID --body '${q(_accountId.text)}'",
+      if (_dbUrl.text.trim().isNotEmpty)
+        "gh secret set FB_DB_URL --body '${q(_dbUrl.text)}'",
+      if (_apiKey.text.trim().isNotEmpty)
+        "gh secret set FB_API_KEY --body '${q(_apiKey.text)}'",
+      if (_sharedSecret.text.trim().isNotEmpty)
+        "gh secret set WORKER_SHARED_SECRET --body '${q(_sharedSecret.text)}'",
+      if (_scimToken.text.trim().isNotEmpty)
+        "gh secret set SCIM_TOKEN --body '${q(_scimToken.text)}'",
+      'gh secret set FIREBASE_SERVICE_ACCOUNT < service-account.json',
+    ];
+    Clipboard.setData(ClipboardData(text: lines.join('\n')));
+    _toast('Secret-setup commands copied to clipboard.', Sa.cyan);
   }
 }
 
