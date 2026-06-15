@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
 
-const adminNavy = AppColors.navy;
-const adminNavyLt = AppColors.navyLight;
+Color get adminNavy => brandPrimary(false);
+Color get adminNavyLt => brandPrimaryTint(false);
 const adminRed = AppColors.red;
 const adminWhite = AppColors.white;
 const adminBorder = AppColors.border;

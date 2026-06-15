@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/company_config.dart';
 import '../services/branding_config_service.dart';
+import '../theme.dart';
 
 class ThemeProvider extends ChangeNotifier {
   static const _key = 'isDarkMode';
@@ -18,13 +20,16 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode get mode => _mode;
   bool get isDark => _mode == ThemeMode.dark;
 
-  /// Runtime brand color from `branding_config`, or null to fall back to the
-  /// build-time CompanyConfig default.
+  /// Runtime brand color (null → product default navy). Read app-wide through
+  /// [AppTheme.navy] and the [ColorScheme], so a change re-skins everything.
   Color? get brandColor => _brandColor;
   String get logoUrl => _logoUrl;
   bool get logoBackgroundless => _logoBackgroundless;
 
   ThemeProvider() {
+    // Seed with the build-time brand (white-label) until branding_config loads.
+    _brandColor = CompanyConfig.isConfigured ? CompanyConfig.brandColor : null;
+    setRuntimeBrand(_brandColor);
     _load();
     _bindBranding();
   }
@@ -36,27 +41,40 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   /// Streams `branding_config` so a save in the studio re-skins every open
-  /// dashboard live. Public read on the node lets even the login screen brand
-  /// itself before sign-in.
+  /// dashboard live (public read lets the login screen brand itself too).
   void _bindBranding() {
     try {
       _brandingSub = BrandingConfigService().stream().listen((c) {
-        _brandColor = c.primaryColor;
+        _brandColor = c.primaryColor ??
+            (CompanyConfig.isConfigured ? CompanyConfig.brandColor : null);
         _logoUrl = c.logoUrl;
         _logoBackgroundless = c.logoBackgroundless;
+        setRuntimeBrand(_brandColor);
         notifyListeners();
       }, onError: (_) {});
     } catch (_) {
-      // Branding is best-effort; the app still runs on CompanyConfig defaults.
+      // Branding is best-effort; the app still runs on the default theme.
     }
   }
 
   /// Instant local apply on the device that just saved (the stream delivers the
-  /// same values to every other device a moment later).
+  /// same values to other devices a moment later).
   void applyBranding({Color? primary, String? logoUrl, bool? logoBackgroundless}) {
-    if (primary != null) _brandColor = primary;
+    if (primary != null) {
+      _brandColor = primary;
+      setRuntimeBrand(primary);
+    }
     if (logoUrl != null) _logoUrl = logoUrl;
     if (logoBackgroundless != null) _logoBackgroundless = logoBackgroundless;
+    notifyListeners();
+  }
+
+  /// Resets branding back to product defaults (the studio's "Reset to default").
+  void resetBranding() {
+    _brandColor = CompanyConfig.isConfigured ? CompanyConfig.brandColor : null;
+    _logoUrl = '';
+    _logoBackgroundless = false;
+    setRuntimeBrand(_brandColor);
     notifyListeners();
   }
 
