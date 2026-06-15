@@ -87,14 +87,23 @@ node tool/restore_rtdb.mjs backups\rtdb-2026-06-14-02-00-00.json --path=/alerts 
 
 ## Monitoring & alerting
 
-- **Cron health** is already written to `workers/health/lastRun` every minute and
-  surfaced in SuperAdmin → Logs (NOMINAL / DEGRADED / STALLED).
-- **Client errors** flow to `bugs/client`; security events to `security/*`.
-- **Add an external uptime check** (e.g. a 5-min cron hitting the AI worker
-  `/config` and the notify worker `/config`) so you're paged if an edge goes dark
-  independently of the app.
-- **Watch:** cron freshness > 10 min, a spike in `bugs/client`, backup worker
-  errors, and the continuous-learning accuracy ledger drifting.
+- **System monitor / deadman switch (built-in):** `cloudflare_monitor_worker.js`
+  runs every 5 min, checks both workers + cron freshness + backup freshness, and
+  posts to a webhook (Slack / Teams / Discord / PagerDuty) **on state change** —
+  so you hear about a stalled cron or failed backup before a customer does.
+  Deploy: `npx wrangler deploy --config wrangler.monitor.toml` after setting the
+  `FIREBASE_SERVICE_ACCOUNT`, `FB_DB_URL`, and `ALERT_WEBHOOK_URL` secrets. Live
+  state at `workers/health/monitor`.
+- **Backup beacon:** the backup worker records each run at `workers/health/backup`
+  (`{ ok, key, bytes, at }`); the monitor alerts if it fails or goes stale.
+- **Cron health** is written to `workers/health/lastRun` every minute and shown in
+  SuperAdmin → Logs (NOMINAL / DEGRADED / STALLED).
+- **Client errors** flow to `bugs/client` (every ERROR log + uncaught Flutter
+  errors); security events to `security/*`. The empty `catch (_)` blocks that
+  remain are intentional best-effort (voice/TTS, UI parsing, cleanup) — the paths
+  that matter already report.
+- **Watch:** cron freshness > 10 min, a spike in `bugs/client`, a failed/stale
+  backup beacon, and the continuous-learning accuracy ledger drifting.
 
 ---
 

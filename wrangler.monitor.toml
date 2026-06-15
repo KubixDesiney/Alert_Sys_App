@@ -1,0 +1,18 @@
+# System monitor / deadman switch worker.
+# Deploy:  npx wrangler deploy --config wrangler.monitor.toml
+name = "alertsys-monitor"
+main = "cloudflare_monitor_worker.js"
+compatibility_date = "2025-01-01"
+
+# Every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+AI_WORKER_URL = "https://alert-notifier.aziz-nagati01.workers.dev"
+NOTIFY_WORKER_URL = "https://alertsys.aziz-nagati01.workers.dev"
+
+# Secrets (wrangler secret put NAME --config wrangler.monitor.toml):
+#   FIREBASE_SERVICE_ACCOUNT   the service-account JSON (to read workers/health)
+#   FB_DB_URL                  https://<project>-default-rtdb.firebaseio.com/
+#   ALERT_WEBHOOK_URL          an incoming webhook (Slack / Teams / Discord / etc.)
