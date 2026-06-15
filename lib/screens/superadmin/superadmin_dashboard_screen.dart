@@ -12,6 +12,7 @@ import 'access_identity_tab.dart';
 import 'ai_agents_tab.dart';
 import 'ai_training_tab.dart';
 import 'hardware_tab.dart';
+import 'infrastructure_tab.dart';
 import 'logs_tab.dart';
 import 'production_managers_tab.dart';
 import 'reliability_tab.dart';
@@ -40,6 +41,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
     (icon: Icons.vpn_key_outlined, label: 'ACCESS & IDENTITY'),
     (icon: Icons.health_and_safety_outlined, label: 'RELIABILITY'),
     (icon: Icons.palette_outlined, label: 'BRANDING'),
+    (icon: Icons.dns_outlined, label: 'INFRASTRUCTURE'),
     (icon: Icons.terminal_outlined, label: 'LOGS'),
     (icon: Icons.memory_outlined, label: 'HARDWARE'),
   ];
@@ -122,7 +124,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                             3 => const AccessIdentityTab(),
                             4 => const ReliabilityTab(),
                             5 => const ThemeStudioTab(),
-                            6 => const SuperAdminLogsTab(),
+                            6 => const InfrastructureTab(),
+                            7 => const SuperAdminLogsTab(),
                             _ => const HardwareTab(),
                           },
                         ),
