@@ -1,0 +1,15 @@
+# Plant hostname; use an internal CA or self-signed cert for air-gapped sites.
+{$SIA_HOST:sia.local} {
+  encode gzip
+  handle_path /api/* {
+    reverse_proxy pocketbase:8090
+  }
+  handle_path /ws/* {
+    reverse_proxy worker-runner:8787
+  }
+  handle {
+    root * /srv/web
+    try_files {path} /index.html
+    file_server
+  }
+}
