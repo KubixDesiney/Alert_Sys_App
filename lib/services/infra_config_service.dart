@@ -136,6 +136,7 @@ class InfraConfigService {
   Future<({bool ok, String message})> deploy({
     required InfraConfig config,
     String? authToken,
+    Map<String, String> secrets = const {},
   }) async {
     final url = config.deployWebhookUrl.trim();
     if (url.isEmpty) {
@@ -164,7 +165,17 @@ class InfraConfigService {
             // Secrets live in the repo's GitHub Actions secrets, not in transit.
             body: jsonEncode({
               'event_type': 'deploy_instance',
-              'client_payload': config.toMap(),
+              // Non-secret config + write-only secrets, sent over the HTTPS guard
+              // only. The receiving CI stores them as GitHub Actions secrets.
+              // Note: repository_dispatch payloads can appear in webhook delivery
+              // logs - prefer setting these directly as GitHub Actions secrets.
+              'client_payload': {
+                ...config.toMap(),
+                if (secrets.isNotEmpty)
+                  'secrets': Map<String, String>.fromEntries(
+                    secrets.entries.where((e) => e.value.trim().isNotEmpty),
+                  ),
+              },
             }),
           )
           .timeout(const Duration(seconds: 20));
