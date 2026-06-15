@@ -83,7 +83,19 @@ String _flagOf(String iso) {
 ///
 /// Requires SMS multi-factor enabled in Firebase Identity Platform.
 class MfaEnrollmentScreen extends StatefulWidget {
-  const MfaEnrollmentScreen({super.key});
+  const MfaEnrollmentScreen({
+    super.key,
+    this.mandatory = false,
+    this.onCompleted,
+  });
+
+  /// When true the screen is a non-dismissable gate (no back/skip) the
+  /// RoleRouter shows to enforce enrolment before granting app access.
+  final bool mandatory;
+
+  /// Called once enrolment is satisfied in [mandatory] mode so the gate can let
+  /// the user through to the dashboard.
+  final VoidCallback? onCompleted;
 
   @override
   State<MfaEnrollmentScreen> createState() => _MfaEnrollmentScreenState();
@@ -247,8 +259,21 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Two-factor authentication')),
+    return PopScope(
+      canPop: !widget.mandatory,
+      child: Scaffold(
+      appBar: AppBar(
+        title: const Text('Two-factor authentication'),
+        automaticallyImplyLeading: !widget.mandatory,
+        actions: widget.mandatory
+            ? [
+                TextButton(
+                  onPressed: () => FirebaseAuth.instance.signOut(),
+                  child: const Text('Sign out'),
+                ),
+              ]
+            : null,
+      ),
       body: _checking
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -264,7 +289,7 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
                 ),
               ),
             ),
-    );
+    ));
   }
 
   Widget _verifyEmailView() {
@@ -350,8 +375,14 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
         ),
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('Done'),
+          onPressed: () {
+            if (widget.mandatory && widget.onCompleted != null) {
+              widget.onCompleted!();
+            } else {
+              Navigator.of(context).maybePop();
+            }
+          },
+          child: Text(widget.mandatory ? 'Continue to app' : 'Done'),
         ),
       ],
     );

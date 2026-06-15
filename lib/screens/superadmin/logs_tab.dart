@@ -785,8 +785,12 @@ class _CronHealthSection extends StatefulWidget {
 class _CronHealthSectionState extends State<_CronHealthSection> {
   StreamSubscription<DatabaseEvent>? _aiSub;
   StreamSubscription<DatabaseEvent>? _notifySub;
+  StreamSubscription<DatabaseEvent>? _backupSub;
+  StreamSubscription<DatabaseEvent>? _monitorSub;
   Map<String, dynamic>? _ai;
   Map<String, dynamic>? _notify;
+  Map<String, dynamic>? _backup;
+  Map<String, dynamic>? _monitor;
   String? _error;
   Timer? _ticker;
 
@@ -813,6 +817,24 @@ class _CronHealthSectionState extends State<_CronHealthSection> {
             e.snapshot.value is Map ? Map<String, dynamic>.from(e.snapshot.value as Map) : null);
       }
     }, onError: (_) {});
+    _backupSub = FirebaseDatabase.instance
+        .ref('workers/health/backup')
+        .onValue
+        .listen((e) {
+      if (mounted) {
+        setState(() => _backup =
+            e.snapshot.value is Map ? Map<String, dynamic>.from(e.snapshot.value as Map) : null);
+      }
+    }, onError: (_) {});
+    _monitorSub = FirebaseDatabase.instance
+        .ref('workers/health/monitor')
+        .onValue
+        .listen((e) {
+      if (mounted) {
+        setState(() => _monitor =
+            e.snapshot.value is Map ? Map<String, dynamic>.from(e.snapshot.value as Map) : null);
+      }
+    }, onError: (_) {});
     // Re-render every 10s so the freshness ages tick.
     _ticker = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted) setState(() {});
@@ -823,6 +845,8 @@ class _CronHealthSectionState extends State<_CronHealthSection> {
   void dispose() {
     _aiSub?.cancel();
     _notifySub?.cancel();
+    _backupSub?.cancel();
+    _monitorSub?.cancel();
     _ticker?.cancel();
     super.dispose();
   }
@@ -875,19 +899,184 @@ class _CronHealthSectionState extends State<_CronHealthSection> {
                 ('errorCount', 'Errors'),
               ],
             );
+            final backup = _backupCard();
+            final monitor = _monitorCard();
             if (narrow) {
-              return Column(children: [ai, const SizedBox(height: 16), notify]);
+              return Column(children: [
+                ai, const SizedBox(height: 16), notify,
+                const SizedBox(height: 16), backup,
+                const SizedBox(height: 16), monitor,
+              ]);
             }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: ai),
-                const SizedBox(width: 16),
-                Expanded(child: notify),
-              ],
-            );
+            return Column(children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: ai),
+                  const SizedBox(width: 16),
+                  Expanded(child: notify),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: backup),
+                  const SizedBox(width: 16),
+                  Expanded(child: monitor),
+                ],
+              ),
+            ]);
           }),
         ),
+      ),
+    );
+  }
+
+  Widget _backupCard() {
+    final b = _backup;
+    final ok = b != null && b['ok'] != false;
+    final at = DateTime.tryParse((b?['at'] ?? '').toString());
+    final age = at == null ? null : DateTime.now().toUtc().difference(at.toUtc());
+    // Daily backup: healthy if it succeeded and ran within the last 26h.
+    final stale = age == null || age.inHours >= 26;
+    final color = b == null ? Sa.muted : (!ok ? Sa.red : (stale ? Sa.amber : Sa.green));
+    final bytes = b != null && b['bytes'] is num ? (b['bytes'] as num).toInt() : null;
+    return GlassPanel(
+      accent: color,
+      glow: b != null && ok && !stale,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SaSectionHeader(
+            icon: Icons.cloud_done_outlined,
+            title: 'BACKUP WORKER',
+            subtitle: 'alertsys-backup — nightly RTDB snapshot to R2',
+            accent: Sa.cyan,
+            trailing: GlowChip(
+              label: b == null ? 'NO DATA' : (!ok ? 'FAILED' : (stale ? 'STALE' : 'HEALTHY')),
+              color: color,
+              pulse: b != null && ok && !stale,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (b == null)
+            Text(
+              'No backup pulse yet. Deploy the backup worker (wrangler.backup.toml) '
+              'and run it once.',
+              style: Sa.body(size: 12, color: Sa.textDim),
+            )
+          else ...[
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SaStatTile(
+                  label: 'last backup',
+                  value: age == null
+                      ? '—'
+                      : age.inHours < 1
+                          ? '${age.inMinutes}m ago'
+                          : '${age.inHours}h ago',
+                  icon: Icons.schedule,
+                  color: color,
+                ),
+                if (bytes != null)
+                  SaStatTile(
+                    label: 'snapshot',
+                    value: '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB',
+                    icon: Icons.save_alt,
+                    color: Sa.cyan,
+                  ),
+                if (b['ok'] == false)
+                  SaStatTile(
+                    label: 'error',
+                    value: (b['error'] ?? 'failed').toString(),
+                    icon: Icons.error_outline,
+                    color: Sa.red,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _RawDataExpander(data: b),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _monitorCard() {
+    final m = _monitor;
+    final state = (m?['state'] ?? '').toString();
+    final degraded = state == 'degraded';
+    final at = DateTime.tryParse((m?['at'] ?? '').toString());
+    final age = at == null ? null : DateTime.now().toUtc().difference(at.toUtc());
+    final color = m == null ? Sa.muted : (degraded ? Sa.red : Sa.green);
+    final problems = m?['problems'] is List ? (m!['problems'] as List) : const [];
+    return GlassPanel(
+      accent: color,
+      glow: m != null && !degraded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SaSectionHeader(
+            icon: Icons.radar_outlined,
+            title: 'SYSTEM MONITOR',
+            subtitle: 'alertsys-monitor — deadman switch, 5-min checks',
+            accent: degraded ? Sa.red : Sa.green,
+            trailing: GlowChip(
+              label: m == null ? 'NO DATA' : (degraded ? 'DEGRADED' : 'NOMINAL'),
+              color: color,
+              pulse: m != null && !degraded,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (m == null)
+            Text(
+              'No monitor pulse yet. Deploy the monitor worker (wrangler.monitor.toml).',
+              style: Sa.body(size: 12, color: Sa.textDim),
+            )
+          else ...[
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SaStatTile(
+                  label: 'last check',
+                  value: age == null
+                      ? '—'
+                      : age.inMinutes < 1
+                          ? 'just now'
+                          : '${age.inMinutes}m ago',
+                  icon: Icons.schedule,
+                  color: color,
+                ),
+                SaStatTile(
+                  label: 'issues',
+                  value: '${problems.length}',
+                  icon: Icons.report_outlined,
+                  color: problems.isEmpty ? Sa.green : Sa.red,
+                ),
+              ],
+            ),
+            if (problems.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ...problems.map((p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.error_outline, size: 13, color: Sa.red),
+                        const SizedBox(width: 7),
+                        Expanded(child: Text(p.toString(), style: Sa.body(size: 11.5, color: Sa.textDim))),
+                      ],
+                    ),
+                  )),
+            ],
+            const SizedBox(height: 12),
+            _RawDataExpander(data: m),
+          ],
+        ],
       ),
     );
   }

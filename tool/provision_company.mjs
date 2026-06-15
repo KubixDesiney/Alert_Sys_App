@@ -89,6 +89,7 @@ const WORKERS = [
   { key: 'notify', file: 'wrangler.notify.toml', urlVar: 'ALERTSYS_NOTIFY_WORKER_URL' },
   { key: 'backup', file: 'wrangler.backup.toml' },
   { key: 'monitor', file: 'wrangler.monitor.toml' },
+  { key: 'scim', file: 'wrangler.scim.toml' },
 ];
 const workerUrls = {};
 const workerNames = {};
@@ -123,6 +124,9 @@ for (const w of WORKERS) {
 const aiUrl = workerUrls.ALERTSYS_AI_WORKER_URL || `https://${id}-alert-notifier.${cfg.subdomain}.workers.dev`;
 const notifyUrl = workerUrls.ALERTSYS_NOTIFY_WORKER_URL || `https://${id}-alertsys.${cfg.subdomain}.workers.dev`;
 const backupBucket = `${id}-alertsys-backups`;
+const scimBase = workerNames.scim
+  ? `https://${workerNames.scim}.${cfg.subdomain}.workers.dev/scim/v2`
+  : `https://${id}-alertsys-scim.${cfg.subdomain}.workers.dev/scim/v2`;
 
 // ── canonical config record ───────────────────────────────────────────────────
 const record = {
@@ -130,7 +134,7 @@ const record = {
   supportEmail: support, firebaseProject: cfg.project, firebaseDbUrl: dbUrl,
   cloudflareAccount: cfg.account, workersSubdomain: cfg.subdomain,
   sso: { providerId: sso, label: ssoLabel }, mfaRequired: mfa,
-  workers: { names: workerNames, aiUrl, notifyUrl, backupBucket },
+  workers: { names: workerNames, aiUrl, notifyUrl, backupBucket, scimBase },
   generatedAt: new Date().toISOString(),
 };
 writeFileSync(join(outDir, 'company.json'), JSON.stringify(record, null, 2) + '\n');
@@ -219,6 +223,15 @@ Never commit secret values. The same FIREBASE_SERVICE_ACCOUNT JSON (full admin o
 - FIREBASE_SERVICE_ACCOUNT
 (The monitor reads its webhook/check config live from \`monitoring_config\` in RTDB —
 the customer's IT team sets that in the SuperAdmin → Reliability tab, no redeploy.)
+
+## SCIM worker (${workerNames.scim || `${id}-alertsys-scim`})
+- FB_DB_URL = ${dbUrl}
+- FIREBASE_SERVICE_ACCOUNT
+- SCIM_TOKEN              the bearer the IdP authenticates with (use a long random string)
+- SCIM_DEFAULT_ROLE       optional; default "supervisor"
+- SCIM_GRANTABLE_ROLES    optional CSV; default "admin,supervisor"
+- SCIM_DEFAULT_FACTORY    optional
+SCIM base URL for the IdP connector: ${scimBase}
 `);
 
 // ── ordered runbook ─────────────────────────────────────────────────────────────
@@ -247,7 +260,7 @@ Generated ${record.generatedAt}. Run every step from the repo root.
 ## 3. Cloudflare R2 (for backups)
    npx wrangler r2 bucket create ${backupBucket}
 
-## 4. Deploy the four workers (per-company configs already generated)
+## 4. Deploy the workers (per-company configs already generated)
 ${deployCmds}
    Then set each worker's secrets — see companies/${id}/secrets.md.
 

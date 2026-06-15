@@ -19,13 +19,14 @@
  *      `users/{uid}` (this is the step that actually closes the exposure).
  *
  * USAGE:
- *   GOOGLE_APPLICATION_CREDENTIALS=./service-account.json \
+ *   SA_PATH=./service-account.json \
  *   FB_DB_URL=https://<project>.firebaseio.com \
  *   node tool/migrate_user_pii.mjs            # dry run (prints plan only)
  *   ... node tool/migrate_user_pii.mjs --apply           # copy to users_private
  *   ... node tool/migrate_user_pii.mjs --apply --purge   # + strip from users
  */
 import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
 
 // Stage 1 (app-only) moves email/phone. fcmToken/currentLocation are read by
 // the workers, so only migrate them in Stage 2 AFTER the workers read from
@@ -38,13 +39,14 @@ const APPLY = process.argv.includes('--apply');
 const PURGE = process.argv.includes('--purge');
 
 const dbUrl = process.env.FB_DB_URL;
-if (!dbUrl) {
-  console.error('ERROR: set FB_DB_URL=https://<project>.firebaseio.com');
+const saPath = process.env.SA_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+if (!dbUrl || !saPath) {
+  console.error('ERROR: set SA_PATH=./service-account.json and FB_DB_URL=https://<project>.firebaseio.com');
   process.exit(1);
 }
 
 admin.initializeApp({
-  credential: admin.credential.applicationDefault(),
+  credential: admin.credential.cert(JSON.parse(readFileSync(saPath, 'utf8'))),
   databaseURL: dbUrl,
 });
 
