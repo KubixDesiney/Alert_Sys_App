@@ -1,0 +1,13 @@
+title = "Smart Industrial Alert - gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Firebase client config files contain PUBLIC client API keys by design (restricted via GCP API key restrictions, not secrets). Exclude generated config files only - all other paths are still scanned."
+paths = [
+  '''lib/firebase_options\.dart''',
+  '''android/app/google-services\.json''',
+  '''ios/Runner/GoogleService-Info\.plist''',
+  '''macos/Runner/GoogleService-Info\.plist''',
+]
