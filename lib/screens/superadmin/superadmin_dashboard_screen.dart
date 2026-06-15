@@ -14,6 +14,7 @@ import 'ai_training_tab.dart';
 import 'hardware_tab.dart';
 import 'logs_tab.dart';
 import 'production_managers_tab.dart';
+import 'reliability_tab.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin command center: AI model training, Production Manager account
@@ -36,6 +37,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
     (icon: Icons.hub_outlined, label: 'AI AGENTS'),
     (icon: Icons.badge_outlined, label: 'PRODUCTION MANAGERS'),
     (icon: Icons.vpn_key_outlined, label: 'ACCESS & IDENTITY'),
+    (icon: Icons.health_and_safety_outlined, label: 'RELIABILITY'),
     (icon: Icons.terminal_outlined, label: 'LOGS'),
     (icon: Icons.memory_outlined, label: 'HARDWARE'),
   ];
@@ -116,7 +118,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                             1 => const AiAgentsTab(),
                             2 => const ProductionManagersTab(),
                             3 => const AccessIdentityTab(),
-                            4 => const SuperAdminLogsTab(),
+                            4 => const ReliabilityTab(),
+                            5 => const SuperAdminLogsTab(),
                             _ => const HardwareTab(),
                           },
                         ),
