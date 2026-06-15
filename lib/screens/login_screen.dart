@@ -243,16 +243,27 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // Logo / Title
-                  Icon(Icons.factory, size: 56, color: t.red),
+                  // Logo / Title (white-labeled per company)
+                  if (CompanyConfig.logoUrl.isNotEmpty)
+                    Image.network(
+                      CompanyConfig.logoUrl,
+                      height: 64,
+                      errorBuilder: (_, __, ___) => Icon(Icons.factory,
+                          size: 56, color: CompanyConfig.brandColor),
+                    )
+                  else
+                    Icon(Icons.factory, size: 56, color: CompanyConfig.brandColor),
                   const SizedBox(height: 16),
                   Text(
-                    _t('title'),
+                    CompanyConfig.isConfigured
+                        ? CompanyConfig.companyName
+                        : _t('title'),
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w700,
                       color: t.textDark,
                     ),
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   Text(
