@@ -58,4 +58,6 @@ RTDB `.validate` rules become PocketBase field **types** + `required`:
    `pb_migrations/` as a migration.
 2. Create the superuser the worker-runner uses; put its token in `PB_TOKEN` (see
    `deploy/onprem/docker-compose.yml`).
-3. Provision the first `superadmin` user record, then use the app/console as normal.
+3. Migrate existing data (optional): `node migrate_rtdb_to_pocketbase.mjs --input export.json
+   --pb http://localhost:8090 --token <superuser> --dry-run` (drop `--dry-run` to apply).
+4. Provision the first `superadmin` user record, then use the app/console as normal.
