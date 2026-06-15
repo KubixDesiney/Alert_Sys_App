@@ -36,8 +36,9 @@ the worker-logic port are scoped here as defined engineering work, not yet shipp
    Firebase directly). Add a PocketBase implementation alongside the Firebase one.
 2. **Port `database.rules.json`** authorization to PocketBase API rules (RBAC is the same
    model: superadmin/admin/supervisor).
-3. **Port worker logic** to `worker-runner` (Node + node-cron); the functions are already
-   pure and tested (188 worker tests) — keep them, swap the RTDB REST calls for PocketBase.
+3. **Port worker logic** to `worker-runner`. DONE for AI assignment: `runAssignmentCycle`
+   reuses the cloud's pure `buildSupStats`/`scoreSupervisor` against a `PocketBaseStore`
+   (tested in `worker_test/onprem_assignment.test.js`). Remaining: escalation + notifications.
 4. **Replace push** with LAN WebSocket/SSE; keep FCM as an optional path for internet sites.
 5. **Package** with the `deploy/onprem/` compose; ship as an appliance image.
 
