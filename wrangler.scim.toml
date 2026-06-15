@@ -1,0 +1,17 @@
+# SCIM 2.0 provisioning worker — the customer's IdP (Okta / Entra / OneLogin)
+# points its SCIM connector here to auto-provision / deprovision users.
+# Deploy:  npx wrangler deploy --config wrangler.scim.toml
+name = "alertsys-scim"
+main = "cloudflare_scim_worker.js"
+compatibility_date = "2025-01-01"
+
+# No cron — SCIM is request-driven by the IdP. The worker writes a heartbeat to
+# workers/health/scim on each handled request so the console can see it.
+
+# Secrets (set with `wrangler secret put NAME --config wrangler.scim.toml`):
+#   FIREBASE_SERVICE_ACCOUNT   service-account JSON (RTDB access)
+#   FB_DB_URL                  https://<project>-default-rtdb.firebaseio.com/
+#   SCIM_TOKEN                 the bearer token the IdP authenticates with
+#   SCIM_DEFAULT_ROLE          optional; default "supervisor"
+#   SCIM_GRANTABLE_ROLES       optional CSV; default "admin,supervisor"
+#   SCIM_DEFAULT_FACTORY       optional default factory/usine
