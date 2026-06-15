@@ -1,16 +1,17 @@
 // Pluggable data store for the on-prem worker-runner.
 // MemoryStore = tests/dev. PocketBaseStore = self-hosted PocketBase backend.
-// Same interface either way so the assignment cycle is backend-agnostic.
 
 export class MemoryStore {
-  constructor({ users = [], alerts = [], active = {} } = {}) {
+  constructor({ users = [], alerts = [], active = {}, escalationSettings = {} } = {}) {
     this.users = users;
     this.alerts = alerts;
     this._active = { ...active };
+    this.escalationSettings = escalationSettings;
   }
   async listUsers() { return this.users; }
   async listAlerts() { return this.alerts; }
   async activeCounts() { return { ...this._active }; }
+  async getEscalationSettings() { return this.escalationSettings; }
   async assign(alertId, uid, name, reason) {
     const a = this.alerts.find((x) => x.id === alertId);
     if (!a) return;
@@ -20,6 +21,13 @@ export class MemoryStore {
     a.aiAssigned = true;
     a.aiAssignmentReason = reason;
     this._active[uid] = (this._active[uid] || 0) + 1;
+  }
+  async escalate(alertId, reason) {
+    const a = this.alerts.find((x) => x.id === alertId);
+    if (!a) return;
+    a.isEscalated = true;
+    a.escalatedAt = new Date().toISOString();
+    a.escalationReason = reason;
   }
 }
 
@@ -41,6 +49,12 @@ export class PocketBaseStore {
     if (!r.ok) throw new Error(`PB list ${collection}: ${r.status}`);
     return (await r.json()).items || [];
   }
+  async _patchAlert(alertId, body) {
+    const r = await fetch(`${this.base}/api/collections/alerts/records/${alertId}`, {
+      method: 'PATCH', headers: this._headers(), body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`PB patch ${alertId}: ${r.status}`);
+  }
   async listUsers() { return (await this._list('users')).map((u) => ({ uid: u.id, ...u })); }
   async listAlerts() { return (await this._list('alerts')).map((a) => ({ id: a.id, ...a })); }
   async activeCounts() {
@@ -50,15 +64,18 @@ export class PocketBaseStore {
     }
     return out;
   }
+  async getEscalationSettings() {
+    try { return (await this._list('escalation_settings'))[0] || {}; } catch (_) { return {}; }
+  }
   async assign(alertId, uid, name, reason) {
-    const r = await fetch(`${this.base}/api/collections/alerts/records/${alertId}`, {
-      method: 'PATCH',
-      headers: this._headers(),
-      body: JSON.stringify({
-        status: 'en_cours', superviseurId: uid, superviseurName: name,
-        aiAssigned: true, aiAssignmentReason: reason,
-      }),
+    await this._patchAlert(alertId, {
+      status: 'en_cours', superviseurId: uid, superviseurName: name,
+      aiAssigned: true, aiAssignmentReason: reason,
     });
-    if (!r.ok) throw new Error(`PB assign ${alertId}: ${r.status}`);
+  }
+  async escalate(alertId, reason) {
+    await this._patchAlert(alertId, {
+      isEscalated: true, escalatedAt: new Date().toISOString(), escalationReason: reason,
+    });
   }
 }
