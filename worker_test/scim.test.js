@@ -7,6 +7,7 @@ import {
   applyPatch,
   timingSafeEqual,
   scimRateLimit,
+  scimAuthLogThrottle,
 } from '../cloudflare_scim_worker.js';
 
 const ENTERPRISE = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
@@ -184,5 +185,14 @@ describe('scimRateLimit', () => {
     const b = new Map();
     scimRateLimit(b, 'a', 1, 60000, 0);
     expect(scimRateLimit(b, 'b', 1, 60000, 0).allowed).toBe(true);
+  });
+});
+
+
+describe('scimAuthLogThrottle', () => {
+  test('allows first write, blocks within the gap, allows after it', () => {
+    expect(scimAuthLogThrottle(0, 5000, 5000)).toBe(true);
+    expect(scimAuthLogThrottle(5000, 7000, 5000)).toBe(false);
+    expect(scimAuthLogThrottle(5000, 10000, 5000)).toBe(true);
   });
 });
