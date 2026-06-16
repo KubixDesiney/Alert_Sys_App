@@ -1,0 +1,32 @@
+# Code ownership for review routing (GitHub auto-requests these reviewers on PRs).
+#
+# SET YOUR HANDLES: replace @kubix / @kubix-org/* below with your real GitHub user
+# or team slugs. Branch protection (docs/BRANCH_PROTECTION.md) can require Code
+# Owner review on protected paths. Order matters — last matching pattern wins.
+
+# Default owner for everything not matched below.
+*                                   @kubix
+
+# Security-critical surfaces — require security review.
+/database.rules.json                @kubix
+/docs/security/                     @kubix
+/cloudflare_ai_worker.js            @kubix
+/cloudflare_notify_worker.js        @kubix
+/cloudflare_github_worker.js        @kubix
+/cloudflare_scim_worker.js          @kubix
+/.github/workflows/                 @kubix
+
+# Reliability / ops.
+/docs/ops/                          @kubix
+/tool/smoke_test.mjs                @kubix
+
+# Guardian self-healing pipeline.
+/tool/autonomous_bugfix_agent.mjs   @kubix
+/tool/guardian_*.mjs                @kubix
+
+# Architecture decisions — changes here need a deliberate review.
+/docs/adr/                          @kubix
+/ARCHITECTURE.md                    @kubix
+
+# Forecaster engine.
+/lib/services/forecast/             @kubix

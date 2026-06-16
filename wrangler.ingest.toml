@@ -1,0 +1,18 @@
+# Industrial telemetry ingestion worker (SCADA / PLC / historian → SIA alerts).
+# Deploy:  npx wrangler deploy --config wrangler.ingest.toml
+#
+# Secrets (npx wrangler secret put <NAME> --config wrangler.ingest.toml):
+#   INGEST_SHARED_SECRET   required — gateways send it as the x-alertsys-ingest header
+#
+# Set FB_DB_URL / NOTIFY_WORKER_URL below to the instance's values (or move them to
+# secrets if you prefer). This worker has no cron — it is purely request-driven.
+
+name = "alertsys-ingest"
+main = "cloudflare_ingest_worker.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+FB_DB_URL = "https://REPLACE-default-rtdb.firebaseio.com"
+NOTIFY_WORKER_URL = "https://alertsys.REPLACE.workers.dev/notify"
+INGEST_RATE_PER_MIN = "240"
+INGEST_DEDUP_WINDOW_MS = "60000"

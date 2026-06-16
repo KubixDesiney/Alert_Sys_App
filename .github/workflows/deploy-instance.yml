@@ -44,6 +44,11 @@ on:
         description: Brand color, e.g. 0xFF1565C0
         required: false
 
+# Least privilege: provisions external infra (Cloudflare workers, R2, Firebase
+# rules) using Actions secrets only. No repo write scope required.
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-instance-${{ github.event.client_payload.firebaseProjectId || github.event.inputs.firebaseProjectId }}
   cancel-in-progress: false
