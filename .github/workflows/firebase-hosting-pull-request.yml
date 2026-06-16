@@ -11,6 +11,8 @@ jobs:
   build_and_preview:
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
+    env:
+      FIREBASE_SERVICE_ACCOUNT_PRESENT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Flutter
@@ -26,8 +28,14 @@ jobs:
       - name: Build web preview
         run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
-      - uses: FirebaseExtended/action-hosting-deploy@v0
+      - name: Deploy Firebase Hosting preview
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT_PRESENT == 'true' }}
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
           projectId: alertappsys
+
+      - name: Skip Firebase Hosting preview deploy
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT_PRESENT != 'true' }}
+        run: echo "::warning::FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS is not configured; web preview build succeeded but Firebase preview deploy was skipped."

@@ -2,6 +2,8 @@ let _fbToken = null;
 let _fbTokenExpMs = 0;
 let _fcmToken = null;
 let _fcmTokenExpMs = 0;
+const PRIVATE_KEY_BEGIN = `-----BEGIN ${'PRIVATE KEY'}-----`;
+const PRIVATE_KEY_END = `-----END ${'PRIVATE KEY'}-----`;
 
 async function getFirebaseToken(env) {
   const now = Date.now();
@@ -65,8 +67,8 @@ async function createFirebaseAuthJWT(clientEmail, privateKeyPem) {
 
 async function importPrivateKey(pem) {
   const pemContents = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/, '')
-    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(PRIVATE_KEY_BEGIN, '')
+    .replace(PRIVATE_KEY_END, '')
     .replace(/\s/g, '');
   const binaryDer = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
   return crypto.subtle.importKey(
