@@ -101,9 +101,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
 
       - name: Install deps
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Provision per-company configs
         env:
@@ -120,7 +121,16 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler r2 bucket create "$R2" || echo "bucket exists or create skipped"
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(npx wrangler r2 bucket create "$R2" 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ] && ! printf '%s\n' "$output" | grep -Eiq 'already exists|bucket exists'; then
+            exit "$status"
+          fi
 
       - name: Deploy workers + set secrets
         env:
@@ -177,7 +187,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
-            echo "::warning::FIREBASE_SERVICE_ACCOUNT not set — skipping rules deploy"; exit 0
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is required to deploy company database rules"; exit 1
           fi
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"

@@ -26,8 +26,15 @@ jobs:
           sudo mv gitleaks /usr/local/bin/gitleaks
       - name: Secret scan - current tree (blocking)
         run: gitleaks detect --no-git --config .gitleaks.toml --redact --no-banner --exit-code 1
-      - name: Secret scan - full history (informational)
-        run: gitleaks detect --config .gitleaks.toml --redact --no-banner --report-path gitleaks-history.json --exit-code 0 || true
+      - name: Secret scan - full history legacy evidence
+        run: |
+          set +e
+          gitleaks detect --config .gitleaks.toml --redact --no-banner --report-path gitleaks-history.json --exit-code 1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::warning title=Legacy secret history remains::Full-history scan found historical findings. Current-tree scanning is blocking; history purge status and owner action are documented in docs/SECRET_ROTATION.md."
+          fi
       - name: Upload history scan report
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,7 +51,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Audit root packages
-        run: npm audit --audit-level=high || echo "::warning::root npm audit found high/critical advisories"
+          cache: npm
+      - name: Install root packages
+        run: npm ci
+      - name: Audit root production packages
+        run: npm audit --omit=dev --audit-level=high
+      - name: Install functions packages
+        working-directory: functions
+        run: npm ci
       - name: Audit functions packages
-        run: cd functions && npm audit --audit-level=high || echo "::warning::functions npm audit found high/critical advisories"
+        working-directory: functions
+        run: npm audit --audit-level=high
+      - name: Install codebasedelta packages
+        working-directory: codebasedelta
+        run: npm ci
+      - name: Audit codebasedelta packages
+        working-directory: codebasedelta
+        run: npm audit --audit-level=high

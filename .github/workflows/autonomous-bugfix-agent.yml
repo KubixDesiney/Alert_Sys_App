@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   agent:
-    name: Health, fix, review, push main, deploy
+    name: Health, fix, review, open PR
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -38,14 +38,13 @@ jobs:
       OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'o3' }}
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
       FIREBASE_DATABASE_URL: ${{ vars.FIREBASE_DATABASE_URL || 'https://alertappsys-default-rtdb.firebaseio.com' }}
-      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       AGENT_UI_HEALTH_URLS: ${{ vars.AGENT_UI_HEALTH_URLS || 'https://alertappsys.web.app' }}
       AGENT_AI_WORKER_URL: ${{ vars.AGENT_AI_WORKER_URL || 'https://alert-notifier.aziz-nagati01.workers.dev' }}
       AGENT_NOTIFY_WORKER_URL: ${{ vars.AGENT_NOTIFY_WORKER_URL || 'https://alertsys.aziz-nagati01.workers.dev' }}
-      AGENT_DEPLOY_WORKERS: ${{ vars.AGENT_DEPLOY_WORKERS || '0' }}
+      AGENT_PUBLISH_MODE: pull_request
+      AGENT_SKIP_WEB_DEPLOY: '1'
+      AGENT_DEPLOY_WORKERS: '0'
       AGENT_FORCE: ${{ github.event.inputs.force == 'true' && '1' || '' }}
       AGENT_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
       AGENT_DETECTION_COMMANDS: |
@@ -58,7 +57,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.AUTOFIX_GITHUB_TOKEN || github.token }}
+          token: ${{ github.token }}
 
       - uses: actions/setup-java@v4
         with:
@@ -77,14 +76,14 @@ jobs:
           cache: true
 
       - name: Install Node dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Resolve Flutter dependencies
         run: flutter pub get
 
       - name: Run autonomous bug-fix agent
         env:
-          GH_TOKEN: ${{ secrets.AUTOFIX_GITHUB_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: npm run agent:bugfix
 
       - name: Upload agent artifacts
