@@ -23,6 +23,6 @@
     "wrangler": "^4.100.0"
   },
   "dependencies": {
-    "firebase-admin": "^13.10.0"
+    "firebase-admin": "^14.0.0"
   }
 }
