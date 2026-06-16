@@ -384,6 +384,11 @@ async function gatherSignals() {
     collectDetectionCommands(signals),
   ]);
 
+  try {
+    const { collectCiSignals } = await import('./guardian_ci_watch.mjs');
+    await collectCiSignals(signals, { token: githubToken(), repo: await resolveGitHubRepository() });
+  } catch (e) { signals.skipped.push({ area: 'ci', error: String((e && e.message) || e) }); }
+
   signals.db = await collectDbState(signals);
   evaluateDbHealth(signals);
   return signals;
