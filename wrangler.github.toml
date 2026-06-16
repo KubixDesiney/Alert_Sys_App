@@ -1,0 +1,11 @@
+name = "alertsys-github"
+main = "cloudflare_github_worker.js"
+compatibility_date = "2024-11-01"
+
+# Secrets (wrangler secret put --config wrangler.github.toml):
+#   GITHUB_TOKEN          read-only PAT/App token: actions, pull_requests, deployments
+#   WORKER_SHARED_SECRET  bearer the app authenticates with
+
+[vars]
+GITHUB_REPO = "kubix/Alert_Sys_App"
+GITHUB_RATE_LIMIT = "120"
