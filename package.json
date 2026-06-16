@@ -19,7 +19,7 @@
     "bench:ci": "node tool/load_benchmark.mjs --sups=1000 --alerts=50000 --decisions=2000 --max-p99=5"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
+    "jest": "^30.4.2",
     "wrangler": "^4.100.0"
   },
   "dependencies": {
