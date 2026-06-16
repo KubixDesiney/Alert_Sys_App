@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Least privilege: this workflow only reads the repo and deploys to Firebase
+# (auth via the FIREBASE_TOKEN secret). It needs no write scope on the repo.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
