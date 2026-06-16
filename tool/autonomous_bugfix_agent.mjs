@@ -346,10 +346,10 @@ async function assertActivePreflight() {
     );
   }
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is required to generate fixes with Claude');
+    console.warn('[agent] ANTHROPIC_API_KEY not set - using Guardian fix-provider config');
   }
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is required for the OpenAI review gate');
+    console.warn('[agent] OPENAI_API_KEY not set - using Guardian review-provider config');
   }
   if (config.publishMode === 'direct' && !envFlag('AGENT_DIRECT_MAIN_PUSH_ALLOWED')) {
     throw new Error('AGENT_DIRECT_MAIN_PUSH_ALLOWED=1 is required for direct main publishing');
@@ -722,94 +722,73 @@ function budgetContextFiles(files) {
   return budgeted;
 }
 
+let _guardianAi = null;
+async function getGuardianAi() { if (!_guardianAi) _guardianAi = await loadGuardianAi(); return _guardianAi; }
+function stripFences(t) {
+  const m = String(t || '').match(/```(?:json)?\s*([\s\S]*?)```/);
+  return (m ? m[1] : String(t || '')).trim();
+}
+async function loadGuardianAi() {
+  const cfg = {
+    fix: { provider: 'anthropic', model: config.claudeFixModel, apiKey: process.env.ANTHROPIC_API_KEY || '', baseUrl: '' },
+    review: { provider: 'openai', model: config.openaiReviewModel, apiKey: process.env.OPENAI_API_KEY || '', baseUrl: '' },
+    autoSelect: true,
+    routing: { high: 'claude-opus-4-8', medium: 'claude-sonnet-4-6', low: 'claude-haiku-4-5' },
+  };
+  const E = process.env;
+  if (E.GUARDIAN_FIX_PROVIDER) cfg.fix.provider = E.GUARDIAN_FIX_PROVIDER;
+  if (E.GUARDIAN_FIX_MODEL) cfg.fix.model = E.GUARDIAN_FIX_MODEL;
+  if (E.GUARDIAN_FIX_API_KEY) cfg.fix.apiKey = E.GUARDIAN_FIX_API_KEY;
+  if (E.GUARDIAN_FIX_BASE_URL) cfg.fix.baseUrl = E.GUARDIAN_FIX_BASE_URL;
+  if (E.GUARDIAN_REVIEW_PROVIDER) cfg.review.provider = E.GUARDIAN_REVIEW_PROVIDER;
+  if (E.GUARDIAN_REVIEW_MODEL) cfg.review.model = E.GUARDIAN_REVIEW_MODEL;
+  if (E.GUARDIAN_REVIEW_API_KEY) cfg.review.apiKey = E.GUARDIAN_REVIEW_API_KEY;
+  if (E.GUARDIAN_REVIEW_BASE_URL) cfg.review.baseUrl = E.GUARDIAN_REVIEW_BASE_URL;
+  try {
+    const db = await getFirebaseDatabase();
+    if (db) {
+      const g = (await db.ref('ai_agents/guardian').get()).val() || {};
+      const st = g.settings || g || {};
+      const sec = (await db.ref('ai_agent_secrets/guardian').get()).val() || {};
+      if (!E.GUARDIAN_FIX_PROVIDER && st.fixProvider) cfg.fix.provider = st.fixProvider;
+      if (!E.GUARDIAN_FIX_MODEL && st.fixModel) cfg.fix.model = st.fixModel;
+      if (!E.GUARDIAN_FIX_BASE_URL && st.fixBaseUrl) cfg.fix.baseUrl = st.fixBaseUrl;
+      if (!E.GUARDIAN_FIX_API_KEY && sec.fixApiKey) cfg.fix.apiKey = sec.fixApiKey;
+      if (!E.GUARDIAN_REVIEW_PROVIDER && st.reviewProvider) cfg.review.provider = st.reviewProvider;
+      if (!E.GUARDIAN_REVIEW_MODEL && st.reviewModel) cfg.review.model = st.reviewModel;
+      if (!E.GUARDIAN_REVIEW_BASE_URL && st.reviewBaseUrl) cfg.review.baseUrl = st.reviewBaseUrl;
+      if (!E.GUARDIAN_REVIEW_API_KEY && sec.reviewApiKey) cfg.review.apiKey = sec.reviewApiKey;
+      if (typeof st.autoModelSelect === 'boolean') cfg.autoSelect = st.autoModelSelect;
+      if (st.modelRouting && typeof st.modelRouting === 'object') cfg.routing = { ...cfg.routing, ...st.modelRouting };
+    }
+  } catch (_) { /* env defaults */ }
+  return cfg;
+}
 async function requestClaudeFix(context, attempt) {
-  const schema = {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      summary: { type: 'string' },
-      rootCause: { type: 'string' },
-      confidence: { type: 'number' },
-      fixedFiles: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            path: { type: 'string' },
-            content: { type: 'string' },
-          },
-          required: ['path', 'content'],
-        },
-      },
-      validationFocus: {
-        type: 'array',
-        items: { type: 'string' },
-      },
-      riskNotes: {
-        type: 'array',
-        items: { type: 'string' },
-      },
-    },
-    required: ['summary', 'rootCause', 'confidence', 'fixedFiles', 'validationFocus', 'riskNotes'],
-  };
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-api-key': process.env.ANTHROPIC_API_KEY,
-    'anthropic-version': process.env.ANTHROPIC_VERSION || '2023-06-01',
-  };
-  if (process.env.ANTHROPIC_BETA) headers['anthropic-beta'] = process.env.ANTHROPIC_BETA;
-
-  const response = await fetchJson('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
-    headers,
-    body: JSON.stringify({
-      model: config.claudeFixModel,
-      max_tokens: envInt('CLAUDE_FIX_MAX_TOKENS', 12000),
-      system:
-        'You are Claude acting as the code-fix generator in a dual-model autonomous deployment gate. ' +
-        'Make minimal, production-grade changes. Never fabricate logs or claim validation that has not run. ' +
-        'Return the result only by calling the submit_code_fix tool.',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                attempt,
-                maxAttempts: config.maxAttempts,
-                outputContract:
-                  'Call submit_code_fix. fixedFiles must contain full text contents for each changed file.',
-                context,
-              }),
-            },
-          ],
-        },
-      ],
-      tools: [
-        {
-          name: 'submit_code_fix',
-          description: 'Submit the minimal code fix for the detected issue.',
-          input_schema: schema,
-        },
-      ],
-      tool_choice: {
-        type: 'tool',
-        name: 'submit_code_fix',
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Claude request failed (${response.status}): ${response.text || response.error}`);
+  const ai = await getGuardianAi();
+  const fix = ai.fix;
+  let model = fix.model;
+  if (ai.autoSelect) {
+    const issues = (context && context.signals && context.signals.issues) || [];
+    const sev = issues.some((i) => i && (i.severity === 'critical' || i.severity === 'high')) ? 'high'
+      : issues.some((i) => i && i.severity === 'medium') ? 'medium' : 'low';
+    model = ai.routing[sev] || model;
   }
-
-  const parsed = extractClaudeToolInput(response.json) || parseJsonText(extractClaudeText(response.json));
+  const system =
+    'You are the code-fix generator in a dual-model autonomous deployment gate. ' +
+    'Make minimal, production-grade changes. Never fabricate logs or claim validation that has not run. ' +
+    'Return ONLY a JSON object (no prose, no markdown fences) with keys: summary (string), rootCause (string), ' +
+    'confidence (number 0-1), fixedFiles (array of {path, content} where content is the FULL new file text), ' +
+    'validationFocus (array of strings), riskNotes (array of strings).';
+  const user = JSON.stringify({ attempt, maxAttempts: config.maxAttempts, context });
+  const { callModel } = await import('./guardian_providers.mjs');
+  const text = await callModel({
+    provider: fix.provider, model, apiKey: fix.apiKey, baseUrl: fix.baseUrl,
+    system, user, maxTokens: envInt('CLAUDE_FIX_MAX_TOKENS', 12000),
+  });
+  const parsed = parseJsonText(stripFences(text));
   if (!parsed || !Array.isArray(parsed.fixedFiles)) {
-    throw new Error(`Claude returned invalid fix JSON: ${JSON.stringify(response.json).slice(0, 1000)}`);
+    throw new Error(`Fix model returned invalid JSON: ${String(text).slice(0, 1000)}`);
   }
   return parsed;
 }
@@ -917,71 +896,21 @@ async function requestOpenAiReview({ signals, claudeFix, validation, diff, chang
     diff,
   };
 
-  const body = {
-    model: config.openaiReviewModel,
-    input: [
-      {
-        role: 'system',
-        content: [
-          {
-            type: 'input_text',
-            text:
-              'Return JSON only. You are a strict senior code reviewer and release gate. ' +
-              'If unsure, reject with concrete requiredChanges.',
-          },
-        ],
-      },
-      {
-        role: 'user',
-        content: [{ type: 'input_text', text: JSON.stringify(reviewPrompt) }],
-      },
-    ],
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'autonomous_bugfix_review',
-        strict: true,
-        schema,
-      },
-    },
-    reasoning: {
-      effort: process.env.OPENAI_REASONING_EFFORT || 'medium',
-    },
-    max_output_tokens: envInt('OPENAI_REVIEW_MAX_OUTPUT_TOKENS', 2400),
-  };
-
-  let response = await fetchJson('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+  const system =
+    'You are a strict senior code reviewer and release gate. Return ONLY JSON (no prose, no fences) with keys: ' +
+    'approved (boolean), summary (string), requiredChanges (array of strings), confidence (number 0-1). ' +
+    'If unsure, set approved=false with concrete requiredChanges.';
+  const ai = await getGuardianAi();
+  const rv = ai.review;
+  const { callModel } = await import('./guardian_providers.mjs');
+  const text = await callModel({
+    provider: rv.provider, model: rv.model, apiKey: rv.apiKey, baseUrl: rv.baseUrl,
+    system, user: JSON.stringify(reviewPrompt),
+    maxTokens: envInt('OPENAI_REVIEW_MAX_OUTPUT_TOKENS', 2400),
   });
-
-  if (!response.ok && /reasoning|max_output_tokens/i.test(response.text || '')) {
-    const fallbackBody = { ...body };
-    delete fallbackBody.reasoning;
-    response = await fetchJson('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      timeoutMs: envInt('AGENT_MODEL_TIMEOUT_MS', 120000),
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(fallbackBody),
-    });
-  }
-
-  if (!response.ok) {
-    throw new Error(`OpenAI review failed (${response.status}): ${response.text || response.error}`);
-  }
-
-  const text = extractOpenAiText(response.json);
-  const parsed = parseJsonText(text);
+  const parsed = parseJsonText(stripFences(text));
   if (!parsed || typeof parsed.approved !== 'boolean') {
-    throw new Error(`OpenAI review returned invalid JSON: ${text.slice(0, 1000)}`);
+    throw new Error(`Review model returned invalid JSON: ${String(text).slice(0, 1000)}`);
   }
   return parsed;
 }
