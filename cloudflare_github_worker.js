@@ -129,7 +129,7 @@ export function mapJob(j = {}) {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 function json(obj, status = 200, extra = {}) {
   return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS, ...extra } });
@@ -140,6 +140,15 @@ async function ghGet(token, repo, path) {
   });
   if (!res.ok) throw new Error(`github ${path}: ${res.status}`);
   return res.json();
+}
+async function ghPost(token, repo, path, body) {
+  const res = await fetch(`${GH}/repos/${repo}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': UA, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error(`github ${path}: ${res.status} ${String(await res.text()).slice(0, 200)}`);
+  return res.status;
 }
 
 export default {
@@ -160,8 +169,17 @@ export default {
     const token = creds.token || '';
     const path = url.pathname.replace(/\/+$/, '');
     try {
-      if (path === '/config') return json({ ok: true, repo, connected: !!token });
+      if (path === '/config') return json({ ok: true, repo, connected: !!token, canDispatch: !!token });
       if (!token || !repo) return json({ error: 'not_configured', repo, connected: !!token }, 503);
+      if (req.method === 'POST' && path === '/dispatch') {
+        // Trigger a repository_dispatch (e.g. the Guardian drill). Token stays server-side.
+        let body = {};
+        try { body = await req.json(); } catch (_) { /* empty body ok */ }
+        const eventType = (body && body.event_type) || 'guardian_drill';
+        const clientPayload = (body && typeof body.client_payload === 'object' && body.client_payload) || {};
+        await ghPost(token, repo, '/dispatches', { event_type: eventType, client_payload: clientPayload });
+        return json({ ok: true, dispatched: eventType });
+      }
       if (path === '/runs') return json({ runs: ((await ghGet(token, repo, '/actions/runs?per_page=20')).workflow_runs || []).map(mapRun) });
       if (path === '/pulls') return json({ pulls: ((await ghGet(token, repo, '/pulls?state=all&per_page=20&sort=updated&direction=desc')) || []).map(mapPull) });
       if (path === '/deployments') return json({ deployments: ((await ghGet(token, repo, '/deployments?per_page=20')) || []).map(mapDeployment) });
