@@ -12,6 +12,12 @@ export const PROVIDERS = {
   xai:       { base: 'https://api.x.ai/v1/chat/completions',                         kind: 'openai',    defaultModel: 'grok-2-latest' },
   gemini:    { base: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', kind: 'openai', defaultModel: 'gemini-2.0-flash' },
   groq:      { base: 'https://api.groq.com/openai/v1/chat/completions',              kind: 'openai',    defaultModel: 'llama-3.3-70b-versatile' },
+  moonshot:  { base: 'https://api.moonshot.cn/v1/chat/completions',                kind: 'openai', defaultModel: 'moonshot-v1-128k' },
+  together:  { base: 'https://api.together.xyz/v1/chat/completions',               kind: 'openai', defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
+  fireworks: { base: 'https://api.fireworks.ai/inference/v1/chat/completions',     kind: 'openai', defaultModel: 'accounts/fireworks/models/llama-v3p3-70b-instruct' },
+  openrouter:{ base: 'https://openrouter.ai/api/v1/chat/completions',              kind: 'openai', defaultModel: 'openai/gpt-4o' },
+  perplexity:{ base: 'https://api.perplexity.ai/chat/completions',                 kind: 'openai', defaultModel: 'sonar-pro' },
+  cohere:    { base: 'https://api.cohere.ai/compatibility/v1/chat/completions',    kind: 'openai', defaultModel: 'command-r-plus' },
   other:     { base: '',                                                            kind: 'openai',    defaultModel: '' },
 };
 
