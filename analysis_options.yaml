@@ -1,37 +1,94 @@
-# This file configures the analyzer, which statically analyzes Dart code to
-# check for errors, warnings, and lints.
+# Static analysis configuration for SIA.
 #
-# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
-# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
-# invoked from the command line by running `flutter analyze`.
+# Baseline: package:flutter_lints (Flutter's recommended set). On top of that we
+# enable a curated "premium" rule set focused on correctness, async safety, and
+# resource hygiene — the classes of bug that actually bite a real-time, offline-
+# capable, stream-heavy app.
+#
+# CI safety: `flutter analyze` runs with `--no-fatal-infos --no-fatal-warnings`
+# (see .github/workflows/ci.yml), so these lints raise signal in IDEs and reviews
+# without breaking the build. We deliberately do NOT enable the strict-casts /
+# strict-inference / strict-raw-types language modes here, because those surface
+# as fatal errors across a large existing codebase; adopt them incrementally.
 
-# The following line activates a set of recommended lints for Flutter apps,
-# packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
-    # Stray legacy entrypoint kept at the repo root from an earlier
-    # scaffolding step. Flutter uses lib/main.dart; this file is unused
-    # and out of date — exclude it from analysis so CI stays green.
+    # Stray legacy entrypoint from an earlier scaffolding step (app uses lib/main.dart).
     - main.dart
     - build/**
     - .dart_tool/**
+    # Generated code — owned by tooling, not hand-maintained.
+    - lib/l10n/generated/**
+    - lib/firebase_options.dart
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/*.mocks.dart"
+  errors:
+    # Keep informational rules non-blocking; reviewers act on them, CI doesn't fail.
+    todo: ignore
+    invalid_annotation_target: ignore
+    # A clearly-dead branch should be fixed but not block a hotfix deploy.
+    dead_code: warning
 
 linter:
-  # The lint rules applied to this project can be customized in the
-  # section below to disable rules from the `package:flutter_lints/flutter.yaml`
-  # included above or to enable additional rules. A list of all available lints
-  # and their documentation is published at https://dart.dev/lints.
-  #
-  # Instead of disabling a lint rule for the entire project in the
-  # section below, it can also be suppressed for a single line of code
-  # or a specific dart file by using the `// ignore: name_of_lint` and
-  # `// ignore_for_file: name_of_lint` syntax on the line or in the file
-  # producing the lint.
   rules:
-    # avoid_print: false  # Uncomment to disable the `avoid_print` rule
-    # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+    # --- Correctness / error-prevention ---
+    - always_use_package_imports
+    - avoid_dynamic_calls
+    - avoid_empty_else
+    - avoid_returning_null_for_future
+    - avoid_slow_async_io
+    - avoid_type_to_string
+    - cast_nullable_to_non_nullable
+    - collection_methods_unrelated_type
+    - control_flow_in_finally
+    - empty_statements
+    - hash_and_equals
+    - no_adjacent_strings_in_list
+    - no_duplicate_case_values
+    - throw_in_finally
+    - unnecessary_statements
+    - use_build_context_synchronously
+    - use_key_in_widget_constructors
+    - valid_regexps
 
-# Additional information about this file can be found at
-# https://dart.dev/guides/language/analysis-options
+    # --- Async & resource hygiene (critical for streams/offline) ---
+    - await_only_futures
+    - cancel_subscriptions
+    - close_sinks
+    - discarded_futures
+    - unawaited_futures
+
+    # --- Null-safety clarity ---
+    - null_check_on_nullable_type_parameter
+    - prefer_null_aware_method_calls
+    - tighten_type_of_initializing_formals
+    - unnecessary_null_aware_assignments
+    - unnecessary_null_checks
+    - unnecessary_nullable_for_final_variable_declarations
+
+    # --- Performance ---
+    - prefer_const_constructors
+    - prefer_const_constructors_in_immutables
+    - prefer_const_declarations
+    - prefer_const_literals_to_create_immutables
+    - prefer_final_fields
+    - prefer_final_in_for_each
+    - prefer_final_locals
+    - sized_box_for_whitespace
+    - use_colored_box
+    - use_decorated_box
+
+    # --- Consistency / readability ---
+    - always_declare_return_types
+    - directives_ordering
+    - eol_at_end_of_file
+    - prefer_single_quotes
+    - require_trailing_commas
+    - sort_child_properties_last
+    - unnecessary_lambdas
+    - unnecessary_parenthesis
+    - use_string_buffers
+    - use_super_parameters
