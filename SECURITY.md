@@ -21,7 +21,11 @@ within 3 business days and to share a remediation timeline after triage.
   are locked down with Google Cloud **API key restrictions** (app + API allow-lists),
   plus enforcement in `database.rules.json`.
 - RTDB data exports (`backups/`) are git-ignored and never committed.
-- CI runs `gitleaks` secret scanning and `npm audit` on every push and weekly.
+- CI runs blocking current-tree `gitleaks` secret scanning and blocking `npm audit`
+  on every push and weekly. Full-history gitleaks output is retained as legacy
+  remediation evidence until the owner completes history purge.
+- Dependency audit gate scope and the current Wrangler dev-tool advisory note are
+  documented in `docs/DEPENDENCY_AUDIT.md`.
 
 ## Hardening checklist (operational)
 1. Rotate the legacy third-party push credential at its provider and purge it from git
@@ -29,3 +33,6 @@ within 3 business days and to share a remediation timeline after triage.
 2. Apply Google Cloud API key restrictions to every Firebase API key.
 3. Keep `database.rules.json` least-privilege; review broad `auth != null` grants.
 4. Enforce MFA/SSO for admin and superadmin accounts (see `MFA_SSO.md`).
+5. Verify provider-side secret rotation evidence and history-purge status with
+   `docs/SECRET_ROTATION.md`.
+6. Verify protected `main` branch settings with `docs/BRANCH_PROTECTION.md`.

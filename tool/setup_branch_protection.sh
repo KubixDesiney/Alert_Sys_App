@@ -7,32 +7,12 @@
 #
 set -euo pipefail
 REPO="${1:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+POLICY_FILE="${BRANCH_PROTECTION_POLICY_FILE:-.github/branch-protection-main.json}"
 echo "Applying branch protection to main on: $REPO"
+echo "Policy file: $POLICY_FILE"
 
 gh api -X PUT "repos/$REPO/branches/main/protection" \
-  -H "Accept: application/vnd.github+json" --input - <<JSON
-{
-  "required_status_checks": {
-    "strict": true,
-    "checks": [
-      { "context": "Flutter (analyze, test, build)" },
-      { "context": "Cloudflare Workers (Jest + deploy)" },
-      { "context": "Worker coverage (Jest, gated)" },
-      { "context": "AI assignment performance guard" },
-      { "context": "Secret scan (gitleaks)" },
-      { "context": "Dependency audit (npm)" }
-    ]
-  },
-  "enforce_admins": true,
-  "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
-    "dismiss_stale_reviews": true
-  },
-  "restrictions": null,
-  "required_linear_history": true,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
-JSON
+  -H "Accept: application/vnd.github+json" \
+  --input "$POLICY_FILE"
 
-echo "Done. Verify under repo Settings -> Branches. Adjust check names if a workflow job is renamed."
+echo "Done. Verify under repo Settings -> Branches and docs/BRANCH_PROTECTION.md."

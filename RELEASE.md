@@ -21,8 +21,11 @@ production. Never load-test or trial-deploy against production.
 ## Pre-release gates (all must be green)
 1. `flutter analyze` clean + `flutter test --coverage` (Flutter coverage job).
 2. `npm run test:coverage` (worker coverage gate, see jest.config.js threshold).
-3. `npm run bench:ci` (assignment performance guard - fails on latency regression).
-4. Security workflow green (`gitleaks` + `npm audit`).
+3. `npm run test:rules` (Firebase RTDB rules/configuration behavior).
+4. `npm run bench:ci` (assignment performance guard - fails on latency regression).
+5. Security workflow green (`gitleaks` + `npm audit`; see `docs/DEPENDENCY_AUDIT.md`).
+6. `main` branch protection verified with `docs/BRANCH_PROTECTION.md`.
+7. Secret rotation/history-purge evidence reviewed with `docs/SECRET_ROTATION.md`.
 
 ## Deploy order (staging first, then repeat for production)
 1. Database rules: `firebase deploy --only database`.

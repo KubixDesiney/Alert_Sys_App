@@ -178,10 +178,32 @@ To test a new helper:
 ```bash
 npm test               # one-shot
 npm run test:watch     # rebuild on change
+npm run test:rules     # Firebase RTDB rules/configuration behavior only
 ```
 
 Jest is run with `--experimental-vm-modules` (configured in `package.json`)
 so it can load the worker as ESM without transformation.
+
+### Firebase rules/configuration tests
+
+Realtime Database rule coverage lives in:
+
+- [`worker_test/database_rules_security.test.js`](worker_test/database_rules_security.test.js)
+- [`worker_test/firebase_rules_configuration.test.js`](worker_test/firebase_rules_configuration.test.js)
+
+These tests are hermetic: they do not use real Firebase projects, service
+accounts, customer data, or an emulator. The behavior test evaluates
+`database.rules.json` expressions against synthetic company database roots to
+validate the SIA deployment model:
+
+- each customer gets its own configured database/runtime through Superadmin;
+- role checks are evaluated inside the active company database root;
+- Superadmin-only configuration paths are writable only by company superadmins;
+- service-token writes are limited to worker/security paths where expected;
+- dangerous writes such as credential-vault edits, audit overwrites, invalid
+  push-lock values, and oversized agent prompts are denied.
+
+They run as part of `npm test` in CI.
 
 ---
 
@@ -198,14 +220,14 @@ so it can load the worker as ESM without transformation.
 4. `flutter analyze --no-fatal-infos --no-fatal-warnings` â€” fails on real
    errors only. The codebase has pre-existing `withOpacity` deprecation
    infos that don't block CI.
-5. `flutter test --reporter expanded`.
+5. `flutter test --reporter expanded` (blocking; no auto-fix bypass).
 6. `flutter build apk --debug` and `flutter build web --release`.
 7. Uploads the web build as a CI artefact (`web-build`, 7-day retention).
 
 ### `worker` job
 
 1. Sets up Node 20 with the `npm` cache.
-2. `npm ci || npm install` (graceful when no lockfile yet).
+2. `npm ci`.
 3. `npm test` â€” runs the Jest suite.
 4. **`wrangler deploy`** â€” only on direct pushes to `main` and only when
    `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are present. Forks

@@ -1,0 +1,212 @@
+import fs from 'node:fs';
+import { describe, expect, test } from '@jest/globals';
+
+const rules = JSON.parse(
+  fs.readFileSync(new URL('../database.rules.json', import.meta.url), 'utf8'),
+).rules;
+
+class RuleNode {
+  constructor(value) {
+    this.value = value;
+  }
+
+  child(key) {
+    if (this.value && typeof this.value === 'object' && Object.prototype.hasOwnProperty.call(this.value, key)) {
+      return new RuleNode(this.value[key]);
+    }
+    return new RuleNode(undefined);
+  }
+
+  val() {
+    return this.exists() ? this.value : null;
+  }
+
+  exists() {
+    return this.value !== undefined && this.value !== null;
+  }
+
+  isString() {
+    return typeof this.value === 'string';
+  }
+
+  isNumber() {
+    return typeof this.value === 'number' && Number.isFinite(this.value);
+  }
+
+  isBoolean() {
+    return typeof this.value === 'boolean';
+  }
+
+  hasChildren(keys) {
+    return this.value && typeof this.value === 'object' && keys.every((key) => this.child(key).exists());
+  }
+}
+
+function user(uid, token = {}) {
+  return uid ? { uid, token } : null;
+}
+
+function companyDb(users) {
+  return {
+    users: Object.fromEntries(
+      Object.entries(users).map(([uid, role]) => [uid, { role }]),
+    ),
+  };
+}
+
+function evaluate(rule, { auth = null, rootData = {}, data = undefined, newData = undefined, vars = {} } = {}) {
+  if (typeof rule === 'boolean') return rule;
+  const names = ['auth', 'root', 'data', 'newData', ...Object.keys(vars)];
+  const values = [auth, new RuleNode(rootData), new RuleNode(data), new RuleNode(newData), ...Object.values(vars)];
+  return Boolean(Function(...names, `"use strict"; return (${rule});`)(...values));
+}
+
+const companies = {
+  steelco: {
+    root: companyDb({
+      steelSuper: 'superadmin',
+      steelAdmin: 'admin',
+      steelSupervisor: 'supervisor',
+      steelOperator: 'operator',
+    }),
+    superadmin: user('steelSuper'),
+    admin: user('steelAdmin'),
+    supervisor: user('steelSupervisor'),
+    operator: user('steelOperator'),
+  },
+  pharma: {
+    root: companyDb({
+      pharmaSuper: 'SuperAdmin',
+      pharmaAdmin: 'admin',
+      pharmaSupervisor: 'supervisor',
+    }),
+    superadmin: user('pharmaSuper'),
+    admin: user('pharmaAdmin'),
+    supervisor: user('pharmaSupervisor'),
+  },
+};
+
+const serviceAuth = user('worker-service', { role: 'admin' });
+
+describe('Firebase rules company database template behavior', () => {
+  test('Superadmin configuration paths are writable only by company superadmins', () => {
+    for (const company of Object.values(companies)) {
+      expect(evaluate(rules.auth_config['.write'], { auth: company.superadmin, rootData: company.root })).toBe(true);
+      expect(evaluate(rules.monitoring_config['.write'], { auth: company.superadmin, rootData: company.root })).toBe(true);
+      expect(evaluate(rules.infra_config['.write'], { auth: company.superadmin, rootData: company.root })).toBe(true);
+      expect(evaluate(rules.branding_config['.write'], { auth: company.superadmin, rootData: company.root })).toBe(true);
+
+      expect(evaluate(rules.auth_config['.write'], { auth: company.admin, rootData: company.root })).toBe(false);
+      expect(evaluate(rules.monitoring_config['.write'], { auth: company.supervisor, rootData: company.root })).toBe(false);
+      expect(evaluate(rules.infra_config['.write'], { auth: serviceAuth, rootData: company.root })).toBe(false);
+    }
+
+    expect(evaluate(rules.auth_config['.read'], { auth: null, rootData: companies.steelco.root })).toBe(true);
+    expect(evaluate(rules.branding_config['.read'], { auth: null, rootData: companies.pharma.root })).toBe(true);
+  });
+
+  test('Role checks are scoped to the active company database root', () => {
+    const steelAdminInSteelDb = { auth: companies.steelco.admin, rootData: companies.steelco.root };
+    const steelAdminInPharmaDb = { auth: companies.steelco.admin, rootData: companies.pharma.root };
+
+    expect(evaluate(rules.assets['.write'], steelAdminInSteelDb)).toBe(true);
+    expect(evaluate(rules.factories.$factoryId.aiConfig['.write'], steelAdminInSteelDb)).toBe(true);
+
+    expect(evaluate(rules.assets['.write'], steelAdminInPharmaDb)).toBe(false);
+    expect(evaluate(rules.factories.$factoryId.aiConfig['.write'], steelAdminInPharmaDb)).toBe(false);
+
+    // The worker service token is a per-deployment credential injected into the
+    // configured company database runtime, not a customer user record.
+    expect(evaluate(rules.assets['.write'], { auth: serviceAuth, rootData: companies.pharma.root })).toBe(true);
+  });
+
+  test('User records allow self, company admins, company superadmins, and service token only', () => {
+    const expr = rules.users.$userId['.write'];
+
+    expect(evaluate(expr, {
+      auth: user('steelOperator'),
+      rootData: companies.steelco.root,
+      vars: { $userId: 'steelOperator' },
+    })).toBe(true);
+    expect(evaluate(expr, {
+      auth: companies.steelco.admin,
+      rootData: companies.steelco.root,
+      vars: { $userId: 'steelOperator' },
+    })).toBe(true);
+    expect(evaluate(expr, {
+      auth: companies.steelco.superadmin,
+      rootData: companies.steelco.root,
+      vars: { $userId: 'steelOperator' },
+    })).toBe(true);
+    expect(evaluate(expr, {
+      auth: serviceAuth,
+      rootData: companies.steelco.root,
+      vars: { $userId: 'steelOperator' },
+    })).toBe(true);
+
+    expect(evaluate(expr, {
+      auth: companies.pharma.admin,
+      rootData: companies.steelco.root,
+      vars: { $userId: 'steelOperator' },
+    })).toBe(false);
+    expect(evaluate(expr, {
+      auth: companies.steelco.supervisor,
+      rootData: companies.steelco.root,
+      vars: { $userId: 'steelOperator' },
+    })).toBe(false);
+  });
+
+  test('Credential vault and security telemetry separate read and write authority', () => {
+    const steel = companies.steelco;
+
+    expect(evaluate(rules.ai_agent_secrets['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.ai_agent_secrets['.write'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.ai_agent_secrets['.write'], { auth: steel.admin, rootData: steel.root })).toBe(false);
+    expect(evaluate(rules.ai_agent_secrets['.write'], { auth: serviceAuth, rootData: steel.root })).toBe(false);
+
+    expect(evaluate(rules.security.logs['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.security.logs['.read'], { auth: steel.admin, rootData: steel.root })).toBe(false);
+    expect(evaluate(rules.security.logs['.write'], { auth: steel.superadmin, rootData: steel.root })).toBe(false);
+    expect(evaluate(rules.security.logs['.write'], { auth: serviceAuth, rootData: steel.root })).toBe(true);
+  });
+
+  test('Dangerous writes are denied by validation and append-only audit rules', () => {
+    const appendOwnAudit = {
+      at: '2026-06-16T00:00:00.000Z',
+      actorId: 'steelSupervisor',
+      action: 'alert.acknowledge',
+    };
+    const spoofedAudit = { ...appendOwnAudit, actorId: 'steelOperator' };
+    const auditWrite = rules.audit_log.$entryId['.write'];
+
+    expect(evaluate(auditWrite, {
+      auth: companies.steelco.supervisor,
+      rootData: companies.steelco.root,
+      data: undefined,
+      newData: appendOwnAudit,
+    })).toBe(true);
+    expect(evaluate(auditWrite, {
+      auth: companies.steelco.supervisor,
+      rootData: companies.steelco.root,
+      data: undefined,
+      newData: spoofedAudit,
+    })).toBe(false);
+    expect(evaluate(auditWrite, {
+      auth: companies.steelco.supervisor,
+      rootData: companies.steelco.root,
+      data: appendOwnAudit,
+      newData: appendOwnAudit,
+    })).toBe(false);
+
+    expect(evaluate(rules.alerts.$alertId.push_sent['.validate'], { newData: true })).toBe(true);
+    expect(evaluate(rules.alerts.$alertId.push_sent['.validate'], { newData: 'true' })).toBe(false);
+    expect(evaluate(rules.ai_agents.$agentId.promptTemplate['.validate'], { newData: 'x'.repeat(8001) })).toBe(false);
+    expect(evaluate(rules.audit_log.$entryId.$other['.validate'], { newData: 'unexpected' })).toBe(false);
+  });
+
+  test('Disabled shared provisioning and SCIM writes stay denied in the template', () => {
+    expect(evaluate(rules.scim['.write'], { auth: companies.steelco.superadmin, rootData: companies.steelco.root })).toBe(false);
+    expect(evaluate(rules.provisioning['.write'], { auth: companies.steelco.superadmin, rootData: companies.steelco.root })).toBe(false);
+    expect(rules.companies).toBeUndefined();
+  });
+});
