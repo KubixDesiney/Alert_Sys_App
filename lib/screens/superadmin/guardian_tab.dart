@@ -73,6 +73,8 @@ class _GuardianTabState extends State<GuardianTab> {
             children: [
               _header(cfg),
               const SizedBox(height: 16),
+              _githubConnectCard(cfg),
+              const SizedBox(height: 16),
               _pipelineCard(),
               const SizedBox(height: 16),
               _configCard(cfg),
@@ -134,6 +136,82 @@ class _GuardianTabState extends State<GuardianTab> {
   }
 
   // ── pipeline ──────────────────────────────────────────────────────────
+  Widget _githubConnectCard(GuardianConfig cfg) {
+    final linked = cfg.repo.isNotEmpty;
+    return _panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionLabel(Icons.hub_outlined, 'GITHUB CONNECTION'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(linked ? Icons.check_circle : Icons.link_off,
+                  color: linked ? _ghGreen : Sa.muted, size: 18),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(linked ? cfg.repo : 'No repository linked',
+                        style: TextStyle(color: Sa.text, fontSize: 13.5, fontWeight: FontWeight.w500)),
+                    Text(
+                      _ghConnected
+                          ? 'Connected - token held server-side by the GitHub worker'
+                          : (_ghWorkerUrl.isEmpty
+                              ? 'Set ALERTSYS_GITHUB_WORKER_URL to enable live data'
+                              : 'Token not set on the worker (wrangler secret put GITHUB_TOKEN)'),
+                      style: TextStyle(color: Sa.muted, fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _linkRepo(cfg),
+                icon: Icon(Icons.edit, size: 16, color: Sa.cyan),
+                label: Text(linked ? 'Change' : 'Link repo', style: TextStyle(color: Sa.cyan)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _linkRepo(GuardianConfig cfg) async {
+    final controller = TextEditingController(text: cfg.repo);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Sa.panelSolid,
+        title: Text('Link GitHub repository', style: TextStyle(color: Sa.text, fontSize: 16)),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: controller,
+            style: TextStyle(color: Sa.text, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'owner/repository  (e.g. kubix/Alert_Sys_App)',
+              hintStyle: TextStyle(color: Sa.muted),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: Text('Save', style: TextStyle(color: Sa.cyan)),
+          ),
+        ],
+      ),
+    );
+    if (result != null) {
+      await _cfg.save(cfg.copyWith(repo: result));
+      _loadGithub();
+    }
+  }
+
   Widget _pipelineCard() {
     final stages = <List<String>>[
       ['Detect', 'UI checks · log watcher · CF cron'],

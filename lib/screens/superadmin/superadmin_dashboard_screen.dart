@@ -11,6 +11,7 @@ import '../../services/forecast/forecast_training_controller.dart';
 import 'access_identity_tab.dart';
 import 'ai_agents_tab.dart';
 import 'ai_training_tab.dart';
+import 'guardian_tab.dart';
 import 'hardware_tab.dart';
 import 'infrastructure_tab.dart';
 import 'logs_tab.dart';
@@ -44,6 +45,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
     (icon: Icons.dns_outlined, label: 'INFRASTRUCTURE'),
     (icon: Icons.terminal_outlined, label: 'LOGS'),
     (icon: Icons.memory_outlined, label: 'HARDWARE'),
+    (icon: Icons.shield_moon_outlined, label: 'GUARDIAN'),
   ];
 
   @override
@@ -126,6 +128,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                             5 => const ThemeStudioTab(),
                             6 => const InfrastructureTab(),
                             7 => const SuperAdminLogsTab(),
+                            8 => const HardwareTab(),
+                            9 => const GuardianTab(),
                             _ => const HardwareTab(),
                           },
                         ),
