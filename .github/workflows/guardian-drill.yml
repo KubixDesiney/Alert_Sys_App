@@ -1,0 +1,199 @@
+name: Guardian drill (self-heal)
+
+# The REAL Guardian demonstration. Triggered by the SuperAdmin console's Simulate
+# button (via the GitHub proxy worker -> repository_dispatch) or manually.
+#
+# It genuinely: (1) injects a real syntax error (removes a bracket) and commits it,
+# (2) runs the joint Fix+Review AI loop to repair it, (3) verifies the repair,
+# (4) in automatic mode pushes the fix to main + builds/deploys web and the Android
+# app; in human mode opens a PR. A guaranteed safety-restore returns the file to its
+# original if the AI ever fails, so a drill can never leave the branch broken.
+#
+# Secrets (see `node tool/guardian_preflight.mjs`):
+#   GUARDIAN_FIX_API_KEY / GUARDIAN_REVIEW_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY)
+#   AUTOFIX_GITHUB_TOKEN (push/PR; falls back to the default GITHUB_TOKEN)
+#   FIREBASE_TOKEN (web deploy)
+# Vars (optional): GUARDIAN_FIX_PROVIDER/MODEL, GUARDIAN_REVIEW_PROVIDER/MODEL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "automatic (push to main + deploy) or human (PR)"
+        default: "human"
+        required: true
+      target:
+        description: "file to break and heal"
+        default: "tool/guardian_drill_target.mjs"
+        required: true
+  repository_dispatch:
+    types: [guardian_drill]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: guardian-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      mode: ${{ steps.cfg.outputs.mode }}
+      fixed: ${{ steps.verify.outputs.fixed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.AUTOFIX_GITHUB_TOKEN || github.token }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve config
+        id: cfg
+        env:
+          CP_MODE: ${{ github.event.client_payload.mode }}
+          IN_MODE: ${{ github.event.inputs.mode }}
+          CP_TARGET: ${{ github.event.client_payload.target }}
+          IN_TARGET: ${{ github.event.inputs.target }}
+          CP_FAIL: ${{ github.event.client_payload.failure }}
+        run: |
+          set -euo pipefail
+          MODE="${CP_MODE:-${IN_MODE:-human}}"
+          [ "$MODE" = "automatic" ] || MODE="human"
+          TARGET="${CP_TARGET:-${IN_TARGET:-tool/guardian_drill_target.mjs}}"
+          case "$TARGET" in
+            *..*|/*) echo "::error::unsafe target path"; exit 1 ;;
+          esac
+          if [ ! -f "$TARGET" ]; then echo "::error::target $TARGET not found"; exit 1; fi
+          FAIL="${CP_FAIL:-Syntax error: a closing bracket was removed from $TARGET; the check is red.}"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "branch=guardian/drill-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          { echo "MODE=$MODE"; echo "TARGET=$TARGET"; echo "FAILURE=$FAIL"; } >> "$GITHUB_ENV"
+          echo "### Guardian drill — mode: $MODE · target: \`$TARGET\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preflight (credential status)
+        run: node tool/guardian_preflight.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Git identity
+        run: |
+          git config user.name "guardian-agent[bot]"
+          git config user.email "guardian-agent@users.noreply.github.com"
+
+      - name: Inject real fault
+        run: |
+          set -euo pipefail
+          if [ "$MODE" = "human" ]; then
+            git checkout -b "${{ steps.cfg.outputs.branch }}"
+          fi
+          node tool/guardian_drill.mjs --inject --target "$TARGET"
+          git add "$TARGET"
+          git commit -m "💥 guardian drill: inject fault into $TARGET"
+          if [ "$MODE" = "automatic" ]; then git push origin HEAD:main; else git push origin HEAD; fi
+          echo "- 💥 injected a real syntax error and committed it" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Joint Fix + Review AI
+        continue-on-error: true
+        env:
+          GUARDIAN_FIX_PROVIDER: ${{ vars.GUARDIAN_FIX_PROVIDER }}
+          GUARDIAN_FIX_MODEL: ${{ vars.GUARDIAN_FIX_MODEL }}
+          GUARDIAN_FIX_API_KEY: ${{ secrets.GUARDIAN_FIX_API_KEY || secrets.ANTHROPIC_API_KEY }}
+          GUARDIAN_REVIEW_PROVIDER: ${{ vars.GUARDIAN_REVIEW_PROVIDER }}
+          GUARDIAN_REVIEW_MODEL: ${{ vars.GUARDIAN_REVIEW_MODEL }}
+          GUARDIAN_REVIEW_API_KEY: ${{ secrets.GUARDIAN_REVIEW_API_KEY || secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          echo "- 🤝 joint Fix+Review AI engaged" >> "$GITHUB_STEP_SUMMARY"
+          node tool/guardian_joint_fix.mjs --files "$TARGET" --failure "$FAILURE" --max 3 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify repair
+        id: verify
+        run: |
+          set -euo pipefail
+          if node tool/guardian_drill.mjs --verify --target "$TARGET"; then
+            echo "fixed=true" >> "$GITHUB_OUTPUT"
+            echo "- ✅ repair verified (syntactically valid again)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "fixed=false" >> "$GITHUB_OUTPUT"
+            echo "- ⚠️ repair not verified — safety-restore will run" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Commit verified fix
+        if: steps.verify.outputs.fixed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOFIX_GITHUB_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          git add "$TARGET"
+          git commit -m "✅ guardian: joint Fix+Review AI repaired $TARGET" || echo "already committed / no diff"
+          if [ "$MODE" = "automatic" ]; then
+            git push origin HEAD:main
+            echo "- 🚀 fix pushed to main (web deploy + Android build will follow)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            git push origin HEAD
+            gh pr create --base main --head "${{ steps.cfg.outputs.branch }}" \
+              --title "Guardian: joint AI auto-fix for $TARGET" \
+              --body "Automated repair from the Guardian drill (Fix AI + independent Review AI + validator)." || true
+            echo "- 🔀 pull request opened for human review" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Safety restore (only if the fix did not verify)
+        if: always() && steps.verify.outputs.fixed != 'true'
+        run: |
+          set -euo pipefail
+          echo "::warning::Joint fix did not verify; restoring the original so nothing is left broken."
+          node tool/guardian_drill.mjs --restore --target "$TARGET" || git checkout -- "$TARGET"
+          git add "$TARGET"
+          git commit -m "♻️ guardian: safety-restore $TARGET (AI fix not verified)" || echo "nothing to restore"
+          if [ "$MODE" = "automatic" ]; then git push origin HEAD:main; else git push origin HEAD || true; fi
+
+  ship:
+    needs: drill
+    if: needs.drill.outputs.mode == 'automatic' && needs.drill.outputs.fixed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    steps:
+      - name: Checkout (healed main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.6"
+          channel: "stable"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build web (healed)
+        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
+
+      - name: Deploy web to Firebase Hosting
+        if: env.FIREBASE_TOKEN != ''
+        run: |
+          npm i -g firebase-tools
+          firebase deploy --only hosting --token "$FIREBASE_TOKEN"
+
+      - name: Build Android app
+        run: flutter build apk --debug --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
+
+      - name: Upload healed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-healed-apk
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: warn
