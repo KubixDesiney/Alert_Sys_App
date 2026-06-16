@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+
+import '../../services/github_service.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
@@ -204,7 +206,6 @@ const List<_AgentSpec> _kAgents = [
     role: 'Under maintenance — capabilities not yet disclosed',
     icon: Icons.shield_moon_outlined,
     logoAsset: 'media/guardian_agent_logo.png',
-    maintenance: true,
   ),
 ];
 
@@ -3572,67 +3573,520 @@ class _GuardianAgentPanel extends StatefulWidget {
   State<_GuardianAgentPanel> createState() => _GuardianAgentPanelState();
 }
 
-class _GuardianAgentPanelState extends State<_GuardianAgentPanel>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
+class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
+  static const _ghUrl = String.fromEnvironment('ALERTSYS_GITHUB_WORKER_URL', defaultValue: '');
+  static const _wSecret = String.fromEnvironment('ALERTSYS_WORKER_SHARED_SECRET', defaultValue: '');
+
+  final _cfg = FirebaseDatabase.instance.ref('ai_agents/guardian');
+  final _sec = FirebaseDatabase.instance.ref('ai_agent_secrets/guardian');
+  final _runsRef = FirebaseDatabase.instance.ref('bugs/agent');
+
+  // GitHub status colours (fixed/semantic).
+  static const _gGreen = Color(0xFF3FB950);
+  static const _gRed = Color(0xFFF85149);
+  static const _gAmber = Color(0xFFD29922);
+  static const _gPurple = Color(0xFFA371F7);
+
+  List<Map<String, dynamic>> _ghRuns = [];
+  List<Map<String, dynamic>> _ghPulls = [];
+  bool _ghLoading = false;
+  bool _ghConnected = false;
+  Map<dynamic, dynamic> _secrets = {};
 
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 6))
-      ..repeat();
+    _sec.get().then((s) {
+      if (mounted && s.value is Map) setState(() => _secrets = s.value as Map<dynamic, dynamic>);
+    });
+    _loadGithub();
   }
 
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
+  Future<void> _loadGithub() async {
+    if (_ghUrl.isEmpty) return;
+    setState(() => _ghLoading = true);
+    final gh = GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret);
+    final connected = await gh.connected();
+    final runs = connected ? await gh.runs() : <Map<String, dynamic>>[];
+    final pulls = connected ? await gh.pulls() : <Map<String, dynamic>>[];
+    if (!mounted) return;
+    setState(() {
+      _ghConnected = connected;
+      _ghRuns = runs;
+      _ghPulls = pulls;
+      _ghLoading = false;
+    });
   }
+
+  bool _hasSecret(String k) => (_secrets[k]?.toString() ?? '').isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    final spec = widget.spec;
-    return Center(
-      child: GlassPanel(
-        accent: spec.accent,
-        padding: const EdgeInsets.all(36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 130,
-              height: 130,
-              child: RepaintBoundary(
-                child: CustomPaint(
-                  painter: _GuardianScanPainter(color: spec.accent, tick: _c),
-                  child: Center(
-                    child: SizedBox(
-                      width: 56,
-                      height: 56,
-                      child: _AgentGlyph(spec: spec, size: 56, radius: 14),
-                    ),
-                  ),
-                ),
-              ),
+    return StreamBuilder<DatabaseEvent>(
+      stream: _cfg.onValue,
+      builder: (context, snap) {
+        final raw = snap.data?.snapshot.value;
+        final cfg = (raw is Map) ? raw : const {};
+        final settings = (cfg['settings'] is Map) ? cfg['settings'] as Map : const {};
+        final enabled = cfg['enabled'] != false;
+        final active = (cfg['activeRun'] is Map) ? cfg['activeRun'] as Map : null;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(enabled, settings),
+              const SizedBox(height: 14),
+              _pipeline(active),
+              const SizedBox(height: 14),
+              _aiConfig(settings),
+              const SizedBox(height: 14),
+              _github(cfg),
+              const SizedBox(height: 14),
+              _knowledge(cfg),
+              const SizedBox(height: 14),
+              _simulate(),
+              const SizedBox(height: 14),
+              _githubLive(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ── header ──
+  Widget _header(bool enabled, Map settings) {
+    final auto = (settings['deployMode'] ?? 'human') == 'auto';
+    return GlassPanel(
+      accent: widget.spec.accent,
+      child: Row(
+        children: [
+          SizedBox(width: 40, height: 40, child: _AgentGlyph(spec: widget.spec, size: 40, radius: 11)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('GUARDIAN', style: Sa.display(size: 17)),
+                Text('autonomous fix pipeline', style: Sa.body(size: 12, color: Sa.muted)),
+              ],
             ),
-            const SizedBox(height: 22),
-            Text('GUARDIAN', style: Sa.display(size: 18)),
-            const SizedBox(height: 6),
-            GlowChip(label: 'UNDER MAINTENANCE', color: spec.accent, pulse: true),
-            const SizedBox(height: 14),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Text(
-                'Unit-06 is being assembled in the hangar. Its mission profile is classified '
-                'until commissioning — check back after the next fleet upgrade.',
-                textAlign: TextAlign.center,
-                style: Sa.body(size: 12.5, color: Sa.textDim),
-              ),
-            ),
-          ],
-        ),
+          ),
+          _deployToggle('Automatic', auto, () => _saveSetting('deployMode', 'auto')),
+          const SizedBox(width: 6),
+          _deployToggle('Human review', !auto, () => _saveSetting('deployMode', 'human')),
+          const SizedBox(width: 12),
+          GlowChip(label: enabled ? 'ARMED' : 'OFF', color: enabled ? _gGreen : Sa.muted, pulse: enabled),
+          Switch(value: enabled, onChanged: (v) => _cfg.update({'enabled': v})),
+        ],
       ),
     );
+  }
+
+  Widget _deployToggle(String label, bool active, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? widget.spec.accent.withValues(alpha: 0.16) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: active ? widget.spec.accent.withValues(alpha: 0.5) : Sa.border),
+        ),
+        child: Text(label, style: Sa.body(size: 11.5, color: active ? widget.spec.accent : Sa.textDim)),
+      ),
+    );
+  }
+
+  // ── dynamic pipeline (only when an incident is active) ──
+  Widget _pipeline(Map? active) {
+    if (active == null) {
+      return _panel('PIPELINE', Icons.route, Row(
+        children: [
+          Icon(Icons.check_circle_outline, color: _gGreen, size: 18),
+          const SizedBox(width: 9),
+          Expanded(child: Text('No active incident — pipeline idle. Guardian is watching.',
+              style: Sa.body(size: 12.5, color: Sa.muted))),
+        ],
+      ));
+    }
+    final stages = ['detect', 'context', 'fix', 'review', 'gate', 'deploy'];
+    final labels = ['Detect', 'Gather context', 'Fix', 'Review + tests', 'Gate', 'PR / deploy'];
+    final cur = stages.indexOf((active['stage'] ?? 'detect').toString());
+    final failed = (active['status'] ?? '').toString() == 'failed';
+    final sev = (active['severity'] ?? 'high').toString().toUpperCase();
+    return GlassPanel(
+      accent: _gRed,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            GlowChip(label: 'INCIDENT ACTIVE', color: _gRed, pulse: true),
+            const SizedBox(width: 8),
+            GlowChip(label: sev, color: sev == 'HIGH' ? _gRed : _gAmber),
+            const Spacer(),
+            Flexible(child: Text((active['title'] ?? 'incident').toString(),
+                textAlign: TextAlign.right, overflow: TextOverflow.ellipsis,
+                style: Sa.body(size: 11.5, color: Sa.muted))),
+          ]),
+          const SizedBox(height: 12),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (var i = 0; i < stages.length; i++)
+              _stageChip(labels[i],
+                  i < cur ? 'done' : (i == cur ? (failed ? 'failed' : 'active') : 'pending')),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _stageChip(String label, String state) {
+    Color c;
+    Widget ic;
+    switch (state) {
+      case 'done':
+        c = _gGreen;
+        ic = Icon(Icons.check, size: 13, color: c);
+        break;
+      case 'active':
+        c = _gAmber;
+        ic = SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: c));
+        break;
+      case 'failed':
+        c = _gRed;
+        ic = Icon(Icons.close, size: 13, color: c);
+        break;
+      default:
+        c = Sa.muted;
+        ic = Icon(Icons.circle_outlined, size: 12, color: c);
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.withValues(alpha: 0.45)),
+        color: c.withValues(alpha: 0.10),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [ic, const SizedBox(width: 6), Text(label, style: Sa.body(size: 11.5, color: c))]),
+    );
+  }
+
+  // ── AI config (fix + review) ──
+  Widget _aiConfig(Map settings) {
+    final auto = settings['autoModelSelect'] != false;
+    return _panel('AI CONFIGURATION', Icons.memory, Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Expanded(child: _aiCard('Fix AI', 'fix', settings, Sa.blue)),
+          const SizedBox(width: 10),
+          Expanded(child: _aiCard('Review AI', 'review', settings, _gPurple)),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Text('Auto-select model by severity', style: Sa.body(size: 12, color: Sa.textDim)),
+          const Spacer(),
+          Switch(value: auto, onChanged: (v) => _saveSetting('autoModelSelect', v)),
+        ]),
+      ],
+    ));
+  }
+
+  Widget _aiCard(String title, String role, Map settings, Color accent) {
+    final provId = (settings['${role}Provider'] ?? (role == 'fix' ? 'anthropic' : 'openai')).toString();
+    final prov = _Providers.list.firstWhere((p) => p.id == provId, orElse: () => _Providers.list.first);
+    final model = (settings['${role}Model'] ?? prov.defaultModel).toString();
+    final keySet = _hasSecret('${role}ApiKey');
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(color: Sa.bgRaised, borderRadius: BorderRadius.circular(10), border: Border.all(color: Sa.border)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Sa.body(size: 12.5, color: accent)),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => _pickProvider(role, settings),
+            child: _fieldRow(Icons.expand_more, '${prov.name} · $model'),
+          ),
+          const SizedBox(height: 6),
+          InkWell(
+            onTap: () => _setSecret('${role}ApiKey', '$title API key', prov.tokenHint),
+            child: _fieldRow(Icons.key, keySet ? '•••••••• set' : 'set API key',
+                trailing: keySet ? Icon(Icons.check, size: 14, color: _gGreen) : null),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fieldRow(IconData ic, String text, {Widget? trailing}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(color: Sa.bg, borderRadius: BorderRadius.circular(7), border: Border.all(color: Sa.border)),
+      child: Row(children: [
+        Icon(ic, size: 14, color: Sa.muted),
+        const SizedBox(width: 7),
+        Expanded(child: Text(text, overflow: TextOverflow.ellipsis, style: Sa.body(size: 12, color: Sa.text))),
+        if (trailing != null) trailing,
+      ]),
+    );
+  }
+
+  // ── github connection ──
+  Widget _github(Map cfg) {
+    final repo = (cfg['repo'] ?? '').toString();
+    return _panel('GITHUB CONNECTION', Icons.hub_outlined, Row(children: [
+      Expanded(child: InkWell(onTap: _setRepo, child: _fieldRow(Icons.account_tree, repo.isEmpty ? 'link repository (owner/name)' : repo))),
+      const SizedBox(width: 10),
+      Expanded(child: InkWell(
+        onTap: () => _setSecret('githubToken', 'GitHub token', 'github_pat_…'),
+        child: _fieldRow(Icons.vpn_key, _hasSecret('githubToken') ? '•••••••• set' : 'set token',
+            trailing: _ghConnected ? Icon(Icons.check, size: 14, color: _gGreen) : null),
+      )),
+    ]));
+  }
+
+  // ── knowledge: instructions / skills ──
+  Widget _knowledge(Map cfg) {
+    List<String> listOf(String k) {
+      final v = cfg[k];
+      if (v is List) return v.map((e) => e is Map ? (e['name'] ?? 'file').toString() : e.toString()).toList();
+      return const [];
+    }
+    return _panel('KNOWLEDGE · upload .md', Icons.menu_book_outlined, Row(children: [
+      Expanded(child: _mdColumn('Instructions', 'instructions', listOf('instructions'), Sa.blue)),
+      const SizedBox(width: 10),
+      Expanded(child: _mdColumn('Skills', 'skills', listOf('skills'), _gGreen)),
+    ]));
+  }
+
+  Widget _mdColumn(String title, String key, List<String> files, Color accent) {
+    return Container(
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(color: Sa.bgRaised, borderRadius: BorderRadius.circular(10), border: Border.all(color: Sa.border)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text(title, style: Sa.body(size: 12.5, color: accent)),
+            const Spacer(),
+            Text('${files.length}', style: Sa.body(size: 11, color: Sa.muted)),
+          ]),
+          const SizedBox(height: 8),
+          for (final f in files)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Row(children: [
+                Icon(Icons.description_outlined, size: 13, color: Sa.muted),
+                const SizedBox(width: 6),
+                Expanded(child: Text(f, overflow: TextOverflow.ellipsis, style: Sa.body(size: 11.5, color: Sa.textDim))),
+              ]),
+            ),
+          const SizedBox(height: 4),
+          SaButton(label: 'Upload .md', icon: Icons.upload_file, outlined: true, onPressed: () => _uploadMd(key)),
+        ],
+      ),
+    );
+  }
+
+  // ── simulate ──
+  Widget _simulate() {
+    final sims = <List<dynamic>>[
+      ['Login error', Icons.login, 'high', 'login screen error — users cannot sign in'],
+      ['Notifications down', Icons.notifications_off, 'high', 'alerts not reaching supervisors'],
+      ['Worker failure', Icons.dns, 'high', 'cloudflare worker endpoint failing'],
+      ['Version mismatch', Icons.sync_problem, 'medium', 'dependency version mismatch breaks build'],
+      ['Tab broken', Icons.tab_unselected, 'medium', 'supervisor tab blank / not loading'],
+      ['Test failing', Icons.science, 'low', 'flutter test failing on a widget test'],
+    ];
+    return _panel('SIMULATE AN INCIDENT', Icons.bolt, Wrap(spacing: 8, runSpacing: 8, children: [
+      for (final s in sims)
+        SaButton(
+          label: s[0] as String,
+          icon: s[1] as IconData,
+          outlined: true,
+          color: s[2] == 'high' ? _gRed : (s[2] == 'medium' ? _gAmber : Sa.muted),
+          onPressed: () => _simulateIncident(s[0] as String, s[2] as String, s[3] as String),
+        ),
+    ]));
+  }
+
+  // ── live github ──
+  Widget _githubLive() {
+    return _panel('GITHUB · LIVE', Icons.bolt, Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Text('Workflow runs', style: Sa.body(size: 12, color: Sa.textDim)),
+          const Spacer(),
+          if (_ghLoading)
+            SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Sa.cyan))
+          else
+            InkWell(onTap: _loadGithub, child: Icon(Icons.refresh, size: 17, color: Sa.cyan)),
+        ]),
+        if (!_ghConnected)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(_ghUrl.isEmpty ? 'Set ALERTSYS_GITHUB_WORKER_URL to go live.' : 'Connect a repo + token above.',
+                  style: Sa.body(size: 12, color: Sa.muted)))
+        else ...[
+          for (final r in _ghRuns.take(5)) _liveRow(
+              _statusIcon((r['conclusion'] ?? r['status'] ?? '').toString()),
+              _statusColor((r['conclusion'] ?? r['status'] ?? '').toString()),
+              '${r['name'] ?? 'run'} · ${r['branch'] ?? ''}', (r['event'] ?? '').toString()),
+          const SizedBox(height: 10),
+          Text('Pull requests', style: Sa.body(size: 12, color: Sa.textDim)),
+          for (final p in _ghPulls.take(5)) _liveRow(Icons.call_merge,
+              (p['state'] == 'merged') ? _gPurple : ((p['state'] == 'open') ? _gGreen : Sa.muted),
+              '#${p['number'] ?? '?'} ${p['title'] ?? ''}', (p['user'] ?? '').toString()),
+        ],
+      ],
+    ));
+  }
+
+  Widget _liveRow(IconData ic, Color c, String title, String meta) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Icon(ic, size: 15, color: c),
+        const SizedBox(width: 8),
+        Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Sa.body(size: 12.5, color: Sa.text))),
+        Text(meta, style: Sa.body(size: 11, color: Sa.muted)),
+      ]),
+    );
+  }
+
+  // ── helpers ──
+  Widget _panel(String label, IconData ic, Widget child) {
+    return GlassPanel(
+      accent: widget.spec.accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [Icon(ic, size: 14, color: Sa.muted), const SizedBox(width: 7),
+            Text(label, style: Sa.body(size: 11, color: Sa.muted))]),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(String s) {
+    s = s.toLowerCase();
+    if (s.contains('success') || s.contains('complet')) return _gGreen;
+    if (s.contains('fail') || s.contains('cancel')) return _gRed;
+    if (s.contains('progress') || s.contains('queued') || s.contains('pending')) return _gAmber;
+    return Sa.muted;
+  }
+
+  IconData _statusIcon(String s) {
+    s = s.toLowerCase();
+    if (s.contains('success') || s.contains('complet')) return Icons.check_circle_outline;
+    if (s.contains('fail') || s.contains('cancel')) return Icons.cancel_outlined;
+    return Icons.sync;
+  }
+
+  Future<void> _saveSetting(String k, dynamic v) => _cfg.child('settings').update({k: v, 'updatedAt': DateTime.now().toUtc().toIso8601String()});
+
+  Future<void> _pickProvider(String role, Map settings) async {
+    final chosen = await showModalBottomSheet<_Provider>(
+      context: context,
+      backgroundColor: Sa.panelSolid,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          for (final p in _Providers.list)
+            ListTile(
+              leading: Icon(Icons.bolt, color: p.color),
+              title: Text(p.name, style: Sa.body(size: 14, color: Sa.text)),
+              subtitle: Text(p.defaultModel, style: Sa.body(size: 11, color: Sa.muted)),
+              onTap: () => Navigator.pop(ctx, p),
+            ),
+        ]),
+      ),
+    );
+    if (chosen != null) {
+      await _saveSetting('${role}Provider', chosen.id);
+      await _saveSetting('${role}Model', chosen.defaultModel);
+    }
+  }
+
+  Future<void> _setSecret(String field, String title, String hint) async {
+    final ctl = TextEditingController();
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Sa.panelSolid,
+        title: Text(title, style: Sa.body(size: 15, color: Sa.text)),
+        content: TextField(controller: ctl, obscureText: true,
+            style: Sa.body(size: 13, color: Sa.text),
+            decoration: InputDecoration(hintText: hint, hintStyle: Sa.body(size: 13, color: Sa.muted), border: const OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: Text('Save', style: Sa.body(size: 13, color: Sa.cyan))),
+        ],
+      ),
+    );
+    if (v != null && v.isNotEmpty) {
+      await _sec.update({field: v, 'updatedAt': DateTime.now().toUtc().toIso8601String()});
+      final s = await _sec.get();
+      if (mounted && s.value is Map) setState(() => _secrets = s.value as Map<dynamic, dynamic>);
+    }
+  }
+
+  Future<void> _setRepo() async {
+    final ctl = TextEditingController(text: '');
+    final v = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Sa.panelSolid,
+        title: Text('Link GitHub repository', style: Sa.body(size: 15, color: Sa.text)),
+        content: TextField(controller: ctl,
+            style: Sa.body(size: 13, color: Sa.text),
+            decoration: InputDecoration(hintText: 'owner/repository', hintStyle: Sa.body(size: 13, color: Sa.muted), border: const OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: Text('Save', style: Sa.body(size: 13, color: Sa.cyan))),
+        ],
+      ),
+    );
+    if (v != null && v.isNotEmpty) {
+      await _cfg.update({'repo': v});
+      _loadGithub();
+    }
+  }
+
+  Future<void> _uploadMd(String key) async {
+    final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['md'], withData: true);
+    if (res == null || res.files.isEmpty) return;
+    final f = res.files.first;
+    final bytes = f.bytes;
+    if (bytes == null) return;
+    final content = utf8.decode(bytes, allowMalformed: true);
+    final snap = await _cfg.child(key).get();
+    final list = (snap.value is List) ? List<dynamic>.from(snap.value as List) : <dynamic>[];
+    list.add({'name': f.name, 'content': content, 'at': DateTime.now().toUtc().toIso8601String()});
+    await _cfg.update({key: list});
+  }
+
+  Future<void> _simulateIncident(String title, String severity, String description) async {
+    await _cfg.child('activeRun').set({
+      'title': title, 'severity': severity, 'description': description,
+      'stage': 'detect', 'status': 'running', 'at': DateTime.now().toUtc().toIso8601String(),
+      'simulated': true,
+    });
+    await FirebaseDatabase.instance.ref('bugs/client').push().set({
+      'area': 'simulation', 'severity': severity, 'message': description,
+      'at': DateTime.now().toUtc().toIso8601String(), 'simulated': true,
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Sa.panelSolid,
+        content: Text('Simulated: $title — Guardian will pick it up next cycle.', style: Sa.body(size: 13, color: Sa.text)),
+      ));
+    }
   }
 }
 
