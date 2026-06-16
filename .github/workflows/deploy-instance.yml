@@ -100,7 +100,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       - name: Install deps
@@ -203,7 +203,4 @@ jobs:
             echo ""
             echo "- Project: \`$PROJECT\`"
             echo "- Workers subdomain: \`$SUB\`"
-            echo "- R2 bucket: \`$R2\`"
-            echo "- Workers: ${ID}-alert-notifier, ${ID}-alertsys, ${ID}-alertsys-backup, ${ID}-alertsys-monitor, ${ID}-alertsys-scim"
-            echo "- SCIM base: https://${ID}-alertsys-scim.${SUB}.workers.dev/scim/v2"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "- R2 bucket: 
