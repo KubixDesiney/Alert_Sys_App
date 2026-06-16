@@ -1,96 +1,142 @@
-# Secret rotation & history purge runbook
+# Secret rotation and history-purge evidence
 
-Version 1.0 - 2026-06-15 - Owner: SuperAdmin / security lead
+Version 1.1 - Owner: SuperAdmin / security lead
 
-A Firebase **service-account private key** (`service-account.json`) was committed in commit
-`22fede5` and a **OneSignal** key existed in history. Your current tree is clean, but both
-are still in git history. **Rotation neutralizes the leaked values; purging removes them
-from history. Do them in this order — rotation first.**
+Previously exposed material was identified in git history:
 
-> Scrubbing history does NOT un-leak a secret that was already public. Only rotating/revoking
-> it at the provider does. Purge is cleanup after the value is already dead.
+- Firebase service-account private key file: `service-account.json` in commit `22fede5`.
+- Legacy OneSignal credential string in history.
+- Historical RTDB backup dumps under `backups/*`.
 
----
+No real replacement key, provider token, private key, customer export, or screenshot
+may be committed to this repository. Store provider-side proof in the private
+release evidence package or security ticket, with secrets redacted.
 
-## 1. Rotate the Firebase service-account key  (CRITICAL — do this first)
+## Repository evidence available in this PR
 
-Find the service account from `client_email` inside the old `service-account.json`.
+- Current tree has no tracked `service-account.json`.
+- `backups/` is git-ignored.
+- `.gitleaks.toml` scans the tree while allowing only public Firebase client config files.
+- `.github/workflows/security.yml` blocks current-tree gitleaks findings.
+- `.github/workflows/security.yml` uploads a full-history gitleaks report as explicit
+  legacy-risk evidence until the owner performs history purge.
+- `tool/purge_leaked_secret.sh` and this runbook define the history-purge procedure.
 
-**Console:** console.cloud.google.com -> IAM & Admin -> Service Accounts -> select that SA
--> **Keys** -> delete the existing (leaked) key -> **Add key -> Create new key -> JSON** -> download.
+Run locally:
 
-**Or gcloud:**
+```bash
+gitleaks detect --no-git --config .gitleaks.toml --redact --no-banner --exit-code 1
+gitleaks detect --config .gitleaks.toml --redact --no-banner --report-path gitleaks-history.json --exit-code 1
+```
+
+Expected before history purge:
+
+- Current-tree scan exits `0`.
+- Full-history scan may exit non-zero because old commits still contain legacy
+  findings. Treat that as an open release risk until purge is complete.
+
+Expected after history purge:
+
+- Both commands exit `0`.
+- The GitHub Actions `gitleaks-history-report` artifact is empty or reports no findings.
+
+## Provider-side rotation evidence required
+
+The repository cannot prove that an old cloud/provider secret is dead. The owner
+must attach redacted provider evidence before a production pilot:
+
+| Secret class | Required evidence | Do not include |
+|---|---|---|
+| Firebase service-account key | Old key ID absent from `gcloud iam service-accounts keys list`; deletion timestamp; new key creation timestamp; list of Cloudflare/GitHub secret stores updated | Private key JSON, full client email if sensitive, screenshots with key material |
+| OneSignal REST key | App deleted, key revoked, or key regenerated; timestamp; provider audit/event ID if available | REST API key, app auth token |
+| Firebase client API keys | Google Cloud API key restrictions enabled for Android/iOS/web and required Firebase APIs only | Full unrestricted API-key inventory screenshots |
+| RTDB backups | Confirmation that historical backup dumps were removed from git history and retained only in approved backup storage | Customer data, backup content |
+
+## Verification checklist
+
+Firebase service account:
+
 ```bash
 SA=your-sa@your-project.iam.gserviceaccount.com
 gcloud iam service-accounts keys list --iam-account="$SA"
-gcloud iam service-accounts keys delete LEAKED_KEY_ID --iam-account="$SA"
-gcloud iam service-accounts keys create new-sa.json --iam-account="$SA"
 ```
 
-**Push the new key into every worker secret** (paste the new JSON when prompted):
+- The leaked key ID is not present.
+- Only current, expected key IDs remain.
+- Every worker secret was updated after the old key deletion:
+
 ```bash
-npx wrangler secret put FIREBASE_SERVICE_ACCOUNT --config wrangler.ai.toml
-npx wrangler secret put FIREBASE_SERVICE_ACCOUNT --config wrangler.notify.toml
-npx wrangler secret put FIREBASE_SERVICE_ACCOUNT --config wrangler.scim.toml
-npx wrangler secret put FIREBASE_SERVICE_ACCOUNT --config wrangler.backup.toml
-npx wrangler secret put FIREBASE_SERVICE_ACCOUNT --config wrangler.monitor.toml
+npx wrangler secret list --config wrangler.ai.toml
+npx wrangler secret list --config wrangler.notify.toml
+npx wrangler secret list --config wrangler.scim.toml
+npx wrangler secret list --config wrangler.backup.toml
+npx wrangler secret list --config wrangler.monitor.toml
 ```
-Update the same secret in GitHub Actions if CI uses it (Settings -> Secrets -> Actions).
-Then delete `new-sa.json` locally — never commit it (it is git-ignored).
 
-The moment the old key is deleted, the leaked copy in history is dead.
+- If an archived copy of the old JSON exists in the private incident package, a
+  test authentication attempt fails. Never commit or paste the JSON.
 
-## 2. Decommission OneSignal (you no longer use it)
+OneSignal:
 
-In the OneSignal dashboard, **delete the app** (or at minimum revoke/regenerate the REST API
-key) so the historical key is worthless. No code references remain after the recent cleanup.
+- Provider dashboard shows the old REST key invalidated, regenerated, or the app deleted.
+- Any production code path using OneSignal remains removed or disabled.
 
-## 3. Restrict the Firebase client API keys
+GitHub Actions and Cloudflare:
 
-`google-services.json` / `firebase_options.dart` keys are public *client* keys — restrict,
-don't rotate. Console -> APIs & Services -> Credentials -> each key:
-- **Application restrictions**: Android (package + SHA-256), iOS (bundle id), web (HTTP referrers).
-- **API restrictions**: limit to the Firebase APIs you actually use.
+- `FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` was updated after old-key deletion.
+- `FIREBASE_TOKEN`, `WORKER_SHARED_SECRET`, and Cloudflare tokens were reviewed
+  and rotated if exposed outside approved secret stores.
 
-## 4. Purge the secrets from git history
+## History purge status
 
-Only after rotating. This rewrites history — coordinate, then everyone re-clones.
+Status: not proven complete by repository state alone.
+
+Risk while purge is pending:
+
+- Anyone with an old clone, fork, PR cache, GitHub cached commit view, or full-history
+  checkout may still see the dead secret values and historical backup content.
+- Rotation/revocation makes the old provider values unusable, but history still
+  contains sensitive evidence until rewritten and force-pushed.
+- Existing clones must be re-cloned after purge or they retain the old objects.
+
+Required owner action:
+
+1. Complete provider rotation first.
+2. Coordinate a maintenance window because history rewrite changes commit SHAs.
+3. Run the purge procedure below from a clean clone.
+4. Force-push all refs and tags.
+5. Ask collaborators to re-clone.
+6. Ask GitHub Support to purge cached commit views if the repository was ever public.
+7. Re-run both gitleaks commands above and attach redacted output to the release evidence package.
+
+## Purge procedure
 
 ```bash
-# 0. Install the tool + take a full backup mirror first
 pip install git-filter-repo
-git clone --mirror . ../alertsysapp-backup.git
+git clone --mirror https://github.com/KubixDesiney/Alert_Sys_App.git ../alertsysapp-backup.git
 
-# 1. Remove the service-account key file from ALL history
 git filter-repo --invert-paths --path service-account.json
-
-# 2. Remove the RTDB backup dumps (PII) from ALL history
 git filter-repo --invert-paths --path-glob 'backups/*'
 
-# 3. Redact the leaked OneSignal key string everywhere
 printf 'literal:PASTE_OLD_ONESIGNAL_KEY==>REDACTED\n' > ../replacements.txt
 git filter-repo --replace-text ../replacements.txt
-#   (equivalently: ./tool/purge_leaked_secret.sh 'PASTE_OLD_ONESIGNAL_KEY')
 
-# 4. filter-repo drops the remote — re-add and force-push every ref
-git remote add origin https://github.com/<you>/<repo>.git
+git remote add origin https://github.com/KubixDesiney/Alert_Sys_App.git
 git push --force --all
 git push --force --tags
 ```
 
-Everyone with an existing clone must re-clone (old clones still hold the secret).
-
-## 5. Verify
+Alternatively, use the repository helper for a single literal secret:
 
 ```bash
-gitleaks detect --config .gitleaks.toml --redact --no-banner   # expect 0 findings
+./tool/purge_leaked_secret.sh 'PASTE_OLD_SECRET_VALUE'
 ```
-- Hit each worker's health/status endpoint to confirm the new key authenticates.
-- Sign in to the app and confirm reads/writes still work.
 
-## Notes
-- If the GitHub repo is or ever was **public**, assume the key was scraped — rotation
-  (steps 1-2) is the real protection; also ask GitHub Support to purge cached commit views.
-- After the force-push, old commit/PR links will break — expected.
-- Re-enable blocking full-history gitleaks in `.github/workflows/security.yml` once the
-  purge verifies clean (flip the informational scan back to `--exit-code 1`).
+## Release gate
+
+Before enterprise pilot release, the owner must confirm:
+
+- Provider-side rotation evidence is attached outside the repo.
+- Current-tree gitleaks passes.
+- Full-history gitleaks passes, or the risk above is accepted in writing by the owner.
+- Branch protection is verified with `docs/BRANCH_PROTECTION.md`.

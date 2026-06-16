@@ -1,6 +1,15 @@
 # Autonomous Bug-Fix Agent
 
-`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart Industrial Alert repo. It detects production and CI failures, gathers repo/runtime context, asks Claude for a code fix, validates the fix locally, asks OpenAI for an independent review gate, then pushes the approved commit directly to `main` and deploys Firebase Hosting.
+`tool/autonomous_bugfix_agent.mjs` is an operational runner for the Smart
+Industrial Alert repo. It detects production and CI failures, gathers
+repo/runtime context, asks Claude for a candidate fix, validates the fix
+locally, asks OpenAI for an independent review gate, then opens a draft pull
+request for human review and normal CI.
+
+The safe default is reviewable automation. Direct pushes to `main` and
+production deploys are disabled unless an operator explicitly sets both
+`AGENT_PUBLISH_MODE=direct` and `AGENT_DIRECT_MAIN_PUSH_ALLOWED=1` in an
+isolated emergency environment.
 
 ## Entry Points
 
@@ -9,7 +18,8 @@ npm run agent:bugfix:dry-run
 npm run agent:bugfix
 ```
 
-The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. It runs hourly and can also be started manually.
+The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`.
+It runs hourly and can also be started manually.
 
 ## Detection Sources
 
@@ -19,61 +29,38 @@ The GitHub Actions workflow is `.github/workflows/autonomous-bugfix-agent.yml`. 
   - `GET /security-status` on the AI worker.
   - `GET /config` on the notification worker.
 - Recent local/GitHub-run logs matching `*.log`, with stale logs ignored by age.
-- RTDB state when `FIREBASE_SERVICE_ACCOUNT` is present:
-  - `workers/health`
-  - `cron_lock`
-  - `ai_runtime/lastAttemptAt`
-  - `ai_runtime/lastAssignedAt`
-  - `ai_predictions/performance/latest`
-  - recent `alerts`
-  - recent `security/logs`
+- RTDB state when `FIREBASE_SERVICE_ACCOUNT` is present.
 - Optional detection commands from `AGENT_DETECTION_COMMANDS`.
-
-## Detected Issue Conditions
-
-- UI URL request fails, times out, or returns a non-2xx/3xx status.
-- UI HTML contains failure markers such as `flutter initialization failed`, `failed to load`, `uncaught`, or `fatal error`.
-- AI worker `/config` fails.
-- AI worker `/security-status` fails.
-- Notification worker `/config` fails.
-- Recent log files contain error markers such as `error`, `exception`, `fatal`, `failed`, `uncaught`, or `unhandled`.
-- Configured detection commands exit non-zero, for example `npm test`.
-- Firebase RTDB context collection fails when credentials are configured.
-- `workers/health` is missing in RTDB.
-- `workers/health/lastRun` or `workers/health/notifyLastRun` is missing.
-- AI or notification cron health timestamps are unreadable.
-- AI or notification cron health timestamps are older than `AGENT_WORKER_STALE_MINUTES`.
-- AI or notification cron health records include non-empty `errors`.
 
 ## Fix And Gate Flow
 
 1. Stop if no actionable issue is detected, unless `AGENT_FORCE=1`.
-2. Reset the local working branch to `origin/main` for direct publish.
+2. Reset an agent-owned branch from `origin/main`.
 3. Send structured context to Claude using `ANTHROPIC_API_KEY` and `CLAUDE_FIX_MODEL`.
 4. Apply only safe text file writes inside the repo.
 5. Run `AGENT_VALIDATION_COMMANDS`.
-6. Send the diff and validation output to OpenAI using `OPENAI_API_KEY` and `OPENAI_REVIEW_MODEL` (`o3` by default).
+6. Send the diff and validation output to OpenAI using `OPENAI_API_KEY` and `OPENAI_REVIEW_MODEL`.
 7. Retry up to `AGENT_MAX_ATTEMPTS` times with validation/review feedback.
-8. If approved, commit on `main`, push `HEAD:main`, build Flutter web, and deploy Firebase Hosting.
-9. If all attempts fail, write the rejection context to `.dart_tool/autofix-agent` and fail the workflow. There is no Slack/email human escalation path.
+8. If approved, commit to an `autofix/*` branch and open a draft PR against `main`.
+9. If all attempts fail, write the rejection context to `.dart_tool/autofix-agent`, open an escalation issue when possible, and fail the workflow.
 
 ## Required Secrets
 
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
-- `FIREBASE_TOKEN`
-- `AUTOFIX_GITHUB_TOKEN` recommended for direct `main` pushes; falls back to `GITHUB_TOKEN` in Actions when branch protection allows it.
+- `GITHUB_TOKEN` or `GH_TOKEN` with permission to push the autofix branch and open a PR.
 
 ## Runtime Context Secrets
 
 - `FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS`
 - `WORKER_SHARED_SECRET`
-- `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are needed only when `AGENT_DEPLOY_WORKERS=1`.
+
+Cloudflare and Firebase deploy credentials are not used by the default workflow.
+They are only needed for explicit direct emergency publish mode.
 
 ## Safety Notes
 
 - The runner refuses active fixes in a dirty worktree unless `AGENT_ALLOW_DIRTY=1`.
 - It refuses writes outside the repository and ignores binary/build/cache paths.
 - Generated artifacts are written under `.dart_tool/autofix-agent` and uploaded by the workflow.
-- Direct pushes to `main` still depend on repository branch protection allowing the configured token to push.
-
+- Merging an autofix PR requires the same protected-branch checks and human review as any other production change.

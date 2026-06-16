@@ -59,6 +59,7 @@ const DEFAULT_CONTEXT_FILES = [
 ];
 
 const args = new Set(process.argv.slice(2));
+const publishMode = process.env.AGENT_PUBLISH_MODE || 'pull_request';
 
 if (args.has('--help') || args.has('-h')) {
   printHelp();
@@ -69,8 +70,11 @@ const config = {
   dryRun: args.has('--dry-run') || envFlag('AGENT_DRY_RUN'),
   force: args.has('--force') || envFlag('AGENT_FORCE'),
   allowDirty: envFlag('AGENT_ALLOW_DIRTY'),
-  deployWeb: !envFlag('AGENT_SKIP_WEB_DEPLOY'),
-  deployWorkers: envFlag('AGENT_DEPLOY_WORKERS'),
+  publishMode,
+  publishBranch: '',
+  publishBranchPrefix: process.env.AGENT_BRANCH_PREFIX || 'autofix',
+  deployWeb: publishMode === 'direct' && !envFlag('AGENT_SKIP_WEB_DEPLOY'),
+  deployWorkers: publishMode === 'direct' && envFlag('AGENT_DEPLOY_WORKERS'),
   maxAttempts: envInt('AGENT_MAX_ATTEMPTS', 3),
   commandTimeoutMs: envInt('AGENT_COMMAND_TIMEOUT_MS', 20 * 60 * 1000),
   fetchTimeoutMs: envInt('AGENT_FETCH_TIMEOUT_MS', 15000),
@@ -108,6 +112,7 @@ async function main() {
   ensureArtifactDir();
   console.log(`[agent] repo: ${ROOT}`);
   console.log(`[agent] mode: ${config.dryRun ? 'dry-run' : 'active'}`);
+  console.log(`[agent] publish mode: ${config.publishMode}`);
 
   const signals = await gatherSignals();
   const signalArtifact = writeArtifact('signals', signals);
@@ -126,7 +131,7 @@ async function main() {
   }
 
   await assertActivePreflight();
-  await prepareMainBranchForDirectPublish();
+  await prepareBranchForAutofix();
 
   let feedback = '';
   let lastValidation = null;
@@ -188,10 +193,11 @@ async function main() {
     });
     writeArtifact('publish-result', published);
     const commitSha = await safeGitText(['rev-parse', '--short', 'HEAD']);
-    await recordAgentRun('ai_fixed', {
+    await recordAgentRun(published.pullRequestUrl ? 'ai_pr_opened' : 'ai_fixed', {
       signals,
       commit: commitSha,
       summary: published.commitMessage,
+      prUrl: published.pullRequestUrl,
       changedPaths: published.changedPaths,
     });
     return;
@@ -230,7 +236,7 @@ async function main() {
  * SuperAdmin Logs tab can display what the AI detected, fixed or escalated.
  * Best-effort: never fails the agent.
  */
-async function recordAgentRun(status, { signals, commit, summary, issueUrl, changedPaths } = {}) {
+async function recordAgentRun(status, { signals, commit, summary, issueUrl, prUrl, changedPaths } = {}) {
   try {
     const db = await getFirebaseDatabase();
     if (!db) {
@@ -245,6 +251,7 @@ async function recordAgentRun(status, { signals, commit, summary, issueUrl, chan
     if (commit) record.commit = commit;
     if (summary) record.summary = String(summary).slice(0, 1000);
     if (issueUrl) record.issueUrl = issueUrl;
+    if (prUrl) record.prUrl = prUrl;
     if (changedPaths?.length) record.changedPaths = changedPaths.slice(0, 20);
     await db.ref('bugs/agent').push(record);
     console.log(`[agent] recorded ${status} run to bugs/agent`);
@@ -258,17 +265,12 @@ async function recordAgentRun(status, { signals, commit, summary, issueUrl, chan
  * Returns the issue URL or null. Best-effort.
  */
 async function createGitHubEscalationIssue(signals, rejectionSummary) {
-  const token = process.env.AUTOFIX_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+  const token = githubToken();
   if (!token) {
     console.warn('[agent] no GitHub token; cannot escalate to an issue');
     return null;
   }
-  let repo = process.env.GITHUB_REPOSITORY;
-  if (!repo) {
-    const remote = await safeGitText(['remote', 'get-url', 'origin']);
-    const match = remote.match(/github\.com[:/]([^/]+\/[^/.\s]+)/);
-    if (match) repo = match[1];
-  }
+  const repo = await resolveGitHubRepository();
   if (!repo) {
     console.warn('[agent] cannot resolve GitHub repository for escalation');
     return null;
@@ -319,7 +321,24 @@ async function createGitHubEscalationIssue(signals, rejectionSummary) {
   }
 }
 
+function githubToken() {
+  return process.env.AUTOFIX_GITHUB_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+}
+
+async function resolveGitHubRepository() {
+  let repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) {
+    const remote = await safeGitText(['remote', 'get-url', 'origin']);
+    const match = remote.match(/github\.com[:/]([^/]+\/[^/.\s]+)/);
+    if (match) repo = match[1];
+  }
+  return repo || '';
+}
+
 async function assertActivePreflight() {
+  if (!['pull_request', 'direct'].includes(config.publishMode)) {
+    throw new Error("AGENT_PUBLISH_MODE must be 'pull_request' or 'direct'");
+  }
   const status = await gitText(['status', '--porcelain']);
   if (status.trim() && !config.allowDirty) {
     throw new Error(
@@ -331,6 +350,9 @@ async function assertActivePreflight() {
   }
   if (!process.env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY is required for the OpenAI review gate');
+  }
+  if (config.publishMode === 'direct' && !envFlag('AGENT_DIRECT_MAIN_PUSH_ALLOWED')) {
+    throw new Error('AGENT_DIRECT_MAIN_PUSH_ALLOWED=1 is required for direct main publishing');
   }
   if (config.deployWeb && !process.env.FIREBASE_TOKEN) {
     throw new Error('FIREBASE_TOKEN is required for direct production web deploy');
@@ -970,23 +992,124 @@ async function publishApprovedFix({ changedPaths, signals, claudeFix, validation
   const title = buildCommitTitle(claudeFix, signals);
   const commitMessage = title.length > 70 ? title.slice(0, 69) : title;
   await runProcess('git', ['commit', '-m', commitMessage]);
-  await runProcess('git', ['push', 'origin', `HEAD:${config.baseBranch}`]);
 
-  const deploy = await deployProduction();
+  if (config.publishMode === 'direct') {
+    await runProcess('git', ['push', 'origin', `HEAD:${config.baseBranch}`]);
+    const deploy = await deployProduction();
+    return {
+      published: true,
+      mode: 'direct',
+      branch: config.baseBranch,
+      commitMessage,
+      changedPaths: diffNames,
+      validation: summarizeValidation(validation),
+      review,
+      deploy,
+    };
+  }
+
+  const branch = config.publishBranch || buildAgentBranchName(signals);
+  await runProcess('git', ['push', '--set-upstream', 'origin', `HEAD:${branch}`]);
+  const pullRequestUrl = await createAutofixPullRequest({
+    branch,
+    title: commitMessage,
+    changedPaths: diffNames,
+    signals,
+    validation,
+    review,
+  });
   return {
     published: true,
-    branch: config.baseBranch,
+    mode: 'pull_request',
+    branch,
+    pullRequestUrl,
     commitMessage,
     changedPaths: diffNames,
     validation: summarizeValidation(validation),
     review,
-    deploy,
+    deploy: [],
   };
 }
 
-async function prepareMainBranchForDirectPublish() {
+async function prepareBranchForAutofix() {
   await runProcess('git', ['fetch', 'origin', config.baseBranch]);
-  await runProcess('git', ['checkout', '-B', config.baseBranch, `origin/${config.baseBranch}`]);
+  if (config.publishMode === 'direct') {
+    await runProcess('git', ['checkout', '-B', config.baseBranch, `origin/${config.baseBranch}`]);
+    return;
+  }
+  config.publishBranch = buildAgentBranchName();
+  await runProcess('git', ['checkout', '-B', config.publishBranch, `origin/${config.baseBranch}`]);
+}
+
+function buildAgentBranchName(signals = null) {
+  const slug = (signals?.issues?.[0]?.title || 'approved-fix')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40) || 'approved-fix';
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, 'z');
+  const prefix = config.publishBranchPrefix.replace(/[^A-Za-z0-9._/-]+/g, '-').replace(/^\/+|\/+$/g, '') || 'autofix';
+  return `${prefix}/${stamp}-${slug}`;
+}
+
+async function createAutofixPullRequest({ branch, title, changedPaths, signals, validation, review }) {
+  const token = githubToken();
+  if (!token) {
+    throw new Error('GITHUB_TOKEN or GH_TOKEN is required to open an autofix pull request');
+  }
+  const repo = await resolveGitHubRepository();
+  if (!repo) {
+    throw new Error('GITHUB_REPOSITORY or a GitHub origin remote is required to open an autofix pull request');
+  }
+  const issueLines = (signals?.issues || [])
+    .map((issue) => `- **${issue.severity}** \`${issue.source}\`: ${issue.title}`)
+    .join('\n');
+  const validationSummary = summarizeValidation(validation);
+  const body = [
+    'Automated bug-fix proposal generated by the SIA autonomous agent.',
+    '',
+    'This branch passed local agent validation and the independent OpenAI review gate. It is intentionally opened as a pull request so normal branch protection, CI, and human review decide whether it reaches `main`.',
+    '',
+    '## Detected issues',
+    issueLines || '_none captured_',
+    '',
+    '## Changed files',
+    ...changedPaths.map((file) => `- \`${file}\``),
+    '',
+    '## Validation',
+    ...validationSummary.results.map((item) => `- \`${item.command}\`: exit ${item.exitCode}`),
+    '',
+    '## Review gate',
+    `- Approved: ${review.approved}`,
+    `- Risk: ${review.deploymentRisk || 'not provided'}`,
+    '',
+    '_Do not merge without the repository required checks and a human reviewer approval._',
+  ].join('\n');
+
+  const response = await fetch(`https://api.github.com/repos/${repo}/pulls`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'alertsys-autofix-agent',
+    },
+    body: JSON.stringify({
+      title: `[autofix] ${title}`.slice(0, 240),
+      head: branch,
+      base: config.baseBranch,
+      body,
+      maintainer_can_modify: true,
+      draft: true,
+    }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GitHub pull request creation failed: ${response.status} ${text.slice(0, 500)}`);
+  }
+  const json = await response.json();
+  console.log(`[agent] opened autofix PR: ${json.html_url}`);
+  return json.html_url;
 }
 
 async function ensureGitIdentity() {
@@ -1468,15 +1591,20 @@ Usage:
 Required for active fixes:
   ANTHROPIC_API_KEY              Generates candidate code fixes with Claude.
   OPENAI_API_KEY                 Runs the independent OpenAI review gate.
-  FIREBASE_TOKEN                 Deploys the approved fix to Firebase Hosting.
+  GITHUB_TOKEN or GH_TOKEN       Opens the reviewed autofix pull request.
 
 Common configuration:
+  AGENT_PUBLISH_MODE             pull_request (default) or direct.
+  AGENT_DIRECT_MAIN_PUSH_ALLOWED=1
+                                 Required in addition to AGENT_PUBLISH_MODE=direct.
+  AGENT_BRANCH_PREFIX            Branch prefix for autofix PRs. Defaults to autofix.
   AGENT_UI_HEALTH_URLS           Comma or newline separated deployed UI URLs.
   AGENT_DETECTION_COMMANDS       Newline separated commands for bug detection.
   AGENT_VALIDATION_COMMANDS      Newline separated commands for final validation.
   CLAUDE_FIX_MODEL               Claude fix model. Defaults to claude-opus-4-8.
-  AGENT_SKIP_WEB_DEPLOY=1        Push main without deploying Firebase Hosting.
-  AGENT_DEPLOY_WORKERS=1         Also deploy Cloudflare workers after web deploy.
+  FIREBASE_TOKEN                 Required only for direct web deploy mode.
+  AGENT_SKIP_WEB_DEPLOY=1        Direct mode only: skip Firebase Hosting deploy.
+  AGENT_DEPLOY_WORKERS=1         Direct mode only: also deploy Cloudflare workers.
   FIREBASE_SERVICE_ACCOUNT       Firebase service account JSON for RTDB context.
   FIREBASE_DATABASE_URL          RTDB URL. Defaults to alertappsys.
   WORKER_SHARED_SECRET           Optional Cloudflare worker health auth header.

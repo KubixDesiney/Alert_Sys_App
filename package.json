@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:rules": "node --experimental-vm-modules node_modules/jest/bin/jest.js worker_test/database_rules_security.test.js worker_test/firebase_rules_configuration.test.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "agent:bugfix": "node tool/autonomous_bugfix_agent.mjs",
     "agent:bugfix:dry-run": "node tool/autonomous_bugfix_agent.mjs --dry-run",
@@ -19,7 +20,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "wrangler": "^3.114.17"
+    "wrangler": "^4.100.0"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0"

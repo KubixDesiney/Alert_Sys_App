@@ -10,13 +10,17 @@ changes to production.
 - `main` is protected: changes land via pull request.
 - At least one review approval required before merge.
 - Required status checks must pass (see section 3) before merge.
-- The autonomous bug-fix agent's changes are subject to the same CI gates + review.
+- The expected `main` protection policy is versioned in
+  `.github/branch-protection-main.json` and verified with `docs/BRANCH_PROTECTION.md`.
+- The autonomous bug-fix agent opens draft PRs; its changes are subject to the
+  same CI gates + review.
 
 ## 3. Required CI gates (all green to merge/release)
 - `flutter analyze` clean + `flutter test --coverage`.
 - `npm test` + worker coverage gate (`jest.config.js` threshold).
 - Performance guard: `npm run bench:ci` (assignment p99 within budget).
 - Security workflow: `gitleaks` + `npm audit`.
+- Firebase RTDB rules/configuration behavior: `npm run test:rules`.
 
 ## 4. Release & deploy
 Follow `RELEASE.md`: staging first, then production; tag releases; deploy order rules,
