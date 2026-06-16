@@ -42,6 +42,33 @@ class GithubService {
   Future<List<Map<String, dynamic>>> pulls() => _list('/pulls', 'pulls');
   Future<List<Map<String, dynamic>>> deployments() => _list('/deployments', 'deployments');
 
+  /// Step-level jobs for a workflow run (drives the live terminal stream).
+  Future<List<Map<String, dynamic>>> runJobs(Object runId) =>
+      _list('/run-jobs?id=${Uri.encodeQueryComponent('$runId')}', 'jobs');
+
+  /// Fire the Guardian drill for real: the proxy worker forwards a
+  /// repository_dispatch (guardian_drill) using its server-side GitHub token.
+  /// [mode] is 'automatic' (push to main + deploy) or 'human' (open a PR).
+  /// Returns true if the dispatch was accepted (HTTP 200).
+  Future<bool> dispatchDrill({
+    String mode = 'human',
+    String target = 'tool/guardian_drill_target.mjs',
+  }) async {
+    try {
+      final res = await _client.post(
+        Uri.parse('$_base${_withRepo('/dispatch')}'),
+        headers: {..._headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'event_type': 'guardian_drill',
+          'client_payload': {'mode': mode, 'target': target},
+        }),
+      );
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> connected() async {
     try {
       final res = await _client.get(Uri.parse('$_base/config'), headers: _headers);
