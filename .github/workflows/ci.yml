@@ -11,10 +11,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   FLUTTER_VERSION: '3.41.6'
   NODE_VERSION: '20'
-  AUTO_FIX_URL: 'https://alert-notifier.aziz-nagati01.workers.dev'
 
 jobs:
   flutter:
@@ -51,135 +53,16 @@ jobs:
       - name: Static analysis
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: Run tests and capture errors
-        id: tests
-        continue-on-error: true
-        run: flutter test --reporter expanded 2>&1 | tee test_output.log
-
-      - name: Guard – skip if previous commit was AI fix
-        id: guard
-        if: steps.tests.outcome == 'failure'
-        run: |
-          LAST_MSG=$(git log -1 --pretty=%s)
-          if [[ "$LAST_MSG" == "🤖"* ]]; then
-            echo "is_autofix=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Last commit is an AI auto-fix; skipping self-heal to prevent infinite loop."
-          else
-            echo "is_autofix=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Determine failing test file
-        id: find_test
-        if: steps.tests.outcome == 'failure' && steps.guard.outputs.is_autofix == 'false'
-        run: |
-          FAILING_FILE=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '_test\.dart$' | head -1)
-          if [ -z "$FAILING_FILE" ]; then
-            FAILING_FILE=$(grep -oP '[^\s]+_test\.dart' test_output.log | head -1 | sed 's/^.*alertsysapp\///')
-          fi
-          echo "file=$FAILING_FILE" >> "$GITHUB_OUTPUT"
-          if [ -n "$FAILING_FILE" ]; then
-            echo "Found failing test file: $FAILING_FILE"
-          else
-            echo "::warning::Could not determine which test file to fix."
-          fi
-
-      - name: Collect relevant source files
-        id: collect
-        if: steps.tests.outcome == 'failure' && steps.guard.outputs.is_autofix == 'false' && steps.find_test.outputs.file != ''
-        run: |
-          FAILING_FILE="${{ steps.find_test.outputs.file }}"
-          ERRORS=$(cat test_output.log)
-          TEST_CONTENT=$(cat "$FAILING_FILE")
-
-          # Collect all Dart files used by the test (the test itself + all its imports)
-          FILES_JSON=$(echo "$TEST_CONTENT" | grep "^import" | sed -E "s/^import['\"]([^'\"]+)['\"];.*/\1/" | while read import_path; do
-            # Translate package imports to actual paths inside lib/
-            if [[ "$import_path" == package:alertsysapp/* ]]; then
-              real_path="lib/${import_path#package:alertsysapp/}"
-            elif [[ "$import_path" == package:* ]]; then
-              # Skip external packages
-              continue
-            else
-              # relative import – assumes test directory
-              real_path="$(dirname "$FAILING_FILE")/$import_path"
-            fi
-            if [ -f "$real_path" ]; then
-              echo "{\"path\":\"$real_path\",\"content\":$(cat "$real_path" | jq -Rs .)}"
-            fi
-          done)
-
-          # Add the test file itself
-          TEST_ENTRY=$(jq -n --arg path "$FAILING_FILE" --arg content "$TEST_CONTENT" '{path: $path, content: $content}')
-
-          # Build the final files array (test file first, then imported files)
-          ALL_FILES=$(echo "[$TEST_ENTRY,$(echo "$FILES_JSON" | paste -sd, -)]" | jq '.')
-
-          echo "files_json<<JSON_EOF" >> "$GITHUB_OUTPUT"
-          echo "$ALL_FILES" >> "$GITHUB_OUTPUT"
-          echo "JSON_EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Call AI full‑context auto‑fix
-        id: autofix
-        if: steps.tests.outcome == 'failure' && steps.guard.outputs.is_autofix == 'false' && steps.find_test.outputs.file != ''
-        run: |
-          FAILING_FILE="${{ steps.find_test.outputs.file }}"
-          ERRORS=$(cat test_output.log)
-          PAYLOAD=$(jq -n \
-            --arg failingTest "$FAILING_FILE" \
-            --arg errors "$ERRORS" \
-            --argjson files "${{ steps.collect.outputs.files_json }}" \
-            '{failingTest: $failingTest, errors: $errors, files: $files}')
-
-          RESPONSE=$(curl -s -X POST "${{ env.AUTO_FIX_URL }}/auto-fix-full" \
-            -H 'Content-Type: application/json' \
-            -H "X-SIA-Worker-Secret: $WORKER_SHARED_SECRET" \
-            -d "$PAYLOAD")
-
-          echo "AI response: $RESPONSE"
-          FIXED=$(echo "$RESPONSE" | jq -r '.fixedFiles // empty')
-
-          if [ "$FIXED" != "null" ] && [ "$FIXED" != "[]" ] && [ -n "$FIXED" ]; then
-            echo "fixed=true" >> "$GITHUB_OUTPUT"
-            echo "$FIXED" | jq -c '.[]' | while read file; do
-              path=$(echo "$file" | jq -r '.path')
-              content=$(echo "$file" | jq -r '.content')
-              printf '%s' "$content" > "$path"
-              echo "Updated $path"
-            done
-          else
-            echo "fixed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::AI returned no fixes."
-          fi
-        env:
-          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
-
-      - name: Commit and push AI fix (all changed files)
-        if: steps.autofix.outputs.fixed == 'true'
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "🤖 Auto-fix failing test: ${{ steps.find_test.outputs.file }}"
-          git push origin HEAD
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fail if tests failed and no fix was applied
-        if: steps.tests.outcome == 'failure' && (steps.guard.outputs.is_autofix == 'true' || steps.autofix.outputs.fixed != 'true')
-        run: |
-          echo "Tests failed and no automatic fix was applied."
-          exit 1
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
 
       - name: Build Android APK (debug)
-        if: steps.tests.outcome == 'success'
         run: flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
       - name: Build Web release
-        if: steps.tests.outcome == 'success'
         run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
-      - name: Upload web build artefact
-        if: steps.tests.outcome == 'success'
+      - name: Upload web build artifact
         uses: actions/upload-artifact@v4
         with:
           name: web-build
@@ -199,15 +82,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - run: npm ci || npm install
+      - name: Install Node dependencies
+        run: npm ci
 
-      - run: npm test
+      - name: Run worker and rules tests
+        run: npm test
 
-      - name: Deploy workers (only on non‑AI‑fix pushes to main)
+      - name: Deploy workers (protected main pushes only)
         if: >
           github.event_name == 'push' &&
-          github.ref == 'refs/heads/main' &&
-          !startsWith(github.event.head_commit.message, '🤖')
+          github.ref == 'refs/heads/main'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

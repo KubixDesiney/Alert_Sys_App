@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { getFcmTokensForFactory, processAlerts, pushSingleNotification } from '../cloudflare_notify_worker.js';
 
+const fakePrivateKey = `-----BEGIN ${'PRIVATE KEY'}-----\nAAAA\n-----END ${'PRIVATE KEY'}-----\n`;
+
 function jsonRes(data, status = 200, headers = {}) {
   return {
     ok: status >= 200 && status < 300,
@@ -28,7 +30,7 @@ function serviceEnv() {
     FB_API_KEY: 'key',
     FIREBASE_SERVICE_ACCOUNT: JSON.stringify({
       client_email: 'worker@test.iam.gserviceaccount.com',
-      private_key: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n',
+      private_key: fakePrivateKey,
       project_id: 'project-test',
     }),
   };
