@@ -382,6 +382,48 @@ class _Providers {
       defaultModel: '@cf/meta/llama-3.1-8b',
     ),
     _Provider(
+      id: 'qwen',
+      name: 'Alibaba Qwen',
+      color: Color(0xFF615CED),
+      tokenHint: 'sk-…',
+      defaultModel: 'qwen-max',
+    ),
+    _Provider(
+      id: 'groq',
+      name: 'Groq',
+      color: Color(0xFFF55036),
+      tokenHint: 'gsk_…',
+      defaultModel: 'llama-3.3-70b-versatile',
+    ),
+    _Provider(
+      id: 'moonshot',
+      name: 'Moonshot Kimi',
+      color: Color(0xFF1F1F3A),
+      tokenHint: 'sk-…',
+      defaultModel: 'moonshot-v1-128k',
+    ),
+    _Provider(
+      id: 'together',
+      name: 'Together AI',
+      color: Color(0xFF0F6FFF),
+      tokenHint: 'API key',
+      defaultModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    ),
+    _Provider(
+      id: 'fireworks',
+      name: 'Fireworks AI',
+      color: Color(0xFF6B2FB3),
+      tokenHint: 'fw_…',
+      defaultModel: 'accounts/fireworks/models/llama-v3p3-70b-instruct',
+    ),
+    _Provider(
+      id: 'openrouter',
+      name: 'OpenRouter',
+      color: Color(0xFF6467F2),
+      tokenHint: 'sk-or-…',
+      defaultModel: 'openai/gpt-4o',
+    ),
+    _Provider(
       id: 'other',
       name: 'Other / Custom',
       color: Color(0xFF64748B),
@@ -4059,7 +4101,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   }
 
   Future<void> _uploadMd(String key) async {
-    final res = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['md'], withData: true);
+    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['md'], withData: true);
     if (res == null || res.files.isEmpty) return;
     final f = res.files.first;
     final bytes = f.bytes;
