@@ -15,7 +15,7 @@
     "deploy:notify": "wrangler deploy --config wrangler.notify.toml",
     "deploy:workers": "npm run deploy:ai && npm run deploy:notify",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js --coverage",
-    "test:mutation": "node tool/mutation_test.mjs --target tool/guardian_preflight.mjs --cmd \"npm test -- worker_test/guardian_preflight.test.js\" --floor 55",
+    "test:mutation": "node tool/mutation_test.mjs --target tool/guardian_preflight.mjs --cmd \"npm test -- worker_test/guardian_preflight.test.js\" --floor 55 && node tool/mutation_test.mjs --target tool/guardian_providers.mjs --cmd \"npm test -- worker_test/guardian_providers.test.js\" --floor 40 && node tool/mutation_test.mjs --target worker/scoring.js --cmd \"npm test -- worker_test/scoring.test.js worker_test/score_supervisor.test.js\" --floor 35",
     "bench": "node tool/load_benchmark.mjs",
     "bench:ci": "node tool/load_benchmark.mjs --sups=1000 --alerts=50000 --decisions=2000 --max-p99=5"
   },
