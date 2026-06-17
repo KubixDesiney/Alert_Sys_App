@@ -26,6 +26,7 @@ import 'services/worker_trigger_queue.dart';
 import 'services/background_sync_service.dart';
 import 'services/app_lifecycle_observer.dart';
 import 'services/bug_report_service.dart';
+import 'services/telemetry_service.dart';
 import 'theme.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'services/connectivity_service.dart';
@@ -80,6 +81,8 @@ void main() async {
   // Route every ERROR-level log and uncaught async error into the bugs
   // pipeline surfaced on the SuperAdmin Logs tab.
   BugReportService.instance.init();
+  // Crash-free / error-rate telemetry (chains the hooks above, never replaces).
+  TelemetryService.instance.init();
   await OfflineDatabaseService.configure();
   // Initialize background sync service for offline support
   BackgroundSyncService.instance.initialize();

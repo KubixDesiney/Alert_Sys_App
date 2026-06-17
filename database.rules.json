@@ -423,6 +423,21 @@
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')"
     },
 
+    "telemetry": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".indexOn": ["lastAt"],
+      "daily": {
+        "$date": {
+          ".write": "auth != null",
+          "sessions": { ".validate": "newData.isNumber()" },
+          "errorSessions": { ".validate": "newData.isNumber()" },
+          "errors": { ".validate": "newData.isNumber()" },
+          "lastAt": { ".validate": "newData.isString()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
     "branding_config": {
       ".read": true,
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",

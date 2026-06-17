@@ -54,6 +54,7 @@ class MonitorChecks {
   final bool backup;
   final bool errorSpike;
   final bool notificationBacklog;
+  final bool appErrorBudget;
 
   const MonitorChecks({
     this.aiWorker = true,
@@ -62,6 +63,7 @@ class MonitorChecks {
     this.backup = true,
     this.errorSpike = true,
     this.notificationBacklog = true,
+    this.appErrorBudget = true,
   });
 
   factory MonitorChecks.fromMap(Map? m) {
@@ -74,6 +76,7 @@ class MonitorChecks {
       backup: v('backup', true),
       errorSpike: v('errorSpike', true),
       notificationBacklog: v('notificationBacklog', true),
+      appErrorBudget: v('appErrorBudget', true),
     );
   }
 
@@ -84,6 +87,7 @@ class MonitorChecks {
         'backup': backup,
         'errorSpike': errorSpike,
         'notificationBacklog': notificationBacklog,
+        'appErrorBudget': appErrorBudget,
       };
 
   MonitorChecks copyWith({
@@ -93,6 +97,7 @@ class MonitorChecks {
     bool? backup,
     bool? errorSpike,
     bool? notificationBacklog,
+    bool? appErrorBudget,
   }) =>
       MonitorChecks(
         aiWorker: aiWorker ?? this.aiWorker,
@@ -101,6 +106,7 @@ class MonitorChecks {
         backup: backup ?? this.backup,
         errorSpike: errorSpike ?? this.errorSpike,
         notificationBacklog: notificationBacklog ?? this.notificationBacklog,
+        appErrorBudget: appErrorBudget ?? this.appErrorBudget,
       );
 }
 
@@ -113,6 +119,7 @@ class MonitoringConfig {
   final String url;
   final String chatId; // Telegram
   final MonitorChecks checks;
+  final int crashFreeSlo; // % crash-free SLO for the app error budget
 
   const MonitoringConfig({
     this.webhookEnabled = false,
@@ -120,6 +127,7 @@ class MonitoringConfig {
     this.url = '',
     this.chatId = '',
     this.checks = const MonitorChecks(),
+    this.crashFreeSlo = 99,
   });
 
   factory MonitoringConfig.fromMap(Map? m) {
@@ -131,6 +139,8 @@ class MonitoringConfig {
       url: (w['url'] ?? '').toString(),
       chatId: (w['chatId'] ?? '').toString(),
       checks: MonitorChecks.fromMap(map['checks'] is Map ? map['checks'] as Map : null),
+      crashFreeSlo:
+          map['crashFreeSlo'] is num ? (map['crashFreeSlo'] as num).toInt() : 99,
     );
   }
 
@@ -143,6 +153,7 @@ class MonitoringConfig {
           'chatId': chatId.trim(),
         },
         'checks': checks.toMap(),
+        'crashFreeSlo': crashFreeSlo,
         'updatedAt': DateTime.now().toIso8601String(),
       };
 
@@ -152,6 +163,7 @@ class MonitoringConfig {
     String? url,
     String? chatId,
     MonitorChecks? checks,
+    int? crashFreeSlo,
   }) =>
       MonitoringConfig(
         webhookEnabled: webhookEnabled ?? this.webhookEnabled,
@@ -159,6 +171,7 @@ class MonitoringConfig {
         url: url ?? this.url,
         chatId: chatId ?? this.chatId,
         checks: checks ?? this.checks,
+        crashFreeSlo: crashFreeSlo ?? this.crashFreeSlo,
       );
 }
 
