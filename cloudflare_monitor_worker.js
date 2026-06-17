@@ -116,6 +116,20 @@ async function sendAlert(env, cfg, text, state, problems) {
   });
 }
 
+// Pure SLO check on a daily telemetry record. Returns a problem string or null.
+export function crashFreeBreach(daily, sloPercent = 99, minSessions = 20) {
+  const sessions = Number((daily && daily.sessions) || 0);
+  const errorSessions = Number((daily && daily.errorSessions) || 0);
+  if (sessions < minSessions) return null; // not enough signal yet
+  const free = Math.max(0, sessions - errorSessions) / sessions;
+  const slo = (Number(sloPercent) || 99) / 100;
+  if (free < slo) {
+    return `Crash-free ${(free * 100).toFixed(1)}% < SLO ${sloPercent}% ` +
+      `(${errorSessions}/${sessions} sessions hit errors today)`;
+  }
+  return null;
+}
+
 async function runChecks(env) {
   const token = await getAccessToken(env);
   const base = env.FB_DB_URL.endsWith('/') ? env.FB_DB_URL : env.FB_DB_URL + '/';
@@ -154,6 +168,12 @@ async function runChecks(env) {
     const notify = await rtdbGet(base, token, 'workers/health/notifyLastRun');
     const age = ageMin(notify && (notify.at || notify.finishedAt));
     if (age > 12) problems.push(`Notification worker stale (${Number.isFinite(age) ? Math.round(age) + ' min' : 'no pulse'})`);
+  }
+  if (on('appErrorBudget')) {
+    const today = new Date().toISOString().slice(0, 10);
+    const daily = await rtdbGet(base, token, `telemetry/daily/${today}`);
+    const breach = crashFreeBreach(daily, cfg.crashFreeSlo, cfg.minSessions);
+    if (breach) problems.push(breach);
   }
 
   const now = new Date().toISOString();
