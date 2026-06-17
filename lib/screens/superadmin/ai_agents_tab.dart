@@ -206,6 +206,7 @@ const List<_AgentSpec> _kAgents = [
     codename: 'UNIT-06 · CLASSIFIED',
     role: 'Under maintenance — capabilities not yet disclosed',
     icon: Icons.shield_moon_outlined,
+    maintenance: false,
     logoAsset: 'media/guardian_agent_logo.png',
   ),
 ];
@@ -4394,58 +4395,6 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     list.add({'name': f.name, 'content': content, 'at': DateTime.now().toUtc().toIso8601String()});
     await _cfg.child(key).set(list);
   }
-}
-
-class _GuardianScanPainter extends CustomPainter {
-  final Color color;
-  final Animation<double> tick;
-  _GuardianScanPainter({required this.color, required this.tick})
-      : super(repaint: tick);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.shortestSide / 2;
-    final t = tick.value;
-    for (var i = 1; i <= 3; i++) {
-      canvas.drawCircle(
-        c,
-        r * i / 3,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 0.8
-          ..color = color.withValues(alpha: 0.22),
-      );
-    }
-    // Sweeping radar beam.
-    final angle = t * math.pi * 2;
-    canvas.drawArc(
-      Rect.fromCircle(center: c, radius: r - 1),
-      angle,
-      0.7,
-      true,
-      Paint()
-        ..shader = SweepGradient(
-          startAngle: angle,
-          endAngle: angle + 0.7,
-          colors: [color.withValues(alpha: 0), color.withValues(alpha: 0.35)],
-        ).createShader(Rect.fromCircle(center: c, radius: r)),
-    );
-    // Expanding maintenance pulse.
-    final pulse = (t * 2) % 1.0;
-    canvas.drawCircle(
-      c,
-      r * pulse,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..color = color.withValues(alpha: (1 - pulse) * 0.5),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _GuardianScanPainter old) =>
-      old.color != color;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
