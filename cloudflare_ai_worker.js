@@ -1441,6 +1441,7 @@ function buildSupStats(alertsMap = {}) {
         typeTotalTimes: {},
         stationCounts: {},
         conveyorCounts: {},
+        criticalCount: 0,
       };
     }
     return stats[uid];
@@ -1460,6 +1461,7 @@ function buildSupStats(alertsMap = {}) {
       entry.typeTotalTimes[type] = (entry.typeTotalTimes[type] || 0) + alert.elapsedTime;
       entry.stationCounts[stationKey] = (entry.stationCounts[stationKey] || 0) + 1;
       entry.conveyorCounts[conveyorKey] = (entry.conveyorCounts[conveyorKey] || 0) + 1;
+      if (alert.isCritical === true) entry.criticalCount = (entry.criticalCount || 0) + 1;
     }
   }
   for (const id of Object.keys(stats)) {
@@ -1474,7 +1476,46 @@ function buildSupStats(alertsMap = {}) {
   return stats;
 }
 
-function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now, { isCommander = false, reinforcementAdjustment = 0 } = {}) {
+// ── Live, SuperAdmin-tunable assignment weights ──────────────────────────────
+// The Shift Commander BRAIN tab lets a SuperAdmin drag each reasoning factor's
+// influence. Those edits land under `ai_agents/shift/settings/weights/assignments`
+// as a slug→(0..1) map. The slugs and their baseline influence MUST mirror the
+// Dart `_kShiftFactors` defaults in lib/screens/superadmin/ai_agents_tab.dart.
+const _SHIFT_ASSIGN_DEFAULTS = {
+  factory: 0.95,
+  type: 0.80,
+  speed: 0.62,
+  station: 0.55,
+  load: 0.70,
+  critical: 0.50,
+  reinforcement: 0.65,
+};
+
+// Turn the stored 0..1 weights into per-component multipliers (userWeight /
+// defaultWeight), clamped to [0, 3]. Returns null when nothing is configured so
+// scoreSupervisor takes its exact original path (zero behaviour change, and the
+// fail-open control read can never alter assignments on a hiccup).
+function _shiftAssignmentWeights(control) {
+  const raw = control?.shift?.settings?.weights?.assignments;
+  if (!raw || typeof raw !== 'object') return null;
+  const mult = {};
+  let any = false;
+  for (const [slug, base] of Object.entries(_SHIFT_ASSIGN_DEFAULTS)) {
+    const v = raw[slug];
+    if (typeof v === 'number' && Number.isFinite(v) && base > 0) {
+      const m = Math.max(0, Math.min(3, v / base));
+      mult[slug] = m;
+      any = true;
+    } else {
+      mult[slug] = 1;
+    }
+  }
+  return any ? mult : null;
+}
+
+function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, now, { isCommander = false, reinforcementAdjustment = 0, weights = null } = {}) {
+  // Per-factor influence multiplier (1 = unchanged). Absent weights ⇒ identity.
+  const W = (k) => (weights && Number.isFinite(weights[k]) ? weights[k] : 1);
   let score = 0;
   const reasons = [];
   const supFactory = aiSanitizeFactoryId(sup?.usine || sup?.factoryId || '');
@@ -1484,26 +1525,28 @@ function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, 
   const typeCount = supStats.typeCounts?.[type] || 0;
 
   if (alertFactory && supFactory && alertFactory === supFactory) {
-    score += 30;
-    reasons.push('Same factory (+30)');
+    const v = 30 * W('factory');
+    score += v;
+    reasons.push(`Same factory (+${Math.round(v)})`);
   } else if (!isCommander) {
     // Under AI Shift Commander the cross-factory penalty is waived so that
     // experienced shift members from other factories can compete fairly.
-    score -= 25;
-    reasons.push('Different factory (−25)');
+    const v = 25 * W('factory');
+    score -= v;
+    reasons.push(`Different factory (−${Math.round(v)})`);
   }
 
   if (typeCount > 0) {
-    const bonus = Math.min(typeCount * 4, 40);
+    const bonus = Math.min(typeCount * 4, 40) * W('type');
     score += bonus;
-    reasons.push(`${typeCount} past ${type} resolved (+${bonus})`);
+    reasons.push(`${typeCount} past ${type} resolved (+${Math.round(bonus)})`);
   } else {
     reasons.push(`No prior ${type} experience`);
   }
 
   const avgTime = supStats.typeAvgRes?.[type];
   if (avgTime !== undefined && avgTime !== null) {
-    const speedBonus = Math.min(Math.max(0, 60 - avgTime), 25);
+    const speedBonus = Math.min(Math.max(0, 60 - avgTime), 25) * W('speed');
     score += speedBonus;
     reasons.push(`Avg resolution ${Math.floor(avgTime)}min (+${Math.floor(speedBonus)})`);
   }
@@ -1511,23 +1554,34 @@ function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, 
   const stationKey = `${alert.usine || ''}|${alert.convoyeur}|${alert.poste}`;
   const stationCount = supStats.stationCounts?.[stationKey] || 0;
   if (stationCount > 0) {
-    const bonus = Math.min(stationCount * 6, 30);
+    const bonus = Math.min(stationCount * 6, 30) * W('station');
     score += bonus;
-    reasons.push(`${stationCount} fixes at workstation (+${bonus})`);
+    reasons.push(`${stationCount} fixes at workstation (+${Math.round(bonus)})`);
   }
 
   const convKey = `${alert.usine || ''}|${alert.convoyeur}`;
   const convCount = supStats.conveyorCounts?.[convKey] || 0;
   if (convCount > 0) {
-    const bonus = Math.min(convCount * 1.5, 15);
+    const bonus = Math.min(convCount * 1.5, 15) * W('station');
     score += bonus;
-    reasons.push(`${convCount} fixes on line (+${bonus})`);
+    reasons.push(`${convCount} fixes on line (+${Math.round(bonus)})`);
   }
 
   if (!alert.isCritical && recentAssignments > 0) {
-    const penalty = recentAssignments * 8;
+    const penalty = recentAssignments * 8 * W('load');
     score -= penalty;
-    reasons.push(`Recent load (−${penalty})`);
+    reasons.push(`Recent load (−${Math.round(penalty)})`);
+  }
+
+  // Critical record — rewards a proven track record on critical alerts, but only
+  // when the SuperAdmin boosts this factor above its baseline (so it stays a
+  // no-op at default weight and never silently shifts scoring).
+  if (alert.isCritical === true) {
+    const critBoost = (supStats.criticalCount || 0) * 6 * Math.max(0, W('critical') - 1);
+    if (critBoost >= 0.5) {
+      score += critBoost;
+      reasons.push(`Critical track record (+${Math.round(critBoost)})`);
+    }
   }
 
   const fb = feedbackSummary[sup.uid] || {};
@@ -1537,19 +1591,20 @@ function scoreSupervisor(sup, alert, stats, feedbackSummary, recentAssignments, 
     (fb.rejectedAssignments || 0) * 2 -
     (fb.abortedAssignments || 0) * 1.5,
     -20
-  ), 20);
+  ), 20) * W('reinforcement');
   if (adjustment !== 0) {
     score += adjustment;
-    reasons.push(`Feedback adjustment (${adjustment > 0 ? '+' : ''}${adjustment})`);
+    reasons.push(`Feedback adjustment (${adjustment > 0 ? '+' : ''}${Math.round(adjustment) === adjustment ? adjustment : adjustment.toFixed(1)})`);
   }
 
   // Reinforcement adjustment — same ±15% cap as the Dart AIScoringEngine.
   // Only apply if the base score is positive (to match Dart's maxAdj > 0 check).
-  if (reinforcementAdjustment !== 0) {
+  const ra = reinforcementAdjustment * W('reinforcement');
+  if (ra !== 0) {
     const raw = score;
     const maxAdj = raw * 0.15;
     if (maxAdj > 0) {
-      const clamped = Math.max(-maxAdj, Math.min(maxAdj, reinforcementAdjustment));
+      const clamped = Math.max(-maxAdj, Math.min(maxAdj, ra));
       if (Math.abs(clamped) >= 0.01) {
         score += clamped;
         const rounded = Math.round(clamped);
@@ -2618,6 +2673,159 @@ async function _runLlama(prompt, env) {
   }
 }
 
+// ============ Configurable LLM router (Assist / Briefing) ============
+// IT can point the Assist and Briefing agents at a stronger model from the
+// SuperAdmin → AI Agents console. The model id + the company's own API key live
+// in RTDB at ai_model_config/{agent}. Default is the built-in Cloudflare Workers
+// AI Llama (no key, no cost). Any external provider that fails or has no key
+// transparently falls back to Llama, so a misconfiguration never blocks an agent.
+// The builder/parse helpers are pure so they're unit-tested (worker_test/llm_router.test.js).
+export const LLM_MODELS = {
+  'llama-3.2': { provider: 'cloudflare', model: '@cf/meta/llama-3.2-3b-instruct' },
+  'gpt-4o': { provider: 'openai', model: 'gpt-4o' },
+  'gpt-4o-mini': { provider: 'openai', model: 'gpt-4o-mini' },
+  'claude-sonnet': { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+  'claude-opus': { provider: 'anthropic', model: 'claude-opus-4-8' },
+  'claude-haiku': { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+  'gemini-flash': { provider: 'google', model: 'gemini-1.5-flash' },
+  'gemini-pro': { provider: 'google', model: 'gemini-1.5-pro' },
+  'mistral-large': { provider: 'mistral', model: 'mistral-large-latest' },
+  'grok-2': { provider: 'xai', model: 'grok-2-latest' },
+  'deepseek-chat': { provider: 'deepseek', model: 'deepseek-chat' },
+  'command-r-plus': { provider: 'cohere', model: 'command-r-plus' },
+};
+
+/** Resolve the stored {modelId, apiKey} to a concrete provider/model, falling
+ *  back to built-in Llama when an external model is selected without a key. */
+export function resolveLlm(config) {
+  const id = (config && config.modelId) || 'llama-3.2';
+  const spec = LLM_MODELS[id] || LLM_MODELS['llama-3.2'];
+  const apiKey = (config && config.apiKey ? String(config.apiKey) : '').trim();
+  if (spec.provider !== 'cloudflare' && !apiKey) {
+    return { provider: 'cloudflare', model: LLM_MODELS['llama-3.2'].model, apiKey: '', fellBack: true };
+  }
+  return { provider: spec.provider, model: spec.model, apiKey, fellBack: false };
+}
+
+/** Build the fetch URL + init for an external provider. Returns null for the
+ *  built-in cloudflare provider (handled by env.AI). Pure — no network. */
+export function llmRequest(provider, model, apiKey, prompt) {
+  const openaiLike = (base) => ({
+    url: `${base}/chat/completions`,
+    init: {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.4 }),
+    },
+  });
+  switch (provider) {
+    case 'openai': return openaiLike('https://api.openai.com/v1');
+    case 'xai': return openaiLike('https://api.x.ai/v1');
+    case 'deepseek': return openaiLike('https://api.deepseek.com/v1');
+    case 'mistral': return openaiLike('https://api.mistral.ai/v1');
+    case 'anthropic':
+      return {
+        url: 'https://api.anthropic.com/v1/messages',
+        init: {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
+        },
+      };
+    case 'google':
+      return {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        },
+      };
+    case 'cohere':
+      return {
+        url: 'https://api.cohere.com/v2/chat',
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }] }),
+        },
+      };
+    default: return null;
+  }
+}
+
+/** Extract the assistant text from a provider's JSON response. Pure. */
+export function llmParse(provider, json) {
+  if (!json) return null;
+  try {
+    switch (provider) {
+      case 'openai':
+      case 'xai':
+      case 'deepseek':
+      case 'mistral':
+        return ((json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) || '').trim() || null;
+      case 'anthropic': {
+        const parts = Array.isArray(json.content) ? json.content : [];
+        return parts.map((p) => (p && p.type === 'text' ? p.text : '')).join('').trim() || null;
+      }
+      case 'google': {
+        const parts = (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) || [];
+        return parts.map((p) => (p && p.text) || '').join('').trim() || null;
+      }
+      case 'cohere': {
+        const parts = (json.message && json.message.content) || [];
+        return (Array.isArray(parts) ? parts.map((p) => (p && p.text) || '').join('') : '').trim() || null;
+      }
+      default: return null;
+    }
+  } catch (_) {
+    return null;
+  }
+}
+
+async function _loadModelConfig(env, token, agent) {
+  try {
+    const r = await fetch(`${env.FB_DB_URL}ai_model_config/${agent}.json?auth=${token}`);
+    if (!r.ok) return null;
+    return (await r.json()) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Run a prompt on the agent's configured model. Always resolves to
+ *  { text, modelUsed, fellBack }; any failure path degrades to built-in Llama. */
+async function _runConfiguredLlm(env, token, agent, prompt) {
+  const llama = LLM_MODELS['llama-3.2'].model;
+  const viaLlama = async (fellBack) => {
+    const text = await _runLlama(prompt, env);
+    return { text, modelUsed: text ? llama : 'fallback', fellBack };
+  };
+  let config = null;
+  try { config = await _loadModelConfig(env, token, agent); } catch (_) {}
+  const r = resolveLlm(config);
+  if (r.provider === 'cloudflare') return viaLlama(r.fellBack);
+  const req = llmRequest(r.provider, r.model, r.apiKey, prompt);
+  if (!req) return viaLlama(true);
+  try {
+    const resp = await fetch(req.url, req.init);
+    if (!resp.ok) {
+      console.error(`[AI] ${r.provider} ${resp.status}; falling back to Llama`);
+      return viaLlama(true);
+    }
+    const parsed = llmParse(r.provider, await resp.json());
+    if (parsed) return { text: parsed, modelUsed: `${r.provider}:${r.model}`, fellBack: false };
+    return viaLlama(true);
+  } catch (e) {
+    console.error(`[AI] ${r.provider} call failed: ${e.message}; falling back to Llama`);
+    return viaLlama(true);
+  }
+}
+
 // /ai-proxy – generic prompt relay (used by auto-fix features).
 // Routed through the security guard: rate-limited, body-size-capped, and
 // the `prompt` field is scanned for prompt-injection patterns before we
@@ -2733,7 +2941,8 @@ async function handleAiSuggest(request, env) {
       history: historyBlock,
     });
 
-    const suggestion = await _runLlama(prompt, env) ?? _AI_FALLBACK;
+    const llm = await _runConfiguredLlm(env, token, 'assist', prompt);
+    const suggestion = llm.text ?? _AI_FALLBACK;
 
     // Fleet telemetry: served counter + activity row for the AI Agents tab.
     _agentBumpStats(env, token, 'assist', {
@@ -2747,6 +2956,7 @@ async function handleAiSuggest(request, env) {
       poste: poste ?? null,
       historyUsed: pastResolutions.length,
       promptSource: template === _ASSIST_DEFAULT_PROMPT ? 'default' : 'override',
+      model: llm.modelUsed,
       outcome: suggestion === _AI_FALLBACK ? 'fallback' : 'served',
     });
 
@@ -3126,15 +3336,10 @@ Begin with "Good morning". Acknowledge what is going well, or that it has been a
     let summary = `Good morning. Last week the team handled ${stats.total} alerts with a ${resolutionRate}% resolution rate and an average response of ${stats.avgResolutionMin} minutes. Stay sharp on critical signals today.`;
     let model = 'fallback';
     try {
-      if (env.AI) {
-        const resp = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-          messages: [{ role: 'user', content: prompt }],
-        });
-        const out = (resp.response || '').trim();
-        if (out) {
-          summary = out;
-          model = '@cf/meta/llama-3.2-3b-instruct';
-        }
+      const out = await _runConfiguredLlm(env, coreCtx.token, 'briefing', prompt);
+      if (out.text) {
+        summary = out.text;
+        model = out.modelUsed;
       }
     } catch (e) {
       console.error('[BRIEFING] AI failed: ' + e.message);
@@ -3675,6 +3880,8 @@ async function aiAssignAlert(alertId, supervisor, reasonSummary, confidence, env
 
 async function runAIAssignments(env, ctx) {
   const token = ctx?.token ?? (await getFirebaseToken(env));
+  // Live, SuperAdmin-tuned per-factor weights (fail-open, 60s cached).
+  const _assignWeights = _shiftAssignmentWeights(await _loadAgentControl(env, token));
   let alertsMap, usersMap, factoriesMap, activeShift;
   if (ctx) {
     alertsMap = ctx.alertsMap;
@@ -3925,7 +4132,7 @@ async function runAIAssignments(env, ctx) {
         feedbackSummary,
         recent,
         now,
-        { isCommander: aiCommander, reinforcementAdjustment: adj },
+        { isCommander: aiCommander, reinforcementAdjustment: adj, weights: _assignWeights },
       );
       return {
         uid: u.uid,
@@ -4829,27 +5036,20 @@ async function generateShiftHandoverSummary(env, ctx, shift) {
     }
   }
   let summary = `Shift "${shift.name || shift.id}" summary — Resolved: ${resolved}, Pending: ${pending}, Critical: ${critical}.`;
-  // Try Workers AI for a richer summary.
-  if (env && env.AI && typeof env.AI.run === 'function') {
-    try {
-      const prompt =
-        `You are an industrial shift handover assistant. Write a concise (5 lines max) handover summary for the incoming shift. ` +
-        `Resolved: ${resolved}, Pending: ${pending}, Critical: ${critical}. ` +
-        `Recent alerts JSON: ${JSON.stringify(items).slice(0, 1800)}. ` +
-        `Highlight risks, what needs attention next, and any cross-factory follow-ups.`;
-      const out = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
-        messages: [
-          { role: 'system', content: 'You are concise, factual, and action-oriented.' },
-          { role: 'user', content: prompt },
-        ],
-      });
-      const text = out?.response || out?.result?.response;
-      if (text && typeof text === 'string') {
-        summary = text.trim();
-      }
-    } catch (e) {
-      console.error('[SHIFT-AI] handover failed: ' + e.message);
+  // Try the shift agent's configured model (default: built-in Llama) for a richer summary.
+  try {
+    const prompt =
+      `You are an industrial shift handover assistant; be concise, factual, and action-oriented. ` +
+      `Write a concise (5 lines max) handover summary for the incoming shift. ` +
+      `Resolved: ${resolved}, Pending: ${pending}, Critical: ${critical}. ` +
+      `Recent alerts JSON: ${JSON.stringify(items).slice(0, 1800)}. ` +
+      `Highlight risks, what needs attention next, and any cross-factory follow-ups.`;
+    const out = await _runConfiguredLlm(env, ctx && ctx.token, 'shift', prompt);
+    if (out && out.text && typeof out.text === 'string') {
+      summary = out.text.trim();
     }
+  } catch (e) {
+    console.error('[SHIFT-AI] handover failed: ' + e.message);
   }
   return { summary, resolved, pending, critical };
 }
@@ -5972,6 +6172,7 @@ export {
   aiResolveFactory,
   buildSupStats,
   scoreSupervisor,
+  _shiftAssignmentWeights,
   inferFactoryLocation,
   haversineDistance,
   runAIAssignments,
