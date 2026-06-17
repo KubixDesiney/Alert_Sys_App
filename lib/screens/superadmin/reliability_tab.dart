@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_database/firebase_database.dart';
 
 import '../../services/monitoring_config_service.dart';
+import '../../services/telemetry_service.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin -> Reliability.
@@ -121,6 +123,8 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _statusRow(),
+            const SizedBox(height: 16),
+            _apmPanel(),
             const SizedBox(height: 16),
             _alertsPanel(),
             const SizedBox(height: 16),
@@ -354,6 +358,74 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
     );
   }
 
+  Widget _apmPanel() {
+    final slo = _cfg.crashFreeSlo;
+    return GlassPanel(
+      accent: Sa.green,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SaSectionHeader(
+            icon: Icons.monitor_heart_outlined,
+            title: 'App health (today)',
+            subtitle: 'Crash-free sessions & error rate — SLA alert below $slo%',
+            accent: Sa.green,
+          ),
+          const SizedBox(height: 12),
+          StreamBuilder<DatabaseEvent>(
+            stream: FirebaseDatabase.instance
+                .ref('telemetry/daily/${TelemetryService.todayKey()}')
+                .onValue,
+            builder: (context, snap) {
+              final m = (snap.data?.snapshot.value as Map?) ?? const {};
+              int n(String k) => (m[k] is num) ? (m[k] as num).toInt() : 0;
+              final sessions = n('sessions');
+              final crashed = n('errorSessions');
+              final errors = n('errors');
+              final pct = TelemetryService.crashFreeRate(
+                      sessions: sessions, errorSessions: crashed) *
+                  100;
+              final enough = sessions >= 20;
+              final breaching = enough && pct < slo;
+              final cfColor = !enough ? Sa.muted : (breaching ? Sa.red : Sa.green);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Expanded(child: _metric('Crash-free', sessions == 0 ? '—' : '${pct.toStringAsFixed(1)}%', cfColor)),
+                    Expanded(child: _metric('Sessions', '$sessions', Sa.cyan)),
+                    Expanded(child: _metric('Crashed', '$crashed', crashed > 0 ? Sa.amber : Sa.muted)),
+                    Expanded(child: _metric('Errors', '$errors', errors > 0 ? Sa.amber : Sa.muted)),
+                  ]),
+                  if (sessions > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      breaching
+                          ? 'Below SLO — the monitor will alert your webhook.'
+                          : enough
+                              ? 'Meeting the $slo% crash-free SLO.'
+                              : 'Collecting data ($sessions/20 sessions before SLO alerting).',
+                      style: Sa.body(size: 11.5, color: breaching ? Sa.red : Sa.muted),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metric(String label, String value, Color color) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: Sa.display(size: 22, color: color)),
+          const SizedBox(height: 2),
+          Text(label.toUpperCase(), style: Sa.mono(size: 9, color: Sa.muted)),
+        ],
+      );
+
   Widget _checksPanel() {
     final c = _cfg.checks;
     final items = <(String, String, bool, MonitorChecks Function(bool))>[
@@ -363,6 +435,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
       ('Backups', 'Nightly snapshot ran and succeeded', c.backup, (v) => c.copyWith(backup: v)),
       ('Error spike', 'Surge of client errors in the last hour', c.errorSpike, (v) => c.copyWith(errorSpike: v)),
       ('Notification backlog', 'Notify worker keeping up', c.notificationBacklog, (v) => c.copyWith(notificationBacklog: v)),
+      ('App error budget', 'Crash-free below the ${_cfg.crashFreeSlo}% SLO', c.appErrorBudget, (v) => c.copyWith(appErrorBudget: v)),
     ];
     return GlassPanel(
       accent: Sa.blue,
