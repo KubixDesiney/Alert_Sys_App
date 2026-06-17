@@ -62,3 +62,16 @@ jobs:
         with:
           name: flutter-coverage
           path: coverage
+
+  mutation:
+    name: Mutation testing (Guardian core, gated)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Mutate guardian_preflight and require the suite to kill mutants
+        run: npm run test:mutation
