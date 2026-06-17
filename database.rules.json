@@ -306,6 +306,15 @@
         "updatedAt": { ".validate": "!newData.exists() || newData.isString()" },
         "promptTemplate": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 8000)" },
         "promptUpdatedAt": { ".validate": "!newData.exists() || newData.isString()" },
+        "settings": {
+          "weights": {
+            "$category": {
+              "$factor": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
+              }
+            }
+          }
+        },
         "logs": {
           ".indexOn": ["at"]
         }
@@ -421,6 +430,18 @@
     "infra_config": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')"
+    },
+
+    "ai_model_config": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "$agent": {
+        "modelId": { ".validate": "newData.isString()" },
+        "apiKey": { ".validate": "!newData.exists() || newData.isString()" },
+        "provider": { ".validate": "!newData.exists() || newData.isString()" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isString()" },
+        "$other": { ".validate": false }
+      }
     },
 
     "telemetry": {
