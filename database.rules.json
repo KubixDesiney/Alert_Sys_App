@@ -487,6 +487,15 @@
       }
     },
 
+    "hardware_lab": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".indexOn": ["updatedAtMs"],
+      "telemetry": {
+        ".indexOn": ["at"]
+      }
+    },
+
     ".read": false,
     ".write": false
   }
