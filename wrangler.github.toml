@@ -7,5 +7,5 @@ compatibility_date = "2024-11-01"
 #   WORKER_SHARED_SECRET  bearer the app authenticates with
 
 [vars]
-GITHUB_REPO = "kubix/Alert_Sys_App"
+GITHUB_REPO = "KubixDesiney/Alert_Sys_App"
 GITHUB_RATE_LIMIT = "120"

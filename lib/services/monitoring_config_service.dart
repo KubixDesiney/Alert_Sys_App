@@ -55,6 +55,7 @@ class MonitorChecks {
   final bool errorSpike;
   final bool notificationBacklog;
   final bool appErrorBudget;
+  final bool modelDrift;
 
   const MonitorChecks({
     this.aiWorker = true,
@@ -64,6 +65,7 @@ class MonitorChecks {
     this.errorSpike = true,
     this.notificationBacklog = true,
     this.appErrorBudget = true,
+    this.modelDrift = true,
   });
 
   factory MonitorChecks.fromMap(Map? m) {
@@ -77,6 +79,7 @@ class MonitorChecks {
       errorSpike: v('errorSpike', true),
       notificationBacklog: v('notificationBacklog', true),
       appErrorBudget: v('appErrorBudget', true),
+      modelDrift: v('modelDrift', true),
     );
   }
 
@@ -88,6 +91,7 @@ class MonitorChecks {
         'errorSpike': errorSpike,
         'notificationBacklog': notificationBacklog,
         'appErrorBudget': appErrorBudget,
+        'modelDrift': modelDrift,
       };
 
   MonitorChecks copyWith({
@@ -98,6 +102,7 @@ class MonitorChecks {
     bool? errorSpike,
     bool? notificationBacklog,
     bool? appErrorBudget,
+    bool? modelDrift,
   }) =>
       MonitorChecks(
         aiWorker: aiWorker ?? this.aiWorker,
@@ -107,6 +112,7 @@ class MonitorChecks {
         errorSpike: errorSpike ?? this.errorSpike,
         notificationBacklog: notificationBacklog ?? this.notificationBacklog,
         appErrorBudget: appErrorBudget ?? this.appErrorBudget,
+        modelDrift: modelDrift ?? this.modelDrift,
       );
 }
 

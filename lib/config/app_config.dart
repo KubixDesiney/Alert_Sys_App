@@ -25,6 +25,14 @@ class AppConfig {
     defaultValue: 'https://alertsys.aziz-nagati01.workers.dev',
   );
 
+  /// GitHub proxy Worker base URL (Guardian console: live Actions + PRs +
+  /// repository_dispatch). The token stays server-side on this worker; the app
+  /// authenticates with [workerSharedSecret].
+  static const String githubWorkerBase = String.fromEnvironment(
+    'ALERTSYS_GITHUB_WORKER_URL',
+    defaultValue: 'https://alertsys-github.aziz-nagati01.workers.dev',
+  );
+
   /// Deprecated alias for old call sites. New code should choose aiWorkerBase
   /// or notifyWorkerBase explicitly.
   static const String workerBaseUrl = aiWorkerBase;
@@ -46,6 +54,7 @@ class AppConfig {
   static String get notifyEndpoint => '$notifyWorkerBase/notify';
   static String get notifyTriggerEndpoint => notifyEndpoint;
   static String get aiRetryEndpoint => '$aiWorkerBase/ai-retry';
+  static String get evalModelEndpoint => '$aiWorkerBase/eval-model';
 
   // ── Timeouts ────────────────────────────────────────────────────────────
   static const Duration defaultRequestTimeout = Duration(seconds: 8);

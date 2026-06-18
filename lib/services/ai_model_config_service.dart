@@ -1,5 +1,10 @@
+import 'dart:convert';
+
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+import '../config/app_config.dart';
 
 /// One selectable LLM for the AI Assist / Briefing agents.
 class AiModel {
@@ -7,7 +12,7 @@ class AiModel {
   final String provider; // cloudflare | openai | anthropic | google | mistral | xai | deepseek | cohere
   final String brandId; // brand-mark id for the real provider logo (meta/openai/anthropic/gemini/…)
   final String label; // shown in the picker
-  final String apiModel; // the exact model string the provider API expects
+  final String providerModel; // the exact model string the provider API expects
   final bool needsKey; // false only for the built-in Cloudflare Workers AI Llama
   final Color color;
   final IconData icon; // fallback glyph
@@ -17,7 +22,7 @@ class AiModel {
     required this.provider,
     required this.brandId,
     required this.label,
-    required this.apiModel,
+    required this.providerModel,
     required this.needsKey,
     required this.color,
     required this.icon,
@@ -33,7 +38,7 @@ const List<AiModel> kAiModels = [
     provider: 'cloudflare',
     brandId: 'meta',
     label: 'Llama 3.2 · built-in (no key)',
-    apiModel: '@cf/meta/llama-3.2-3b-instruct',
+    providerModel: '@cf/meta/llama-3.2-3b-instruct',
     needsKey: false,
     color: Color(0xFFF38020),
     icon: Icons.bolt_rounded,
@@ -43,7 +48,7 @@ const List<AiModel> kAiModels = [
     provider: 'openai',
     brandId: 'openai',
     label: 'OpenAI · GPT-4o',
-    apiModel: 'gpt-4o',
+    providerModel: 'gpt-4o',
     needsKey: true,
     color: Color(0xFF10A37F),
     icon: Icons.auto_awesome,
@@ -53,7 +58,7 @@ const List<AiModel> kAiModels = [
     provider: 'openai',
     brandId: 'openai',
     label: 'OpenAI · GPT-4o mini',
-    apiModel: 'gpt-4o-mini',
+    providerModel: 'gpt-4o-mini',
     needsKey: true,
     color: Color(0xFF10A37F),
     icon: Icons.auto_awesome_outlined,
@@ -63,7 +68,7 @@ const List<AiModel> kAiModels = [
     provider: 'anthropic',
     brandId: 'anthropic',
     label: 'Anthropic · Claude Sonnet',
-    apiModel: 'claude-sonnet-4-6',
+    providerModel: 'claude-sonnet-4-6',
     needsKey: true,
     color: Color(0xFFD97757),
     icon: Icons.psychology_alt,
@@ -73,7 +78,7 @@ const List<AiModel> kAiModels = [
     provider: 'anthropic',
     brandId: 'anthropic',
     label: 'Anthropic · Claude Opus',
-    apiModel: 'claude-opus-4-8',
+    providerModel: 'claude-opus-4-8',
     needsKey: true,
     color: Color(0xFFD97757),
     icon: Icons.psychology,
@@ -83,7 +88,7 @@ const List<AiModel> kAiModels = [
     provider: 'anthropic',
     brandId: 'anthropic',
     label: 'Anthropic · Claude Haiku',
-    apiModel: 'claude-haiku-4-5-20251001',
+    providerModel: 'claude-haiku-4-5-20251001',
     needsKey: true,
     color: Color(0xFFD97757),
     icon: Icons.psychology_outlined,
@@ -93,7 +98,7 @@ const List<AiModel> kAiModels = [
     provider: 'google',
     brandId: 'gemini',
     label: 'Google · Gemini 1.5 Flash',
-    apiModel: 'gemini-1.5-flash',
+    providerModel: 'gemini-1.5-flash',
     needsKey: true,
     color: Color(0xFF4285F4),
     icon: Icons.diamond_outlined,
@@ -103,7 +108,7 @@ const List<AiModel> kAiModels = [
     provider: 'google',
     brandId: 'gemini',
     label: 'Google · Gemini 1.5 Pro',
-    apiModel: 'gemini-1.5-pro',
+    providerModel: 'gemini-1.5-pro',
     needsKey: true,
     color: Color(0xFF4285F4),
     icon: Icons.diamond,
@@ -113,7 +118,7 @@ const List<AiModel> kAiModels = [
     provider: 'mistral',
     brandId: 'mistral',
     label: 'Mistral · Large',
-    apiModel: 'mistral-large-latest',
+    providerModel: 'mistral-large-latest',
     needsKey: true,
     color: Color(0xFFFA520F),
     icon: Icons.air,
@@ -123,7 +128,7 @@ const List<AiModel> kAiModels = [
     provider: 'xai',
     brandId: 'xai',
     label: 'xAI · Grok 2',
-    apiModel: 'grok-2-latest',
+    providerModel: 'grok-2-latest',
     needsKey: true,
     color: Color(0xFF111111),
     icon: Icons.bolt,
@@ -133,7 +138,7 @@ const List<AiModel> kAiModels = [
     provider: 'deepseek',
     brandId: 'deepseek',
     label: 'DeepSeek · V3',
-    apiModel: 'deepseek-chat',
+    providerModel: 'deepseek-chat',
     needsKey: true,
     color: Color(0xFF4D6BFE),
     icon: Icons.travel_explore,
@@ -143,7 +148,7 @@ const List<AiModel> kAiModels = [
     provider: 'cohere',
     brandId: 'cohere',
     label: 'Cohere · Command R+',
-    apiModel: 'command-r-plus',
+    providerModel: 'command-r-plus',
     needsKey: true,
     color: Color(0xFF39594D),
     icon: Icons.forum_outlined,
@@ -182,6 +187,54 @@ class AiModelConfig {
       };
 }
 
+/// One model's eval score: overall 0..1 plus per-dimension breakdown.
+class ModelEvalScore {
+  final String modelId;
+  final double score;
+  final Map<String, double> dims;
+  const ModelEvalScore(
+      {required this.modelId, required this.score, required this.dims});
+
+  factory ModelEvalScore.fromMap(Map? m) {
+    final map = m ?? const {};
+    final dims = <String, double>{};
+    final raw = map['dims'];
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        if (v is num) dims[k.toString()] = v.toDouble();
+      });
+    }
+    return ModelEvalScore(
+      modelId: (map['modelId'] ?? '').toString(),
+      score: (map['score'] is num) ? (map['score'] as num).toDouble() : 0.0,
+      dims: dims,
+    );
+  }
+}
+
+/// Result of a head-to-head eval: candidate vs the current champion model.
+class ModelEvalResult {
+  final String verdict; // better | similar | worse
+  final double delta;
+  final ModelEvalScore candidate;
+  final ModelEvalScore champion;
+  const ModelEvalResult({
+    required this.verdict,
+    required this.delta,
+    required this.candidate,
+    required this.champion,
+  });
+
+  factory ModelEvalResult.fromMap(Map m) => ModelEvalResult(
+        verdict: (m['verdict'] ?? 'similar').toString(),
+        delta: (m['delta'] is num) ? (m['delta'] as num).toDouble() : 0.0,
+        candidate:
+            ModelEvalScore.fromMap(m['candidate'] is Map ? m['candidate'] as Map : null),
+        champion:
+            ModelEvalScore.fromMap(m['champion'] is Map ? m['champion'] as Map : null),
+      );
+}
+
 class AiModelConfigService {
   AiModelConfigService({FirebaseDatabase? db})
       : _db = db ?? FirebaseDatabase.instance;
@@ -199,4 +252,27 @@ class AiModelConfigService {
 
   Future<void> save(String agent, AiModelConfig config) =>
       _ref(agent).set(config.toMap());
+
+  /// Head-to-head eval: runs the candidate model and the current champion on a
+  /// set of golden tasks (worker side) and returns scores + a verdict, so a
+  /// model swap can be measured before it's deployed.
+  Future<ModelEvalResult> evaluate(String agent, AiModelConfig candidate) async {
+    final res = await http
+        .post(
+          Uri.parse(AppConfig.evalModelEndpoint),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'agent': agent,
+            'modelId': candidate.modelId,
+            'apiKey': candidate.apiKey.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+    if (res.statusCode != 200) {
+      throw Exception('Eval failed (${res.statusCode})');
+    }
+    final data = jsonDecode(res.body);
+    if (data is! Map) throw Exception('Unexpected eval response');
+    return ModelEvalResult.fromMap(data);
+  }
 }

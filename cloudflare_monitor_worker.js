@@ -175,6 +175,14 @@ async function runChecks(env) {
     const breach = crashFreeBreach(daily, cfg.crashFreeSlo, cfg.minSessions);
     if (breach) problems.push(breach);
   }
+  if (on('modelDrift')) {
+    for (const agent of ['assist', 'briefing', 'shift']) {
+      const ds = await rtdbGet(base, token, `ai_model_evals/${agent}/driftStatus`);
+      if (ds && ds.drift === true) {
+        problems.push(`Model drift · ${agent}: ${ds.reason || 'quality regressed'}`);
+      }
+    }
+  }
 
   const now = new Date().toISOString();
   const state = problems.length ? 'degraded' : 'ok';

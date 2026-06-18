@@ -444,6 +444,11 @@
       }
     },
 
+    "ai_model_evals": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": false
+    },
+
     "telemetry": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".indexOn": ["lastAt"],
