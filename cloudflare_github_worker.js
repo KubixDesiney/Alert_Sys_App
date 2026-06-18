@@ -125,6 +125,31 @@ export function mapJob(j = {}) {
   };
 }
 
+/**
+ * Keep only the last [max] characters of a raw log, trimmed to a clean line
+ * boundary so the live terminal never starts mid-line. GitHub job logs can be
+ * megabytes; the console only renders a live tail.
+ */
+export function tailText(text, max = 16000) {
+  const s = String(text == null ? '' : text);
+  if (s.length <= max) return s;
+  const cut = s.slice(s.length - max);
+  const nl = cut.indexOf('\n');
+  return nl >= 0 && nl < cut.length - 1 ? cut.slice(nl + 1) : cut;
+}
+
+/**
+ * Strip the leading "2026-06-18T12:00:01.1234567Z " ISO timestamp GitHub prefixes
+ * on every raw-log line, so the terminal can render its own clock and the real
+ * command output (`$ npm test`, etc.) reads cleanly.
+ */
+export function stripLogTimestamps(text) {
+  return String(text == null ? '' : text)
+    .split('\n')
+    .map((l) => l.replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s/, ''))
+    .join('\n');
+}
+
 // ── http ───────────────────────────────────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -140,6 +165,25 @@ async function ghGet(token, repo, path) {
   });
   if (!res.ok) throw new Error(`github ${path}: ${res.status}`);
   return res.json();
+}
+// Raw text fetch (GitHub returns job logs as a 302 -> signed blob URL). We follow
+// the redirect manually and drop the Authorization header on the second hop so the
+// signed URL accepts it. Returns '' (not throw) when logs aren't ready yet (404).
+async function ghGetText(token, repo, path) {
+  const res = await fetch(`${GH}/repos/${repo}${path}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': UA },
+    redirect: 'manual',
+  });
+  if (res.status >= 300 && res.status < 400) {
+    const loc = res.headers.get('location');
+    if (!loc) return '';
+    const follow = await fetch(loc, { headers: { 'User-Agent': UA } });
+    if (!follow.ok) return '';
+    return follow.text();
+  }
+  if (res.status === 404) return '';
+  if (!res.ok) throw new Error(`github ${path}: ${res.status}`);
+  return res.text();
 }
 async function ghPost(token, repo, path, body) {
   const res = await fetch(`${GH}/repos/${repo}${path}`, {
@@ -187,6 +231,15 @@ export default {
         const id = url.searchParams.get('id');
         if (!id) return json({ error: 'missing id' }, 400);
         return json({ jobs: ((await ghGet(token, repo, `/actions/runs/${encodeURIComponent(id)}/jobs`)).jobs || []).map(mapJob) });
+      }
+      if (path === '/job-logs') {
+        // Raw stdout of one job (the real `$ npm test` / build output) for the
+        // live Guardian terminal. Best-effort: empty while the job is warming up.
+        const id = url.searchParams.get('id');
+        if (!id) return json({ error: 'missing id' }, 400);
+        let text = '';
+        try { text = await ghGetText(token, repo, `/actions/jobs/${encodeURIComponent(id)}/logs`); } catch (_) { text = ''; }
+        return json({ id, logs: tailText(stripLogTimestamps(text)) });
       }
       return json({ error: 'not_found' }, 404);
     } catch (e) {
