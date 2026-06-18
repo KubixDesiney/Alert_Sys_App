@@ -57,10 +57,10 @@ jobs:
         run: flutter test --reporter expanded
 
       - name: Build Android APK (debug)
-        run: flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
+        run: flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev --dart-define=ALERTSYS_GITHUB_WORKER_URL=https://alertsys-github.aziz-nagati01.workers.dev
 
       - name: Build Web release
-        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
+        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev --dart-define=ALERTSYS_GITHUB_WORKER_URL=https://alertsys-github.aziz-nagati01.workers.dev
 
       - name: Upload web build artifact
         uses: actions/upload-artifact@v4
@@ -98,3 +98,25 @@ jobs:
         run: |
           npx wrangler deploy --config wrangler.ai.toml
           npx wrangler deploy --config wrangler.notify.toml
+          npx wrangler deploy --config wrangler.github.toml
+
+      # Idempotent: re-running `wrangler secret put` with the same value is a no-op
+      # other than a redeploy. The actual GitHub PAT lives only in the RTDB vault
+      # (ai_agent_secrets/guardian/githubToken) — this worker just needs creds to
+      # read that vault, so we never have to put the PAT itself in this workflow.
+      - name: Set github worker secrets (protected main pushes only)
+        if: >
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          FB_DB_URL: ${{ vars.FB_DB_URL }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
+        run: |
+          set -euo pipefail
+          put() { if [ -n "$2" ]; then printf '%s' "$2" | npx wrangler secret put "$1" --config wrangler.github.toml >/dev/null && echo "  set $1"; fi; }
+          put WORKER_SHARED_SECRET "$WORKER_SHARED_SECRET"
+          put FB_DB_URL "$FB_DB_URL"
+          put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT"

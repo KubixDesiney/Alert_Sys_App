@@ -2797,16 +2797,15 @@ async function _loadModelConfig(env, token, agent) {
   }
 }
 
-/** Run a prompt on the agent's configured model. Always resolves to
+/** Run a prompt on a SPECIFIC model config { modelId, apiKey } — used by both
+ *  the live agents and the eval harness. Always resolves to
  *  { text, modelUsed, fellBack }; any failure path degrades to built-in Llama. */
-async function _runConfiguredLlm(env, token, agent, prompt) {
+async function _runLlmConfig(env, config, prompt) {
   const llama = LLM_MODELS['llama-3.2'].model;
   const viaLlama = async (fellBack) => {
     const text = await _runLlama(prompt, env);
     return { text, modelUsed: text ? llama : 'fallback', fellBack };
   };
-  let config = null;
-  try { config = await _loadModelConfig(env, token, agent); } catch (_) {}
   const r = resolveLlm(config);
   if (r.provider === 'cloudflare') return viaLlama(r.fellBack);
   const req = llmRequest(r.provider, r.model, r.apiKey, prompt);
@@ -2823,6 +2822,329 @@ async function _runConfiguredLlm(env, token, agent, prompt) {
   } catch (e) {
     console.error(`[AI] ${r.provider} call failed: ${e.message}; falling back to Llama`);
     return viaLlama(true);
+  }
+}
+
+/** Run a prompt on the agent's configured model (loads ai_model_config). */
+async function _runConfiguredLlm(env, token, agent, prompt) {
+  let config = null;
+  try { config = await _loadModelConfig(env, token, agent); } catch (_) {}
+  return _runLlmConfig(env, config, prompt);
+}
+
+// ============ Model eval / drift harness ============
+// When IT swaps an agent's model we MEASURE whether it actually got better,
+// instead of assuming. A small set of golden tasks per agent runs on the
+// candidate model and the current champion; each output is scored on
+// deterministic quality rubrics (no judge model → cheap + reproducible) and a
+// verdict (better / similar / worse) is returned. Every run is also logged to
+// ai_model_evals/{agent}/history so the deployed model's quality can be watched
+// for drift over time. The scorers + verdict are pure and unit-tested
+// (worker_test/model_eval.test.js).
+function _evalCountSteps(text) {
+  return String(text)
+    .split(/\n|•|(?:^|\s)[-*]\s|\d+[.)]\s/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 3).length;
+}
+function _evalHas(text, needle) {
+  return String(text).toLowerCase().includes(String(needle).toLowerCase());
+}
+function _evalAvg(obj) {
+  const vals = Object.values(obj);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+}
+
+/** Score an Assist resolution suggestion. ctx: { typeLabel, machine, historyKeywords[], fallback } */
+export function scoreAssistOutput(text, ctx = {}) {
+  const t = String(text || '');
+  const dims = {
+    notFallback:
+      t.trim().length > 30 && t.trim() !== String(ctx.fallback || '').trim() ? 1 : 0,
+    actionable: (() => {
+      const n = _evalCountSteps(t);
+      return n >= 2 ? 1 : n === 1 ? 0.5 : 0;
+    })(),
+    onTopic:
+      (ctx.typeLabel && _evalHas(t, ctx.typeLabel)) ||
+      (ctx.machine && _evalHas(t, ctx.machine))
+        ? 1
+        : 0,
+    grounded: (() => {
+      const kw = Array.isArray(ctx.historyKeywords) ? ctx.historyKeywords : [];
+      if (kw.length === 0) return 0.5;
+      const hit = kw.filter((k) => _evalHas(t, k)).length;
+      return hit >= 2 ? 1 : hit === 1 ? 0.5 : 0;
+    })(),
+    lengthOk: t.length >= 40 && t.length <= 1400 ? 1 : 0.5,
+  };
+  return { overall: _evalAvg(dims), dims };
+}
+
+/** Score a morning Briefing. ctx: { numbers[], onTopicWords[] } */
+export function scoreBriefingOutput(text, ctx = {}) {
+  const t = String(text || '');
+  const numbers = Array.isArray(ctx.numbers) ? ctx.numbers : [];
+  const numHit = numbers.length
+    ? numbers.filter((n) => _evalHas(t, String(n))).length / numbers.length
+    : 0.5;
+  const topicWords =
+    Array.isArray(ctx.onTopicWords) && ctx.onTopicWords.length
+      ? ctx.onTopicWords
+      : ['alert', 'shift', 'production'];
+  const dims = {
+    greeting: /good\s+morning/i.test(t) ? 1 : 0,
+    numbersPresent: numHit,
+    noPlaceholderLeak: /[{}]/.test(t) ? 0 : 1,
+    lengthOk: t.length >= 120 && t.length <= 1000 ? 1 : 0.5,
+    onTopic: topicWords.some((w) => _evalHas(t, w)) ? 1 : 0,
+  };
+  return { overall: _evalAvg(dims), dims };
+}
+
+/** Score a shift Handover. ctx: { counts[] } */
+export function scoreShiftOutput(text, ctx = {}) {
+  const t = String(text || '');
+  const counts = Array.isArray(ctx.counts) ? ctx.counts : [];
+  const countHit = counts.length
+    ? counts.filter((c) => _evalHas(t, String(c))).length / counts.length
+    : 0.5;
+  const lines = t.split(/\n/).map((s) => s.trim()).filter(Boolean).length;
+  const dims = {
+    countsPresent: countHit,
+    concise: lines > 0 && lines <= 8 ? 1 : 0.5,
+    actionable: /(next|attention|follow|check|ensure|monitor|priorit)/i.test(t) ? 1 : 0,
+    onTopic: /(shift|handover|alert|production)/i.test(t) ? 1 : 0,
+  };
+  return { overall: _evalAvg(dims), dims };
+}
+
+const _EVAL_SCORERS = {
+  assist: scoreAssistOutput,
+  briefing: scoreBriefingOutput,
+  shift: scoreShiftOutput,
+};
+
+/** Compare a candidate's average score against the champion → verdict. Pure. */
+export function evalVerdict(candidate, champion, margin = 0.05) {
+  const d = Number(candidate) - Number(champion);
+  let verdict = 'similar';
+  if (d >= margin) verdict = 'better';
+  else if (d <= -margin) verdict = 'worse';
+  return { verdict, delta: Math.round(d * 1000) / 1000 };
+}
+
+function _evalCases(agent) {
+  if (agent === 'briefing') {
+    return [
+      {
+        prompt:
+          'Write a single warm 3-4 sentence morning briefing for a production manager. Begin with "Good morning". Facts from the last 7 days: total alerts 42, resolved 38 (90% resolution rate), critical 3, average response 11 minutes. No bullets, no markdown, do not invent names.',
+        ctx: { numbers: ['42', '38', '90', '11'], onTopicWords: ['alert', 'resolution', 'response'] },
+      },
+      {
+        prompt:
+          'Write a warm 3-4 sentence morning briefing. Begin with "Good morning". Facts: total alerts 7, resolved 7 (100% resolution rate), critical 0, average response 6 minutes. No markdown, no invented names.',
+        ctx: { numbers: ['7', '100', '6'], onTopicWords: ['alert', 'quiet', 'resolution'] },
+      },
+    ];
+  }
+  if (agent === 'shift') {
+    return [
+      {
+        prompt:
+          'Write a concise (max 5 lines) shift handover summary for the incoming shift. Resolved: 12, Pending: 3, Critical: 1. Highlight risks and what needs attention next.',
+        ctx: { counts: ['12', '3', '1'] },
+      },
+      {
+        prompt:
+          'Write a concise (max 5 lines) shift handover. Resolved: 5, Pending: 0, Critical: 0. Note anything the next shift should monitor.',
+        ctx: { counts: ['5', '0'] },
+      },
+    ];
+  }
+  return [
+    {
+      prompt:
+        'A conveyor quality alert fired on Line 3, workstation 7: "parts jamming at the sensor gate". Past fixes here: realigned the sensor bracket; cleared debris from the gate; replaced the worn guide rail. Give the supervisor a short numbered list of concrete steps to resolve it.',
+      ctx: {
+        typeLabel: 'quality',
+        machine: 'Line 3',
+        historyKeywords: ['sensor', 'gate', 'rail', 'debris', 'bracket'],
+        fallback: _AI_FALLBACK,
+      },
+    },
+    {
+      prompt:
+        'A maintenance alert on Line 1 workstation 2: motor overheating. Past fixes: cleaned the cooling vents; tightened the drive belt; lubricated the bearings. Give 3-4 concrete steps.',
+      ctx: {
+        typeLabel: 'maintenance',
+        machine: 'Line 1',
+        historyKeywords: ['cooling', 'belt', 'bearing', 'vent', 'lubric'],
+        fallback: _AI_FALLBACK,
+      },
+    },
+  ];
+}
+
+async function _evalRunModel(env, agent, config) {
+  const cases = _evalCases(agent);
+  const scorer = _EVAL_SCORERS[agent] || scoreAssistOutput;
+  let sum = 0;
+  const dimSums = {};
+  let fellBack = false;
+  for (const c of cases) {
+    const out = await _runLlmConfig(env, config, c.prompt);
+    if (out.fellBack) fellBack = true;
+    const s = scorer(out.text || '', c.ctx);
+    sum += s.overall;
+    for (const k of Object.keys(s.dims)) dimSums[k] = (dimSums[k] || 0) + s.dims[k];
+  }
+  const n = cases.length || 1;
+  const dims = {};
+  for (const k of Object.keys(dimSums)) {
+    dims[k] = Math.round((dimSums[k] / n) * 100) / 100;
+  }
+  return { score: Math.round((sum / n) * 1000) / 1000, dims, cases: n, fellBack };
+}
+
+// POST /eval-model { agent, modelId, apiKey, championModelId?, championApiKey? }
+async function handleEvalModel(request, env) {
+  const guard = await _securityGuard(request, env, {
+    endpoint: 'eval-model',
+    requireBody: true,
+    textFields: ['apiKey', 'championApiKey'],
+  });
+  if (!guard.ok) return guard.response;
+  try {
+    const body = guard.body || {};
+    const agent = ['assist', 'briefing', 'shift'].includes(body.agent) ? body.agent : 'assist';
+    const candidate = { modelId: body.modelId || 'llama-3.2', apiKey: body.apiKey || '' };
+    let token = null;
+    try { token = await getFirebaseToken(env); } catch (_) {}
+    let champion = { modelId: body.championModelId || '', apiKey: body.championApiKey || '' };
+    if (!champion.modelId) {
+      let stored = null;
+      try { stored = await _loadModelConfig(env, token, agent); } catch (_) {}
+      champion = {
+        modelId: (stored && stored.modelId) || 'llama-3.2',
+        apiKey: (stored && stored.apiKey) || '',
+      };
+    }
+    const cand = await _evalRunModel(env, agent, candidate);
+    const champ = await _evalRunModel(env, agent, champion);
+    const v = evalVerdict(cand.score, champ.score);
+    const result = {
+      at: new Date().toISOString(),
+      agent,
+      candidate: { modelId: candidate.modelId, ...cand },
+      champion: { modelId: champion.modelId || 'llama-3.2', ...champ },
+      verdict: v.verdict,
+      delta: v.delta,
+    };
+    if (token) {
+      const key = result.at.replace(/[:.]/g, '-');
+      fetch(`${env.FB_DB_URL}ai_model_evals/${agent}/latest.json?auth=${token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(result),
+      }).catch(() => {});
+      fetch(`${env.FB_DB_URL}ai_model_evals/${agent}/history/${key}.json?auth=${token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(result),
+      }).catch(() => {});
+    }
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e?.message || e) }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+/** Pure drift decision: is the deployed model's quality meaningfully below its
+ *  baseline (or below an absolute floor)? Returns a reason string or null. */
+export function modelDriftBreach(
+  { score, baseline, modelId, baselineModelId, minDrop = 0.1, floor = 0.45 } = {},
+) {
+  const s = Number(score);
+  if (!Number.isFinite(s)) return null;
+  if (s < floor) {
+    return `quality ${(s * 100).toFixed(0)}% is below the ${(floor * 100).toFixed(0)}% floor`;
+  }
+  if (baseline == null) return null;
+  if (baselineModelId && modelId && baselineModelId !== modelId) return null; // fresh baseline
+  const drop = Number(baseline) - s;
+  if (drop >= minDrop) {
+    return `quality dropped ${(drop * 100).toFixed(0)} pts from its ${(Number(baseline) * 100).toFixed(0)}% baseline`;
+  }
+  return null;
+}
+
+/** Daily drift watch: re-run each agent's DEPLOYED model on the golden tasks,
+ *  compare to the model's baseline score, and flag quality regressions. Writes
+ *  ai_model_evals/{agent}/{driftStatus, baseline, drift/{day}}. Cheap — samples
+ *  each agent at most once per day (self-skips when today's sample exists), and
+ *  the Reliability monitor turns a flagged drift into a webhook alert. */
+async function _runModelDriftCycle(env, token) {
+  if (!token) return;
+  const agents = ['assist', 'briefing', 'shift'];
+  const today = new Date().toISOString().slice(0, 10);
+  for (const agent of agents) {
+    try {
+      const base = `${env.FB_DB_URL}ai_model_evals/${agent}`;
+      const sres = await fetch(`${base}/driftStatus.json?auth=${token}`);
+      const status = sres.ok ? await sres.json() : null;
+      if (status && status.day === today) continue; // already sampled today
+
+      let config = null;
+      try { config = await _loadModelConfig(env, token, agent); } catch (_) {}
+      const modelId = (config && config.modelId) || 'llama-3.2';
+      const run = await _evalRunModel(env, agent, config);
+
+      const bres = await fetch(`${base}/baseline.json?auth=${token}`);
+      let baseline = bres.ok ? await bres.json() : null;
+      if (!baseline || baseline.modelId !== modelId) {
+        baseline = { modelId, score: run.score, at: new Date().toISOString() };
+        await fetch(`${base}/baseline.json?auth=${token}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(baseline),
+        });
+      }
+      const reason = modelDriftBreach({
+        score: run.score,
+        baseline: baseline.score,
+        modelId,
+        baselineModelId: baseline.modelId,
+      });
+      const driftStatus = {
+        day: today,
+        at: new Date().toISOString(),
+        modelId,
+        score: run.score,
+        baseline: baseline.score,
+        deltaFromBaseline: Math.round((run.score - baseline.score) * 1000) / 1000,
+        drift: !!reason,
+        reason: reason || null,
+        dims: run.dims,
+      };
+      for (const path of [`${base}/driftStatus.json`, `${base}/drift/${today}.json`]) {
+        await fetch(`${path}?auth=${token}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(driftStatus),
+        });
+      }
+      if (reason) console.warn(`[DRIFT] ${agent}: ${reason}`);
+    } catch (e) {
+      console.error('[DRIFT] ' + agent + ': ' + e.message);
+    }
   }
 }
 
@@ -5969,6 +6291,13 @@ export default {
           catch (e) { console.error('[CRON] forecastOutcomeCycle: ' + e.message); healthErrors.push('forecastOutcomeCycle: ' + e.message); }
         }
 
+        // Daily model-drift watch: re-eval each agent's deployed model and flag
+        // quality regressions (each agent is sampled at most once per day).
+        if (_cronEvery(runStart, 180)) {
+          try { await _runModelDriftCycle(env, coreCtx.token); }
+          catch (e) { console.error('[CRON] modelDriftCycle: ' + e.message); healthErrors.push('modelDriftCycle: ' + e.message); }
+        }
+
         let basePredictiveModel = null;
         if (runPredictive) {
           try {
@@ -6124,6 +6453,7 @@ export default {
 
     if (url.pathname === '/ai-proxy') return handleAiProxy(request, env);
     if (url.pathname === '/ai-suggest') return handleAiSuggest(request, env);
+    if (url.pathname === '/eval-model') return handleEvalModel(request, env);
     if (url.pathname === '/predict') return handlePredictions(request, env);
     if (url.pathname === '/briefing') return handleBriefing(request, env);
     if (url.pathname === '/suggest-assignee') return handleSuggestAssignee(request, env);

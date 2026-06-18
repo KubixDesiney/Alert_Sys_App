@@ -54,7 +54,7 @@ void main() {
   group('aiModelById', () {
     test('returns the matching model', () {
       expect(aiModelById('gpt-4o').provider, 'openai');
-      expect(aiModelById('claude-sonnet').apiModel, 'claude-sonnet-4-6');
+      expect(aiModelById('claude-sonnet').providerModel, 'claude-sonnet-4-6');
     });
 
     test('falls back to the default (Llama) for unknown or null ids', () {

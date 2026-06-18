@@ -69,14 +69,22 @@ class GithubService {
     }
   }
 
-  Future<bool> connected() async {
+  /// Resolved repository (`owner/name`) as the proxy worker sees it, plus whether
+  /// a server-side token is present. Drives the GitHub-faithful console header.
+  Future<({bool connected, String repo})> status() async {
     try {
       final res = await _client.get(Uri.parse('$_base/config'), headers: _headers);
-      if (res.statusCode != 200) return false;
+      if (res.statusCode != 200) return (connected: false, repo: '');
       final b = jsonDecode(res.body);
-      return b is Map && b['connected'] == true;
+      if (b is! Map) return (connected: false, repo: '');
+      return (connected: b['connected'] == true, repo: (b['repo'] ?? '').toString());
     } catch (_) {
-      return false;
+      return (connected: false, repo: '');
     }
   }
+
+  Future<bool> connected() async => (await status()).connected;
+
+  /// Releases the underlying HTTP client. Call from the owner's dispose().
+  void close() => _client.close();
 }

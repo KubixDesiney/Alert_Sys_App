@@ -436,6 +436,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
       ('Error spike', 'Surge of client errors in the last hour', c.errorSpike, (v) => c.copyWith(errorSpike: v)),
       ('Notification backlog', 'Notify worker keeping up', c.notificationBacklog, (v) => c.copyWith(notificationBacklog: v)),
       ('App error budget', 'Crash-free below the ${_cfg.crashFreeSlo}% SLO', c.appErrorBudget, (v) => c.copyWith(appErrorBudget: v)),
+      ('AI model drift', 'A deployed agent model regressed in quality', c.modelDrift, (v) => c.copyWith(modelDrift: v)),
     ];
     return GlassPanel(
       accent: Sa.blue,
