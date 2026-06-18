@@ -17,6 +17,7 @@ import '../../config/app_config.dart';
 import '../../services/ai_model_config_service.dart';
 import '../../services/predictive_scope.dart';
 import 'guardian_github_view.dart';
+import 'guardian_pipeline_view.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin tab: the AI AGENT FLEET.
@@ -6312,9 +6313,19 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   int _subtab = 0; // 0 = Control · 1 = Actions · 2 = Pull requests
   Timer? _simTimer;
 
+  // Live GitHub engine: drives the 3D pipeline + terminal + connection badge.
+  late final GuardianLiveTracker _tracker =
+      GuardianLiveTracker(baseUrl: _ghUrl, secret: _wSecret);
+
+  // One-shot "verify connection" affordance state.
+  bool _verifying = false;
+  bool? _verifyOk;
+  String _verifyMsg = '';
+
   @override
   void initState() {
     super.initState();
+    _tracker.start();
     _sec.get().then((s) {
       if (mounted && s.value is Map) setState(() => _secrets = s.value as Map<dynamic, dynamic>);
     });
@@ -6323,6 +6334,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   @override
   void dispose() {
     _simTimer?.cancel();
+    _tracker.dispose();
     super.dispose();
   }
 
@@ -6341,6 +6353,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
         final active = (cfg['activeRun'] is Map) ? cfg['activeRun'] as Map : null;
         final repo = (cfg['repo'] ?? '').toString();
         _deployAuto = (settings['deployMode'] ?? 'human') == 'auto';
+        _tracker.mode = _deployAuto ? 'auto' : 'human';
         return LayoutBuilder(
           builder: (context, c) {
             final h = c.maxHeight.isFinite ? c.maxHeight : 1600.0;
@@ -6443,22 +6456,28 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
             Positioned.fill(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _header(enabled, settings),
-                    const SizedBox(height: 14),
-                    _pipeline(active),
-                    const SizedBox(height: 14),
-                    _terminal(active),
-                    const SizedBox(height: 14),
-                    _aiConfig(settings),
-                    const SizedBox(height: 14),
-                    _github(cfg),
-                    const SizedBox(height: 14),
-                    _knowledge(cfg),
-                    const SizedBox(height: 60),
-                  ],
+                // Rebuild on every live-tracker tick so the pipeline, terminal
+                // and the GitHub connection badge stay in lock-step with the
+                // real workflow run.
+                child: ListenableBuilder(
+                  listenable: _tracker,
+                  builder: (context, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _header(enabled, settings),
+                      const SizedBox(height: 14),
+                      _livePipeline(),
+                      const SizedBox(height: 14),
+                      _liveTerminal(active),
+                      const SizedBox(height: 14),
+                      _aiConfig(settings),
+                      const SizedBox(height: 14),
+                      _github(cfg),
+                      const SizedBox(height: 14),
+                      _knowledge(cfg),
+                      const SizedBox(height: 60),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -6545,7 +6564,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
               ],
             ),
           ),
-          _deployToggle('Automatic', _deployAuto, () => _saveSetting('deployMode', 'auto')),
+          _deployToggle('Automatic', _deployAuto, _confirmAutomaticMode),
           const SizedBox(width: 6),
           _deployToggle('Human review', !_deployAuto, () => _saveSetting('deployMode', 'human')),
           const SizedBox(width: 12),
@@ -6572,114 +6591,37 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     );
   }
 
-  // ── dynamic pipeline ──
-  Widget _pipeline(Map? active) {
-    if (active == null) {
-      return _panel('PIPELINE', Icons.route, Row(children: [
-        Icon(Icons.check_circle_outline, color: _gGreen, size: 18),
-        const SizedBox(width: 9),
-        Expanded(child: Text('No active incident — pipeline idle. Guardian is watching.',
-            style: Sa.body(size: 12.5, color: Sa.muted))),
-      ]));
-    }
-    final stages = ['detect', 'context', 'fix', 'review', 'gate', 'deploy'];
-    final labels = ['Detect', 'Gather context', 'Fix', 'Review + tests', 'Gate', 'PR / deploy'];
-    final cur = stages.indexOf((active['stage'] ?? 'detect').toString());
-    final status = (active['status'] ?? 'running').toString();
-    final done = status == 'deployed' || status == 'pr_open';
-    final failed = status == 'failed';
-    final sev = (active['severity'] ?? 'high').toString().toUpperCase();
-    return GlassPanel(
-      accent: _gRed,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            GlowChip(label: done ? 'RESOLVED' : 'INCIDENT ACTIVE', color: done ? _gGreen : _gRed, pulse: !done),
-            const SizedBox(width: 8),
-            GlowChip(label: sev, color: sev == 'HIGH' ? _gRed : (sev == 'MEDIUM' ? _gAmber : Sa.muted)),
-            const Spacer(),
-            InkWell(onTap: _dismissIncident, child: Icon(Icons.close, size: 16, color: Sa.muted)),
-          ]),
-          const SizedBox(height: 6),
-          Text((active['title'] ?? 'incident').toString(), style: Sa.body(size: 12.5, color: Sa.text)),
-          const SizedBox(height: 12),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            for (var i = 0; i < stages.length; i++)
-              _stageChip(labels[i],
-                  done ? 'done' : (i < cur ? 'done' : (i == cur ? (failed ? 'failed' : 'active') : 'pending'))),
-          ]),
-        ],
-      ),
+  // ── live 3D pipeline (driven by the real GitHub run) ──
+  Widget _livePipeline() {
+    final connected = _tracker.connected;
+    final nodes = connected
+        ? _tracker.nodes
+        : computePipelineNodes(
+            connected: false,
+            frontier: 0,
+            failPhase: -1,
+            done: false,
+            running: false,
+            idleArmed: false,
+            mode: 'human',
+          );
+    return GuardianPipeline(
+      nodes: nodes,
+      connected: connected,
+      statusLabel: _tracker.stageLabel,
+      failed: connected && _tracker.failed,
+      running: connected && _tracker.running,
     );
   }
 
-  Widget _stageChip(String label, String state) {
-    Color c;
-    Widget ic;
-    switch (state) {
-      case 'done':
-        c = _gGreen;
-        ic = Icon(Icons.check, size: 13, color: c);
-        break;
-      case 'active':
-        c = _gAmber;
-        ic = SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: c));
-        break;
-      case 'failed':
-        c = _gRed;
-        ic = Icon(Icons.close, size: 13, color: c);
-        break;
-      default:
-        c = Sa.muted;
-        ic = Icon(Icons.circle_outlined, size: 12, color: c);
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: c.withValues(alpha: 0.45)),
-        color: c.withValues(alpha: 0.10),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [ic, const SizedBox(width: 6), Text(label, style: Sa.body(size: 11.5, color: c))]),
-    );
-  }
-
-  // ── terminal ──
-  Widget _terminal(Map? active) {
-    final logs = (active != null && active['log'] is List)
+  // ── live terminal (real job/step + raw stdout, or offline preview) ──
+  Widget _liveTerminal(Map? active) {
+    final preview = (active != null && active['log'] is List)
         ? (active['log'] as List).map((e) => e.toString()).toList()
-        : <String>[];
-    final running = active != null && (active['status'] ?? '') == 'running';
-    return Container(
-      decoration: BoxDecoration(color: Sa.termBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: Sa.termBorder)),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(Icons.terminal, size: 14, color: Sa.termDim),
-            const SizedBox(width: 6),
-            Text('GUARDIAN TERMINAL', style: TextStyle(color: Sa.termDim, fontSize: 11, letterSpacing: 0.5, fontFamily: 'monospace')),
-            const Spacer(),
-            if (running) ...[
-              SizedBox(width: 9, height: 9, child: CircularProgressIndicator(strokeWidth: 2, color: _gAmber)),
-              const SizedBox(width: 6),
-              Text('working', style: TextStyle(color: _gAmber, fontSize: 11, fontFamily: 'monospace')),
-            ],
-          ]),
-          const SizedBox(height: 8),
-          if (logs.isEmpty)
-            Text('guardian idle \$ watching for incidents…',
-                style: TextStyle(color: Sa.termMuted, fontSize: 11.5, fontFamily: 'monospace'))
-          else
-            for (final l in logs)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(l, style: TextStyle(color: Sa.termText, fontSize: 11.5, height: 1.5, fontFamily: 'monospace')),
-              ),
-        ],
-      ),
+        : const <String>[];
+    return GuardianTerminal(
+      tracker: _tracker,
+      previewLog: _tracker.connected ? const [] : preview,
     );
   }
 
@@ -6745,15 +6687,132 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   // ── github connection ──
   Widget _github(Map cfg) {
     final repo = (cfg['repo'] ?? '').toString();
-    return _panel('GITHUB CONNECTION', Icons.hub_outlined, Row(children: [
-      Expanded(child: InkWell(onTap: _setRepo, child: _fieldRow(Icons.account_tree, repo.isEmpty ? 'link repository (owner/name)' : repo))),
-      const SizedBox(width: 10),
-      Expanded(child: InkWell(
-        onTap: () => _setSecret('githubToken', 'GitHub token', 'github_pat_…'),
-        child: _fieldRow(Icons.vpn_key, _hasSecret('githubToken') ? '•••••••• set' : 'set token',
-            trailing: _hasSecret('githubToken') ? Icon(Icons.check, size: 14, color: _gGreen) : null),
-      )),
-    ]));
+    return GlassPanel(
+      accent: widget.spec.accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.hub_outlined, size: 14, color: Sa.muted),
+            const SizedBox(width: 7),
+            Text('GITHUB CONNECTION', style: Sa.body(size: 11, color: Sa.muted)),
+            const Spacer(),
+            _connBadge(),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: InkWell(onTap: _setRepo, child: _fieldRow(Icons.account_tree, repo.isEmpty ? 'link repository (owner/name)' : repo))),
+            const SizedBox(width: 10),
+            Expanded(child: InkWell(
+              onTap: () => _setSecret('githubToken', 'GitHub token', 'github_pat_…'),
+              child: _fieldRow(Icons.vpn_key, _hasSecret('githubToken') ? '•••••••• set' : 'set token',
+                  trailing: _hasSecret('githubToken') ? Icon(Icons.check, size: 14, color: _gGreen) : null),
+            )),
+          ]),
+          const SizedBox(height: 10),
+          _verifyRow(),
+        ],
+      ),
+    );
+  }
+
+  /// Live "Connected / Not connected" badge — fed by the same tracker that polls
+  /// the proxy worker's /config, so it flips the moment the worker can reach the repo.
+  Widget _connBadge() {
+    final ok = _tracker.connected;
+    final c = ok ? _gGreen : _gRed;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.withValues(alpha: 0.5)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 7, height: 7, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(ok ? 'Connected' : 'Not connected', style: Sa.body(size: 11, color: c)),
+      ]),
+    );
+  }
+
+  /// Verify button + animated result line: spinner → green check / red cross.
+  Widget _verifyRow() {
+    return Row(children: [
+      SaButton(
+        label: _verifying ? 'Verifying…' : 'Verify connection',
+        icon: Icons.wifi_tethering,
+        outlined: true,
+        onPressed: () {
+          if (!_verifying) _verifyConnection();
+        },
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 280),
+          transitionBuilder: (child, anim) =>
+              FadeTransition(opacity: anim, child: SizeTransition(sizeFactor: anim, axis: Axis.horizontal, child: child)),
+          child: _verifyStatus(),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _verifyStatus() {
+    if (_verifying) {
+      return Row(key: const ValueKey('verifying'), mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: _gAmber)),
+        const SizedBox(width: 8),
+        Flexible(child: Text('contacting GitHub…', overflow: TextOverflow.ellipsis, style: Sa.body(size: 11.5, color: Sa.textDim))),
+      ]);
+    }
+    if (_verifyOk == null) return const SizedBox.shrink();
+    final ok = _verifyOk!;
+    final c = ok ? _gGreen : _gRed;
+    return Row(key: ValueKey('result_$ok'), mainAxisSize: MainAxisSize.min, children: [
+      Icon(ok ? Icons.check_circle : Icons.error, size: 15, color: c),
+      const SizedBox(width: 8),
+      Flexible(child: Text(_verifyMsg, overflow: TextOverflow.ellipsis, maxLines: 2, style: Sa.body(size: 11.5, color: c))),
+    ]);
+  }
+
+  Future<void> _verifyConnection() async {
+    setState(() {
+      _verifying = true;
+      _verifyOk = null;
+      _verifyMsg = '';
+    });
+    final svc = GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret);
+    ({bool ok, String repo, int runs, String message}) r;
+    try {
+      r = await svc.verify();
+    } catch (_) {
+      r = (ok: false, repo: '', runs: 0, message: 'Proxy worker unreachable.');
+    } finally {
+      svc.close();
+    }
+    if (!mounted) return;
+    setState(() {
+      _verifying = false;
+      _verifyOk = r.ok;
+      _verifyMsg = r.message;
+    });
+    _tracker.refreshNow();
+  }
+
+  /// Guard rail: switching from human review to fully-automatic deploy ships AI
+  /// fixes to production with no person in the loop, so confirm it deliberately.
+  Future<void> _confirmAutomaticMode() async {
+    if (_deployAuto) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => const _AutomaticModeWarningDialog(),
+    );
+    if (ok == true) {
+      await _saveSetting('deployMode', 'auto');
+      _tracker.mode = 'auto';
+    }
   }
 
   // ── knowledge ──
@@ -6821,22 +6880,44 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   Future<void> _saveSetting(String k, dynamic v) =>
       _cfg.child('settings').update({k: v, 'updatedAt': DateTime.now().toUtc().toIso8601String()});
 
-  Future<void> _dismissIncident() async {
-    _simTimer?.cancel();
-    await _cfg.child('activeRun').remove();
-  }
-
   Future<void> _simulateIncident(String title, String severity, String description, String model) async {
     _simTimer?.cancel();
+    final messenger = ScaffoldMessenger.of(context);
     final mode = _deployAuto ? 'automatic' : 'human';
     const target = 'tool/guardian_drill_target.mjs';
+
+    // Register the drill in the bug pipeline so the rest of the platform sees it.
+    FirebaseDatabase.instance.ref('bugs/client').push().set({
+      'area': 'simulation', 'severity': severity, 'message': description,
+      'at': DateTime.now().toUtc().toIso8601String(), 'simulated': true,
+    });
+
     var dispatched = false;
     if (_ghUrl.isNotEmpty) {
+      final svc = GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret);
       try {
-        dispatched = await GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret)
-            .dispatchDrill(mode: mode, target: target);
-      } catch (_) {}
+        dispatched = await svc.dispatchDrill(mode: mode, target: target);
+      } catch (_) {
+      } finally {
+        svc.close();
+      }
     }
+
+    if (dispatched) {
+      // The REAL guardian-drill workflow now drives the pipeline + terminal,
+      // stage by stage, straight from GitHub. No synthetic preview needed.
+      _tracker.expectDrill();
+      await _cfg.child('activeRun').remove();
+      messenger.showSnackBar(SnackBar(
+        backgroundColor: Sa.panelSolid,
+        content: Text('Guardian drill dispatched on GitHub (mode=$mode) — the pipeline is now live.',
+            style: Sa.body(size: 12.5, color: Sa.text)),
+      ));
+      return;
+    }
+
+    // Offline fallback: staged textual PREVIEW in the terminal (the pipeline
+    // stays in its grey "not connected" state until the worker is linked).
     final stages = ['detect', 'context', 'fix', 'review', 'gate', 'deploy'];
     String line(String st) {
       switch (st) {
@@ -6856,9 +6937,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     }
 
     final logs = <String>[
-      dispatched
-          ? '[${_ts()}] dispatch  > guardian-drill triggered on GitHub (mode=$mode)'
-          : '[${_ts()}] dispatch  > local preview (link the GitHub worker to go live)',
+      '[${_ts()}] dispatch  > local preview (link the GitHub worker to go live)',
       '[${_ts()}] incident: $title ($severity)',
       '[${_ts()}] ${line('detect')}',
     ];
@@ -6866,10 +6945,6 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       'title': title, 'severity': severity, 'description': description, 'model': model,
       'stage': 'detect', 'status': 'running', 'log': logs, 'simulated': true,
       'at': DateTime.now().toUtc().toIso8601String(),
-    });
-    FirebaseDatabase.instance.ref('bugs/client').push().set({
-      'area': 'simulation', 'severity': severity, 'message': description,
-      'at': DateTime.now().toUtc().toIso8601String(), 'simulated': true,
     });
     var i = 0;
     _simTimer = Timer.periodic(const Duration(milliseconds: 1700), (t) async {
@@ -6974,6 +7049,160 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     final list = (snap.value is List) ? List<dynamic>.from(snap.value as List) : <dynamic>[];
     list.add({'name': f.name, 'content': content, 'at': DateTime.now().toUtc().toIso8601String()});
     await _cfg.child(key).set(list);
+  }
+}
+
+/// Deliberate, premium warning before arming fully-autonomous deployment.
+class _AutomaticModeWarningDialog extends StatelessWidget {
+  const _AutomaticModeWarningDialog();
+
+  static const _red = Color(0xFFF85149);
+  static const _amber = Color(0xFFD29922);
+  static const _green = Color(0xFF3FB950);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Sa.panelSolid,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _red.withValues(alpha: 0.4)),
+            boxShadow: [
+              BoxShadow(color: _red.withValues(alpha: 0.18), blurRadius: 40, spreadRadius: 2),
+              BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 30, offset: const Offset(0, 16)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [_red.withValues(alpha: 0.22), _amber.withValues(alpha: 0.10)],
+                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _red.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _red.withValues(alpha: 0.5)),
+                    ),
+                    child: const Icon(Icons.warning_amber_rounded, color: _red, size: 26),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Enable automatic deployment?', style: Sa.display(size: 16)),
+                        const SizedBox(height: 3),
+                        Text('Guardian will ship fixes with no human in the loop',
+                            style: Sa.body(size: 12, color: Sa.muted)),
+                      ],
+                    ),
+                  ),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _bullet(Icons.merge, 'Verified AI fixes are pushed straight to ', 'main', ' — no pull request, no review.'),
+                    _bullet(Icons.rocket_launch_outlined, 'Each healed commit ', 'auto-deploys to production', ' (web + app builds).'),
+                    _bullet(Icons.person_off_outlined, 'A person is only notified ', 'after the fact', ', or when a fix fails to verify.'),
+                    _bullet(Icons.health_and_safety_outlined, 'A safety-restore still protects ', 'main', ' if a fix can’t be validated.'),
+                  ],
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: _amber.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _amber.withValues(alpha: 0.35)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.info_outline, size: 15, color: _amber),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text('Recommended only once you trust the Fix + Review AI pairing on your codebase.',
+                        style: Sa.body(size: 11.5, color: Sa.textDim)),
+                  ),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  Expanded(child: _btn(context, 'Keep human review', _green, false, filled: false)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _btn(context, 'Enable automatic', _red, true, filled: true)),
+                ]),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bullet(IconData ic, String a, String bold, String b) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(ic, size: 15, color: _red.withValues(alpha: 0.85)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style: Sa.body(size: 12.5, color: Sa.textDim),
+                children: [
+                  TextSpan(text: a),
+                  TextSpan(text: bold, style: Sa.body(size: 12.5, color: Sa.text).copyWith(fontWeight: FontWeight.w700)),
+                  TextSpan(text: b),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _btn(BuildContext ctx, String label, Color c, bool value, {required bool filled}) {
+    return InkWell(
+      onTap: () => Navigator.pop(ctx, value),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: filled ? c.withValues(alpha: 0.92) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.withValues(alpha: filled ? 0.0 : 0.6)),
+        ),
+        child: Text(label,
+            style: Sa.body(size: 12.5, color: filled ? Colors.white : c).copyWith(fontWeight: FontWeight.w600)),
+      ),
+    );
   }
 }
 

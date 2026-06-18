@@ -42,9 +42,26 @@ class GithubService {
   Future<List<Map<String, dynamic>>> pulls() => _list('/pulls', 'pulls');
   Future<List<Map<String, dynamic>>> deployments() => _list('/deployments', 'deployments');
 
-  /// Step-level jobs for a workflow run (drives the live terminal stream).
+  /// Step-level jobs for a workflow run (drives the live pipeline + terminal).
   Future<List<Map<String, dynamic>>> runJobs(Object runId) =>
       _list('/run-jobs?id=${Uri.encodeQueryComponent('$runId')}', 'jobs');
+
+  /// Raw stdout tail of one job (the real `$ npm test` / build output). Returns
+  /// '' while the job is still warming up or on any error — best-effort so the
+  /// terminal degrades gracefully to step-level lines.
+  Future<String> jobLogs(Object jobId) async {
+    try {
+      final res = await _client.get(
+        Uri.parse('$_base${_withRepo('/job-logs?id=${Uri.encodeQueryComponent('$jobId')}')}'),
+        headers: _headers,
+      );
+      if (res.statusCode != 200) return '';
+      final body = jsonDecode(res.body);
+      return (body is Map && body['logs'] is String) ? body['logs'] as String : '';
+    } catch (_) {
+      return '';
+    }
+  }
 
   /// Fire the Guardian drill for real: the proxy worker forwards a
   /// repository_dispatch (guardian_drill) using its server-side GitHub token.
@@ -84,6 +101,56 @@ class GithubService {
   }
 
   Future<bool> connected() async => (await status()).connected;
+
+  /// Deep connection check for the "Verify" affordance: not only is a token
+  /// present, but the proxy worker can actually reach the repo with it. Returns
+  /// a human-readable [message] suitable for an inline status line.
+  Future<({bool ok, String repo, int runs, String message})> verify() async {
+    String repo = '';
+    try {
+      final cfg = await _client.get(Uri.parse('$_base/config'), headers: _headers);
+      if (cfg.statusCode == 401) {
+        return (ok: false, repo: '', runs: 0, message: 'Worker rejected the shared secret.');
+      }
+      if (cfg.statusCode == 200) {
+        final b = jsonDecode(cfg.body);
+        if (b is Map) {
+          repo = (b['repo'] ?? '').toString();
+          if (b['connected'] != true) {
+            return (ok: false, repo: repo, runs: 0, message: 'No GitHub token set on the proxy worker yet.');
+          }
+        }
+      }
+      final res = await _client.get(Uri.parse('$_base${_withRepo('/runs')}'), headers: _headers);
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final n = (body is Map && body['runs'] is List) ? (body['runs'] as List).length : 0;
+        return (ok: true, repo: repo, runs: n, message: 'Connected to ${repo.isEmpty ? 'repository' : repo} · $n workflow run${n == 1 ? '' : 's'} visible.');
+      }
+      if (res.statusCode == 401) {
+        return (ok: false, repo: repo, runs: 0, message: 'Worker rejected the shared secret.');
+      }
+      if (res.statusCode == 503) {
+        return (ok: false, repo: repo, runs: 0, message: 'Worker has no repo + token configured.');
+      }
+      String detail = '';
+      try {
+        final b = jsonDecode(res.body);
+        if (b is Map && b['error'] != null) detail = b['error'].toString();
+      } catch (_) {}
+      final isAuth = detail.contains('404') || detail.contains('403') || detail.contains('401');
+      return (
+        ok: false,
+        repo: repo,
+        runs: 0,
+        message: isAuth
+            ? 'Token cannot reach ${repo.isEmpty ? 'this repo' : repo} — check the repo name and token scopes.'
+            : 'Could not reach GitHub${detail.isEmpty ? '' : ' ($detail)'}.',
+      );
+    } catch (e) {
+      return (ok: false, repo: repo, runs: 0, message: 'Proxy worker unreachable.');
+    }
+  }
 
   /// Releases the underlying HTTP client. Call from the owner's dispose().
   void close() => _client.close();
