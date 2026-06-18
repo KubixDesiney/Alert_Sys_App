@@ -1,6 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import {
   mapRun, mapPull, mapDeployment, mapJob, timingSafeEqual, rateLimit,
+  tailText, stripLogTimestamps,
 } from '../cloudflare_github_worker.js';
 
 describe('mapRun', () => {
@@ -49,5 +50,31 @@ describe('rateLimit', () => {
     for (let i = 0; i < 3; i++) ok = rateLimit(b, 'ip', 3, 60000, 1000 + i);
     expect(ok).toBe(true);
     expect(rateLimit(b, 'ip', 3, 60000, 1003)).toBe(false);
+  });
+});
+
+describe('tailText', () => {
+  test('returns short text unchanged', () => {
+    expect(tailText('hello', 16000)).toBe('hello');
+  });
+  test('tails long text to a clean line boundary', () => {
+    const text = 'line1\nline2\nlonglonglongtail';
+    const out = tailText(text, 18); // forces a cut inside the first lines
+    expect(out.length).toBeLessThanOrEqual(18);
+    expect(out.startsWith('line')).toBe(false); // partial first line dropped
+    expect(text.endsWith(out)).toBe(true); // it is a true tail
+  });
+  test('handles null', () => {
+    expect(tailText(null)).toBe('');
+  });
+});
+
+describe('stripLogTimestamps', () => {
+  test('removes GitHub ISO prefixes, keeps command output', () => {
+    const raw = '2026-06-18T12:00:01.1234567Z $ npm test\n2026-06-18T12:00:02.0000000Z PASS';
+    expect(stripLogTimestamps(raw)).toBe('$ npm test\nPASS');
+  });
+  test('leaves untimestamped lines alone', () => {
+    expect(stripLogTimestamps('plain line')).toBe('plain line');
   });
 });
