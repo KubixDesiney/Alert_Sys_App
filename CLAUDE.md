@@ -233,13 +233,50 @@ Real-time delivery behavior:
 - App-created queued `new_alert` rows use `pushDeliveryMode: notification_queue`; the alert record is marked with `push_delivery_mode: notification_queue` so cron does not send a duplicate `/alerts` fan-out.
 - WebSockets/Durable Objects are not the primary wake-up mechanism because Firebase writes do not wake a Worker WebSocket, and mobile background sockets are not reliable; FCM remains the background/offline delivery path.
 
+### GitHub Proxy Worker (Guardian)
+
+- Worker name: `alertsys-github`
+- URL: `https://alertsys-github.aziz-nagati01.workers.dev`
+- Main file: `cloudflare_github_worker.js`
+- Config: `wrangler.github.toml`
+- No cron. Pure HTTP proxy, read-only against GitHub plus one `repository_dispatch` write.
+
+Purpose: lets the SuperAdmin Guardian console render **live GitHub Actions runs and Pull Requests inside the app**, styled to match GitHub's own UI, without ever shipping a GitHub token to the client. The worker holds the token server-side; the app authenticates to the worker with the shared `WORKER_SHARED_SECRET` bearer.
+
+HTTP routes:
+
+- `GET /config`: `{ connected, repo }` — whether server-side GitHub creds resolved, and the resolved `owner/name`.
+- `GET /runs`: recent workflow runs (mapped to `{id, name, workflow, status, conclusion, branch, event, actor, createdAt, updatedAt, htmlUrl, ...}`).
+- `GET /pulls`: open + recently closed pull requests.
+- `GET /deployments`: recent deployments.
+- `GET /run-jobs?id=<runId>`: jobs + steps for one run (drives the expand-to-jobs view).
+- `POST /dispatch`: fires a `repository_dispatch` (`event_type: guardian_drill`) using the worker's server-side token — used by `GithubService.dispatchDrill()` for Guardian incident simulations.
+
+Credential resolution (`resolveCreds` in `cloudflare_github_worker.js`):
+
+- Prefers Cloudflare secrets/vars `GITHUB_TOKEN` / `GITHUB_REPO` if both are set.
+- Otherwise falls back to the RTDB vault: `ai_agents/guardian/repo` (plain string, `owner/name`) and `ai_agent_secrets/guardian/githubToken` (string, PAT/App token with `actions` + `pull_requests` read scope), read via a minted Google OAuth token from `FIREBASE_SERVICE_ACCOUNT` + `FB_DB_URL` (same service-account JWT pattern as `cloudflare_ai_worker.js`'s `getAccessToken`). This fallback exists specifically because local `wrangler secret put` doesn't work on this project's dev machine (broken OAuth) — the vault lets the repo/token be set or rotated from the SuperAdmin console or via `firebase database:set` without a worker redeploy.
+- 60-second in-memory cache (`_credCache`) avoids refetching the vault on every request.
+
+Flutter side: `lib/services/github_service.dart` (`GithubService`) wraps all six routes; `AppConfig.githubWorkerBase` (default `https://alertsys-github.aziz-nagati01.workers.dev`, override via `--dart-define=ALERTSYS_GITHUB_WORKER_URL=...`) is the single source of the base URL.
+
+### Guardian Console — Control / Actions / Pull Requests Subtabs
+
+The Guardian agent lives inside the SuperAdmin **AI Agents** fleet tab (`lib/screens/superadmin/ai_agents_tab.dart`, `_GuardianAgentPanel`) — there is no separate top-level SuperAdmin nav-rail entry for it. The panel has three subtabs:
+
+- **Control**: enabled toggle, Automatic/Human deploy-mode switch, pipeline visualization, terminal log, AI provider config (fix model + review model, any of the 15+ providers in `tool/guardian_providers.mjs`), GitHub connection config (repo + token → writes to the RTDB vault above), knowledge upload, and a draggable incident-simulation toolbar (`dispatchDrill`).
+- **Actions**: `GuardianActionsView` (`lib/screens/superadmin/guardian_github_view.dart`) — a GitHub Actions-faithful live list (own GitHub-dark `GhTheme` palette, deliberately decoupled from the app's `Sa.*` SuperAdmin theme). Event/Status/Branch/Actor filters, status glyphs, branch pills, relative time; tapping a run lazily fetches `runJobs()` and expands to jobs/steps. Polls every 12s while mounted.
+- **Pull Requests**: `GuardianPullsView` (same file) — Open/Closed segmented tabs with live counts, search, PR state icons (open/merged/closed), branch pills, draft/bot tags. Polls every 12s while mounted.
+
+Both live views are built only when their subtab is active, so polling stops the moment the SuperAdmin navigates away. `lib/screens/superadmin/guardian_tab.dart` (an empty, never-imported orphan file from an earlier "dedicated tab" iteration) was deleted on 2026-06-18.
+
 ### Compatibility And Deprecated Worker Files
 
 - `cloudflare_worker.js` re-exports `./worker/index.js`. Worker tests import it for modular helper coverage.
 - `worker/index.js` is a modular worker implementation with AI, assignment, predictions, fanout, and helper exports.
 - `cloudflare_workerV2.js` (the deprecated monolith) was DELETED on 2026-06-14. The four test files that imported unique helpers from it (`predictive_model`, `proximity`, `reliability`, `security_prompt_injection`) were repointed to the deployed `cloudflare_ai_worker.js`, which already exports every symbol they need. All 15 worker suites (188 tests) pass against the deployed worker.
 - The legacy `wrangler.toml` and `worker/wrangler.toml` (both pointed at the deleted monolith) were also DELETED on 2026-06-14. The old `wrangler.toml` was named `alert-notifier`, so a bare `wrangler deploy` would have overwritten the live AI worker with dead code — removing it closes that footgun.
-- Active production deployments use `wrangler.ai.toml` and `wrangler.notify.toml` only (`npm run deploy:ai` / `deploy:notify`; CI deploys with the same `--config` flags). There is no longer any bare-`wrangler.toml` deploy path.
+- Active production deployments use `wrangler.ai.toml`, `wrangler.notify.toml`, and `wrangler.github.toml` (`npm run deploy:ai` / `deploy:notify` / `deploy:github`, or `npm run deploy:workers` for all three; CI deploys with the same `--config` flags on protected `main` pushes). There is no longer any bare-`wrangler.toml` deploy path.
 
 ## Worker Secrets And Runtime Config
 
@@ -252,6 +289,8 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 - Optional AI/provider secrets used by AI endpoints.
 - `WORKER_SHARED_SECRET` / `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET` when protected worker requests are enabled.
 - Optional `NOTIFY_WORKER_URL` / `ALERTSYS_NOTIFY_WORKER_URL` for AI-worker-to-notification-worker fast triggers; defaults to `https://alertsys.aziz-nagati01.workers.dev/notify`.
+
+`alertsys-github` (`wrangler.github.toml`) secrets: `WORKER_SHARED_SECRET` (required — same value the app sends), `FB_DB_URL` + `FIREBASE_SERVICE_ACCOUNT` (enable the RTDB vault fallback for the GitHub repo/token), `GITHUB_TOKEN`/`GITHUB_REPO` (optional direct-secret alternative to the vault). As of 2026-06-18 these three secrets are pushed automatically by `.github/workflows/ci.yml`'s "Set github worker secrets" step on every protected push to `main`, reusing the repo's existing `WORKER_SHARED_SECRET`/`FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` Actions secrets and `FB_DB_URL` Actions variable — no new secret material needed. The actual GitHub PAT is never put in a workflow file; it lives only in the RTDB vault (`ai_agent_secrets/guardian/githubToken`, set via `firebase database:set` or the SuperAdmin GitHub Connection panel).
 
 `FIREBASE_SERVICE_ACCOUNT` is parsed by the workers to mint Firebase custom auth JWTs and FCM OAuth tokens at the edge.
 
@@ -664,6 +703,8 @@ Required GitHub Actions secrets:
 - `FIREBASE_TOKEN`
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY`
+- `FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` — also used by `ci.yml`'s `alertsys-github` secret-push step and `firebase-hosting-pull-request.yml`.
+- Repo variable `FB_DB_URL` (Settings → Secrets and variables → Actions → Variables) — also used by `ci.yml`'s `alertsys-github` secret-push step and `uptime.yml`.
 - Optional but recommended: `AUTOFIX_GITHUB_TOKEN`
 - Optional worker deploy: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` when `AGENT_DEPLOY_WORKERS=1`.
 
@@ -680,6 +721,8 @@ Required GitHub Actions secrets:
 - Generated Flutter localization files live under `lib/l10n/generated`; update ARB files and regenerate instead of hand-editing generated files when possible.
 - `firebase_options.dart` is generated by FlutterFire; avoid manual edits unless intentionally updating Firebase config.
 - `node_modules`, `.dart_tool`, `build`, `.wrangler`, and Firebase/Flutter generated caches should not be committed.
+- Never put the GitHub PAT used by `alertsys-github` directly in a workflow file or commit — it lives only in the RTDB vault (`ai_agent_secrets/guardian/githubToken`). Rotate it via `firebase database:set` or the SuperAdmin Guardian → Control → GitHub Connection panel.
+- On this dev machine, `npx firebase database:set "/some/path" ...` fails with "Path must begin with /" unless run as `MSYS_NO_PATHCONV=1 npx firebase database:set ...` — Git Bash on Windows mangles the leading-slash argument otherwise.
 
 ## Recent Local Fix
 

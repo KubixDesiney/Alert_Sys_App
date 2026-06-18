@@ -16,6 +16,7 @@ import 'package:http/http.dart' as http;
 import '../../config/app_config.dart';
 import '../../services/ai_model_config_service.dart';
 import '../../services/predictive_scope.dart';
+import 'guardian_github_view.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin tab: the AI AGENT FLEET.
@@ -4613,11 +4614,24 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
   bool _loading = true;
   bool _saving = false;
   bool _obscure = true;
+  bool _testing = false;
+  ModelEvalResult? _eval;
+  StreamSubscription<DatabaseEvent>? _driftSub;
+  Map<String, dynamic>? _drift;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _driftSub = FirebaseDatabase.instance
+        .ref('ai_model_evals/${widget.agent}/driftStatus')
+        .onValue
+        .listen((e) {
+      final v = e.snapshot.value;
+      if (mounted) {
+        setState(() => _drift = v is Map ? Map<String, dynamic>.from(v) : null);
+      }
+    }, onError: (_) {});
   }
 
   Future<void> _load() async {
@@ -4656,6 +4670,63 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
     }
   }
 
+  Future<void> _test() async {
+    final model = aiModelById(_modelId);
+    final key = _key.text.trim();
+    if (model.needsKey && key.isEmpty) {
+      _toast('${model.label} needs an API key to test.', err: true);
+      return;
+    }
+    setState(() => _testing = true);
+    try {
+      final result = await _svc.evaluate(
+        widget.agent,
+        AiModelConfig(modelId: _modelId, apiKey: model.needsKey ? key : ''),
+      );
+      if (mounted) setState(() => _eval = result);
+    } catch (e) {
+      _toast('Test failed: $e', err: true);
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  Widget _driftStripWidget() {
+    final d = _drift!;
+    final drifting = d['drift'] == true;
+    final score = (d['score'] is num) ? (d['score'] as num).toDouble() : 0.0;
+    final baseline =
+        (d['baseline'] is num) ? (d['baseline'] as num).toDouble() : null;
+    final c = drifting ? Sa.red : Sa.green;
+    final reason = (d['reason'] ?? '').toString();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: c.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(drifting ? Icons.warning_amber_rounded : Icons.verified_outlined,
+              size: 16, color: c),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              drifting
+                  ? 'Drift detected — ${reason.isNotEmpty ? reason : 'quality regressed'}'
+                  : 'Quality stable · ${(score * 100).round()}%${baseline != null ? ' vs ${(baseline * 100).round()}% baseline' : ''}',
+              style: Sa.body(size: 11.5, color: Sa.text),
+            ),
+          ),
+          Text('checked ${_agoIso(d['at'])}',
+              style: Sa.mono(size: 9.5, color: Sa.muted)),
+        ],
+      ),
+    );
+  }
+
   void _toast(String msg, {bool err = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -4667,6 +4738,7 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
 
   @override
   void dispose() {
+    _driftSub?.cancel();
     _key.dispose();
     super.dispose();
   }
@@ -4691,6 +4763,7 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
             ),
           ),
           const SizedBox(height: 14),
+          if (_drift != null) _driftStripWidget(),
           if (_loading)
             Center(
               child: Padding(
@@ -4781,14 +4854,137 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
               ),
               const SizedBox(height: 12),
             ],
-            SaButton(
-              label: 'SAVE MODEL',
-              icon: Icons.save_outlined,
-              color: widget.accent,
-              busy: _saving,
-              onPressed: widget.enabled ? _save : null,
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                SaButton(
+                  label: 'TEST THIS MODEL',
+                  icon: Icons.science_outlined,
+                  color: widget.accent,
+                  outlined: true,
+                  busy: _testing,
+                  onPressed: widget.enabled ? _test : null,
+                ),
+                SaButton(
+                  label: 'SAVE MODEL',
+                  icon: Icons.save_outlined,
+                  color: widget.accent,
+                  busy: _saving,
+                  onPressed: widget.enabled ? _save : null,
+                ),
+              ],
             ),
+            if (_testing)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  'Running both models on golden tasks and scoring them…',
+                  style: Sa.body(size: 11, color: Sa.muted),
+                ),
+              ),
+            if (_eval != null)
+              _EvalResultCard(eval: _eval!, accent: widget.accent),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Head-to-head eval result: candidate vs current champion, with a verdict.
+class _EvalResultCard extends StatelessWidget {
+  final ModelEvalResult eval;
+  final Color accent;
+  const _EvalResultCard({required this.eval, required this.accent});
+
+  static String _short(String id) => id.isEmpty ? 'built-in' : id;
+
+  Widget _scoreRow(String label, double score, Color color, bool strong) {
+    final pct = score.clamp(0.0, 1.0);
+    return Row(
+      children: [
+        SizedBox(
+          width: 132,
+          child: Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Sa.body(size: 11.5, color: strong ? Sa.text : Sa.textDim)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (ctx, cons) => Container(
+              height: 10,
+              width: double.infinity,
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                  color: Sa.panelSolid, borderRadius: BorderRadius.circular(6)),
+              child: Container(
+                height: 10,
+                width: cons.maxWidth * pct,
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(6)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 42,
+          child: Text('${(pct * 100).round()}%',
+              textAlign: TextAlign.right,
+              style: Sa.mono(size: 11.5, color: strong ? Sa.text : Sa.muted)),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final v = eval.verdict;
+    final vColor = v == 'better' ? Sa.green : (v == 'worse' ? Sa.red : Sa.amber);
+    final vLabel = v == 'better'
+        ? 'BETTER — safe to deploy'
+        : v == 'worse'
+            ? 'WORSE — keep current'
+            : 'SIMILAR — no real gain';
+    final vIcon = v == 'better'
+        ? Icons.trending_up
+        : v == 'worse'
+            ? Icons.trending_down
+            : Icons.drag_handle;
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: vColor.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: vColor.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(vIcon, size: 18, color: vColor),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(vLabel, style: Sa.heading(size: 13, color: vColor))),
+              Text('${eval.delta >= 0 ? '+' : ''}${(eval.delta * 100).round()} pts',
+                  style: Sa.mono(size: 12, color: vColor)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _scoreRow('This model', eval.candidate.score, accent, true),
+          const SizedBox(height: 8),
+          _scoreRow('Current · ${_short(eval.champion.modelId)}',
+              eval.champion.score, Sa.muted, false),
+          const SizedBox(height: 12),
+          Text(
+            'Both models ran the same golden tasks; we score grounding, structure, on-topic accuracy and length. Higher is better.',
+            style: Sa.body(size: 10.5, color: Sa.muted),
+          ),
         ],
       ),
     );
@@ -6097,8 +6293,10 @@ class _GuardianAgentPanel extends StatefulWidget {
 }
 
 class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
-  static const _ghUrl = String.fromEnvironment('ALERTSYS_GITHUB_WORKER_URL', defaultValue: '');
-  static const _wSecret = String.fromEnvironment('ALERTSYS_WORKER_SHARED_SECRET', defaultValue: '');
+  // The GitHub proxy worker URL + shared secret come from build-time config so
+  // the live Actions/PR subtabs work in CI builds without per-widget defines.
+  static const _ghUrl = AppConfig.githubWorkerBase;
+  static const _wSecret = AppConfig.workerSharedSecret;
 
   final _cfg = FirebaseDatabase.instance.ref('ai_agents/guardian');
   final _sec = FirebaseDatabase.instance.ref('ai_agent_secrets/guardian');
@@ -6108,13 +6306,10 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   static const _gAmber = Color(0xFFD29922);
   static const _gPurple = Color(0xFFA371F7);
 
-  List<Map<String, dynamic>> _ghRuns = [];
-  List<Map<String, dynamic>> _ghPulls = [];
-  bool _ghLoading = false;
-  bool _ghConnected = false;
   Map<dynamic, dynamic> _secrets = {};
   Offset _simOffset = const Offset(10, 96);
   bool _deployAuto = false;
+  int _subtab = 0; // 0 = Control · 1 = Actions · 2 = Pull requests
   Timer? _simTimer;
 
   @override
@@ -6123,29 +6318,12 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     _sec.get().then((s) {
       if (mounted && s.value is Map) setState(() => _secrets = s.value as Map<dynamic, dynamic>);
     });
-    _loadGithub();
   }
 
   @override
   void dispose() {
     _simTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadGithub() async {
-    if (_ghUrl.isEmpty) return;
-    setState(() => _ghLoading = true);
-    final gh = GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret);
-    final connected = await gh.connected();
-    final runs = connected ? await gh.runs() : <Map<String, dynamic>>[];
-    final pulls = connected ? await gh.pulls() : <Map<String, dynamic>>[];
-    if (!mounted) return;
-    setState(() {
-      _ghConnected = connected;
-      _ghRuns = runs;
-      _ghPulls = pulls;
-      _ghLoading = false;
-    });
   }
 
   bool _hasSecret(String k) => (_secrets[k]?.toString() ?? '').isNotEmpty;
@@ -6161,47 +6339,135 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
         final settings = (cfg['settings'] is Map) ? cfg['settings'] as Map : const {};
         final enabled = cfg['enabled'] != false;
         final active = (cfg['activeRun'] is Map) ? cfg['activeRun'] as Map : null;
+        final repo = (cfg['repo'] ?? '').toString();
         _deployAuto = (settings['deployMode'] ?? 'human') == 'auto';
         return LayoutBuilder(
           builder: (context, c) {
             final h = c.maxHeight.isFinite ? c.maxHeight : 1600.0;
             return SizedBox(
               height: h,
-              child: Stack(
+              child: Column(
                 children: [
-                  Positioned.fill(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(4),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _header(enabled, settings),
-                          const SizedBox(height: 14),
-                          _pipeline(active),
-                          const SizedBox(height: 14),
-                          _terminal(active),
-                          const SizedBox(height: 14),
-                          _aiConfig(settings),
-                          const SizedBox(height: 14),
-                          _github(cfg),
-                          const SizedBox(height: 14),
-                          _knowledge(cfg),
-                          const SizedBox(height: 14),
-                          _githubLive(),
-                          const SizedBox(height: 60),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: _simOffset.dx.clamp(0.0, (c.maxWidth - 176).clamp(0.0, double.infinity)),
-                    top: _simOffset.dy.clamp(0.0, (h - 120).clamp(0.0, double.infinity)),
-                    child: _simToolbar(),
+                  _subtabBar(),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    // Only the active subtab is built, so the GitHub views' live
+                    // polling stops the moment you leave Actions / Pull requests.
+                    child: switch (_subtab) {
+                      1 => GuardianActionsView(
+                          baseUrl: _ghUrl, sharedSecret: _wSecret, repo: repo),
+                      2 => GuardianPullsView(
+                          baseUrl: _ghUrl, sharedSecret: _wSecret, repo: repo),
+                      _ => _controlBody(cfg, settings, enabled, active),
+                    },
                   ),
                 ],
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  /// Subtab selector: Control · Actions · Pull requests. The two GitHub subtabs
+  /// render in authentic GitHub styling inside [GuardianActionsView] /
+  /// [GuardianPullsView]; this bar stays in the command-center theme.
+  Widget _subtabBar() {
+    const items = [
+      (i: 0, label: 'CONTROL', icon: Icons.tune),
+      (i: 1, label: 'ACTIONS', icon: Icons.sync_alt),
+      (i: 2, label: 'PULL REQUESTS', icon: Icons.merge_type),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Sa.bgRaised.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Sa.border),
+      ),
+      child: Row(
+        children: [
+          for (final it in items)
+            Expanded(
+              child: InkWell(
+                onTap: () => setState(() => _subtab = it.i),
+                borderRadius: BorderRadius.circular(9),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _subtab == it.i
+                        ? widget.spec.accent.withValues(alpha: 0.16)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: _subtab == it.i
+                          ? widget.spec.accent.withValues(alpha: 0.5)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(it.icon,
+                          size: 15,
+                          color: _subtab == it.i ? widget.spec.accent : Sa.muted),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(it.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Sa.body(
+                                size: 11.5,
+                                color: _subtab == it.i ? widget.spec.accent : Sa.muted)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The Control subtab: header + live pipeline + terminal + AI/GitHub config +
+  /// knowledge, with the draggable simulate toolbar overlaid.
+  Widget _controlBody(Map cfg, Map settings, bool enabled, Map? active) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final h = c.maxHeight.isFinite ? c.maxHeight : 1600.0;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _header(enabled, settings),
+                    const SizedBox(height: 14),
+                    _pipeline(active),
+                    const SizedBox(height: 14),
+                    _terminal(active),
+                    const SizedBox(height: 14),
+                    _aiConfig(settings),
+                    const SizedBox(height: 14),
+                    _github(cfg),
+                    const SizedBox(height: 14),
+                    _knowledge(cfg),
+                    const SizedBox(height: 60),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: _simOffset.dx.clamp(0.0, (c.maxWidth - 176).clamp(0.0, double.infinity)),
+              top: _simOffset.dy.clamp(0.0, (h - 120).clamp(0.0, double.infinity)),
+              child: _simToolbar(),
+            ),
+          ],
         );
       },
     );
@@ -6485,7 +6751,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       Expanded(child: InkWell(
         onTap: () => _setSecret('githubToken', 'GitHub token', 'github_pat_…'),
         child: _fieldRow(Icons.vpn_key, _hasSecret('githubToken') ? '•••••••• set' : 'set token',
-            trailing: _ghConnected ? Icon(Icons.check, size: 14, color: _gGreen) : null),
+            trailing: _hasSecret('githubToken') ? Icon(Icons.check, size: 14, color: _gGreen) : null),
       )),
     ]));
   }
@@ -6537,105 +6803,6 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     );
   }
 
-  // ── live github (matches the GitHub screenshots) ──
-  Widget _githubLive() {
-    return _panel('GITHUB · LIVE', Icons.bolt, Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          Text('Workflow runs', style: Sa.body(size: 12, color: Sa.textDim)),
-          const Spacer(),
-          if (_ghLoading)
-            SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Sa.cyan))
-          else
-            InkWell(onTap: _loadGithub, child: Icon(Icons.refresh, size: 17, color: Sa.cyan)),
-        ]),
-        const SizedBox(height: 4),
-        if (!_ghConnected)
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Sa.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: Sa.border)),
-            child: Row(children: [
-              Icon(Icons.link_off, size: 16, color: Sa.muted),
-              const SizedBox(width: 9),
-              Expanded(child: Text(
-                _ghUrl.isEmpty
-                    ? 'Set ALERTSYS_GITHUB_WORKER_URL (build define) to stream live Actions + PRs.'
-                    : 'Link a repo + GitHub token above to stream live Actions + PRs.',
-                style: Sa.body(size: 12, color: Sa.muted))),
-            ]),
-          )
-        else ...[
-          for (final r in _ghRuns.take(6)) _ghActionRow(r),
-          const SizedBox(height: 12),
-          Text('Pull requests', style: Sa.body(size: 12, color: Sa.textDim)),
-          const SizedBox(height: 4),
-          for (final p in _ghPulls.take(6)) _ghPrRow(p),
-        ],
-      ],
-    ));
-  }
-
-  Widget _ghActionRow(Map<String, dynamic> r) {
-    final concl = (r['conclusion'] ?? r['status'] ?? '').toString();
-    final c = _statusColor(concl);
-    final running = concl.contains('progress') || concl.contains('queued') || concl.isEmpty;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: Sa.border.withValues(alpha: 0.5)))),
-      child: Row(children: [
-        running
-            ? SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2, color: _gAmber))
-            : Icon(_statusIcon(concl), size: 17, color: c),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${r['name'] ?? 'workflow'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Sa.body(size: 13, color: Sa.text)),
-            Text('#${r['runNumber'] ?? '?'} · ${r['event'] ?? ''}', style: Sa.body(size: 11, color: Sa.muted)),
-          ]),
-        ),
-        if ((r['branch'] ?? '').toString().isNotEmpty)
-          Container(
-            constraints: const BoxConstraints(maxWidth: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: Sa.blue.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(20)),
-            child: Text(r['branch'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: Sa.body(size: 10.5, color: Sa.blue)),
-          ),
-        const SizedBox(width: 8),
-        Text(_ago(r['createdAt']?.toString()), style: Sa.body(size: 11, color: Sa.muted)),
-      ]),
-    );
-  }
-
-  Widget _ghPrRow(Map<String, dynamic> p) {
-    final state = (p['state'] ?? '').toString();
-    final c = state == 'merged' ? _gPurple : (state == 'open' ? _gGreen : Sa.muted);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: Sa.border.withValues(alpha: 0.5)))),
-      child: Row(children: [
-        Icon(Icons.call_merge, size: 16, color: c),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${p['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Sa.body(size: 13, color: Sa.text)),
-            Row(children: [
-              Text('#${p['number'] ?? '?'} · ${p['user'] ?? ''}', style: Sa.body(size: 11, color: Sa.muted)),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), border: Border.all(color: Sa.border)),
-                child: Text('Bot', style: Sa.body(size: 9, color: Sa.muted)),
-              ),
-            ]),
-          ]),
-        ),
-        GlowChip(label: state.toUpperCase(), color: c),
-      ]),
-    );
-  }
-
   // ── helpers ──
   Widget _panel(String label, IconData ic, Widget child) {
     return GlassPanel(
@@ -6649,32 +6816,6 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
         ],
       ),
     );
-  }
-
-  String _ago(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    final t = DateTime.tryParse(iso);
-    if (t == null) return '';
-    final d = DateTime.now().difference(t);
-    if (d.inMinutes < 1) return 'now';
-    if (d.inMinutes < 60) return '${d.inMinutes}m';
-    if (d.inHours < 24) return '${d.inHours}h';
-    return '${d.inDays}d';
-  }
-
-  Color _statusColor(String s) {
-    s = s.toLowerCase();
-    if (s.contains('success') || s.contains('complet')) return _gGreen;
-    if (s.contains('fail') || s.contains('cancel')) return _gRed;
-    if (s.contains('progress') || s.contains('queued') || s.contains('pending')) return _gAmber;
-    return Sa.muted;
-  }
-
-  IconData _statusIcon(String s) {
-    s = s.toLowerCase();
-    if (s.contains('success') || s.contains('complet')) return Icons.check_circle;
-    if (s.contains('fail') || s.contains('cancel')) return Icons.cancel;
-    return Icons.sync;
   }
 
   Future<void> _saveSetting(String k, dynamic v) =>
@@ -6819,7 +6960,6 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     );
     if (v != null && v.isNotEmpty) {
       await _cfg.update({'repo': v});
-      _loadGithub();
     }
   }
 
