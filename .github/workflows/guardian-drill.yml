@@ -192,7 +192,7 @@ jobs:
         run: flutter build apk --debug --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
       - name: Upload healed APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: guardian-healed-apk
           path: build/app/outputs/flutter-apk/*.apk
