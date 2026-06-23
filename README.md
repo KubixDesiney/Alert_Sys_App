@@ -72,8 +72,6 @@ This release consolidates SIA for controlled enterprise pilots: dedicated white-
 
 ---
 
-</div>
-
 ## Table of Contents
 
 - [Overview](#-overview)
@@ -97,23 +95,23 @@ This release consolidates SIA for controlled enterprise pilots: dedicated white-
 <tr>
 <td width="60%">
 
-Smart Industrial Alert - SIA is a **full-stack industrial supervision platform** designed from the ground up for high-noise, high-stakes manufacturing environments. It replaces fragmented radio systems and paper-based workflows with a unified, intelligent layer that routes alerts, verifies identities through voice biometrics, predicts failures before they happen, and provides hands-free control to supervisors â€” all running offline on the factory floor.
+Smart Industrial Alert - SIA is a **full-stack industrial supervision platform** designed from the ground up for high-noise, high-stakes manufacturing environments. It replaces fragmented radio systems and paper-based workflows with a unified, intelligent layer that routes alerts, verifies identities through voice biometrics, predicts failures before they happen, and provides hands-free control to supervisors — all running offline on the factory floor.
 
-**Built for factories. Engineered for scale. Designed for zero downtime.**
+**Built for factories. Engineered for scale. Designed for resilient factory operations.**
 
 </td>
 <td width="40%" align="center">
 
 ```
-ðŸ­  Factory Operations Layer
-       â†•  Real-time sync
-ðŸ”¥  Firebase + Cloudflare Edge
-       â†•  AI pipeline
-ðŸ¤–  TFLite + Claude + ONNX
-       â†•  Voice interface
-ðŸŽ¤  Offline ASR + Speaker ID
-       â†•  Mobile/Desktop
-ðŸ“±  Flutter Multi-Platform App
+🏭  Factory Operations Layer
+       ↕  Real-time sync
+🔥  Firebase + Cloudflare Edge
+       ↕  AI pipeline
+🤖  TFLite + Claude + ONNX
+       ↕  Voice interface
+🎤  Offline ASR + Speaker ID
+       ↕  Mobile/Desktop
+📱  Flutter Multi-Platform App
 ```
 
 </td>
@@ -133,8 +131,8 @@ Smart Industrial Alert - SIA is a **full-stack industrial supervision platform**
 | Feature | Description |
 |---|---|
 | **Multi-Type Alerts** | Quality (`qualite`), Maintenance, Product Defects (`defaut_produit`), Resource Deficiency (`manque_ressource`) |
-| **Human-Readable IDs** | Every alert gets a numeric ID starting at `1000` â€” speakable by voice ("Alert one zero two five") |
-| **Full Status Lifecycle** | `open â†’ claimed â†’ in_progress â†’ resolved / escalated` with timestamped transitions |
+| **Human-Readable IDs** | Every alert gets a numeric ID starting at `1000` — speakable by voice ("Alert one zero two five") |
+| **Full Status Lifecycle** | `open → claimed → in_progress → resolved / escalated` with timestamped transitions |
 | **Critical Flag System** | Mark alerts critical with custom notes and type-specific escalation thresholds |
 | **Comments & Resolution Notes** | Structured resolution comments attached to every alert for audit trails |
 | **Auto-Escalation** | Cloudflare Worker cron triggers automatic escalation of unclaimed alerts after configurable timeout |
@@ -160,14 +158,14 @@ Smart Industrial Alert - SIA is a **full-stack industrial supervision platform**
 
 ```
 Usine (Factory)
- â””â”€â”€ Conveyor Line
-       â””â”€â”€ Workstation
-             â””â”€â”€ Machine Asset (with full history)
+ └── Conveyor Line
+       └── Workstation
+             └── Machine Asset (with full history)
 ```
 
 - Alerts are always bound to a valid node in the hierarchy
 - Asset management with machine IDs and asset history
-- Location-aware AI assignment â€” closer supervisors score higher
+- Location-aware AI assignment — closer supervisors score higher
 - QR codes at each station let supervisors identify a workstation and load its alert history instantly
 
 ---
@@ -177,21 +175,21 @@ Usine (Factory)
 <div align="center">
 
 ```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                   VOICE PIPELINE                        â”‚
-â”‚                                                         â”‚
-â”‚  ðŸŽ¤ Native Android AudioRecord (16kHz PCM mono)         â”‚
-â”‚         â†“ RMS silence detection (900ms threshold)       â”‚
-â”‚  ðŸ“¦ Sherpa ONNX Streaming Zipformer (~17MB int8)        â”‚
-â”‚         â†“ 30% lower WER than alternatives in noise      â”‚
-â”‚  ðŸ§  TFLite Speaker Embedding (conformer_tisid_small)    â”‚
-â”‚         â†“ Cosine similarity â‰¥ 0.80 to authenticate      â”‚
-â”‚  ðŸ” VoiceCommandParser (num-word â†’ digit + intent)      â”‚
-â”‚         â†“ claim / resolve / escalate / navigate         â”‚
-â”‚  âš¡ VoiceCommandDispatcher â†’ AlertProvider action        â”‚
-â”‚         â†“                                               â”‚
-â”‚  ðŸ”Š flutter_tts confirmation (max vol + focus steal)    â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+┌─────────────────────────────────────────────────────────┐
+│                   VOICE PIPELINE                        │
+│                                                         │
+│  🎤 Native Android AudioRecord (16kHz PCM mono)         │
+│         ↓ RMS silence detection (900ms threshold)       │
+│  📦 Sherpa ONNX Streaming Zipformer (~17MB int8)        │
+│         ↓ 30% lower WER than alternatives in noise      │
+│  🧠 TFLite Speaker Embedding (conformer_tisid_small)    │
+│         ↓ Cosine similarity ≥ 0.80 to authenticate      │
+│  🔍 VoiceCommandParser (num-word → digit + intent)      │
+│         ↓ claim / resolve / escalate / navigate         │
+│  ⚡ VoiceCommandDispatcher → AlertProvider action        │
+│         ↓                                               │
+│  🔊 flutter_tts confirmation (max vol + focus steal)    │
+└─────────────────────────────────────────────────────────┘
 ```
 
 </div>
@@ -209,21 +207,21 @@ Usine (Factory)
 ### Speaker Verification
 
 - **TFLite conformer model** generates speaker embeddings from raw audio
-- **Cosine similarity threshold**: `0.80` â€” tuned for factory-grade accuracy
-- **Quality gates**: minimum 600ms of speech, SNR â‰¥ 6 dB
+- **Cosine similarity threshold**: `0.80` — tuned for factory-grade accuracy
+- **Quality gates**: minimum 600ms of speech, SNR ≥ 6 dB
 - **VAD trimming**: silence stripped from both ends before embedding
 - **Enrollment UI**: guided multi-sample enrollment flow for new supervisors
 
 ### Lock Screen Voice Actions
 
 - Full-screen `VoiceLockRecorderActivity` launches above Android keyguard
-- FCM notification carries `voice_claim` action button â€” tap opens voice claim screen on the lock screen
-- Post-notification flow: **record â†’ transcribe â†’ verify identity â†’ execute â†’ speak confirmation**
+- FCM notification carries `voice_claim` action button — tap opens voice claim screen on the lock screen
+- Post-notification flow: **record → transcribe → verify identity → execute → speak confirmation**
 - `fullScreenIntent` with `boostMediaVolume()` ensures TTS cuts through factory noise
 
 ### Offline-First STT
 
-- **Primary**: Sherpa ONNX streaming Zipformer â€” fully offline after one-time model download
+- **Primary**: Sherpa ONNX streaming Zipformer — fully offline after one-time model download
 - **Fallback**: `speech_to_text` plugin for non-Android platforms
 - Zero dependency on cloud connectivity on the factory floor
 - Model stored in app data directory, compressed archive on first launch
@@ -235,34 +233,34 @@ Usine (Factory)
 <div align="center">
 
 ```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                      AI INTELLIGENCE LAYER                         â”‚
-â”‚                                                                    â”‚
-â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”‚
-â”‚  â”‚  AI ASSIGNMENT      â”‚   â”‚  PREDICTIVE INTELLIGENCE         â”‚   â”‚
-â”‚  â”‚                     â”‚   â”‚                                  â”‚   â”‚
-â”‚  â”‚  Scoring Model:     â”‚   â”‚  â€¢ Morning briefing (daily)      â”‚   â”‚
-â”‚  â”‚  â€¢ Workload weight  â”‚   â”‚  â€¢ Failure risk curves           â”‚   â”‚
-â”‚  â”‚  â€¢ Expertise match  â”‚   â”‚  â€¢ Hourly probability dist.      â”‚   â”‚
-â”‚  â”‚  â€¢ Location prox.   â”‚   â”‚  â€¢ Per-factory risk scores       â”‚   â”‚
-â”‚  â”‚  â€¢ Success rate     â”‚   â”‚  â€¢ Assignee predictions          â”‚   â”‚
-â”‚  â”‚                     â”‚   â”‚                                  â”‚   â”‚
-â”‚  â”‚  Confidence: 0-100  â”‚   â”‚  Powered by historical alert     â”‚   â”‚
-â”‚  â”‚  Cooldown: 5 min    â”‚   â”‚  patterns + factory metadata     â”‚   â”‚
-â”‚  â”‚  Debounce: 1.5s     â”‚   â”‚                                  â”‚   â”‚
-â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â”‚
-â”‚                                                                    â”‚
-â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”‚
-â”‚  â”‚  AI RESOLUTION      â”‚   â”‚  VOICE BIOMETRICS                â”‚   â”‚
-â”‚  â”‚  SUGGESTIONS        â”‚   â”‚                                  â”‚   â”‚
-â”‚  â”‚                     â”‚   â”‚  TFLite Speaker Embedding        â”‚   â”‚
-â”‚  â”‚  Claude API via     â”‚   â”‚  â€¢ 16kHz mono PCM input          â”‚   â”‚
-â”‚  â”‚  Cloudflare Worker  â”‚   â”‚  â€¢ conformer_tisid_small.tflite  â”‚   â”‚
-â”‚  â”‚                     â”‚   â”‚  â€¢ Cosine sim >= 0.80            â”‚   â”‚
-â”‚  â”‚  Context: type,     â”‚   â”‚  â€¢ VAD + SNR quality gates       â”‚   â”‚
-â”‚  â”‚  location, history  â”‚   â”‚  â€¢ Multi-enrollment averaging    â”‚   â”‚
-â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+┌────────────────────────────────────────────────────────────────────┐
+│                      AI INTELLIGENCE LAYER                         │
+│                                                                    │
+│  ┌─────────────────────┐   ┌──────────────────────────────────┐   │
+│  │  AI ASSIGNMENT      │   │  PREDICTIVE INTELLIGENCE         │   │
+│  │                     │   │                                  │   │
+│  │  Scoring Model:     │   │  • Morning briefing (daily)      │   │
+│  │  • Workload weight  │   │  • Failure risk curves           │   │
+│  │  • Expertise match  │   │  • Hourly probability dist.      │   │
+│  │  • Location prox.   │   │  • Per-factory risk scores       │   │
+│  │  • Success rate     │   │  • Assignee predictions          │   │
+│  │                     │   │                                  │   │
+│  │  Confidence: 0-100  │   │  Powered by historical alert     │   │
+│  │  Cooldown: 5 min    │   │  patterns + factory metadata     │   │
+│  │  Debounce: 1.5s     │   │                                  │   │
+│  └─────────────────────┘   └──────────────────────────────────┘   │
+│                                                                    │
+│  ┌─────────────────────┐   ┌──────────────────────────────────┐   │
+│  │  AI RESOLUTION      │   │  VOICE BIOMETRICS                │   │
+│  │  SUGGESTIONS        │   │                                  │   │
+│  │                     │   │  TFLite Speaker Embedding        │   │
+│  │  Claude API via     │   │  • 16kHz mono PCM input          │   │
+│  │  Cloudflare Worker  │   │  • conformer_tisid_small.tflite  │   │
+│  │                     │   │  • Cosine sim >= 0.80            │   │
+│  │  Context: type,     │   │  • VAD + SNR quality gates       │   │
+│  │  location, history  │   │  • Multi-enrollment averaging    │   │
+│  └─────────────────────┘   └──────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 </div>
@@ -272,7 +270,7 @@ Usine (Factory)
 The rule-based scoring model evaluates every available supervisor against a weighted multi-criteria function:
 
 ```
-score = w1Â·(1/workload) + w2Â·expertise_match + w3Â·location_proximity + w4Â·recent_success_rate
+score = w1·(1/workload) + w2·expertise_match + w3·location_proximity + w4·recent_success_rate
 ```
 
 - **Decision transparency**: every assignment includes full per-supervisor score breakdown
@@ -299,29 +297,29 @@ score = w1Â·(1/workload) + w2Â·expertise_match + w3Â·location_proximity + 
 ## Architecture
 
 ```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                            Smart Industrial Alert - SIA ARCHITECTURE                             â”‚
-â”‚                                                                              â”‚
-â”‚   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
-â”‚   â”‚   FLUTTER    â”‚   â”‚   FIREBASE   â”‚   â”‚  CLOUDFLARE  â”‚   â”‚  SHOREBIRD â”‚  â”‚
-â”‚   â”‚   APP        â”‚   â”‚              â”‚   â”‚  WORKERS     â”‚   â”‚  CODE PUSH â”‚  â”‚
-â”‚   â”‚              â”‚<â”€â”€â”¤ Realtime DB  â”‚   â”‚              â”‚   â”‚            â”‚  â”‚
-â”‚   â”‚ Provider     â”‚   â”‚ Firestore    â”‚<â”€â”€â”¤ Cron AI      â”‚   â”‚ OTA deploy â”‚  â”‚
-â”‚   â”‚ Screens      â”‚<â”€â”€â”¤ Cloud Funcs  â”‚   â”‚ Escalation   â”‚   â”‚ Zero-down  â”‚  â”‚
-â”‚   â”‚ Services     â”‚   â”‚ Auth         â”‚   â”‚ Push fan-out â”‚   â”‚ time patch â”‚  â”‚
-â”‚   â”‚ Models       â”‚<â”€â”€â”¤ FCM          â”‚   â”‚ JWT signing  â”‚   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
-â”‚   â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”˜   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                   â”‚
-â”‚          â”‚                                                                   â”‚
-â”‚   â”Œâ”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”‚
-â”‚   â”‚                     PLATFORM CHANNELS (Android)                     â”‚   â”‚
-â”‚   â”‚  VoiceLockRecorderActivity  Â·  boostMediaVolume()  Â·  Keyguard API  â”‚   â”‚
-â”‚   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â”‚
-â”‚                                                                              â”‚
-â”‚   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”‚
-â”‚   â”‚                        ON-DEVICE ML STACK                            â”‚  â”‚
-â”‚   â”‚   Sherpa ONNX (offline ASR)  Â·  TFLite (speaker embedding)           â”‚  â”‚
-â”‚   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            Smart Industrial Alert - SIA ARCHITECTURE                             │
+│                                                                              │
+│   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌────────────┐  │
+│   │   FLUTTER    │   │   FIREBASE   │   │  CLOUDFLARE  │   │  SHOREBIRD │  │
+│   │   APP        │   │              │   │  WORKERS     │   │  CODE PUSH │  │
+│   │              │<──┤ Realtime DB  │   │              │   │            │  │
+│   │ Provider     │   │ Firestore    │<──┤ Cron AI      │   │ OTA deploy │  │
+│   │ Screens      │<──┤ Cloud Funcs  │   │ Escalation   │   │ Zero-down  │  │
+│   │ Services     │   │ Auth         │   │ Push fan-out │   │ time patch │  │
+│   │ Models       │<──┤ FCM          │   │ JWT signing  │   └────────────┘  │
+│   └──────┬───────┘   └──────────────┘   └──────────────┘                   │
+│          │                                                                   │
+│   ┌──────▼──────────────────────────────────────────────────────────────┐   │
+│   │                     PLATFORM CHANNELS (Android)                     │   │
+│   │  VoiceLockRecorderActivity  ·  boostMediaVolume()  ·  Keyguard API  │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│   ┌──────────────────────────────────────────────────────────────────────┐  │
+│   │                        ON-DEVICE ML STACK                            │  │
+│   │   Sherpa ONNX (offline ASR)  ·  TFLite (speaker embedding)           │  │
+│   └──────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### State Management
@@ -335,13 +333,13 @@ score = w1Â·(1/workload) + w2Â·expertise_match + w3Â·location_proximity + 
 
 ```
 Firebase RTDB stream
-  â†’ AlertProvider (Provider)
-    â†’ UI rebuilds (Consumer widgets)
-      â†’ User action (tap / voice command)
-        â†’ AlertProvider method
-          â†’ Firebase write
-            â†’ Cloudflare Worker triggered (if needed)
-              â†’ FCM push to all supervisors
+  → AlertProvider (Provider)
+    → UI rebuilds (Consumer widgets)
+      → User action (tap / voice command)
+        → AlertProvider method
+          → Firebase write
+            → Cloudflare Worker triggered (if needed)
+              → FCM push to all supervisors
 ```
 
 ---
@@ -384,41 +382,41 @@ Firebase RTDB stream
 
 ```
 Authentication
-  â”œâ”€â”€ Login Screen
-  â””â”€â”€ Role Gate (Admin / Supervisor / Production Manager)
+  ├── Login Screen
+  └── Role Gate (Admin / Supervisor / Production Manager)
 
 Dashboard (Overview)
-  â”œâ”€â”€ Health Score Gauge
-  â”œâ”€â”€ Critical Alerts Card
-  â”œâ”€â”€ Predictive Failure Card
-  â”œâ”€â”€ AI Morning Briefing Hero
-  â””â”€â”€ Insights Strip
+  ├── Health Score Gauge
+  ├── Critical Alerts Card
+  ├── Predictive Failure Card
+  ├── AI Morning Briefing Hero
+  └── Insights Strip
 
 Alert Management
-  â”œâ”€â”€ Alerts Tree (hierarchical, heatmap-colored)
-  â”œâ”€â”€ Alert Detail (comments, resolution, AI suggestion)
-  â”œâ”€â”€ Alert Scan Screen (mobile / web variants)
-  â””â”€â”€ Escalated Alerts (admin view)
+  ├── Alerts Tree (hierarchical, heatmap-colored)
+  ├── Alert Detail (comments, resolution, AI suggestion)
+  ├── Alert Scan Screen (mobile / web variants)
+  └── Escalated Alerts (admin view)
 
 Voice Features
-  â”œâ”€â”€ Voice Claim Screen (lock-screen capable)
-  â”œâ”€â”€ Voice Enrollment Screen (guided multi-sample)
-  â””â”€â”€ Push-to-Talk overlay
+  ├── Voice Claim Screen (lock-screen capable)
+  ├── Voice Enrollment Screen (guided multi-sample)
+  └── Push-to-Talk overlay
 
 Supervision
-  â”œâ”€â”€ Supervisor Tab (availability, workload)
-  â”œâ”€â”€ Collaboration Screen (help requests, accept/refuse)
-  â””â”€â”€ Admin Escalation Dashboard
+  ├── Supervisor Tab (availability, workload)
+  ├── Collaboration Screen (help requests, accept/refuse)
+  └── Admin Escalation Dashboard
 
 Factory Management
-  â”œâ”€â”€ Factory Mapping Tab (custom layout)
-  â”œâ”€â”€ Alert Locator (custom painter map)
-  â””â”€â”€ Asset Management
+  ├── Factory Mapping Tab (custom layout)
+  ├── Alert Locator (custom painter map)
+  └── Asset Management
 
 Intelligence
-  â”œâ”€â”€ AI Logs Panel (assignment decision trace)
-  â”œâ”€â”€ Predictive Heatmaps
-  â””â”€â”€ Morning Briefing View
+  ├── AI Logs Panel (assignment decision trace)
+  ├── Predictive Heatmaps
+  └── Morning Briefing View
 ```
 
 ### Theme System
@@ -448,10 +446,10 @@ Smart Industrial Alert - SIA ships with a polished **dual-mode design system**:
 |---|:---:|:---:|:---:|:---:|
 | Android | Full | Native | Yes | Yes |
 | iOS | Supported | Fallback | Yes | Partial |
-| Windows | Supported | Fallback | â€” | Partial |
-| Linux | Supported | Fallback | â€” | Partial |
+| Windows | Supported | Fallback | — | Partial |
+| Linux | Supported | Fallback | — | Partial |
 | macOS | Supported | Fallback | Yes | Partial |
-| Web | Supported | Fallback | Manual entry | â€” |
+| Web | Supported | Fallback | Manual entry | — |
 
 > **Android is the primary deployment target.** Native `VoiceLockRecorderActivity` and full offline Sherpa ONNX pipeline are Android-only. Other platforms use `speech_to_text` plugin fallback.
 
@@ -463,22 +461,22 @@ Smart Industrial Alert - SIA ships with a polished **dual-mode design system**:
 
 ```
 firebase/
-  â”œâ”€â”€ Realtime Database   â†’ Live alert streams, supervisor state
-  â”œâ”€â”€ Firestore           â†’ AI decision logs, structured metadata
-  â”œâ”€â”€ Cloud Functions     â†’ Assignment cooldowns, factory locks (15s TTL)
-  â”œâ”€â”€ Cloud Messaging     â†’ Push to supervisors, voice_claim actions
-  â””â”€â”€ Authentication      â†’ UID-based role gates
+  ├── Realtime Database   → Live alert streams, supervisor state
+  ├── Firestore           → AI decision logs, structured metadata
+  ├── Cloud Functions     → Assignment cooldowns, factory locks (15s TTL)
+  ├── Cloud Messaging     → Push to supervisors, voice_claim actions
+  └── Authentication      → UID-based role gates
 ```
 
 ### Cloudflare Workers
 
-**Primary Worker** (`cloudflare_worker.js` â€” 49 KB):
+**Primary Worker** (`cloudflare_worker.js` — 49 KB):
 
 | Cron Trigger | Action |
 |---|---|
-| Every minute | AI scoring run â€” matches unassigned alerts to supervisors |
-| Every minute | Escalation check â€” auto-escalates stale unclaimed alerts |
-| Every minute | Push fan-out â€” broadcasts qualifying alerts to available supervisors |
+| Every minute | AI scoring run — matches unassigned alerts to supervisors |
+| Every minute | Escalation check — auto-escalates stale unclaimed alerts |
+| Every minute | Push fan-out — broadcasts qualifying alerts to available supervisors |
 
 - Custom Firebase JWT generation (service account signing, no Admin SDK required at edge)
 - Rate-limited: max 1 alert/push, 5 escalation checks, 20 factories per cron run
@@ -535,7 +533,7 @@ flutter run --release
 
 ### First Launch
 
-1. **Voice Enrollment**: Supervisors record 3â€“5 samples to build their voice profile
+1. **Voice Enrollment**: Supervisors record 3–5 samples to build their voice profile
 2. **Model Download**: Sherpa ONNX ASR model (~17 MB) downloads once, then fully offline
 3. **FCM Token**: Device registers for push notifications automatically
 4. **Role Assignment**: Admin assigns supervisor/manager roles via Firebase console
@@ -593,69 +591,69 @@ const int    minSpeechMs         = 600;    // minimum speech duration (ms)
 
 ```
 Smart Industrial Alert - SIAapp/
-â”‚
-â”œâ”€â”€ lib/
-â”‚   â”œâ”€â”€ main.dart                          # App entry, Firebase init, auth gate
-â”‚   â”œâ”€â”€ theme.dart                         # AppTheme light/dark + context extensions
-â”‚   â”‚
-â”‚   â”œâ”€â”€ models/                            # Data models
-â”‚   â”‚   â”œâ”€â”€ alert_model.dart
-â”‚   â”‚   â”œâ”€â”€ user_model.dart
-â”‚   â”‚   â”œâ”€â”€ collaboration_model.dart
-â”‚   â”‚   â””â”€â”€ hierarchy_model.dart
-â”‚   â”‚
-â”‚   â”œâ”€â”€ providers/                         # State management
-â”‚   â”‚   â””â”€â”€ alert_provider.dart            # Central alert + supervisor state
-â”‚   â”‚
-â”‚   â”œâ”€â”€ services/                          # 30+ service classes
-â”‚   â”‚   â”œâ”€â”€ alert_service.dart
-â”‚   â”‚   â”œâ”€â”€ ai_service.dart                # Claude API proxy
-â”‚   â”‚   â”œâ”€â”€ ai_assignment_service.dart     # Scoring + auto-assignment
-â”‚   â”‚   â”œâ”€â”€ predictive_intel_service.dart  # Morning briefings, risk curves
-â”‚   â”‚   â”œâ”€â”€ voice_service.dart             # Platform-conditional entry
-â”‚   â”‚   â”œâ”€â”€ voice_service_io.dart          # Android native impl
-â”‚   â”‚   â”œâ”€â”€ voice_service_stub.dart        # Non-Android stub
-â”‚   â”‚   â”œâ”€â”€ voice_auth_service_io.dart     # TFLite speaker verification
-â”‚   â”‚   â”œâ”€â”€ sherpa_stt_service_io.dart     # Offline ASR
-â”‚   â”‚   â”œâ”€â”€ voice_command_parser.dart      # Intent + number parsing
-â”‚   â”‚   â”œâ”€â”€ voice_command_dispatcher.dart  # Command â†’ AlertProvider bridge
-â”‚   â”‚   â”œâ”€â”€ fcm_service.dart
-â”‚   â”‚   â”œâ”€â”€ offline_db_service.dart
-â”‚   â”‚   â””â”€â”€ ...
-â”‚   â”‚
-â”‚   â”œâ”€â”€ screens/                           # 24+ screens
-â”‚   â”‚   â”œâ”€â”€ dashboard_screen.dart
-â”‚   â”‚   â”œâ”€â”€ alerts_tree_screen.dart
-â”‚   â”‚   â”œâ”€â”€ voice_claim_screen.dart
-â”‚   â”‚   â”œâ”€â”€ voice_enrollment_screen.dart
-â”‚   â”‚   â”œâ”€â”€ alert_scan_screen.dart
-â”‚   â”‚   â”œâ”€â”€ admin_escalation_screen.dart
-â”‚   â”‚   â”œâ”€â”€ collaboration_screen.dart
-â”‚   â”‚   â””â”€â”€ ...
-â”‚   â”‚
-â”‚   â””â”€â”€ widgets/                           # Reusable components
-â”‚       â”œâ”€â”€ voice_command_button.dart
-â”‚       â”œâ”€â”€ ai_logs_panel.dart
-â”‚       â”œâ”€â”€ predictive_heatmap_widget.dart
-â”‚       â””â”€â”€ ...
-â”‚
-â”œâ”€â”€ android/
-â”‚   â””â”€â”€ app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/
-â”‚       â”œâ”€â”€ MainActivity.kt
-â”‚       â””â”€â”€ VoiceLockRecorderActivity.kt   # Native audio + keyguard bypass
-â”‚
-â”œâ”€â”€ assets/
-â”‚   â””â”€â”€ models/
-â”‚       â””â”€â”€ conformer_tisid_small.tflite   # Speaker embedding model
-â”‚
-â”œâ”€â”€ functions/                             # Firebase Cloud Functions (Node.js)
-â”‚   â””â”€â”€ index.js
-â”‚
-â”œâ”€â”€ cloudflare_worker.js                   # Edge AI scoring + escalation cron
-â”œâ”€â”€ WORKER_UPDATE_FILTER_CLAIMED.js        # Claimed filter sync worker
-â”œâ”€â”€ pubspec.yaml                           # Flutter dependencies
-â”œâ”€â”€ firebase.json                          # Firebase config
-â””â”€â”€ shorebird.yaml                         # Code push configuration
+│
+├── lib/
+│   ├── main.dart                          # App entry, Firebase init, auth gate
+│   ├── theme.dart                         # AppTheme light/dark + context extensions
+│   │
+│   ├── models/                            # Data models
+│   │   ├── alert_model.dart
+│   │   ├── user_model.dart
+│   │   ├── collaboration_model.dart
+│   │   └── hierarchy_model.dart
+│   │
+│   ├── providers/                         # State management
+│   │   └── alert_provider.dart            # Central alert + supervisor state
+│   │
+│   ├── services/                          # 30+ service classes
+│   │   ├── alert_service.dart
+│   │   ├── ai_service.dart                # Claude API proxy
+│   │   ├── ai_assignment_service.dart     # Scoring + auto-assignment
+│   │   ├── predictive_intel_service.dart  # Morning briefings, risk curves
+│   │   ├── voice_service.dart             # Platform-conditional entry
+│   │   ├── voice_service_io.dart          # Android native impl
+│   │   ├── voice_service_stub.dart        # Non-Android stub
+│   │   ├── voice_auth_service_io.dart     # TFLite speaker verification
+│   │   ├── sherpa_stt_service_io.dart     # Offline ASR
+│   │   ├── voice_command_parser.dart      # Intent + number parsing
+│   │   ├── voice_command_dispatcher.dart  # Command → AlertProvider bridge
+│   │   ├── fcm_service.dart
+│   │   ├── offline_db_service.dart
+│   │   └── ...
+│   │
+│   ├── screens/                           # 24+ screens
+│   │   ├── dashboard_screen.dart
+│   │   ├── alerts_tree_screen.dart
+│   │   ├── voice_claim_screen.dart
+│   │   ├── voice_enrollment_screen.dart
+│   │   ├── alert_scan_screen.dart
+│   │   ├── admin_escalation_screen.dart
+│   │   ├── collaboration_screen.dart
+│   │   └── ...
+│   │
+│   └── widgets/                           # Reusable components
+│       ├── voice_command_button.dart
+│       ├── ai_logs_panel.dart
+│       ├── predictive_heatmap_widget.dart
+│       └── ...
+│
+├── android/
+│   └── app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/
+│       ├── MainActivity.kt
+│       └── VoiceLockRecorderActivity.kt   # Native audio + keyguard bypass
+│
+├── assets/
+│   └── models/
+│       └── conformer_tisid_small.tflite   # Speaker embedding model
+│
+├── functions/                             # Firebase Cloud Functions (Node.js)
+│   └── index.js
+│
+├── cloudflare_worker.js                   # Edge AI scoring + escalation cron
+├── WORKER_UPDATE_FILTER_CLAIMED.js        # Claimed filter sync worker
+├── pubspec.yaml                           # Flutter dependencies
+├── firebase.json                          # Firebase config
+└── shorebird.yaml                         # Code push configuration
 ```
 
 ---
