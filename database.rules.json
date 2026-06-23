@@ -209,6 +209,7 @@
         "handleCollaborations": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "handleCrossFactoryTransfer": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "fullControl": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "presenceChecks": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "crossFactoryMaxDistanceKm": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 20000)" },
         "supervisors": {
           "$supervisorId": {
@@ -432,6 +433,33 @@
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')"
     },
 
+    "connectors": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "$connectorId": {
+        "kind": { ".validate": "!newData.exists() || newData.isString()" },
+        "mode": { ".validate": "!newData.exists() || newData.isString()" },
+        "enabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "endpoint": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2000)" },
+        "pollIntervalSec": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "runtime": {
+          "eventsIngested": { ".validate": "!newData.exists() || newData.isNumber()" }
+        }
+      }
+    },
+
+    "connector_secrets": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+      "$connectorId": {
+        "token": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 8000)" },
+        "username": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2000)" },
+        "password": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2000)" },
+        "ingestKey": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "updatedAt": { ".validate": "!newData.exists() || newData.isString()" }
+      }
+    },
+
     "ai_model_config": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
@@ -490,10 +518,7 @@
     "hardware_lab": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
-      ".indexOn": ["updatedAtMs"],
-      "telemetry": {
-        ".indexOn": ["at"]
-      }
+      ".indexOn": ["updatedAtMs"]
     },
 
     ".read": false,

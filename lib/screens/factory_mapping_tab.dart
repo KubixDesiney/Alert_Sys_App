@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import '../models/factory_map_model.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/user_friendly_error.dart';
 import '../widgets/common/app_loading_indicator.dart';
@@ -152,7 +153,8 @@ class _FactoryMappingTabState extends State<FactoryMappingTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Map saved for ${factory.name}'),
+          content: Text(context.tr('Map saved for {name}',
+              {'name': factory.name})),
           backgroundColor: context.appTheme.green,
         ),
       );
@@ -165,7 +167,8 @@ class _FactoryMappingTabState extends State<FactoryMappingTab> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Save failed: ${UserFriendlyError.message(e)}'),
+          content: Text(context.tr('Save failed: {error}',
+              {'error': UserFriendlyError.message(e)})),
           backgroundColor: context.appTheme.red,
         ),
       );
@@ -261,7 +264,7 @@ class _FactoryMappingTabState extends State<FactoryMappingTab> {
     final t = context.appTheme;
     if (widget.factories.isEmpty) {
       return Center(
-        child: Text('Add a factory in the Structure tab first.',
+        child: Text(context.tr('Add a factory in the Structure tab first.'),
             style: TextStyle(color: t.muted)),
       );
     }
@@ -411,12 +414,14 @@ class _Header extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Factory Mapping',
+              Text(context.tr('Factory Mapping'),
                   style: TextStyle(
                       color: t.text,
                       fontSize: 16,
                       fontWeight: FontWeight.w900)),
-              Text('Drag stations onto the grid, then connect each conveyor.',
+              Text(
+                  context.tr(
+                      'Drag stations onto the grid, then connect each conveyor.'),
                   style: TextStyle(color: t.muted, fontSize: 11)),
             ],
           ),
@@ -426,11 +431,11 @@ class _Header extends StatelessWidget {
             child: DropdownButtonFormField<String>(
               value: selectedId,
               isDense: true,
-              decoration: const InputDecoration(
-                labelText: 'Factory',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: context.tr('Factory'),
+                border: const OutlineInputBorder(),
                 contentPadding:
-                    EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
               ),
               items: factories
                   .map((f) =>
@@ -444,7 +449,7 @@ class _Header extends StatelessWidget {
           const Spacer(),
           _ToolButton(
             icon: Icons.door_front_door_outlined,
-            label: 'Entrance',
+            label: context.tr('Entrance'),
             color: t.green,
             active: tool == _Tool.entrance,
             onTap: () => onTool(_Tool.entrance),
@@ -452,7 +457,7 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 6),
           _ToolButton(
             icon: Icons.touch_app_outlined,
-            label: 'Place',
+            label: context.tr('Place'),
             color: t.navy,
             active: tool == _Tool.place,
             onTap: () => onTool(_Tool.place),
@@ -460,7 +465,7 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 6),
           _ToolButton(
             icon: Icons.linear_scale_rounded,
-            label: 'Connect',
+            label: context.tr('Connect'),
             color: t.blue,
             active: tool == _Tool.connect,
             onTap: () => onTool(_Tool.connect),
@@ -468,7 +473,7 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 6),
           _ToolButton(
             icon: Icons.delete_sweep_outlined,
-            label: 'Erase',
+            label: context.tr('Erase'),
             color: t.red,
             active: tool == _Tool.erase,
             onTap: () => onTool(_Tool.erase),
@@ -477,7 +482,7 @@ class _Header extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onUndo,
             icon: const Icon(Icons.undo_rounded, size: 16),
-            label: const Text('Undo'),
+            label: Text(context.tr('Undo')),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
@@ -494,10 +499,10 @@ class _Header extends StatelessWidget {
                 : Icon(dirty ? Icons.save_rounded : Icons.check_rounded,
                     size: 16),
             label: Text(saving
-                ? 'Saving…'
+                ? context.tr('Saving…')
                 : dirty
-                    ? 'Save'
-                    : 'Saved'),
+                    ? context.tr('Save')
+                    : context.tr('Saved')),
             style: FilledButton.styleFrom(
               backgroundColor: dirty ? t.green : t.muted,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -591,13 +596,13 @@ class _StationPalette extends StatelessWidget {
               children: [
                 Icon(Icons.dashboard_customize_rounded, color: t.navy, size: 18),
                 const SizedBox(width: 8),
-                Text('Stations',
+                Text(context.tr('Stations'),
                     style: TextStyle(
                         color: t.text,
                         fontSize: 14,
                         fontWeight: FontWeight.w900)),
                 const Spacer(),
-                Text('${placedKeys.length} placed',
+                Text(context.tr('{n} placed', {'n': '${placedKeys.length}'}),
                     style: TextStyle(color: t.muted, fontSize: 11)),
               ],
             ),
@@ -605,7 +610,7 @@ class _StationPalette extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
             child: Text(
-              'Drag a chip onto the grid. Live updates from Hierarchy.',
+              context.tr('Drag a chip onto the grid. Live updates from Hierarchy.'),
               style: TextStyle(color: t.muted, fontSize: 11),
             ),
           ),
@@ -613,7 +618,7 @@ class _StationPalette extends StatelessWidget {
           Expanded(
             child: conveyors.isEmpty
                 ? Center(
-                    child: Text('No conveyors yet',
+                    child: Text(context.tr('No conveyors yet'),
                         style: TextStyle(color: t.muted)))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -641,7 +646,8 @@ class _StationPalette extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text('Conveyor ${c.number}',
+                                Text(context.tr('Conveyor {n}',
+                                    {'n': '${c.number}'}),
                                     style: TextStyle(
                                         color: t.text,
                                         fontSize: 12,

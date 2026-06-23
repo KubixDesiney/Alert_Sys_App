@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/ai_assignment_service.dart';
 import '../models/user_model.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../screens/alert_detail_screen.dart';
 import 'common/app_loading_indicator.dart';
@@ -157,7 +158,7 @@ class _AILogsPanelState extends State<AILogsPanel> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI Activity',
+                      context.tr('AI Activity'),
                       style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -175,7 +176,7 @@ class _AILogsPanelState extends State<AILogsPanel> {
               Icon(Icons.drag_indicator, size: 16, color: t.muted),
               const SizedBox(width: 2),
               IconButton(
-                tooltip: 'AI settings — enable/disable per factory',
+                tooltip: context.tr('AI settings — enable/disable per factory'),
                 onPressed: () => showDialog(
                   context: context,
                   builder: (_) => const _AISettingsDialog(),
@@ -185,7 +186,7 @@ class _AILogsPanelState extends State<AILogsPanel> {
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               ),
               IconButton(
-                tooltip: 'Close panel',
+                tooltip: context.tr('Close panel'),
                 onPressed: widget.onClose,
                 icon: Icon(Icons.close, size: 18, color: t.muted),
                 padding: EdgeInsets.zero,
@@ -209,7 +210,7 @@ class _AILogsPanelState extends State<AILogsPanel> {
               Icon(Icons.inbox_outlined, size: 36, color: t.muted),
               const SizedBox(height: 8),
               Text(
-                'No AI activity yet',
+                context.tr('No AI activity yet'),
                 style: TextStyle(
                     fontSize: 13, color: t.muted, fontWeight: FontWeight.w600),
               ),
@@ -253,18 +254,18 @@ class _AILogsPanelState extends State<AILogsPanel> {
       ),
       child: Row(
         children: [
-          _statChip(t, Icons.check_circle, t.green, '$success', 'OK'),
+          _statChip(t, Icons.check_circle, t.green, '$success', context.tr('OK')),
           const SizedBox(width: 6),
-          _statChip(t, Icons.skip_next, t.muted, '$skipped', 'Skip'),
+          _statChip(t, Icons.skip_next, t.muted, '$skipped', context.tr('Skip')),
           const SizedBox(width: 6),
-          _statChip(t, Icons.recommend_outlined, t.blue, '$recommended', 'Rec'),
+          _statChip(t, Icons.recommend_outlined, t.blue, '$recommended', context.tr('Rec')),
           const SizedBox(width: 6),
-          _statChip(t, Icons.stop_circle, t.orange, '$aborted', 'Abort'),
+          _statChip(t, Icons.stop_circle, t.orange, '$aborted', context.tr('Abort')),
           const SizedBox(width: 6),
-          _statChip(t, Icons.thumb_down_outlined, t.red, '$rejected', 'Rej'),
+          _statChip(t, Icons.thumb_down_outlined, t.red, '$rejected', context.tr('Rej')),
           const Spacer(),
           IconButton(
-            tooltip: 'Clear logs',
+            tooltip: context.tr('Clear logs'),
             onPressed: logs.isEmpty
                 ? null
                 : () => AIAssignmentService.instance.clearLogs(),
@@ -414,7 +415,7 @@ class _LogTile extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: () => _showDetails(context),
                         icon: Icon(Icons.info_outline, size: 14, color: t.navy),
-                        label: Text('Details',
+                        label: Text(context.tr('Details'),
                             style: TextStyle(
                                 fontSize: 11,
                                 color: t.navy,
@@ -437,8 +438,8 @@ class _LogTile extends StatelessWidget {
                           onPressed: () => _confirmAbort(context),
                           icon: const Icon(Icons.stop_circle_outlined,
                               size: 14, color: Colors.white),
-                          label: const Text('Abort',
-                              style: TextStyle(
+                          label: Text(context.tr('Abort'),
+                              style: const TextStyle(
                                   fontSize: 11,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600)),
@@ -461,8 +462,8 @@ class _LogTile extends StatelessWidget {
                           onPressed: () => _declineRecommendation(context),
                           icon: const Icon(Icons.close,
                               size: 14, color: Colors.white),
-                          label: const Text('Decline',
-                              style: TextStyle(
+                          label: Text(context.tr('Decline'),
+                              style: const TextStyle(
                                   fontSize: 11,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600)),
@@ -483,8 +484,8 @@ class _LogTile extends StatelessWidget {
                           onPressed: () => _approveRecommendation(context),
                           icon: const Icon(Icons.check,
                               size: 14, color: Colors.white),
-                          label: const Text('Approve',
-                              style: TextStyle(
+                          label: Text(context.tr('Approve'),
+                              style: const TextStyle(
                                   fontSize: 11,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600)),
@@ -522,21 +523,26 @@ class _LogTile extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Abort AI assignment?'),
+        title: Text(context.tr('Abort AI assignment?')),
         content: Text(
-          'This will remove ${entry.assignedSupervisorName ?? "the supervisor"} '
-          'from "${entry.alertLabel}" and return the alert to the queue. '
-          'AI will keep running for future alerts.',
+          context.tr(
+              'This will remove {name} from "{label}" and return the alert to the queue. AI will keep running for future alerts.',
+              {
+                'name': entry.assignedSupervisorName ??
+                    context.tr('the supervisor'),
+                'label': entry.alertLabel
+              }),
           style: TextStyle(color: t.text),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: t.orange),
-            child: const Text('Abort', style: TextStyle(color: Colors.white)),
+            child: Text(context.tr('Abort'),
+                style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -546,8 +552,8 @@ class _LogTile extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                const Text('AI assignment aborted — alert returned to queue'),
+            content: Text(context.tr(
+                'AI assignment aborted — alert returned to queue')),
             backgroundColor: t.orange,
           ),
         );
@@ -568,8 +574,8 @@ class _LogTile extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
-            ? 'Recommendation approved and assigned'
-            : 'Recommendation is no longer pending'),
+            ? context.tr('Recommendation approved and assigned')
+            : context.tr('Recommendation is no longer pending')),
         backgroundColor: ok ? context.appTheme.green : Colors.blueGrey,
       ),
     );
@@ -580,19 +586,21 @@ class _LogTile extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Decline recommendation?'),
+        title: Text(context.tr('Decline recommendation?')),
         content: Text(
-          'This will reject the AI cross-factory transfer recommendation for this alert.',
+          context.tr(
+              'This will reject the AI cross-factory transfer recommendation for this alert.'),
           style: TextStyle(color: t.text),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(backgroundColor: t.red),
-            child: const Text('Decline', style: TextStyle(color: Colors.white)),
+            child: Text(context.tr('Decline'),
+                style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -850,7 +858,7 @@ class _AIDetailsDialogState extends State<_AIDetailsDialog> {
                                 t, 'Rejection reason', entry.rejectionReason!),
                           if (entry.reason.trim().isNotEmpty) ...[
                             const SizedBox(height: 10),
-                            _heading(t, 'AI summary'),
+                            _heading(t, context.tr('AI summary')),
                             const SizedBox(height: 6),
                             Container(
                               width: double.infinity,
@@ -869,7 +877,7 @@ class _AIDetailsDialogState extends State<_AIDetailsDialog> {
                           ],
                           const SizedBox(height: 14),
                           if (_reasonBreakdown.isNotEmpty) ...[
-                            _heading(t, 'Why this supervisor'),
+                            _heading(t, context.tr('Why this supervisor')),
                             const SizedBox(height: 6),
                             ..._reasonBreakdown.map((r) => Padding(
                                   padding: const EdgeInsets.only(bottom: 4),
@@ -891,7 +899,7 @@ class _AIDetailsDialogState extends State<_AIDetailsDialog> {
                             const SizedBox(height: 14),
                           ],
                           if (whyOthers.isNotEmpty) ...[
-                            _heading(t, 'Why not others'),
+                            _heading(t, context.tr('Why not others')),
                             const SizedBox(height: 6),
                             ...whyOthers.map((c) {
                               final detail = c.skipReason ??
@@ -954,12 +962,13 @@ class _AIDetailsDialogState extends State<_AIDetailsDialog> {
                       );
                     },
                     icon: Icon(Icons.open_in_new, size: 16, color: t.navy),
-                    label: Text('Open alert', style: TextStyle(color: t.navy)),
+                    label: Text(context.tr('Open alert'),
+                        style: TextStyle(color: t.navy)),
                   ),
                   const Spacer(),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
+                    child: Text(context.tr('Close')),
                   ),
                 ],
               ),
@@ -1129,7 +1138,9 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Failed to save: ${UserFriendlyError.message(e)}'), backgroundColor: Colors.red),
+              content: Text(context.tr('Failed to save: {error}',
+                  {'error': UserFriendlyError.message(e)})),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -1168,12 +1179,12 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('AI Assignment Settings',
+                        Text(context.tr('AI Assignment Settings'),
                             style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
                                 color: t.text)),
-                        Text('Enable auto-assignment per factory',
+                        Text(context.tr('Enable auto-assignment per factory'),
                             style: TextStyle(fontSize: 11, color: t.muted)),
                       ],
                     ),
@@ -1202,7 +1213,7 @@ class _AISettingsDialogState extends State<_AISettingsDialog> {
                       : _factories.isEmpty
                           ? Padding(
                               padding: const EdgeInsets.all(20),
-                              child: Text('No factories configured.',
+                              child: Text(context.tr('No factories configured.'),
                                   style:
                                       TextStyle(color: t.muted, fontSize: 13)),
                             )

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
+import '../common/language_toggle.dart';
 import '../dashboard_common.dart';
 
 class AdminDashboardHeader extends StatefulWidget {
@@ -28,15 +30,15 @@ class _AdminDashboardHeaderState extends State<AdminDashboardHeader> {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
-          const DashboardUserInfo(
-            title: 'Production Manager',
-            subtitle: 'Production Manager - Dashboard',
+          DashboardUserInfo(
+            title: context.tr('Production Manager'),
+            subtitle: context.tr('Production Manager - Dashboard'),
           ),
           const Spacer(),
           IconButton(
             onPressed: widget.onSimulateAlert,
             icon: Icon(Icons.add_alert, size: 20, color: t.navy),
-            tooltip: 'Simulate Alert',
+            tooltip: context.tr('Simulate Alert'),
             style: IconButton.styleFrom(
               side: BorderSide(color: t.border),
               padding: const EdgeInsets.all(10),
@@ -45,6 +47,8 @@ class _AdminDashboardHeaderState extends State<AdminDashboardHeader> {
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          const LanguageToggle(),
           const SizedBox(width: 8),
           const DashboardThemeToggleButton(),
           const SizedBox(width: 8),
@@ -59,7 +63,7 @@ class _AdminDashboardHeaderState extends State<AdminDashboardHeader> {
             onPressed: widget.onLogout,
             icon: Icon(Icons.logout, size: 15, color: t.red),
             label: Text(
-              'Sign Out',
+              context.tr('Sign Out'),
               style: TextStyle(
                 color: t.red,
                 fontSize: 13,
@@ -132,7 +136,7 @@ class AdminPillTabBar extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        item['label'] as String,
+                        context.tr(item['label'] as String),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

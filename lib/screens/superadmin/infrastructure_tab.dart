@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/infra_config_service.dart';
+import '../../l10n/app_strings.dart';
+import 'connectors_section.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin → Infrastructure. The company IT team connects their OWN backend
@@ -132,6 +134,8 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
         children: [
           _intro(),
           const SizedBox(height: 18),
+          const ConnectorsSection(),
+          const SizedBox(height: 16),
           _databaseSection(),
           const SizedBox(height: 16),
           _cloudflareSection(),
@@ -161,11 +165,11 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('INFRASTRUCTURE', style: Sa.display(size: 18)),
+              Text(context.tr('INFRASTRUCTURE'), style: Sa.display(size: 18)),
               const SizedBox(height: 3),
               Text(
-                'Connect your own backend and edge, then deploy your dedicated '
-                'instance. Secrets go to your pipeline — never the database.',
+                context.tr(
+                    'Connect your own backend and edge, then deploy your dedicated instance. Secrets go to your pipeline — never the database.'),
                 style: Sa.body(size: 12, color: Sa.textDim),
               ),
             ],
@@ -173,7 +177,9 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
         ),
         if (_lastDeployStatus.isNotEmpty)
           GlowChip(
-            label: _lastDeployStatus == 'triggered' ? 'DEPLOYED' : 'DEPLOY FAILED',
+            label: _lastDeployStatus == 'triggered'
+                ? context.tr('DEPLOYED')
+                : context.tr('DEPLOY FAILED'),
             color: _lastDeployStatus == 'triggered' ? Sa.green : Sa.red,
             icon: _lastDeployStatus == 'triggered' ? Icons.check : Icons.error_outline,
           ),
@@ -188,7 +194,7 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(Icons.storage_outlined, 'DATABASE · YOUR FIREBASE'),
+          _sectionHeader(Icons.storage_outlined, context.tr('DATABASE · YOUR FIREBASE')),
           const SizedBox(height: 6),
           Text(
             'Point the build at your own Firebase project. Applied on the next '
@@ -198,15 +204,16 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
           const SizedBox(height: 14),
           _backendStrip(),
           const SizedBox(height: 16),
-          _field('Firebase project ID', _projectId, hint: 'acme-alerts'),
-          _field('Realtime Database URL', _dbUrl,
+          _field(context.tr('Firebase project ID'), _projectId, hint: 'acme-alerts'),
+          _field(context.tr('Realtime Database URL'), _dbUrl,
               hint: 'https://acme-alerts-default-rtdb.firebaseio.com'),
-          _field('Web API key', _apiKey, hint: 'AIza… (not secret)'),
+          _field(context.tr('Web API key'), _apiKey, hint: 'AIza… (not secret)'),
           const SizedBox(height: 8),
           _SecretField(
-            label: 'Service account JSON',
+            label: context.tr('Service account JSON'),
             controller: _serviceAccount,
-            hint: 'Paste the service-account JSON — sent to your pipeline, never stored',
+            hint: context.tr(
+                'Paste the service-account JSON — sent to your pipeline, never stored'),
             multiline: true,
           ),
         ],
@@ -267,17 +274,17 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(Icons.cloud_sync_outlined, 'CLOUDFLARE & WORKERS'),
+          _sectionHeader(Icons.cloud_sync_outlined, context.tr('CLOUDFLARE & WORKERS')),
           const SizedBox(height: 14),
-          _field('Account ID', _accountId, hint: 'your Cloudflare account id'),
-          _field('workers.dev subdomain', _subdomain,
+          _field(context.tr('Account ID'), _accountId, hint: 'your Cloudflare account id'),
+          _field(context.tr('workers.dev subdomain'), _subdomain,
               hint: 'acme-co', onChanged: (_) => setState(() {})),
-          _field('R2 bucket', _r2Bucket, hint: 'acme-alertsys-backups'),
+          _field(context.tr('R2 bucket'), _r2Bucket, hint: 'acme-alertsys-backups'),
           const SizedBox(height: 8),
-          _SecretField(label: 'Cloudflare API token', controller: _cfToken),
-          _SecretField(label: 'Worker shared secret', controller: _sharedSecret),
+          _SecretField(label: context.tr('Cloudflare API token'), controller: _cfToken),
+          _SecretField(label: context.tr('Worker shared secret'), controller: _sharedSecret),
           const SizedBox(height: 16),
-          Text('WORKERS · OUR EXACT SETUP',
+          Text(context.tr('WORKERS · OUR EXACT SETUP'),
               style: Sa.mono(size: 10, color: Sa.muted, weight: FontWeight.w700)),
           const SizedBox(height: 10),
           ...cfg.workers().map(_workerRow),
@@ -329,17 +336,18 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(Icons.badge_outlined, 'SCIM PROVISIONING'),
+          _sectionHeader(Icons.badge_outlined, context.tr('SCIM PROVISIONING')),
           const SizedBox(height: 6),
           Text(
-            'Point your IdP (Okta / Entra) SCIM connector here with the token '
-            'below to auto-provision and deprovision users.',
+            context.tr(
+                'Point your IdP (Okta / Entra) SCIM connector here with the token below to auto-provision and deprovision users.'),
             style: Sa.body(size: 11.5, color: Sa.muted),
           ),
           const SizedBox(height: 14),
-          _SecretField(label: 'SCIM bearer token', controller: _scimToken),
+          _SecretField(label: context.tr('SCIM bearer token'), controller: _scimToken),
           const SizedBox(height: 8),
-          _readonlyRow('SCIM base URL', base.isEmpty ? 'set subdomain first' : base),
+          _readonlyRow(context.tr('SCIM base URL'),
+              base.isEmpty ? context.tr('set subdomain first') : base),
         ],
       ),
     );
@@ -353,35 +361,34 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(Icons.rocket_launch_outlined, 'DEPLOY'),
+          _sectionHeader(Icons.rocket_launch_outlined, context.tr('DEPLOY')),
           const SizedBox(height: 6),
           Text(
-            'Deploy fires a GitHub repository_dispatch to the deploy-instance '
-            'workflow, which provisions and deploys your 5 workers + R2 + '
-            'database rules. Only non-secret config is sent — set the secrets '
-            'once in GitHub Actions with the button below.',
+            context.tr(
+                'Deploy fires a GitHub repository_dispatch to the deploy-instance workflow, which provisions and deploys your 5 workers + R2 + database rules. Only non-secret config is sent — set the secrets once in GitHub Actions with the button below.'),
             style: Sa.body(size: 11.5, color: Sa.muted),
           ),
           const SizedBox(height: 14),
-          _field('Deploy webhook URL', _webhook,
+          _field(context.tr('Deploy webhook URL'), _webhook,
               hint: 'https://api.github.com/repos/acme/sia/dispatches'),
-          _SecretField(label: 'GitHub token (repo scope)', controller: _deployToken),
+          _SecretField(label: context.tr('GitHub token (repo scope)'), controller: _deployToken),
           const SizedBox(height: 4),
           SaButton(
-            label: 'Copy GitHub secret commands',
+            label: context.tr('Copy GitHub secret commands'),
             icon: Icons.key_outlined,
             outlined: true,
             onPressed: _copySecretCommands,
           ),
           if (_lastDeployAt.isNotEmpty) ...[
             const SizedBox(height: 6),
-            Text('Last deploy: $_lastDeployAt · $_lastDeployStatus',
+            Text(context.tr('Last deploy: {at} · {status}',
+                    {'at': _lastDeployAt, 'status': _lastDeployStatus}),
                 style: Sa.mono(size: 10, color: Sa.muted)),
           ],
           const SizedBox(height: 16),
           Row(children: [
             SaButton(
-              label: _saving ? 'Saving…' : 'Save config',
+              label: _saving ? context.tr('Saving…') : context.tr('Save config'),
               icon: Icons.save_outlined,
               outlined: true,
               busy: _saving,
@@ -389,7 +396,9 @@ class _InfrastructureTabState extends State<InfrastructureTab> {
             ),
             const SizedBox(width: 12),
             SaButton(
-              label: _deploying ? 'Deploying…' : 'Deploy instance',
+              label: _deploying
+                ? context.tr('Deploying…')
+                : context.tr('Deploy instance'),
               icon: Icons.rocket_launch_outlined,
               color: Sa.green,
               busy: _deploying,
@@ -538,7 +547,7 @@ class _SecretFieldState extends State<_SecretField> {
             Text(widget.label,
                 style: Sa.body(size: 11, color: Sa.textDim, weight: FontWeight.w600)),
             const SizedBox(width: 6),
-            Text('write-only',
+            Text(context.tr('write-only'),
                 style: Sa.mono(size: 8.5, color: Sa.muted)),
           ]),
           const SizedBox(height: 5),

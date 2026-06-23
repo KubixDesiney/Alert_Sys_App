@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 
 /// Visual metadata for an alert type or status.
@@ -20,32 +21,36 @@ class AlertMeta {
   });
 }
 
-AlertMeta typeMeta(String type, AppTheme t) {
+/// [context] is optional so existing call sites keep compiling without
+/// localization; pass it whenever a BuildContext is available so the label
+/// renders in the active app language.
+AlertMeta typeMeta(String type, AppTheme t, [BuildContext? context]) {
+  String tr(String s) => context == null ? s : context.tr(s);
   switch (type) {
     case 'qualite':
       return AlertMeta(
-        label: 'Quality',
+        label: tr('Quality'),
         icon: Icons.fact_check_outlined,
         color: t.red,
         bg: t.redLt,
       );
     case 'maintenance':
       return AlertMeta(
-        label: 'Maintenance',
+        label: tr('Maintenance'),
         icon: Icons.build_outlined,
         color: t.blue,
         bg: t.blueLt,
       );
     case 'defaut_produit':
       return AlertMeta(
-        label: 'Damaged Product',
+        label: tr('Damaged Product'),
         icon: Icons.report_problem_outlined,
         color: t.green,
         bg: t.greenLt,
       );
     case 'manque_ressource':
       return AlertMeta(
-        label: 'Resource Deficiency',
+        label: tr('Resource Deficiency'),
         icon: Icons.inventory_2_outlined,
         color: t.yellow,
         bg: t.yellowLt,
@@ -60,25 +65,26 @@ AlertMeta typeMeta(String type, AppTheme t) {
   }
 }
 
-AlertMeta statusMeta(String status, AppTheme t) {
+AlertMeta statusMeta(String status, AppTheme t, [BuildContext? context]) {
+  String tr(String s) => context == null ? s : context.tr(s);
   switch (status) {
     case 'disponible':
       return AlertMeta(
-        label: 'PENDING',
+        label: tr('PENDING'),
         icon: Icons.notifications_active_outlined,
         color: t.red,
         bg: t.redLt,
       );
     case 'en_cours':
       return AlertMeta(
-        label: 'CLAIMED',
+        label: tr('CLAIMED'),
         icon: Icons.autorenew,
         color: t.yellow,
         bg: t.yellowLt,
       );
     case 'validee':
       return AlertMeta(
-        label: 'RESOLVED',
+        label: tr('RESOLVED'),
         icon: Icons.verified,
         color: t.green,
         bg: t.greenLt,

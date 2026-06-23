@@ -19,7 +19,7 @@ Color adminTypeColor(BuildContext context, String type) =>
     typeMeta(type, context.appTheme).color;
 
 String adminTypeLabel(BuildContext context, String type) =>
-    typeMeta(type, context.appTheme).label;
+    typeMeta(type, context.appTheme, context).label;
 
 IconData adminTypeIcon(BuildContext context, String type) =>
     typeMeta(type, context.appTheme).icon;

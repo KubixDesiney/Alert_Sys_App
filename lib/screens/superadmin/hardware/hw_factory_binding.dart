@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:alertsysapp/l10n/app_strings.dart';
 import 'package:alertsysapp/screens/superadmin/hardware/hw_machines.dart';
 import 'package:alertsysapp/screens/superadmin/hardware/hw_models.dart';
 import 'package:alertsysapp/screens/superadmin/superadmin_theme.dart';
@@ -14,7 +15,7 @@ part 'hw_factory_binding_machine_editor.dart';
 
 /// Global factory machinery binding — the IT team's overall vision of which
 /// boards, sensors and actuators are wired into which machine on which
-/// conveyor. Each [HwDeviceBinding] ties a designed circuit to a real machine
+/// conveyor. Each [HwDeviceBinding] ties a controller to a real machine
 /// (e.g. "MACH-001 ← ESP32 + heat sensor + 4 colored buttons + LED bank"),
 /// where the machine + conveyor + factory are *picked from live plant
 /// inventory* (the `MACH-XXX` assets) rather than typed by hand.
@@ -49,20 +50,14 @@ kHwBindingStatus = {
 
 class HwFactoryBindingView extends StatefulWidget {
   final List<HwDeviceBinding> bindings;
-  final List<HwCircuit> circuits;
   final Future<void> Function(HwDeviceBinding binding) onSave;
   final Future<void> Function(String id) onDelete;
-
-  /// Open the named circuit in the designer.
-  final ValueChanged<String>? onOpenCircuit;
 
   const HwFactoryBindingView({
     super.key,
     required this.bindings,
-    required this.circuits,
     required this.onSave,
     required this.onDelete,
-    this.onOpenCircuit,
   });
 
   @override
@@ -95,7 +90,6 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
       builder: (_) => _BindingEditor(
         existing: existing,
         catalog: _catalog,
-        circuits: widget.circuits,
         store: _store,
       ),
     );
@@ -176,7 +170,6 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
               machine: machine,
               catalog: _catalog,
               bindings: _bindingsForMachine(machine),
-              circuitNameFor: _circuitName,
               placement: placement,
               onClose: close,
               onEdit: () {
@@ -216,7 +209,8 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
   Widget build(BuildContext context) {
     final byFactory = <String, List<HwDeviceBinding>>{};
     for (final b in widget.bindings) {
-      final key = b.factoryId.trim().isEmpty ? 'Unassigned' : b.factoryId;
+      final key =
+          b.factoryId.trim().isEmpty ? context.tr('Unassigned') : b.factoryId;
       byFactory.putIfAbsent(key, () => []).add(b);
     }
     final factories = byFactory.keys.toList()..sort();
@@ -233,13 +227,18 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
                 Expanded(
                   child: SaSectionHeader(
                     icon: Icons.account_tree,
-                    title: 'Factory Machinery Map',
-                    subtitle:
-                        '${widget.bindings.length} device${widget.bindings.length == 1 ? '' : 's'} bound · ${_catalog.machines.length} machine${_catalog.machines.length == 1 ? '' : 's'} in plant inventory',
+                    title: context.tr('Factory Machinery Map'),
+                    subtitle: context.tr(
+                      '{devices} device(s) bound · {machines} machine(s) in plant inventory',
+                      {
+                        'devices': '${widget.bindings.length}',
+                        'machines': '${_catalog.machines.length}',
+                      },
+                    ),
                   ),
                 ),
                 SaButton(
-                  label: 'ADD MACHINE',
+                  label: context.tr('ADD MACHINE'),
                   icon: Icons.precision_manufacturing,
                   color: Sa.violet,
                   outlined: true,
@@ -247,7 +246,7 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
                 ),
                 const SizedBox(width: 8),
                 SaButton(
-                  label: 'BIND DEVICE',
+                  label: context.tr('BIND DEVICE'),
                   icon: Icons.add_link,
                   color: Sa.cyan,
                   onPressed: _editBinding,
@@ -264,15 +263,14 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
           ),
           const SizedBox(height: 14),
           if (widget.bindings.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
               child: SaEmptyState(
                 icon: Icons.precision_manufacturing,
-                title: 'No machinery bound yet',
-                message:
-                    'Bind a controller + its sensors/actuators to a machine to '
-                    'build the factory-wide hardware map. e.g. MACH-001 ← ESP32 '
-                    'with heat sensor, LED bank and 4 colored buttons.',
+                title: context.tr('No machinery bound yet'),
+                message: context.tr(
+                  'Bind a controller + its sensors/actuators to a machine to build the factory-wide hardware map. e.g. MACH-001 ← ESP32 with heat sensor, LED bank and 4 colored buttons.',
+                ),
               ),
             )
           else
@@ -312,12 +310,8 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
                           child: _BindingCard(
                             binding: b,
                             machine: _catalog.machineById(b.machineLabel),
-                            circuitName: _circuitName(b.circuitId),
                             onEdit: () => _editBinding(b),
                             onDelete: () => widget.onDelete(b.id),
-                            onOpen: b.circuitId.isEmpty
-                                ? null
-                                : () => widget.onOpenCircuit?.call(b.circuitId),
                           ),
                         ),
                     ],
@@ -328,13 +322,6 @@ class _HwFactoryBindingViewState extends State<HwFactoryBindingView> {
         ],
       ),
     );
-  }
-
-  String _circuitName(String id) {
-    for (final c in widget.circuits) {
-      if (c.id == id) return c.name;
-    }
-    return '';
   }
 }
 

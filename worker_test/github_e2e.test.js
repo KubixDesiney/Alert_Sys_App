@@ -1,6 +1,6 @@
 // End-to-end tests for the GitHub proxy worker's request lifecycle.
 // Drives the real `fetch` handler with a mock env + stubbed GitHub API.
-import gh from '../cloudflare_github_worker.js';
+import gh, { resetGithubCredCache } from '../cloudflare_github_worker.js';
 
 const ENV = {
   WORKER_SHARED_SECRET: 'wsec',
@@ -11,6 +11,7 @@ const ENV = {
 
 let ghCalls;
 beforeEach(() => {
+  resetGithubCredCache();
   ghCalls = [];
   globalThis.fetch = async (url, opts) => {
     const u = String(url);
@@ -61,6 +62,29 @@ describe('github proxy e2e', () => {
     expect(res.status).toBe(200);
     const b = await res.json();
     expect(b).toMatchObject({ ok: true, repo: 'owner/repo', connected: true, canDispatch: true });
+  });
+
+  test('/config is not connected when the repo is missing', async () => {
+    const res = await gh.fetch(
+      req('GET', '/config', { auth: 'Bearer wsec' }),
+      { ...ENV, GITHUB_REPO: '' },
+    );
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(b).toMatchObject({
+      ok: true,
+      repo: '',
+      connected: false,
+      hasToken: true,
+      canDispatch: false,
+    });
+  });
+
+  test('normalizes GitHub URLs before calling the API', async () => {
+    const res = await gh.fetch(req('GET', '/runs?repo=https%3A%2F%2Fgithub.com%2Fowner%2Frepo.git', { auth: 'Bearer wsec' }), ENV);
+    expect(res.status).toBe(200);
+    const runsCall = ghCalls.find((c) => c.url.includes('/actions/runs'));
+    expect(runsCall.url).toBe('https://api.github.com/repos/owner/repo/actions/runs?per_page=20');
   });
 
   test('POST /dispatch forwards a repository_dispatch with the server-side token', async () => {

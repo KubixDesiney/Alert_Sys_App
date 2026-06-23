@@ -184,7 +184,7 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'History Filters',
+                                context.tr('History Filters'),
                                 style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w800,
@@ -192,7 +192,8 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                                 ),
                               ),
                               Text(
-                                'Refine alert history only — dashboard stats are unaffected',
+                                context.tr(
+                                    'Refine alert history only — dashboard stats are unaffected'),
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   color: theme.muted,
@@ -214,9 +215,9 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                             });
                           },
                           icon: const Icon(Icons.refresh_rounded, size: 14),
-                          label: const Text(
-                            'Reset',
-                            style: TextStyle(
+                          label: Text(
+                            context.tr('Reset'),
+                            style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
@@ -230,14 +231,14 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                     const SizedBox(height: 14),
                     // Plant
                     _FilterDropdown(
-                      label: 'Plant',
+                      label: context.tr('Plant'),
                       value: _factory,
                       items: widget.factories
                           .map(
                             (v) => DropdownMenuItem(
                               value: v,
                               child: Text(
-                                v == 'all' ? 'All Plants' : v,
+                                v == 'all' ? context.tr('All Plants') : v,
                                 style: const TextStyle(fontSize: 13),
                               ),
                             ),
@@ -254,14 +255,16 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                     const SizedBox(height: 10),
                     // Conveyor
                     _FilterDropdown(
-                      label: 'Conveyor',
+                      label: context.tr('Conveyor'),
                       value: safeConveyeur,
                       items: conveyeurOpts
                           .map(
                             (v) => DropdownMenuItem(
                               value: v,
                               child: Text(
-                                v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                                v == 'all'
+                                    ? context.tr('All Conveyors')
+                                    : context.tr('Conv. {n}', {'n': v}),
                                 style: const TextStyle(fontSize: 13),
                               ),
                             ),
@@ -277,14 +280,16 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                     const SizedBox(height: 10),
                     // Workstation
                     _FilterDropdown(
-                      label: 'Workstation',
+                      label: context.tr('Workstation'),
                       value: safePoste,
                       items: posteOpts
                           .map(
                             (v) => DropdownMenuItem(
                               value: v,
                               child: Text(
-                                v == 'all' ? 'All Workstations' : 'WS $v',
+                                v == 'all'
+                                    ? context.tr('All Workstations')
+                                    : context.tr('WS {n}', {'n': v}),
                                 style: const TextStyle(fontSize: 13),
                               ),
                             ),
@@ -295,14 +300,14 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                     const SizedBox(height: 10),
                     // Alert Type
                     _FilterDropdown(
-                      label: 'Alert Type',
+                      label: context.tr('Alert Type'),
                       value: _type,
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: 'all',
                           child: Text(
-                            'All Types',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('All Types'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         ...[
@@ -325,35 +330,35 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                     const SizedBox(height: 10),
                     // Status
                     _FilterDropdown(
-                      label: 'Status',
+                      label: context.tr('Status'),
                       value: _status,
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: 'all',
                           child: Text(
-                            'All Statuses',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('All Statuses'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         DropdownMenuItem(
                           value: 'disponible',
                           child: Text(
-                            'Pending',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('Pending'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         DropdownMenuItem(
                           value: 'en_cours',
                           child: Text(
-                            'Claimed',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('Claimed'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         DropdownMenuItem(
                           value: 'validee',
                           child: Text(
-                            'Fixed',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('Fixed'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                       ],
@@ -365,7 +370,7 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'CRITICALITY',
+                          context.tr('CRITICALITY'),
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
@@ -377,9 +382,9 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                         Row(
                           children: [
                             for (final opt in [
-                              ('all', 'All'),
-                              ('critical', 'Critical Only'),
-                              ('normal', 'Normal Only'),
+                              ('all', context.tr('All')),
+                              ('critical', context.tr('Critical Only')),
+                              ('normal', context.tr('Normal Only')),
                             ]) ...[
                               ChoiceChip(
                                 label: Text(
@@ -412,39 +417,40 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                     const SizedBox(height: 10),
                     // Time Range
                     _FilterDropdown(
-                      label: 'Time Range',
+                      label: context.tr('Time Range'),
                       value: _timeRange,
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: 'all',
                           child: Text(
-                            'All Time',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('All Time'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         DropdownMenuItem(
                           value: 'today',
-                          child: Text('Today', style: TextStyle(fontSize: 13)),
+                          child: Text(context.tr('Today'),
+                              style: const TextStyle(fontSize: 13)),
                         ),
                         DropdownMenuItem(
                           value: 'week',
                           child: Text(
-                            'Last 7 Days',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('Last 7 Days'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         DropdownMenuItem(
                           value: 'month',
                           child: Text(
-                            'This Month',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('This Month'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                         DropdownMenuItem(
                           value: 'year',
                           child: Text(
-                            'This Year',
-                            style: TextStyle(fontSize: 13),
+                            context.tr('This Year'),
+                            style: const TextStyle(fontSize: 13),
                           ),
                         ),
                       ],
@@ -466,9 +472,9 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                         );
                       },
                       icon: const Icon(Icons.check_rounded, size: 16),
-                      label: const Text(
-                        'Apply',
-                        style: TextStyle(
+                      label: Text(
+                        context.tr('Apply'),
+                        style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -636,15 +642,15 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
   String _chipLabel(BuildContext ctx, String key) {
     switch (key) {
       case 'pending':
-        return 'PENDING';
+        return ctx.tr('PENDING');
       case 'en_cours':
-        return 'CLAIMED';
+        return ctx.tr('CLAIMED');
       case 'validated':
-        return 'FIXED';
+        return ctx.tr('FIXED');
       case 'critical':
-        return 'CRITICAL';
+        return ctx.tr('CRITICAL');
       case 'total':
-        return 'TOTAL';
+        return ctx.tr('TOTAL');
       default:
         return adminTypeLabel(ctx, key).toUpperCase();
     }
@@ -703,7 +709,7 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Alert History',
+                        context.tr('Alert History'),
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -711,7 +717,11 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
                         ),
                       ),
                       Text(
-                        '${filtered.length} alert${filtered.length == 1 ? '' : 's'} · ${widget.scope}',
+                        filtered.length == 1
+                            ? context.tr('{n} alert · {scope}',
+                                {'n': '${filtered.length}', 'scope': widget.scope})
+                            : context.tr('{n} alerts · {scope}',
+                                {'n': '${filtered.length}', 'scope': widget.scope}),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -730,9 +740,9 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
                     OutlinedButton.icon(
                       onPressed: _openFilterSheet,
                       icon: const Icon(Icons.tune_rounded, size: 14),
-                      label: const Text(
-                        'Filters',
-                        style: TextStyle(
+                      label: Text(
+                        context.tr('Filters'),
+                        style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
@@ -845,7 +855,7 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
             child: Row(
               children: [
                 Text(
-                  'Show',
+                  context.tr('Show'),
                   style: TextStyle(
                     fontSize: 11,
                     color: theme.muted,
@@ -919,7 +929,7 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
                   ),
                   color: theme.navy,
                   disabledColor: theme.muted.withValues(alpha: 0.4),
-                  tooltip: 'Previous page',
+                  tooltip: context.tr('Previous page'),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -952,7 +962,7 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
                   ),
                   color: theme.navy,
                   disabledColor: theme.muted.withValues(alpha: 0.4),
-                  tooltip: 'Next page',
+                  tooltip: context.tr('Next page'),
                 ),
               ],
             ),
@@ -1029,7 +1039,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            'All clear',
+            context.tr('All clear'),
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -1038,7 +1048,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'No alerts match your filters.',
+            context.tr('No alerts match your filters.'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: theme.muted),
           ),
@@ -1136,7 +1146,7 @@ class _FilterSheet extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Filter alerts',
+                              ctx.tr('Filter alerts'),
                               style: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
@@ -1144,7 +1154,8 @@ class _FilterSheet extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              'Refine the history list — every selection scopes the dashboard',
+                              ctx.tr(
+                                  'Refine the history list — every selection scopes the dashboard'),
                               style: TextStyle(
                                 fontSize: 11.5,
                                 color: theme.muted,
@@ -1159,9 +1170,9 @@ class _FilterSheet extends StatelessWidget {
                           Navigator.of(ctx).pop();
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 14),
-                        label: const Text(
-                          'Reset',
-                          style: TextStyle(
+                        label: Text(
+                          ctx.tr('Reset'),
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1172,14 +1183,14 @@ class _FilterSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   _FilterDropdown(
-                    label: 'Plant',
+                    label: context.tr('Plant'),
                     value: selectedUsine,
                     items: usines
                         .map(
                           (v) => DropdownMenuItem(
                             value: v,
                             child: Text(
-                              v == 'all' ? 'All Plants' : v,
+                              v == 'all' ? context.tr('All Plants') : v,
                               style: const TextStyle(fontSize: 13),
                             ),
                           ),
@@ -1189,14 +1200,16 @@ class _FilterSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   _FilterDropdown(
-                    label: 'Conveyor',
+                    label: context.tr('Conveyor'),
                     value: filterConvoyeur,
                     items: convoyeurs
                         .map(
                           (v) => DropdownMenuItem(
                             value: v,
                             child: Text(
-                              v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                              v == 'all'
+                                  ? context.tr('All Conveyors')
+                                  : context.tr('Conv. {n}', {'n': v}),
                               style: const TextStyle(fontSize: 13),
                             ),
                           ),
@@ -1206,14 +1219,16 @@ class _FilterSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   _FilterDropdown(
-                    label: 'Post',
+                    label: context.tr('Post'),
                     value: filterPoste,
                     items: postes
                         .map(
                           (v) => DropdownMenuItem(
                             value: v,
                             child: Text(
-                              v == 'all' ? 'All Posts' : 'Post $v',
+                              v == 'all'
+                                  ? context.tr('All Posts')
+                                  : context.tr('Post {n}', {'n': v}),
                               style: const TextStyle(fontSize: 13),
                             ),
                           ),
@@ -1223,14 +1238,14 @@ class _FilterSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   _FilterDropdown(
-                    label: 'Alert Type',
+                    label: context.tr('Alert Type'),
                     value: filterType,
                     items: [
-                      const DropdownMenuItem(
+                      DropdownMenuItem(
                         value: 'all',
                         child: Text(
-                          'All Types',
-                          style: TextStyle(fontSize: 13),
+                          context.tr('All Types'),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                       ...[
@@ -1252,68 +1267,74 @@ class _FilterSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   _FilterDropdown(
-                    label: 'Status',
+                    label: context.tr('Status'),
                     value: filterStatus,
-                    items: const [
+                    items: [
                       DropdownMenuItem(
                         value: 'all',
                         child: Text(
-                          'All Statuses',
-                          style: TextStyle(fontSize: 13),
+                          context.tr('All Statuses'),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem(
                         value: 'disponible',
-                        child: Text('Pending', style: TextStyle(fontSize: 13)),
+                        child: Text(context.tr('Pending'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                       DropdownMenuItem(
                         value: 'en_cours',
-                        child: Text('Claimed', style: TextStyle(fontSize: 13)),
+                        child: Text(context.tr('Claimed'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                       DropdownMenuItem(
                         value: 'validee',
-                        child: Text('Fixed', style: TextStyle(fontSize: 13)),
+                        child: Text(context.tr('Fixed'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                     ],
                     onChanged: onStatus,
                   ),
                   const SizedBox(height: 10),
                   _FilterDropdown(
-                    label: 'Time Range',
+                    label: context.tr('Time Range'),
                     value: timeRange,
-                    items: const [
+                    items: [
                       DropdownMenuItem(
                         value: 'all',
-                        child: Text('All Time', style: TextStyle(fontSize: 13)),
+                        child: Text(context.tr('All Time'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                       DropdownMenuItem(
                         value: 'today',
-                        child: Text('Today', style: TextStyle(fontSize: 13)),
+                        child: Text(context.tr('Today'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                       DropdownMenuItem(
                         value: 'week',
                         child: Text(
-                          'Last 7 Days',
-                          style: TextStyle(fontSize: 13),
+                          context.tr('Last 7 Days'),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem(
                         value: 'month',
                         child: Text(
-                          'This Month',
-                          style: TextStyle(fontSize: 13),
+                          context.tr('This Month'),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem(
                         value: 'year',
                         child: Text(
-                          'This Year',
-                          style: TextStyle(fontSize: 13),
+                          context.tr('This Year'),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                       DropdownMenuItem(
                         value: 'custom',
-                        child: Text('Custom', style: TextStyle(fontSize: 13)),
+                        child: Text(context.tr('Custom'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                     ],
                     onChanged: onTime,
@@ -1322,9 +1343,9 @@ class _FilterSheet extends StatelessWidget {
                   ElevatedButton.icon(
                     onPressed: () => Navigator.of(ctx).pop(),
                     icon: const Icon(Icons.check_rounded, size: 16),
-                    label: const Text(
-                      'Apply',
-                      style: TextStyle(
+                    label: Text(
+                      ctx.tr('Apply'),
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1415,12 +1436,12 @@ class _AlertHistoryRow extends StatelessWidget {
       _ => theme.orange,
     };
     final sl = switch (alert.status) {
-      'validee' => 'Fixed',
-      'en_cours' => 'Claimed',
-      _ => 'Pending',
+      'validee' => context.tr('Fixed'),
+      'en_cours' => context.tr('Claimed'),
+      _ => context.tr('Pending'),
     };
     final desc = alert.description.trim().isEmpty
-        ? '(no description)'
+        ? context.tr('(no description)')
         : alert.description;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1485,7 +1506,7 @@ class _AlertHistoryRow extends StatelessWidget {
                               borderRadius: BorderRadius.circular(99),
                             ),
                             child: Text(
-                              'CRITICAL',
+                              context.tr('CRITICAL'),
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w900,
@@ -1531,7 +1552,14 @@ class _AlertHistoryRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${alert.usine}  ·  Line ${alert.convoyeur}  ·  Post ${alert.poste}  ·  ${_fmtTs(alert.timestamp)}',
+                      context.tr(
+                          '{factory}  ·  Line {line}  ·  Post {station}  ·  {time}',
+                          {
+                            'factory': alert.usine,
+                            'line': '${alert.convoyeur}',
+                            'station': '${alert.poste}',
+                            'time': _fmtTs(alert.timestamp),
+                          }),
                       style: TextStyle(
                         fontFamily: 'monospace',
                         fontSize: 10,
@@ -1551,7 +1579,8 @@ class _AlertHistoryRow extends StatelessWidget {
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
-                                'Assigned: ${alert.superviseurName}',
+                                context.tr('Assigned: {name}',
+                                    {'name': '${alert.superviseurName}'}),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
@@ -1568,7 +1597,8 @@ class _AlertHistoryRow extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          'Critical note: ${alert.criticalNote}',
+                          context.tr('Critical note: {note}',
+                              {'note': '${alert.criticalNote}'}),
                           style: TextStyle(fontSize: 11, color: theme.red),
                         ),
                       ),

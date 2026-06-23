@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/predictive_models.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
@@ -63,7 +64,7 @@ class PredictiveRiskHeatmap extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Predictive Risk · Next 24h',
+                      context.tr('Predictive Risk · Next 24h'),
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -72,10 +73,13 @@ class PredictiveRiskHeatmap extends StatelessWidget {
                     ),
                     Text(
                       model == null
-                          ? 'Awaiting first model from edge inference…'
+                          ? context.tr(
+                              'Awaiting first model from edge inference…')
                           : forecastLive
-                              ? 'On-device AI forecaster · probability per 2h window · tap row to filter'
-                              : 'Probability per 2h window · tap row to filter history',
+                              ? context.tr(
+                                  'On-device AI forecaster · probability per 2h window · tap row to filter')
+                              : context.tr(
+                                  'Probability per 2h window · tap row to filter history'),
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.muted,
@@ -102,7 +106,7 @@ class PredictiveRiskHeatmap extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      forecastLive ? 'AI' : 'ML',
+                      forecastLive ? context.tr('AI') : context.tr('ML'),
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
@@ -175,11 +179,11 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
     super.dispose();
   }
 
-  String _riskLabel(double p) {
-    if (p >= 0.7) return 'High';
-    if (p >= 0.4) return 'Elevated';
-    if (p >= 0.15) return 'Watch';
-    return 'Low';
+  String _riskLabel(BuildContext context, double p) {
+    if (p >= 0.7) return context.tr('High');
+    if (p >= 0.4) return context.tr('Elevated');
+    if (p >= 0.15) return context.tr('Watch');
+    return context.tr('Low');
   }
 
   Color _riskColor(BuildContext ctx, double p) {
@@ -193,7 +197,7 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    final meta = typeMeta(widget.type, context.appTheme);
+    final meta = typeMeta(widget.type, context.appTheme, context);
     final color = meta.color;
     final curve = widget.curve;
     final p = curve?.total24h ?? 0;
@@ -250,8 +254,17 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
                       ),
                       Text(
                         curve == null
-                            ? '${widget.past} past · awaiting forecast'
-                            : '${widget.past} past · ${widget.solved} resolved · peak @ ${curve.peakHour.toString().padLeft(2, '0')}:00',
+                            ? context.tr('{n} past · awaiting forecast',
+                                {'n': '${widget.past}'})
+                            : context.tr(
+                                '{past} past · {solved} resolved · peak @ {hour}:00',
+                                {
+                                  'past': '${widget.past}',
+                                  'solved': '${widget.solved}',
+                                  'hour': curve.peakHour
+                                      .toString()
+                                      .padLeft(2, '0'),
+                                }),
                         style: TextStyle(
                           fontSize: 10.5,
                           color: theme.muted,
@@ -272,7 +285,10 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
                     ),
                   ),
                   child: Text(
-                    '${_riskLabel(p)} · ${(p * 100).toStringAsFixed(0)}%',
+                    context.tr('{label} · {pct}%', {
+                      'label': _riskLabel(context, p),
+                      'pct': (p * 100).toStringAsFixed(0),
+                    }),
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w800,
@@ -302,7 +318,7 @@ class _RiskCurveRowState extends State<_RiskCurveRow>
             Row(
               children: [
                 Text(
-                  'now',
+                  context.tr('now'),
                   style: TextStyle(fontSize: 9.5, color: theme.muted),
                 ),
                 const Spacer(),

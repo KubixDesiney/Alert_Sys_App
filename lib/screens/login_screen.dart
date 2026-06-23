@@ -7,7 +7,9 @@ import '../services/enterprise_auth_service.dart';
 import '../services/sso_config_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
+import '../l10n/app_strings.dart';
 import '../widgets/branded_logo.dart';
+import '../widgets/common/language_toggle.dart';
 import '../widgets/common/offline_banner.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -26,7 +28,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _error;
-  String _language = 'en';
   SsoConfig _sso = const SsoConfig();
 
   @override
@@ -36,29 +37,6 @@ class _LoginScreenState extends State<LoginScreen> {
     SsoConfigService().load().then((c) {
       if (mounted) setState(() => _sso = c);
     });
-  }
-
-  String _t(String key) {
-    const copy = {
-      'en': {
-        'title': 'Sign In',
-        'subtitle': 'Sign In',
-        'email': 'Email',
-        'email_hint': 'your@email.com',
-        'password': 'Password',
-        'login': 'Sign In',
-      },
-      'fr': {
-        'title': 'Connexion',
-        'subtitle': 'Connexion',
-        'email': 'Email',
-        'email_hint': 'votre@email.com',
-        'password': 'Mot de passe',
-        'login': 'Se connecter',
-      },
-    };
-
-    return copy[_language]?[key] ?? copy['en']![key] ?? key;
   }
 
   Future<void> _login() async {
@@ -138,21 +116,21 @@ class _LoginScreenState extends State<LoginScreen> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Two-factor code'),
+        title: Text(ctx.tr('Two-factor code')),
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '6-digit code'),
+          decoration: InputDecoration(hintText: ctx.tr('6-digit code')),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(ctx.tr('Cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Verify'),
+            child: Text(ctx.tr('Verify')),
           ),
         ],
       ),
@@ -167,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to open download link')),
+          SnackBar(content: Text(context.tr('Unable to open download link'))),
         );
       }
     }
@@ -202,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ElevatedButton.icon(
                           onPressed: _downloadApk,
                           icon: const Icon(Icons.download, size: 16),
-                          label: const Text('Download APK'),
+                          label: Text(context.tr('Download APK')),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: t.navy,
                             foregroundColor: Colors.white,
@@ -223,23 +201,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: t.muted,
                             size: 22,
                           ),
-                          tooltip: isDark ? 'Light mode' : 'Dark mode',
+                          tooltip: isDark
+                              ? context.tr('Light mode')
+                              : context.tr('Dark mode'),
                           onPressed: () =>
                               context.read<ThemeProvider>().toggle(),
                         ),
                         const SizedBox(width: 8),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'en', label: Text('EN')),
-                            ButtonSegment(value: 'fr', label: Text('FR')),
-                          ],
-                          selected: {_language},
-                          onSelectionChanged: (selection) {
-                            setState(() {
-                              _language = selection.first;
-                            });
-                          },
-                        ),
+                        const LanguageSegmented(),
                       ],
                     ),
                   ),
@@ -260,7 +229,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text(
                     CompanyConfig.isConfigured
                         ? CompanyConfig.companyName
-                        : _t('title'),
+                        : context.tr('Sign In'),
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w700,
@@ -270,7 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _t('subtitle'),
+                    context.tr('Sign In'),
                     style: TextStyle(
                       fontSize: 14,
                       color: t.muted,
@@ -299,7 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         // Email field
                         Text(
-                          _t('email'),
+                          context.tr('Email'),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -312,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           keyboardType: TextInputType.emailAddress,
                           style: TextStyle(fontSize: 15, color: t.text),
                           decoration: InputDecoration(
-                            hintText: _t('email_hint'),
+                            hintText: context.tr('your@email.com'),
                             hintStyle: TextStyle(color: t.muted),
                             filled: true,
                             fillColor: t.card,
@@ -336,7 +305,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         // Password field
                         Text(
-                          _t('password'),
+                          context.tr('Password'),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -397,7 +366,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    _error!,
+                                    context.tr(_error!),
                                     style:
                                         TextStyle(color: t.red, fontSize: 13),
                                   ),
@@ -431,7 +400,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   )
                                 : Text(
-                                    _t('login'),
+                                    context.tr('Sign In'),
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -460,6 +429,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    "© 2026 KubixDesiney · ${context.tr('All rights reserved.')}",
+                    style: TextStyle(fontSize: 12, color: t.muted),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),

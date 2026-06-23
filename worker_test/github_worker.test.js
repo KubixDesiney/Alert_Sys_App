@@ -1,7 +1,7 @@
 import { describe, test, expect } from '@jest/globals';
 import {
   mapRun, mapPull, mapDeployment, mapJob, timingSafeEqual, rateLimit,
-  tailText, stripLogTimestamps,
+  tailText, stripLogTimestamps, normalizeRepo, chooseGithubCreds,
 } from '../cloudflare_github_worker.js';
 
 describe('mapRun', () => {
@@ -76,5 +76,41 @@ describe('stripLogTimestamps', () => {
   });
   test('leaves untimestamped lines alone', () => {
     expect(stripLogTimestamps('plain line')).toBe('plain line');
+  });
+});
+
+describe('normalizeRepo', () => {
+  test('accepts owner/name and common GitHub URLs', () => {
+    expect(normalizeRepo('owner/repo')).toBe('owner/repo');
+    expect(normalizeRepo('https://github.com/owner/repo')).toBe('owner/repo');
+    expect(normalizeRepo('git@github.com:owner/repo.git')).toBe('owner/repo');
+    expect(normalizeRepo('https://api.github.com/repos/owner/repo')).toBe('owner/repo');
+  });
+});
+
+describe('chooseGithubCreds', () => {
+  test('prefers the SuperAdmin vault over env bootstrap credentials', () => {
+    expect(chooseGithubCreds({
+      envRepo: 'env/repo',
+      envToken: 'env-token',
+      vaultRepo: 'https://github.com/vault/repo',
+      vaultToken: 'vault-token',
+    })).toEqual({ repo: 'vault/repo', token: 'vault-token' });
+  });
+
+  test('does not silently fall back to env after vault credentials are edited', () => {
+    expect(chooseGithubCreds({
+      envRepo: 'env/repo',
+      envToken: 'env-token',
+      vaultRepo: 'bad input',
+      vaultToken: 'gibberish',
+    })).toEqual({ repo: '', token: 'gibberish' });
+  });
+
+  test('uses env credentials only before the vault is populated', () => {
+    expect(chooseGithubCreds({
+      envRepo: 'env/repo',
+      envToken: 'env-token',
+    })).toEqual({ repo: 'env/repo', token: 'env-token' });
   });
 });

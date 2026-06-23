@@ -125,11 +125,13 @@ class _MachineEditorState extends State<_MachineEditor> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _editing ? 'Edit Machine' : 'Register Machine',
+                            _editing
+                                ? context.tr('Edit Machine')
+                                : context.tr('Register Machine'),
                             style: Sa.heading(size: 17),
                           ),
                           Text(
-                            'A MACH-XXX unit on a conveyor line',
+                            context.tr('A MACH-XXX unit on a conveyor line'),
                             style: Sa.mono(size: 9, color: Sa.muted),
                           ),
                         ],
@@ -155,8 +157,9 @@ class _MachineEditorState extends State<_MachineEditor> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'This is a live plant asset. Edits here are kept in '
-                              'the lab overlay and do not change /assets.',
+                              context.tr(
+                                'This is a live plant asset. Edits here are kept in the lab overlay and do not change /assets.',
+                              ),
                               style: Sa.body(size: 10.5, color: Sa.textDim),
                             ),
                           ),
@@ -165,35 +168,37 @@ class _MachineEditorState extends State<_MachineEditor> {
                     ),
                   ),
                 const SizedBox(height: 16),
-                _hwFieldLabel('MACHINE ID'),
+                _hwFieldLabel(context.tr('MACHINE ID')),
                 TextField(
                   controller: _id,
                   enabled: !_readonlyId,
                   style: Sa.body(size: 13),
                   cursorColor: Sa.violet,
-                  decoration: _hwDec('e.g. MACH-001'),
+                  decoration: _hwDec(context.tr('e.g. MACH-001')),
                 ),
                 const SizedBox(height: 14),
-                _hwFieldLabel('NAME'),
+                _hwFieldLabel(context.tr('NAME')),
                 TextField(
                   controller: _name,
                   style: Sa.body(size: 13),
                   cursorColor: Sa.violet,
-                  decoration: _hwDec('e.g. Bottling head A'),
+                  decoration: _hwDec(context.tr('e.g. Bottling head A')),
                 ),
                 const SizedBox(height: 14),
-                _hwFieldLabel('DESCRIPTION'),
+                _hwFieldLabel(context.tr('DESCRIPTION')),
                 TextField(
                   controller: _desc,
                   maxLines: 3,
                   style: Sa.body(size: 13),
                   cursorColor: Sa.violet,
                   decoration: _hwDec(
-                    'What this machine does, what hardware it carries…',
+                    context.tr(
+                      'What this machine does, what hardware it carries…',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
-                _hwFieldLabel('FACTORY'),
+                _hwFieldLabel(context.tr('FACTORY')),
                 DropdownButtonFormField<String>(
                   initialValue:
                       widget.catalog.factories.any((f) => f.id == _factoryId)
@@ -202,7 +207,7 @@ class _MachineEditorState extends State<_MachineEditor> {
                   isExpanded: true,
                   dropdownColor: Sa.panelSolid,
                   style: Sa.body(size: 12.5),
-                  decoration: _hwDec('Select a factory'),
+                  decoration: _hwDec(context.tr('Select a factory')),
                   items: [
                     for (final f in widget.catalog.factories)
                       DropdownMenuItem(value: f.id, child: Text(f.name)),
@@ -213,7 +218,7 @@ class _MachineEditorState extends State<_MachineEditor> {
                   }),
                 ),
                 const SizedBox(height: 14),
-                _hwFieldLabel('CONVEYOR LINE'),
+                _hwFieldLabel(context.tr('CONVEYOR LINE')),
                 DropdownButtonFormField<String>(
                   initialValue: conveyors.any((c) => c.id == _conveyorId)
                       ? _conveyorId
@@ -223,8 +228,8 @@ class _MachineEditorState extends State<_MachineEditor> {
                   style: Sa.body(size: 12.5),
                   decoration: _hwDec(
                     _factoryId == null
-                        ? 'Pick a factory first'
-                        : 'Select a conveyor line (optional)',
+                        ? context.tr('Pick a factory first')
+                        : context.tr('Select a conveyor line (optional)'),
                   ),
                   items: [
                     for (final c in conveyors)
@@ -235,7 +240,7 @@ class _MachineEditorState extends State<_MachineEditor> {
                       : (v) => setState(() => _conveyorId = v),
                 ),
                 const SizedBox(height: 14),
-                _hwFieldLabel('STATUS'),
+                _hwFieldLabel(context.tr('STATUS')),
                 Row(
                   children: [
                     _statusSeg(HwMachineStatus.active),
@@ -249,11 +254,11 @@ class _MachineEditorState extends State<_MachineEditor> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: Text('Cancel', style: Sa.body(color: Sa.textDim)),
+                      child: Text(context.tr('Cancel'), style: Sa.body(color: Sa.textDim)),
                     ),
                     const SizedBox(width: 8),
                     SaButton(
-                      label: _editing ? 'SAVE' : 'ADD MACHINE',
+                      label: _editing ? context.tr('SAVE') : context.tr('ADD MACHINE'),
                       icon: Icons.check,
                       color: Sa.violet,
                       onPressed: _save,
@@ -293,7 +298,7 @@ class _MachineEditorState extends State<_MachineEditor> {
               Icon(s.icon, size: 13, color: active ? s.color : Sa.muted),
               const SizedBox(width: 6),
               Text(
-                s.label,
+                context.tr(s.label),
                 style: Sa.mono(size: 9.5, color: active ? s.color : Sa.textDim),
               ),
             ],

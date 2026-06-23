@@ -46,7 +46,7 @@ log + a stopwatch sample). Keep it conservative — defendable beats impressive.
 | Readout + ROI report | `[2 days]` |
 
 ## 6. Roles & responsibilities
-- `[Company]`: stand up the dedicated instance (`make deploy-all` / `deploy-instance.yml`), wire the connector, train supervisors, run the readout.
+- KubixDesiney: stand up the dedicated instance (`make deploy-all` / `deploy-instance.yml`), wire the connector, train supervisors, run the readout.
 - Customer: name a sponsor, provide line access + alarm/telemetry feed, ensure supervisors install the app, supply baseline incident data.
 
 ## 7. Entry / exit criteria

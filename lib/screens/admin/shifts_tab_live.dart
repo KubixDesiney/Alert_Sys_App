@@ -28,7 +28,8 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
         ? widget.shift.minutesRemaining(now) ?? 0
         : _minutesUntilStart(now);
     final progress = activeNow ? widget.shift.progress(now) : 0.0;
-    final timeLabel = activeNow ? 'Time remaining' : 'Starts in';
+    final timeLabel =
+        activeNow ? context.tr('Time remaining') : context.tr('Starts in');
 
     if (activeNow && remaining <= 0) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -177,7 +178,7 @@ class _LiveShiftPanelState extends State<_LiveShiftPanel> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Select at least one action type'),
+          content: Text(context.tr('Select at least one action type')),
           backgroundColor: context.appTheme.orange,
         ),
       );
@@ -233,7 +234,7 @@ class _ShiftPdfExportButton extends StatelessWidget {
             )
           : const _PdfIcon(),
       label: Text(
-        busy ? 'Generating PDF…' : 'Export PDF report',
+        busy ? context.tr('Generating PDF…') : context.tr('Export PDF report'),
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w800,
@@ -301,7 +302,8 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   String _autoName() {
-    final factory = _factory == 'all' ? 'All factories' : _factory;
+    final factory =
+        _factory == 'all' ? context.tr('All factories') : _factory;
     return 'SIA Shift Commander Report - ${widget.shift.name} - $factory - ${_date(_day)}';
   }
 
@@ -316,17 +318,17 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
   String _label(String kind) {
     switch (kind) {
       case 'created':
-        return 'Created';
+        return context.tr('Created');
       case 'claimed':
-        return 'Claimed';
+        return context.tr('Claimed');
       case 'resolved':
-        return 'Resolved';
+        return context.tr('Resolved');
       case 'ai_assigned':
-        return 'AI Assignments';
+        return context.tr('AI Assignments');
       case 'escalated':
-        return 'Escalations';
+        return context.tr('Escalations');
       case 'handover':
-        return 'Handovers';
+        return context.tr('Handovers');
       default:
         return kind;
     }
@@ -411,22 +413,23 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                         size: 22,
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Export Shift Report',
-                              style: TextStyle(
+                              context.tr('Export Shift Report'),
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 17,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
-                            SizedBox(height: 2),
+                            const SizedBox(height: 2),
                             Text(
-                              'Choose date, factory, and action types',
-                              style: TextStyle(
+                              context.tr(
+                                  'Choose date, factory, and action types'),
+                              style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -439,7 +442,7 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close_rounded),
                         color: Colors.white,
-                        tooltip: 'Close',
+                        tooltip: context.tr('Close'),
                       ),
                     ],
                   ),
@@ -450,7 +453,8 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _dialogLabel(t, 'Report name', Icons.edit_note_rounded),
+                        _dialogLabel(
+                            t, context.tr('Report name'), Icons.edit_note_rounded),
                         const SizedBox(height: 8),
                         TextField(
                           controller: _nameController,
@@ -462,10 +466,10 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                             fontWeight: FontWeight.w700,
                           ),
                           decoration: InputDecoration(
-                            hintText: 'Report name',
+                            hintText: context.tr('Report name'),
                             suffixIcon: _nameTouched
                                 ? IconButton(
-                                    tooltip: 'Reset name',
+                                    tooltip: context.tr('Reset name'),
                                     icon: const Icon(
                                       Icons.refresh_rounded,
                                       size: 18,
@@ -479,7 +483,8 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _dialogLabel(t, 'Report date', Icons.event_rounded),
+                        _dialogLabel(
+                            t, context.tr('Report date'), Icons.event_rounded),
                         const SizedBox(height: 8),
                         InkWell(
                           onTap: _pickDay,
@@ -515,14 +520,15 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _dialogLabel(t, 'Factory', Icons.factory_rounded),
+                        _dialogLabel(
+                            t, context.tr('Factory'), Icons.factory_rounded),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
                           initialValue: _factory,
                           items: [
-                            const DropdownMenuItem(
+                            DropdownMenuItem(
                               value: 'all',
-                              child: Text('All factories'),
+                              child: Text(context.tr('All factories')),
                             ),
                             for (final f in widget.factories)
                               DropdownMenuItem(value: f, child: Text(f)),
@@ -540,7 +546,7 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                           children: [
                             _dialogLabel(
                               t,
-                              'Action types',
+                              context.tr('Action types'),
                               Icons.checklist_rounded,
                             ),
                             const Spacer(),
@@ -553,8 +559,8 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                               }),
                               child: Text(
                                 _selectedKinds.length == actionKinds.length
-                                    ? 'Clear all'
-                                    : 'Select all',
+                                    ? context.tr('Clear all')
+                                    : context.tr('Select all'),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
@@ -565,9 +571,9 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                               onPressed: () => setState(() {
                                 _selectedKinds = {'ai_assigned', 'handover'};
                               }),
-                              child: const Text(
-                                'AI only',
-                                style: TextStyle(
+                              child: Text(
+                                context.tr('AI only'),
+                                style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -623,8 +629,12 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                       Expanded(
                         child: Text(
                           canExport
-                              ? '${_selectedKinds.length} action type${_selectedKinds.length == 1 ? '' : 's'} selected'
-                              : 'No action types selected',
+                              ? (_selectedKinds.length == 1
+                                  ? context.tr('{n} action type selected',
+                                      {'n': '${_selectedKinds.length}'})
+                                  : context.tr('{n} action types selected',
+                                      {'n': '${_selectedKinds.length}'}))
+                              : context.tr('No action types selected'),
                           style: TextStyle(
                             color: canExport ? t.muted : t.red,
                             fontSize: 11,
@@ -634,7 +644,7 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                       ),
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel'),
+                        child: Text(context.tr('Cancel')),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton.icon(
@@ -650,7 +660,7 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
                               )
                             : null,
                         icon: const Icon(Icons.download_rounded, size: 16),
-                        label: const Text('Generate PDF'),
+                        label: Text(context.tr('Generate PDF')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: t.navy,
                           foregroundColor: Colors.white,
@@ -752,7 +762,8 @@ class _HandoverBanner extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Shift ends in $minutes min — generate AI handover?',
+                  context.tr('Shift ends in {n} min — generate AI handover?',
+                      {'n': '$minutes'}),
                   style: TextStyle(
                     color: t.text,
                     fontSize: 13,
@@ -776,7 +787,8 @@ class _HandoverBanner extends StatelessWidget {
                         size: 14,
                         color: Colors.white,
                       ),
-                label: Text(requesting ? 'Generating…' : 'Generate'),
+                label: Text(
+                    requesting ? context.tr('Generating…') : context.tr('Generate')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF60A5FA),
                   foregroundColor: Colors.white,

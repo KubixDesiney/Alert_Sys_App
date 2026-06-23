@@ -158,8 +158,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
     );
     if (added == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Collaborators added to the request'),
+        SnackBar(
+          content: Text(context.tr('Collaborators added to the request')),
           backgroundColor: _green,
         ),
       );
@@ -174,17 +174,18 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Remove Assistant?'),
-        content: Text('Remove @$assistantName from this collaboration?'),
+        title: Text(context.tr('Remove Assistant?')),
+        content: Text(context.tr('Remove @{name} from this collaboration?',
+            {'name': assistantName})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: _red),
-            child: const Text('Remove'),
+            child: Text(context.tr('Remove')),
           ),
         ],
       ),
@@ -482,8 +483,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
                     );
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Collaboration rejected'),
+                        SnackBar(
+                          content: Text(context.tr('Collaboration rejected')),
                           backgroundColor: _red,
                         ),
                       );
@@ -566,8 +567,8 @@ class _CollaborationRequestCardState extends State<_CollaborationRequestCard> {
       );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Collaboration approved successfully'),
+          SnackBar(
+            content: Text(context.tr('Collaboration approved successfully')),
             backgroundColor: _green,
           ),
         );
@@ -832,7 +833,7 @@ class _AddCollaboratorsDialogState extends State<_AddCollaboratorsDialog> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: context.tr('Close'),
                     onPressed: _saving
                         ? null
                         : () => Navigator.of(context).pop(false),
@@ -855,7 +856,8 @@ class _AddCollaboratorsDialogState extends State<_AddCollaboratorsDialog> {
                     enabled: !_saving,
                     style: TextStyle(color: t.text),
                     decoration: InputDecoration(
-                      hintText: 'Search by name, factory, email, or phone',
+                      hintText:
+                          context.tr('Search by name, factory, email, or phone'),
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: t.scaffold,
@@ -954,7 +956,7 @@ class _AddCollaboratorsDialogState extends State<_AddCollaboratorsDialog> {
                     onPressed: _saving
                         ? null
                         : () => Navigator.of(context).pop(false),
-                    child: const Text('Cancel'),
+                    child: Text(context.tr('Cancel')),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
@@ -1128,12 +1130,14 @@ class _CollaboratorCandidateTile extends StatelessWidget {
                       children: [
                         _TinyInfoPill(
                           icon: Icons.factory_outlined,
-                          label: 'Assigned: ${user.usine}',
+                          label: context.tr('Assigned: {factory}',
+                              {'factory': user.usine}),
                           color: t.navy,
                         ),
                         _TinyInfoPill(
                           icon: Icons.crisis_alert_outlined,
-                          label: 'Affected: $affectedFactory',
+                          label: context.tr('Affected: {factory}',
+                              {'factory': affectedFactory}),
                           color: t.orange,
                         ),
                         _TinyInfoPill(

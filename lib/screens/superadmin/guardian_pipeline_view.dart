@@ -5,7 +5,7 @@
 //     worker and turns the REAL workflow run (its jobs + steps + raw logs) into
 //     a per-node pipeline state. It also drives "an actual alert happens": it
 //     latches onto the newest run automatically, so a genuine CI / autonomous
-//     bug-fix run lights the schema with no Simulate click.
+//     bug-fix run lights the schema automatically.
 //   • [GuardianPipeline]     — the headline 3D animated schematic (the flow-
 //     chart the operator asked for). Each node glows: grey/transparent when
 //     GitHub is not connected, amber while a stage is running, green once it
@@ -71,21 +71,91 @@ class _PNode {
 }
 
 const _kNodes = <_PNode>[
-  _PNode('ui_checks', 'UI checks', 'Endpoint polling', Icons.monitor_outlined, 0, 0),
-  _PNode('log_watcher', 'Log watcher', 'Console + Sentry', Icons.terminal, 0, 0),
+  _PNode(
+    'ui_checks',
+    'UI checks',
+    'Endpoint polling',
+    Icons.monitor_outlined,
+    0,
+    0,
+  ),
+  _PNode(
+    'log_watcher',
+    'Log watcher',
+    'Console + Sentry',
+    Icons.terminal,
+    0,
+    0,
+  ),
   _PNode('cf_cron', 'CF + cron', 'Worker status', Icons.cloud_queue, 0, 0),
-  _PNode('orchestrator', 'Agent orchestrator', 'Detects bug → coordinates fix', Icons.account_tree, 0, 1),
+  _PNode(
+    'orchestrator',
+    'Agent orchestrator',
+    'Detects bug → coordinates fix',
+    Icons.account_tree,
+    0,
+    1,
+  ),
   _PNode('ctx_source', 'Source code', 'Relevant files', Icons.code, 1, 2),
-  _PNode('ctx_errors', 'Error logs', 'Stack traces', Icons.bug_report_outlined, 1, 2),
+  _PNode(
+    'ctx_errors',
+    'Error logs',
+    'Stack traces',
+    Icons.bug_report_outlined,
+    1,
+    2,
+  ),
   _PNode('ctx_db', 'DB state', 'CF workers', Icons.storage_outlined, 1, 2),
-  _PNode('claude', 'Anthropic (Claude) API', 'Analyzes context + generates fix', Icons.psychology_outlined, 2, 3),
-  _PNode('test_suite', 'Test suite', 'CI dry run', Icons.science_outlined, 3, 4),
-  _PNode('ai_review', 'AI review', 'OpenAI (ChatGPT)', Icons.reviews_outlined, 3, 4),
-  _PNode('gate', 'Fix approved?', 'Tests pass + AI review confirms', Icons.fact_check_outlined, 4, 5),
-  _PNode('alert_human', 'Alert human', 'Notify + retry', Icons.notifications_active_outlined, 4, 5),
-  _PNode('github_pr', 'GitHub PR', 'Branch created, tests run', Icons.merge_type, 5, 6),
+  _PNode('claude', 'Fix AI', 'Selected model', Icons.psychology_outlined, 2, 3),
+  _PNode(
+    'test_suite',
+    'Test suite',
+    'CI dry run',
+    Icons.science_outlined,
+    3,
+    4,
+  ),
+  _PNode(
+    'ai_review',
+    'Review AI',
+    'Selected model',
+    Icons.reviews_outlined,
+    3,
+    4,
+  ),
+  _PNode(
+    'gate',
+    'Fix approved?',
+    'Tests pass + AI review confirms',
+    Icons.fact_check_outlined,
+    4,
+    5,
+  ),
+  _PNode(
+    'alert_human',
+    'Alert human',
+    'Notify + retry',
+    Icons.notifications_active_outlined,
+    4,
+    5,
+  ),
+  _PNode(
+    'github_pr',
+    'GitHub PR',
+    'Branch created, tests run',
+    Icons.merge_type,
+    5,
+    6,
+  ),
   _PNode('ci_checks', 'CI checks', 'all green', Icons.task_alt, 5, 6),
-  _PNode('deploy', 'Auto-merge + deploy', 'Push to main → production live', Icons.rocket_launch_outlined, 5, 7),
+  _PNode(
+    'deploy',
+    'Auto-merge + deploy',
+    'Push to main → production live',
+    Icons.rocket_launch_outlined,
+    5,
+    7,
+  ),
 ];
 
 class _PEdge {
@@ -151,10 +221,10 @@ Map<String, PipeStatus> computePipelineNodes({
   m['alert_human'] = !connected
       ? PipeStatus.off
       : fail
-          ? PipeStatus.failed
-          : idleArmed
-              ? PipeStatus.idle
-              : PipeStatus.pending;
+      ? PipeStatus.failed
+      : idleArmed
+      ? PipeStatus.idle
+      : PipeStatus.pending;
   // Human-review mode: the PR opens & CI runs, but the deploy waits on a person.
   if (connected && done && failPhase < 0 && mode != 'auto') {
     m['github_pr'] = PipeStatus.passed;
@@ -168,10 +238,20 @@ Map<String, PipeStatus> computePipelineNodes({
 // LIVE TRACKER — turns the real GitHub run into pipeline state
 // ═════════════════════════════════════════════════════════════════════════════
 class GuardianLiveTracker extends ChangeNotifier {
-  GuardianLiveTracker({required String baseUrl, required String secret, String repo = ''})
-      : _gh = GithubService(baseUrl: baseUrl, sharedSecret: secret, repo: repo);
+  GuardianLiveTracker({
+    required String baseUrl,
+    required String secret,
+    String repo = '',
+  }) : _baseUrl = baseUrl,
+       _secret = secret,
+       _repoHint = repo {
+    _gh = GithubService(baseUrl: _baseUrl, sharedSecret: _secret, repo: repo);
+  }
 
-  final GithubService _gh;
+  final String _baseUrl;
+  final String _secret;
+  late GithubService _gh;
+  String _repoHint;
   Timer? _poll;
   bool _disposed = false;
 
@@ -199,7 +279,14 @@ class GuardianLiveTracker extends ChangeNotifier {
   Object? _latchId;
 
   Map<String, PipeStatus> nodes = computePipelineNodes(
-    connected: false, frontier: 0, failPhase: -1, done: false, running: false, idleArmed: false, mode: 'human');
+    connected: false,
+    frontier: 0,
+    failPhase: -1,
+    done: false,
+    running: false,
+    idleArmed: false,
+    mode: 'human',
+  );
 
   bool get idleArmed => connected && run == null && !_dispatchPending;
 
@@ -207,7 +294,68 @@ class GuardianLiveTracker extends ChangeNotifier {
     _tick();
   }
 
-  /// Called right after the Simulate button fires a repository_dispatch: latch
+  void setRepo(String value) {
+    final next = GithubService.normalizeRepo(value);
+    if (next == _repoHint) return;
+    _repoHint = next;
+    _poll?.cancel();
+    _gh.close();
+    _gh = GithubService(
+      baseUrl: _baseUrl,
+      sharedSecret: _secret,
+      repo: _repoHint,
+    );
+    repo = _repoHint;
+    connected = false;
+    run = null;
+    jobs = const [];
+    rawTail = '';
+    _recompute();
+    if (!_disposed) _schedule(Duration.zero);
+  }
+
+  void rememberConnected(String value) {
+    final next = GithubService.normalizeRepo(value);
+    if (next.isNotEmpty && next != _repoHint) {
+      _repoHint = next;
+      _poll?.cancel();
+      _gh.close();
+      _gh = GithubService(
+        baseUrl: _baseUrl,
+        sharedSecret: _secret,
+        repo: _repoHint,
+      );
+    }
+    if (next.isNotEmpty) {
+      repo = next;
+    }
+    connected = true;
+    _recompute();
+    if (!_disposed) {
+      notifyListeners();
+      _schedule(Duration.zero);
+    }
+  }
+
+  void forgetConnection() {
+    connected = false;
+    run = null;
+    jobs = const [];
+    rawTail = '';
+    runUrl = '';
+    frontier = 0;
+    failPhase = -1;
+    running = false;
+    done = false;
+    failed = false;
+    _recompute();
+    if (!_disposed) {
+      notifyListeners();
+      _schedule(Duration.zero);
+    }
+  }
+
+  /// Called right after a repository_dispatch: latch
   /// onto the next guardian run so the schema reacts immediately.
   void expectDrill() {
     _expectAfter = DateTime.now().toUtc();
@@ -298,7 +446,10 @@ class GuardianLiveTracker extends ChangeNotifier {
   }
 
   bool _isFailConcl(String c) =>
-      c == 'failure' || c == 'timed_out' || c == 'startup_failure' || c == 'cancelled';
+      c == 'failure' ||
+      c == 'timed_out' ||
+      c == 'startup_failure' ||
+      c == 'cancelled';
 
   bool _recentlyFinished(Map run) {
     final u = DateTime.tryParse((run['updatedAt'] ?? '').toString());
@@ -309,7 +460,9 @@ class GuardianLiveTracker extends ChangeNotifier {
   bool _looksGuardian(Map r) {
     final wf = '${r['workflow'] ?? ''} ${r['name'] ?? ''}'.toLowerCase();
     final ev = (r['event'] ?? '').toString().toLowerCase();
-    return ev.contains('dispatch') || wf.contains('guardian') || wf.contains('drill');
+    return ev.contains('dispatch') ||
+        wf.contains('guardian') ||
+        wf.contains('drill');
   }
 
   Map<String, dynamic>? _selectRun(List<Map<String, dynamic>> runs) {
@@ -325,8 +478,11 @@ class GuardianLiveTracker extends ChangeNotifier {
     if (_expectAfter != null) {
       for (final r in runs) {
         final created = DateTime.tryParse((r['createdAt'] ?? '').toString());
-        final fresh = created != null &&
-            created.toUtc().isAfter(_expectAfter!.subtract(const Duration(seconds: 30)));
+        final fresh =
+            created != null &&
+            created.toUtc().isAfter(
+              _expectAfter!.subtract(const Duration(seconds: 30)),
+            );
         if (fresh && _looksGuardian(r)) {
           _latchId = r['id'];
           _expectAfter = null;
@@ -371,7 +527,9 @@ class GuardianLiveTracker extends ChangeNotifier {
         ord++;
       }
       final jc = (j['conclusion'] ?? '').toString();
-      if (_isFailConcl(jc) && failedOrd < 0 && (j['status'] ?? '') == 'completed') {
+      if (_isFailConcl(jc) &&
+          failedOrd < 0 &&
+          (j['status'] ?? '') == 'completed') {
         failedOrd = total > 0 ? total - 1 : 0;
       }
     }
@@ -414,8 +572,18 @@ class GuardianLiveTracker extends ChangeNotifier {
     if (_dispatchPending && run == null) return 'Dispatching drill…';
     if (idleArmed) return 'Armed · watching the stack';
     if (failed) return 'Stage failed — human alerted';
-    if (done) return mode == 'auto' ? 'Healed & deployed' : 'Fix ready — awaiting human review';
-    const labels = ['Detecting', 'Gathering context', 'Generating fix', 'Testing + review', 'Approval gate', 'Shipping'];
+    if (done)
+      return mode == 'auto'
+          ? 'Healed & deployed'
+          : 'Fix ready — awaiting human review';
+    const labels = [
+      'Detecting',
+      'Gathering context',
+      'Generating fix',
+      'Testing + review',
+      'Approval gate',
+      'Shipping',
+    ];
     return '${labels[frontier.clamp(0, 5)]}…';
   }
 
@@ -437,6 +605,8 @@ class GuardianPipeline extends StatefulWidget {
   final String statusLabel;
   final bool failed;
   final bool running;
+  final String fixAiLabel;
+  final String reviewAiLabel;
   const GuardianPipeline({
     super.key,
     required this.nodes,
@@ -444,6 +614,8 @@ class GuardianPipeline extends StatefulWidget {
     required this.statusLabel,
     this.failed = false,
     this.running = false,
+    this.fixAiLabel = 'Selected model',
+    this.reviewAiLabel = 'Selected model',
   });
 
   @override
@@ -452,8 +624,10 @@ class GuardianPipeline extends StatefulWidget {
 
 class _GuardianPipelineState extends State<GuardianPipeline>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl =
-      AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
 
   static const _rowPitch = 86.0;
   static const _nodeH = 58.0;
@@ -493,7 +667,12 @@ class _GuardianPipelineState extends State<GuardianPipeline>
       'test_suite': half(4, true),
       'ai_review': half(4, false),
       'gate': Rect.fromLTWH(pad, y(5), (w - 2 * pad) * 0.60, _nodeH),
-      'alert_human': Rect.fromLTWH(pad + (w - 2 * pad) * 0.66, y(5), (w - 2 * pad) * 0.34, _nodeH),
+      'alert_human': Rect.fromLTWH(
+        pad + (w - 2 * pad) * 0.66,
+        y(5),
+        (w - 2 * pad) * 0.34,
+        _nodeH,
+      ),
       'github_pr': half(6, true),
       'ci_checks': half(6, false),
       'deploy': wide(7, 0.66),
@@ -504,17 +683,24 @@ class _GuardianPipelineState extends State<GuardianPipeline>
   Widget build(BuildContext context) {
     const height = _topPad + 7 * _rowPitch + _nodeH + 14;
     return GlassPanel(
-      accent: widget.failed ? _GP.red : (widget.running ? _GP.amber : _GP.green),
+      accent: widget.failed
+          ? _GP.red
+          : (widget.running ? _GP.amber : _GP.green),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(Icons.account_tree_outlined, size: 14, color: Sa.muted),
-            const SizedBox(width: 7),
-            Text('SELF-HEAL PIPELINE', style: Sa.body(size: 11, color: Sa.muted)),
-            const Spacer(),
-            _statusPill(),
-          ]),
+          Row(
+            children: [
+              Icon(Icons.account_tree_outlined, size: 14, color: Sa.muted),
+              const SizedBox(width: 7),
+              Text(
+                'SELF-HEAL PIPELINE',
+                style: Sa.body(size: 11, color: Sa.muted),
+              ),
+              const Spacer(),
+              _statusPill(),
+            ],
+          ),
           const SizedBox(height: 12),
           SizedBox(
             height: height,
@@ -549,6 +735,11 @@ class _GuardianPipelineState extends State<GuardianPipeline>
                                   node: n,
                                   status: widget.nodes[n.id] ?? PipeStatus.off,
                                   pulse: pulse,
+                                  subOverride: switch (n.id) {
+                                    'claude' => widget.fixAiLabel,
+                                    'ai_review' => widget.reviewAiLabel,
+                                    _ => null,
+                                  },
                                 ),
                               ),
                           if (!widget.connected) _disconnectedVeil(),
@@ -569,10 +760,10 @@ class _GuardianPipelineState extends State<GuardianPipeline>
     final c = !widget.connected
         ? Sa.muted
         : widget.failed
-            ? _GP.red
-            : widget.running
-                ? _GP.amber
-                : _GP.green;
+        ? _GP.red
+        : widget.running
+        ? _GP.amber
+        : _GP.green;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -580,19 +771,32 @@ class _GuardianPipelineState extends State<GuardianPipeline>
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: c.withValues(alpha: 0.5)),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (widget.running && widget.connected)
-          SizedBox(width: 11, height: 11, child: CircularProgressIndicator(strokeWidth: 2, color: c))
-        else
-          Icon(widget.failed ? Icons.error_outline : Icons.circle, size: 9, color: c),
-        const SizedBox(width: 7),
-        Flexible(
-          child: Text(widget.statusLabel,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.running && widget.connected)
+            SizedBox(
+              width: 11,
+              height: 11,
+              child: CircularProgressIndicator(strokeWidth: 2, color: c),
+            )
+          else
+            Icon(
+              widget.failed ? Icons.error_outline : Icons.circle,
+              size: 9,
+              color: c,
+            ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              widget.statusLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Sa.body(size: 11.5, color: c)),
-        ),
-      ]),
+              style: Sa.body(size: 11.5, color: c),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -606,14 +810,19 @@ class _GuardianPipelineState extends State<GuardianPipeline>
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Sa.border),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.link_off, size: 16, color: Sa.muted),
-            const SizedBox(width: 9),
-            Flexible(
-              child: Text('Connect GitHub to bring the pipeline live',
-                  style: Sa.body(size: 12, color: Sa.textDim)),
-            ),
-          ]),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.link_off, size: 16, color: Sa.muted),
+              const SizedBox(width: 9),
+              Flexible(
+                child: Text(
+                  'Connect GitHub to bring the pipeline live',
+                  style: Sa.body(size: 12, color: Sa.textDim),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -625,7 +834,13 @@ class _PipeNodeCard extends StatelessWidget {
   final _PNode node;
   final PipeStatus status;
   final double pulse;
-  const _PipeNodeCard({required this.node, required this.status, required this.pulse});
+  final String? subOverride;
+  const _PipeNodeCard({
+    required this.node,
+    required this.status,
+    required this.pulse,
+    this.subOverride,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -639,8 +854,8 @@ class _PipeNodeCard extends StatelessWidget {
     final opacity = status == PipeStatus.off
         ? 0.34
         : status == PipeStatus.pending
-            ? 0.6
-            : 1.0;
+        ? 0.6
+        : 1.0;
 
     return Opacity(
       opacity: opacity,
@@ -662,9 +877,17 @@ class _PipeNodeCard extends StatelessWidget {
               width: lit ? 1.5 : 1.1,
             ),
             boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 6)),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
+              ),
               if (glow > 0)
-                BoxShadow(color: c.withValues(alpha: glow), blurRadius: 18 + pulse * 8, spreadRadius: 0.5),
+                BoxShadow(
+                  color: c.withValues(alpha: glow),
+                  blurRadius: 18 + pulse * 8,
+                  spreadRadius: 0.5,
+                ),
             ],
           ),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -677,19 +900,28 @@ class _PipeNodeCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(node.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12.5,
-                            height: 1.1,
-                            fontWeight: FontWeight.w600,
-                            color: dimmed ? Sa.textDim : Sa.text)),
+                    Text(
+                      node.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                        color: dimmed ? Sa.textDim : Sa.text,
+                      ),
+                    ),
                     const SizedBox(height: 1),
-                    Text(node.sub,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 9.5, height: 1.1, color: Sa.muted)),
+                    Text(
+                      subOverride ?? node.sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        height: 1.1,
+                        color: Sa.muted,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -718,13 +950,21 @@ class _PipeNodeCard extends StatelessWidget {
   Widget _badge(Color c) {
     switch (status) {
       case PipeStatus.active:
-        return SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: c));
+        return SizedBox(
+          width: 13,
+          height: 13,
+          child: CircularProgressIndicator(strokeWidth: 2, color: c),
+        );
       case PipeStatus.passed:
         return Icon(Icons.check_circle, size: 15, color: c);
       case PipeStatus.failed:
         return Icon(Icons.cancel, size: 15, color: c);
       case PipeStatus.idle:
-        return Icon(Icons.radio_button_checked, size: 13, color: c.withValues(alpha: 0.7));
+        return Icon(
+          Icons.radio_button_checked,
+          size: 13,
+          color: c.withValues(alpha: 0.7),
+        );
       default:
         return Icon(Icons.circle_outlined, size: 12, color: Sa.muted);
     }
@@ -759,7 +999,9 @@ class _PipePainter extends CustomPainter {
           ..color = c.withValues(alpha: 0.10 + pulse * 0.10)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 22);
         canvas.drawRRect(
-            RRect.fromRectAndRadius(r.inflate(8), const Radius.circular(18)), p);
+          RRect.fromRectAndRadius(r.inflate(8), const Radius.circular(18)),
+          p,
+        );
       }
     }
     for (final e in _kEdges) {
@@ -783,7 +1025,9 @@ class _PipePainter extends CustomPainter {
     final base = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6
-      ..color = (connected ? color : _GP.dim).withValues(alpha: flowing ? 0.35 : 0.18);
+      ..color = (connected ? color : _GP.dim).withValues(
+        alpha: flowing ? 0.35 : 0.18,
+      );
     canvas.drawPath(path, base);
 
     if (flowing) {
@@ -795,7 +1039,11 @@ class _PipePainter extends CustomPainter {
       canvas.drawPath(path, bright);
       _drawFlow(canvas, path, color);
     }
-    _drawArrowHead(canvas, path, (connected ? color : _GP.dim).withValues(alpha: flowing ? 0.8 : 0.3));
+    _drawArrowHead(
+      canvas,
+      path,
+      (connected ? color : _GP.dim).withValues(alpha: flowing ? 0.8 : 0.3),
+    );
   }
 
   Path _edgePath(Rect a, Rect b, String kind) {
@@ -836,7 +1084,9 @@ class _PipePainter extends CustomPainter {
         if (tan == null) continue;
         final headroom = (len - d) / len; // fade as it approaches target
         final dot = Paint()
-          ..color = color.withValues(alpha: (0.5 + 0.5 * headroom).clamp(0.0, 1.0));
+          ..color = color.withValues(
+            alpha: (0.5 + 0.5 * headroom).clamp(0.0, 1.0),
+          );
         canvas.drawCircle(tan.position, 2.3, dot);
       }
     }
@@ -854,8 +1104,14 @@ class _PipePainter extends CustomPainter {
     final paint = Paint()..color = color;
     final path2 = Path()
       ..moveTo(p.dx, p.dy)
-      ..lineTo(p.dx - size * math.cos(ang - 0.5), p.dy - size * math.sin(ang - 0.5))
-      ..lineTo(p.dx - size * math.cos(ang + 0.5), p.dy - size * math.sin(ang + 0.5))
+      ..lineTo(
+        p.dx - size * math.cos(ang - 0.5),
+        p.dy - size * math.sin(ang - 0.5),
+      )
+      ..lineTo(
+        p.dx - size * math.cos(ang + 0.5),
+        p.dy - size * math.sin(ang + 0.5),
+      )
       ..close();
     canvas.drawPath(path2, paint);
   }
@@ -866,7 +1122,8 @@ class _PipePainter extends CustomPainter {
       return sFrom == PipeStatus.failed ? _GP.red : _GP.dim;
     }
     if (sTo == PipeStatus.failed) return _GP.red;
-    if (sTo == PipeStatus.active || sFrom == PipeStatus.active) return _GP.amber;
+    if (sTo == PipeStatus.active || sFrom == PipeStatus.active)
+      return _GP.amber;
     if (sFrom == PipeStatus.passed &&
         (sTo == PipeStatus.passed || sTo == PipeStatus.active)) {
       return _GP.green;
@@ -886,7 +1143,11 @@ class _PipePainter extends CustomPainter {
 class GuardianTerminal extends StatefulWidget {
   final GuardianLiveTracker tracker;
   final List<String> previewLog;
-  const GuardianTerminal({super.key, required this.tracker, this.previewLog = const []});
+  const GuardianTerminal({
+    super.key,
+    required this.tracker,
+    this.previewLog = const [],
+  });
 
   @override
   State<GuardianTerminal> createState() => _GuardianTerminalState();
@@ -907,7 +1168,8 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
       listenable: widget.tracker,
       builder: (context, _) {
         final tr = widget.tracker;
-        final live = tr.connected && (tr.jobs.isNotEmpty || tr.rawTail.isNotEmpty);
+        final live =
+            tr.connected && (tr.jobs.isNotEmpty || tr.rawTail.isNotEmpty);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scroll.hasClients) {
             _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -917,31 +1179,69 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
           decoration: BoxDecoration(
             color: Sa.termBg,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: tr.failed ? _GP.red.withValues(alpha: 0.5) : Sa.termBorder),
+            border: Border.all(
+              color: tr.failed ? _GP.red.withValues(alpha: 0.5) : Sa.termBorder,
+            ),
           ),
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Icon(Icons.terminal, size: 14, color: Sa.termDim),
-                const SizedBox(width: 6),
-                Text('GUARDIAN TERMINAL',
-                    style: TextStyle(color: Sa.termDim, fontSize: 11, letterSpacing: 0.5, fontFamily: 'monospace')),
-                if (tr.repo.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Text('· ${tr.repo}',
-                      style: TextStyle(color: Sa.termMuted, fontSize: 10.5, fontFamily: 'monospace')),
-                ],
-                const Spacer(),
-                if (tr.busy)
-                  SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1.8, color: Sa.termDim))
-                else if (tr.running && tr.connected) ...[
-                  SizedBox(width: 9, height: 9, child: CircularProgressIndicator(strokeWidth: 2, color: _GP.amber)),
+              Row(
+                children: [
+                  Icon(Icons.terminal, size: 14, color: Sa.termDim),
                   const SizedBox(width: 6),
-                  Text('live', style: TextStyle(color: _GP.amber, fontSize: 11, fontFamily: 'monospace')),
+                  Text(
+                    'GUARDIAN TERMINAL',
+                    style: TextStyle(
+                      color: Sa.termDim,
+                      fontSize: 11,
+                      letterSpacing: 0.5,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  if (tr.repo.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '· ${tr.repo}',
+                      style: TextStyle(
+                        color: Sa.termMuted,
+                        fontSize: 10.5,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  if (tr.busy)
+                    SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.8,
+                        color: Sa.termDim,
+                      ),
+                    )
+                  else if (tr.running && tr.connected) ...[
+                    SizedBox(
+                      width: 9,
+                      height: 9,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _GP.amber,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'live',
+                      style: TextStyle(
+                        color: _GP.amber,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
                 ],
-              ]),
+              ),
               const SizedBox(height: 8),
               SizedBox(
                 height: 188,
@@ -962,9 +1262,7 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
 
   List<Widget> _fallbackLines(GuardianLiveTracker tr) {
     if (widget.previewLog.isNotEmpty) {
-      return [
-        for (final l in widget.previewLog) _line(l, Sa.termText),
-      ];
+      return [for (final l in widget.previewLog) _line(l, Sa.termText)];
     }
     final msg = tr.connected
         ? 'guardian armed \$ watching for incidents…'
@@ -978,7 +1276,13 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
       final jn = (j['name'] ?? 'job').toString();
       final jst = (j['status'] ?? '').toString();
       final jcc = (j['conclusion'] ?? '').toString();
-      out.add(_line('══ $jn  [${jcc.isEmpty ? jst : jcc}]', _termJobColor(jst, jcc), bold: true));
+      out.add(
+        _line(
+          '══ $jn  [${jcc.isEmpty ? jst : jcc}]',
+          _termJobColor(jst, jcc),
+          bold: true,
+        ),
+      );
       final steps = (j['steps'] is List) ? j['steps'] as List : const [];
       for (final s in steps) {
         final name = ((s as Map)['name'] ?? 'step').toString();
@@ -991,7 +1295,9 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
       out.add(const SizedBox(height: 6));
       out.add(_line('── live output ──────────────', Sa.termMuted));
       final lines = tr.rawTail.split('\n');
-      final tail = lines.length > 140 ? lines.sublist(lines.length - 140) : lines;
+      final tail = lines.length > 140
+          ? lines.sublist(lines.length - 140)
+          : lines;
       for (final raw in tail) {
         if (raw.trim().isEmpty) continue;
         out.add(_line(raw.replaceAll('\r', ''), _rawColor(raw)));
@@ -1032,11 +1338,17 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
 
   Color _rawColor(String raw) {
     final l = raw.toLowerCase();
-    if (raw.contains('##[error]') || l.contains('error:') || l.contains('failed') || l.contains('✗')) {
+    if (raw.contains('##[error]') ||
+        l.contains('error:') ||
+        l.contains('failed') ||
+        l.contains('✗')) {
       return _GP.red;
     }
-    if (l.contains('pass') || l.contains('✓') || l.contains('success')) return _GP.green;
-    if (raw.trimLeft().startsWith('\$') || raw.trimLeft().startsWith('+ ') || raw.contains('##[group]')) {
+    if (l.contains('pass') || l.contains('✓') || l.contains('success'))
+      return _GP.green;
+    if (raw.trimLeft().startsWith('\$') ||
+        raw.trimLeft().startsWith('+ ') ||
+        raw.contains('##[group]')) {
       return _GP.blue;
     }
     if (raw.contains('##[warning]') || l.contains('warn')) return _GP.amber;
@@ -1044,7 +1356,10 @@ class _GuardianTerminalState extends State<GuardianTerminal> {
   }
 
   bool _isFail(String c) =>
-      c == 'failure' || c == 'timed_out' || c == 'startup_failure' || c == 'cancelled';
+      c == 'failure' ||
+      c == 'timed_out' ||
+      c == 'startup_failure' ||
+      c == 'cancelled';
 
   Widget _line(String text, Color color, {bool bold = false}) {
     return Padding(

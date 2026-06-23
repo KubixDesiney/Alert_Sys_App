@@ -53,7 +53,7 @@ class _SummaryCard extends StatelessWidget {
                   style: TextStyle(
                       fontSize: 26, fontWeight: FontWeight.bold, color: color)),
               const SizedBox(height: 8),
-              Text('Click to see details',
+              Text(context.tr('Click to see details'),
                   style: TextStyle(fontSize: 11, color: t.muted)),
             ]),
             Container(
@@ -108,7 +108,7 @@ class _DetailPanel extends StatelessWidget {
           child: Row(children: [
             Icon(Icons.info_outline, color: t.navy, size: 20),
             const SizedBox(width: 8),
-            Text(_title,
+            Text(context.tr(_title),
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.bold, color: t.navy))
           ]),
@@ -148,14 +148,15 @@ class _ReceivedView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (alerts.isEmpty)
-      return _empty(Icons.notifications_off, Colors.orange, 'No pending alerts',
-          'All alerts are being handled');
+      return _empty(Icons.notifications_off, Colors.orange,
+          context.tr('No pending alerts'),
+          context.tr('All alerts are being handled'));
     return Column(
         children: alerts
             .map((a) => _AlertRow(
                   alert: a,
                   rowColor: const Color(0xFFFFF7ED),
-                  statusLabel: 'Pending',
+                  statusLabel: context.tr('Pending'),
                   statusColor: Colors.orange,
                   trailing: ElevatedButton.icon(
                     onPressed: () async {
@@ -181,7 +182,7 @@ class _ReceivedView extends StatelessWidget {
                       }
                     },
                     icon: const Icon(Icons.play_circle_outline, size: 16),
-                    label: const Text('Claim'),
+                    label: Text(context.tr('Claim')),
                     style: ElevatedButton.styleFrom(
                         backgroundColor: _navy,
                         foregroundColor: _white,
@@ -215,10 +216,10 @@ class _ClaimedView extends StatelessWidget {
           children: [
             const Icon(Icons.people, color: Colors.deepPurple, size: 22),
             const SizedBox(width: 8),
-            const Expanded(
+            Expanded(
               child: Text(
-                'Request Collaboration',
-                style: TextStyle(
+                context.tr('Request Collaboration'),
+                style: const TextStyle(
                     color: Colors.deepPurple, fontWeight: FontWeight.w700),
               ),
             ),
@@ -232,9 +233,10 @@ class _ClaimedView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Hold detected! Would you like to request collaboration for this alert?',
-              style: TextStyle(fontSize: 13, color: _muted),
+            Text(
+              context.tr(
+                  'Hold detected! Would you like to request collaboration for this alert?'),
+              style: const TextStyle(fontSize: 13, color: _muted),
             ),
             const SizedBox(height: 12),
             Container(
@@ -277,14 +279,14 @@ class _ClaimedView extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: () => Navigator.pop(context, true),
             icon: const Icon(Icons.people_outline),
-            label: const Text('Collab'),
+            label: Text(context.tr('Collab')),
             style: OutlinedButton.styleFrom(foregroundColor: Colors.deepPurple),
           ),
           SizedBox(
             width: double.infinity,
             child: TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(context.tr('Cancel')),
             ),
           ),
         ],
@@ -304,15 +306,16 @@ class _ClaimedView extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Resolve Alert'),
+        title: Text(context.tr('Resolve Alert')),
         content: TextField(
             controller: reasonController,
-            decoration: const InputDecoration(hintText: 'Resolution reason'),
+            decoration:
+                InputDecoration(hintText: context.tr('Resolution reason')),
             maxLines: 3),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
             onPressed: () async {
               if (reasonController.text.trim().isEmpty) return;
@@ -320,7 +323,7 @@ class _ClaimedView extends StatelessWidget {
                   alert.id, reasonController.text.trim());
               if (context.mounted) Navigator.pop(context);
             },
-            child: const Text('Resolve'),
+            child: Text(context.tr('Resolve')),
           ),
         ],
       ),
@@ -348,16 +351,16 @@ class _ClaimedView extends StatelessWidget {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Row(children: [
-            Icon(Icons.auto_awesome, size: 20, color: Color(0xFF7C3AED)),
-            SizedBox(width: 8),
-            Text('AI Suggestion'),
+          title: Row(children: [
+            const Icon(Icons.auto_awesome, size: 20, color: Color(0xFF7C3AED)),
+            const SizedBox(width: 8),
+            Text(context.tr('AI Suggestion')),
           ]),
           content: SingleChildScrollView(child: Text(suggestion)),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Close'))
+                child: Text(context.tr('Close')))
           ],
         ),
       );
@@ -370,20 +373,20 @@ class _ClaimedView extends StatelessWidget {
       note = await showDialog<String>(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('Mark as Critical'),
+          title: Text(context.tr('Mark as Critical')),
           content: TextField(
-            decoration: const InputDecoration(
-                hintText: 'Optional note (reason, impact, etc.)'),
+            decoration: InputDecoration(
+                hintText: context.tr('Optional note (reason, impact, etc.)')),
             maxLines: 3,
             onChanged: (value) => note = value,
           ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context, null),
-                child: const Text('Cancel')),
+                child: Text(context.tr('Cancel'))),
             ElevatedButton(
                 onPressed: () => Navigator.pop(context, note ?? ''),
-                child: const Text('Mark Critical')),
+                child: Text(context.tr('Mark Critical'))),
           ],
         ),
       );
@@ -398,31 +401,39 @@ class _ClaimedView extends StatelessWidget {
   Future<void> _offerAssistance(BuildContext context, AlertModel alert) async {
     await provider.requestHelp(alert.id, FirebaseAuth.instance.currentUser!.uid,
         FirebaseAuth.instance.currentUser!.email!.split('@').first);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Assistance offered. The claimant will be notified.'),
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            context.tr('Assistance offered. The claimant will be notified.')),
         backgroundColor: Colors.purple));
   }
 
-  String _getStatusLabel(AlertModel alert, bool isMine, String currentUserId) {
+  String _getStatusLabel(BuildContext context, AlertModel alert, bool isMine,
+      String currentUserId) {
     final hasValidAssistant =
         alert.assistantId != null && alert.assistantId != alert.superviseurId;
     if (hasValidAssistant) {
       if (alert.assistantId == currentUserId)
-        return 'Assisting ${alert.superviseurName}';
+        return context.tr('Assisting {name}',
+            {'name': alert.superviseurName ?? ''});
       else if (isMine)
-        return 'My Claim (assisted by ${alert.assistantName ?? 'someone'})';
+        return context.tr('My Claim (assisted by {name})',
+            {'name': alert.assistantName ?? context.tr('someone')});
       else
-        return 'Claimed by ${alert.superviseurName} (assisted by ${alert.assistantName ?? 'someone'})';
+        return context.tr('Claimed by {name} (assisted by {assistant})', {
+          'name': alert.superviseurName ?? '',
+          'assistant': alert.assistantName ?? context.tr('someone')
+        });
     }
-    if (isMine) return 'My Claim';
-    return 'Claimed by ${alert.superviseurName ?? 'other'}';
+    if (isMine) return context.tr('My Claim');
+    return context.tr('Claimed by {name}',
+        {'name': alert.superviseurName ?? context.tr('other')});
   }
 
   @override
   Widget build(BuildContext context) {
     if (alerts.isEmpty)
       return _empty(Icons.error_outline, const Color(0xFF94A3B8),
-          'No claimed alerts', 'Claim an alert to start');
+          context.tr('No claimed alerts'), context.tr('Claim an alert to start'));
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     return Column(
         children: alerts.map((a) {
@@ -438,7 +449,7 @@ class _ClaimedView extends StatelessWidget {
         alert: a,
         rowColor: const Color(0xFFEFF6FF),
         borderColor: const Color(0xFF93C5FD),
-        statusLabel: _getStatusLabel(a, isMine, currentUserId),
+        statusLabel: _getStatusLabel(context, a, isMine, currentUserId),
         statusColor: Colors.blue,
         pulseDot: !isMine,
         extraContent: ElapsedTimer(alert: a, provider: provider),
@@ -455,7 +466,7 @@ class _ClaimedView extends StatelessWidget {
                 ElevatedButton.icon(
                   onPressed: () => _resolveWithDialog(context, a),
                   icon: const Icon(Icons.check_circle_outline, size: 16),
-                  label: const Text('Fixed'),
+                  label: Text(context.tr('Fixed')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF16A34A),
                     foregroundColor: _white,
@@ -473,16 +484,17 @@ class _ClaimedView extends StatelessWidget {
                     await showDialog(
                       context: context,
                       builder: (_) => AlertDialog(
-                        title: const Text('Suspend Alert'),
+                        title: Text(context.tr('Suspend Alert')),
                         content: TextField(
-                          decoration: const InputDecoration(
-                              hintText: 'Optional reason for suspension'),
+                          decoration: InputDecoration(
+                              hintText: context
+                                  .tr('Optional reason for suspension')),
                           onChanged: (value) => reason = value,
                         ),
                         actions: [
                           TextButton(
                               onPressed: () => Navigator.pop(context),
-                              child: const Text('Cancel')),
+                              child: Text(context.tr('Cancel'))),
                           ElevatedButton(
                             onPressed: () {
                               Navigator.pop(context);
@@ -491,14 +503,14 @@ class _ClaimedView extends StatelessWidget {
                                       ? null
                                       : reason);
                             },
-                            child: const Text('Suspend'),
+                            child: Text(context.tr('Suspend')),
                           ),
                         ],
                       ),
                     );
                   },
                   icon: const Icon(Icons.rotate_left, size: 16),
-                  label: const Text('Suspend'),
+                  label: Text(context.tr('Suspend')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.orange,
                     side: const BorderSide(color: Colors.orange),
@@ -513,8 +525,8 @@ class _ClaimedView extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: () => _getAiAssist(context, a),
                   icon: const Icon(Icons.auto_awesome, size: 16),
-                  label:
-                      const Text('AI Assist', style: TextStyle(fontSize: 11)),
+                  label: Text(context.tr('AI Assist'),
+                      style: const TextStyle(fontSize: 11)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.purple,
                     side: const BorderSide(color: Colors.purple),
@@ -563,7 +575,7 @@ class _FixedView extends StatelessWidget {
   const _FixedView(
       {required this.alerts, required this.assisted, required this.provider});
 
-  Widget _claimantExtra(AlertModel a, AppTheme t) {
+  Widget _claimantExtra(BuildContext context, AlertModel a, AppTheme t) {
     final collaboratorNames = a.collaborators
             ?.map((c) => c['name'] ?? '')
             .where((n) => n.isNotEmpty)
@@ -584,7 +596,8 @@ class _FixedView extends StatelessWidget {
             Icon(Icons.timer, size: 15, color: t.green),
             const SizedBox(width: 6),
             Text(
-                'Resolution time: ${provider.formatElapsedTime(a.elapsedTime)}',
+                context.tr('Resolution time: {time}',
+                    {'time': provider.formatElapsedTime(a.elapsedTime)}),
                 style: TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w700, color: t.green)),
           ]),
@@ -594,7 +607,7 @@ class _FixedView extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Text.rich(TextSpan(children: [
               TextSpan(
-                  text: 'Fixed by: ',
+                  text: context.tr('Fixed by: '),
                   style: TextStyle(fontSize: 12, color: t.muted)),
               TextSpan(
                   text: a.superviseurName,
@@ -618,7 +631,8 @@ class _FixedView extends StatelessWidget {
                           color: t.blueLt,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text('Assisted by: $name',
+                        child: Text(
+                            context.tr('Assisted by: {name}', {'name': name}),
                             style: TextStyle(fontSize: 12, color: t.blue)),
                       ))
                   .toList(),
@@ -628,7 +642,7 @@ class _FixedView extends StatelessWidget {
     );
   }
 
-  Widget _assistantExtra(AlertModel a, AppTheme t) {
+  Widget _assistantExtra(BuildContext context, AlertModel a, AppTheme t) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -644,7 +658,10 @@ class _FixedView extends StatelessWidget {
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                  'Assisted ${a.assistedBySupervisorName ?? a.superviseurName ?? ""}',
+                  context.tr('Assisted {name}', {
+                    'name':
+                        a.assistedBySupervisorName ?? a.superviseurName ?? ""
+                  }),
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -657,7 +674,7 @@ class _FixedView extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6),
             child: Text.rich(TextSpan(children: [
               TextSpan(
-                  text: 'Fixed by: ',
+                  text: context.tr('Fixed by: '),
                   style: TextStyle(fontSize: 12, color: t.muted)),
               TextSpan(
                   text: a.superviseurName,
@@ -676,26 +693,27 @@ class _FixedView extends StatelessWidget {
     final t = context.appTheme; // ⬅️ This line defines t
 
     if (alerts.isEmpty && assisted.isEmpty)
-      return _empty(Icons.check_circle_outline, t.green, 'No fixed alerts',
-          'Fixed alerts will appear here');
+      return _empty(Icons.check_circle_outline, t.green,
+          context.tr('No fixed alerts'),
+          context.tr('Fixed alerts will appear here'));
 
     return Column(children: [
       ...alerts.map((a) => _AlertRow(
             alert: a,
             rowColor: t.greenLt,
-            statusLabel: 'Fixed',
+            statusLabel: context.tr('Fixed'),
             statusColor: t.green,
             statusIcon: Icons.check_circle_outline,
-            extraContent: _claimantExtra(a, t),
+            extraContent: _claimantExtra(context, a, t),
           )),
       ...assisted.map((a) => _AlertRow(
             alert: a,
             rowColor: t.blueLt,
             borderColor: t.blue.withOpacity(0.4),
-            statusLabel: 'Assisted',
+            statusLabel: context.tr('Assisted'),
             statusColor: t.blue,
             statusIcon: Icons.handshake,
-            extraContent: _assistantExtra(a, t),
+            extraContent: _assistantExtra(context, a, t),
           )),
     ]);
   }
@@ -749,7 +767,7 @@ class _AlertRow extends StatelessWidget {
       rightWidgets.add(ElevatedButton.icon(
           onPressed: onOfferAssistance,
           icon: const Icon(Icons.handshake, size: 16),
-          label: const Text('Assist', style: TextStyle(fontSize: 12)),
+          label: Text(context.tr('Assist'), style: const TextStyle(fontSize: 12)),
           style: ElevatedButton.styleFrom(
               backgroundColor: Colors.purple,
               foregroundColor: Colors.white,

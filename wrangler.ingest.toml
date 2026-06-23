@@ -1,15 +1,23 @@
-# Industrial telemetry ingestion worker (SCADA / PLC / historian → SIA alerts).
+# Industrial telemetry ingestion + connector engine (SCADA / PLC / historian -> SIA).
 # Deploy:  npx wrangler deploy --config wrangler.ingest.toml
 #
-# Secrets (npx wrangler secret put <NAME> --config wrangler.ingest.toml):
-#   INGEST_SHARED_SECRET   required — gateways send it as the x-alertsys-ingest header
+# main bundles ./cloudflare_ingest_connectors.js automatically (wrangler/esbuild).
 #
-# Set FB_DB_URL / NOTIFY_WORKER_URL below to the instance's values (or move them to
-# secrets if you prefer). This worker has no cron — it is purely request-driven.
+# Secrets (npx wrangler secret put <NAME> --config wrangler.ingest.toml):
+#   INGEST_SHARED_SECRET     optional — legacy/global gateways send it as x-alertsys-ingest
+#   FIREBASE_SERVICE_ACCOUNT required for cloud-pull, /verify, and the connector vault —
+#                            the service-account JSON (same value as the AI/GitHub workers)
+#   WORKER_SHARED_SECRET     required for /verify + /control — the bearer the app sends
+#
+# Set FB_DB_URL / NOTIFY_WORKER_URL below to the instance's values. The per-minute cron
+# polls every due cloud-pull connector and refreshes MQTT link status.
 
 name = "alertsys-ingest"
 main = "cloudflare_ingest_worker.js"
 compatibility_date = "2024-11-01"
+
+[triggers]
+crons = ["* * * * *"]
 
 [vars]
 FB_DB_URL = "https://REPLACE-default-rtdb.firebaseio.com"

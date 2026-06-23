@@ -3656,12 +3656,29 @@ async function handleBriefing(request, env) {
 Begin with "Good morning". Acknowledge what is going well, or that it has been a quiet period if total alerts is 0. ${supInstruction} ${predInstruction} Close with a forward-looking sentence about today. Sound calm, professional, and human — not a press release. Only reference facts explicitly listed above — never invent names, numbers, or events that are not in the list.`;
 
     let summary = `Good morning. Last week the team handled ${stats.total} alerts with a ${resolutionRate}% resolution rate and an average response of ${stats.avgResolutionMin} minutes. Stay sharp on critical signals today.`;
+    let summaryFr = `Bonjour. La semaine dernière, l'équipe a traité ${stats.total} alertes avec un taux de résolution de ${resolutionRate}% et un temps de réponse moyen de ${stats.avgResolutionMin} minutes. Restez attentif aux signaux critiques aujourd'hui.`;
     let model = 'fallback';
     try {
       const out = await _runConfiguredLlm(env, coreCtx.token, 'briefing', prompt);
       if (out.text) {
         summary = out.text;
         model = out.modelUsed;
+        // Translate the generated paragraph into French so the PM dashboard
+        // can show a native-language briefing when the app locale is French.
+        // A translation prompt is far more reliable than asking one call to
+        // produce both languages — failure here just leaves the French chip
+        // showing the English paragraph (handled client-side).
+        try {
+          const trOut = await _runConfiguredLlm(
+            env,
+            coreCtx.token,
+            'briefing',
+            `Translate the following operations briefing paragraph into natural, professional French. Preserve the tone, meaning, and all numbers/names exactly. Output only the translated paragraph — no quotes, no notes, no markdown.\n\n${summary}`,
+          );
+          if (trOut.text) summaryFr = trOut.text;
+        } catch (e) {
+          console.warn('[BRIEFING] French translation failed: ' + e.message);
+        }
       }
     } catch (e) {
       console.error('[BRIEFING] AI failed: ' + e.message);
@@ -3670,6 +3687,7 @@ Begin with "Good morning". Acknowledge what is going well, or that it has been a
     const payload = {
       date: today,
       summary,
+      summaryFr,
       generatedAt: new Date().toISOString(),
       model,
       stats,
@@ -5522,6 +5540,7 @@ async function runShiftPresenceCheck(env, ctx) {
 
   for (const [shiftId, shift] of Object.entries(shiftsMap)) {
     if (!shift || !_shiftContainsTime(shift, nowMin)) continue;
+    if (shift.presenceChecks === false) continue;
     const supsRaw = shift.supervisors && typeof shift.supervisors === 'object'
       ? shift.supervisors
       : {};

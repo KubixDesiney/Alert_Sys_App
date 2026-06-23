@@ -10,6 +10,7 @@ import '../services/alert_service.dart';
 import '../services/service_locator.dart';
 import '../services/shift_service.dart';
 import '../models/alert_model.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
@@ -59,7 +60,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Escalations',
+                        context.tr('Escalations'),
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -68,7 +69,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen> {
                       ),
                       const Spacer(),
                       IconButton(
-                        tooltip: 'Escalation Settings',
+                        tooltip: context.tr('Escalation Settings'),
                         onPressed: _showSettingsDialog,
                         icon: Icon(
                           Icons.settings,
@@ -115,7 +116,7 @@ class _AdminEscalationScreenState extends State<AdminEscalationScreen> {
                 top: 8,
                 right: 8,
                 child: IconButton(
-                  tooltip: 'Close',
+                  tooltip: context.tr('Close'),
                   onPressed: () => Navigator.of(dialogContext).pop(),
                   icon: Icon(Icons.close, color: t.muted),
                 ),
@@ -336,12 +337,13 @@ class _EscalatedAlertsPanelState extends State<_EscalatedAlertsPanel> {
                                       child: newCount > 0
                                           ? _CountBadge(
                                               key: ValueKey(newCount),
-                                              label: '$newCount New',
+                                              label: context.tr('{n} New',
+                                                  {'n': '$newCount'}),
                                               color: t.red,
                                             )
                                           : _CountBadge(
                                               key: const ValueKey('read'),
-                                              label: 'All Read',
+                                              label: context.tr('All Read'),
                                               color: t.green,
                                             ),
                                     ),
@@ -415,7 +417,7 @@ class _EscalatedAlertCardState extends State<_EscalatedAlertCard> {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     final alert = widget.alert;
-    final type = typeMeta(alert.type, t);
+    final type = typeMeta(alert.type, t, context);
     final claimed = _isClaimed(alert);
     final claimColor = claimed ? t.yellow : t.red;
     final claimBg = claimed ? t.yellowLt : t.redLt;
@@ -507,7 +509,8 @@ class _EscalatedAlertCardState extends State<_EscalatedAlertCard> {
                               label: alert.alertLabel,
                               color: type.color,
                             ),
-                            if (!isNew) _MiniTag(label: 'read', color: t.green),
+                            if (!isNew)
+                              _MiniTag(label: context.tr('read'), color: t.green),
                           ],
                         ),
                       ),
@@ -546,15 +549,16 @@ class _EscalatedAlertCardState extends State<_EscalatedAlertCard> {
                             ? Icons.assignment_turned_in_outlined
                             : Icons.person_off_outlined,
                         label: claimed
-                            ? 'Claimed - Time Exceeded'
-                            : 'Unclaimed - Time Exceeded',
+                            ? context.tr('Claimed - Time Exceeded')
+                            : context.tr('Unclaimed - Time Exceeded'),
                         color: claimColor,
                         background: claimBg,
                       ),
                       if (limitMinutes != null)
                         _StatusPill(
                           icon: Icons.timer_outlined,
-                          label: '$elapsedMinutes / $limitMinutes min',
+                          label: context.tr('{elapsed} / {limit} min',
+                              {'elapsed': '$elapsedMinutes', 'limit': '$limitMinutes'}),
                           color: t.text,
                           background: t.card,
                         ),
@@ -567,13 +571,14 @@ class _EscalatedAlertCardState extends State<_EscalatedAlertCard> {
                     children: [
                       _InlineMeta(
                         icon: Icons.history_outlined,
-                        label:
-                            'Original alert: ${_timeAgo(alert.timestamp)} ago',
+                        label: context.tr('Original alert: {time} ago',
+                            {'time': _timeAgo(alert.timestamp)}),
                         color: t.muted,
                       ),
                       _InlineMeta(
                         icon: Icons.warning_amber_outlined,
-                        label: 'Escalated: ${_timeAgo(escalatedAt)} ago',
+                        label: context.tr('Escalated: {time} ago',
+                            {'time': _timeAgo(escalatedAt)}),
                         color: t.red,
                       ),
                       if (alert.takenAtTimestamp != null)
@@ -688,27 +693,27 @@ class _EscalatedAlertCardState extends State<_EscalatedAlertCard> {
             children: [
               Icon(Icons.check_circle_outline, color: t.green),
               const SizedBox(width: 8),
-              const Text('Resolve Escalated Alert'),
+              Text(context.tr('Resolve Escalated Alert')),
             ],
           ),
           content: TextField(
             controller: reasonController,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'Resolution reason',
-              hintText: 'What fixed or closed this alert?',
+            decoration: InputDecoration(
+              labelText: context.tr('Resolution reason'),
+              hintText: context.tr('What fixed or closed this alert?'),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: Text(context.tr('Cancel')),
             ),
             ElevatedButton.icon(
               onPressed: () =>
                   Navigator.pop(dialogContext, reasonController.text.trim()),
               icon: const Icon(Icons.check_circle_outline, size: 18),
-              label: const Text('Resolve'),
+              label: Text(context.tr('Resolve')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: t.green,
                 foregroundColor: Colors.white,
@@ -731,7 +736,8 @@ class _EscalatedAlertCardState extends State<_EscalatedAlertCard> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${widget.alert.alertLabel} resolved'),
+          content: Text(context.tr('{label} resolved',
+              {'label': widget.alert.alertLabel})),
           backgroundColor: context.appTheme.green,
         ),
       );
@@ -776,7 +782,7 @@ class _EscalationActionRow extends StatelessWidget {
           icon: isRead
               ? Icons.check_circle_outline
               : Icons.mark_chat_read_outlined,
-          label: isRead ? 'Marked Read' : 'Mark as Read',
+          label: isRead ? context.tr('Marked Read') : context.tr('Mark as Read'),
           loading: markingRead,
           onPressed: isRead || busy ? null : onMarkRead,
           foreground: isRead ? t.green : t.text,
@@ -785,7 +791,7 @@ class _EscalationActionRow extends StatelessWidget {
         );
         final resolveButton = _ActionButton(
           icon: Icons.check_circle_outline,
-          label: 'Resolve',
+          label: context.tr('Resolve'),
           loading: resolving,
           onPressed: busy ? null : onResolve,
           foreground: Colors.white,

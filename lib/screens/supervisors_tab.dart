@@ -13,6 +13,7 @@ import '../../models/hierarchy_model.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/service_locator.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
 import '../../utils/user_friendly_error.dart';
@@ -150,7 +151,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
             child: Row(
               children: [
                 _SubPill(
-                  label: 'Management',
+                  label: context.tr('Management'),
                   icon: Icons.people,
                   index: 0,
                   ctrl: _sub,
@@ -160,7 +161,7 @@ class _SupervisorsTabState extends State<AdminSupervisorsTab>
                   builder: (context, snapshot) {
                     final requests = snapshot.data as List?;
                     return _SubPill(
-                      label: 'Collaborations',
+                      label: context.tr('Collaborations'),
                       icon: Icons.shield,
                       index: 1,
                       ctrl: _sub,
@@ -828,7 +829,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Update failed: ${UserFriendlyError.message(e)}'),
+          content: Text(context.tr('Update failed: {error}',
+              {'error': UserFriendlyError.message(e)})),
         ),
       );
     }
@@ -857,7 +859,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Delete Supervisor',
+                    context.tr('Delete Supervisor'),
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
@@ -879,13 +881,16 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           ],
         ),
         content: Text(
-          'This permanently removes ${sup.fullName} from ${sup.usine.isEmpty ? 'the roster' : sup.usine}.',
+          context.tr('This permanently removes {name} from {place}.', {
+            'name': sup.fullName,
+            'place': sup.usine.isEmpty ? context.tr('the roster') : sup.usine
+          }),
           style: TextStyle(fontSize: 13, color: context.appTheme.muted),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
           ElevatedButton.icon(
             onPressed: () {
@@ -893,7 +898,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               widget.onDelete(sup);
             },
             icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text('Delete'),
+            label: Text(context.tr('Delete')),
             style: ElevatedButton.styleFrom(
               backgroundColor: _red,
               foregroundColor: _white,
@@ -926,7 +931,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             return AlertDialog(
-              title: const Text('Modify Supervisor'),
+              title: Text(context.tr('Modify Supervisor')),
               content: SizedBox(
                 width: 380,
                 child: SingleChildScrollView(
@@ -934,54 +939,54 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SheetLabel('First Name'),
+                      SheetLabel(context.tr('First Name')),
                       TextField(
                         controller: firstCtrl,
-                        decoration: const InputDecoration(
-                          hintText: 'First name',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('First name'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Last Name'),
+                      SheetLabel(context.tr('Last Name')),
                       TextField(
                         controller: lastCtrl,
-                        decoration: const InputDecoration(
-                          hintText: 'Last name',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('Last name'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Email'),
+                      SheetLabel(context.tr('Email')),
                       TextField(
                         controller: emailCtrl,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          hintText: 'Email address',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('Email address'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Phone'),
+                      SheetLabel(context.tr('Phone')),
                       TextField(
                         controller: phoneCtrl,
                         keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          hintText: 'Phone number',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('Phone number'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Assigned Plant'),
+                      SheetLabel(context.tr('Assigned Plant')),
                       DropdownButtonFormField<String>(
                         value: usineChoices.contains(selectedUsine)
                             ? selectedUsine
                             : null,
-                        hint: const Text('Unassigned'),
+                        hint: Text(context.tr('Unassigned')),
                         decoration: const InputDecoration(
                           border: OutlineInputBorder(),
                           isDense: true,
@@ -1005,7 +1010,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               actions: [
                 TextButton(
                   onPressed: saving ? null : () => Navigator.pop(dialogCtx),
-                  child: const Text('Cancel'),
+                  child: Text(context.tr('Cancel')),
                 ),
                 ElevatedButton(
                   onPressed: saving
@@ -1017,9 +1022,10 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           final phone = phoneCtrl.text.trim();
                           if (first.isEmpty || last.isEmpty || email.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
+                              SnackBar(
                                 content: Text(
-                                  'First name, last name, and email are required',
+                                  context.tr(
+                                      'First name, last name, and email are required'),
                                 ),
                               ),
                             );
@@ -1027,8 +1033,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           }
                           if (!email.contains('@')) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please enter a valid email'),
+                              SnackBar(
+                                content: Text(
+                                    context.tr('Please enter a valid email')),
                               ),
                             );
                             return;
@@ -1047,9 +1054,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                             if (!mounted) return;
                             Navigator.pop(dialogCtx);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
+                              SnackBar(
                                 content: Text(
-                                  'Supervisor updated successfully',
+                                  context.tr('Supervisor updated successfully'),
                                 ),
                                 backgroundColor: _green,
                               ),
@@ -1060,7 +1067,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Update failed: ${UserFriendlyError.message(e)}',
+                                  context.tr('Update failed: {error}', {
+                                    'error': UserFriendlyError.message(e)
+                                  }),
                                 ),
                               ),
                             );
@@ -1072,7 +1081,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save Changes'),
+                      : Text(context.tr('Save Changes')),
                 ),
               ],
             );
@@ -1148,7 +1157,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Supervisors',
+                context.tr('Supervisors'),
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
@@ -1157,7 +1166,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               ),
               const SizedBox(height: 3),
               Text(
-                'Roster, plant assignments, and on-demand performance.',
+                context.tr(
+                    'Roster, plant assignments, and on-demand performance.'),
                 style: TextStyle(
                   fontSize: 12,
                   color: t.muted,
@@ -1169,9 +1179,10 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _Chip('$active active', t.green),
-                  _Chip('$absent absent', t.orange),
-                  _Chip('$assignedPlants plants', t.blue),
+                  _Chip(context.tr('{n} active', {'n': '$active'}), t.green),
+                  _Chip(context.tr('{n} absent', {'n': '$absent'}), t.orange),
+                  _Chip(context.tr('{n} plants', {'n': '$assignedPlants'}),
+                      t.blue),
                 ],
               ),
             ],
@@ -1180,9 +1191,9 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           final action = ElevatedButton.icon(
             onPressed: widget.onAdd,
             icon: const Icon(Icons.person_add, size: 17),
-            label: const Text(
-              'Add Supervisor',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            label: Text(
+              context.tr('Add Supervisor'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: t.navy,
@@ -1230,26 +1241,26 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final cards = [
       _SectionShell(
         icon: Icons.stacked_bar_chart,
-        title: 'Weekly Team Resolution Heatmap',
-        subtitle: 'Total resolved alerts by day',
+        title: context.tr('Weekly Team Resolution Heatmap'),
+        subtitle: context.tr('Total resolved alerts by day'),
         child: _WeeklyResolutionHeatmap(values: weekly),
       ),
       _SectionShell(
         icon: Icons.donut_large,
-        title: 'Alert Type Distribution',
-        subtitle: 'Combined supervisor workload mix',
+        title: context.tr('Alert Type Distribution'),
+        subtitle: context.tr('Combined supervisor workload mix'),
         child: _AlertTypeDonut(distribution: types),
       ),
       _SectionShell(
         icon: Icons.emoji_events_outlined,
-        title: 'Supervisor Leaderboard',
-        subtitle: 'Top 5 by impact score',
+        title: context.tr('Supervisor Leaderboard'),
+        subtitle: context.tr('Top 5 by impact score'),
         child: _SupervisorLeaderboardChart(entries: leaderboard),
       ),
       _SectionShell(
         icon: Icons.monitor_heart_outlined,
-        title: 'Live Activity Pulse',
-        subtitle: 'Rolling alert activity window',
+        title: context.tr('Live Activity Pulse'),
+        subtitle: context.tr('Rolling alert activity window'),
         child: AnimatedBuilder(
           animation: _liveActivityController,
           builder: (context, _) => _LiveActivityPulseChart(
@@ -1260,8 +1271,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       ),
       _SectionShell(
         icon: Icons.factory_outlined,
-        title: 'Factory Workload Map',
-        subtitle: 'Supervisor load by factory',
+        title: context.tr('Factory Workload Map'),
+        subtitle: context.tr('Supervisor load by factory'),
         child: _FactoryWorkloadChart(workload: factoryWorkload),
       ),
     ];
@@ -1447,7 +1458,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Performance',
+                                          context.tr('Performance'),
                                           style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w900,
@@ -1477,7 +1488,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                                             Expanded(
                                               child: Text(
                                                 sup.usine.isEmpty
-                                                    ? 'Unassigned'
+                                                    ? context.tr('Unassigned')
                                                     : sup.usine,
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
@@ -1493,7 +1504,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                                     ),
                                   ),
                                   Tooltip(
-                                    message: 'Resize panel',
+                                    message: context.tr('Resize panel'),
                                     child: Icon(
                                       Icons.drag_indicator,
                                       color: t.muted,
@@ -1501,7 +1512,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                                     ),
                                   ),
                                   Tooltip(
-                                    message: 'Toggle size',
+                                    message: context.tr('Toggle size'),
                                     child: IconButton(
                                       onPressed: () =>
                                           _togglePerformancePanelSize(
@@ -1516,7 +1527,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                                     ),
                                   ),
                                   Tooltip(
-                                    message: 'Close',
+                                    message: context.tr('Close'),
                                     child: IconButton(
                                       onPressed: _closePerformancePanel,
                                       icon: Icon(
@@ -1620,7 +1631,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Roster',
+                    context.tr('Roster'),
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -1651,7 +1662,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       onChanged: widget.onSearchChanged,
       style: TextStyle(color: t.text, fontSize: 13),
       decoration: InputDecoration(
-        hintText: 'Search supervisor',
+        hintText: context.tr('Search supervisor'),
         hintStyle: TextStyle(color: t.muted),
         prefixIcon: Icon(Icons.search, color: t.muted, size: 18),
         suffixIcon: widget.searchQuery.isEmpty
@@ -1892,7 +1903,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Factory Assignments',
+                            context.tr('Factory Assignments'),
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
@@ -1902,7 +1913,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                           ),
                           const SizedBox(height: 5),
                           Text(
-                            'Live supervisor placement by plant.',
+                            context.tr('Live supervisor placement by plant.'),
                             style: TextStyle(
                               fontSize: 12,
                               color: t.muted,
@@ -1960,31 +1971,31 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                   children: [
                     signal(
                       icon: Icons.factory_outlined,
-                      label: 'plant lanes',
+                      label: context.tr('plant lanes'),
                       value: '${widget.factories.length}',
                       color: t.navy,
                     ),
                     signal(
                       icon: Icons.groups_2_outlined,
-                      label: 'assigned',
+                      label: context.tr('assigned'),
                       value: '$assigned',
                       color: t.green,
                     ),
                     signal(
                       icon: Icons.pending_actions_outlined,
-                      label: 'unassigned',
+                      label: context.tr('unassigned'),
                       value: '$unassigned',
                       color: t.orange,
                     ),
                     signal(
                       icon: Icons.sensors_outlined,
-                      label: 'active',
+                      label: context.tr('active'),
                       value: '$active',
                       color: t.blue,
                     ),
                     signal(
                       icon: Icons.domain_verification_outlined,
-                      label: 'staffed plants',
+                      label: context.tr('staffed plants'),
                       value: '$staffedFactories',
                       color: t.purple,
                     ),
@@ -2088,14 +2099,16 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                             children: [
                               _StatusPill(
                                 color: statusColor,
-                                label: sup.isActive ? 'Active' : 'Absent',
+                                label: sup.isActive
+                                    ? context.tr('Active')
+                                    : context.tr('Absent'),
                                 icon: Icons.circle,
                                 pulse: sup.isActive,
                               ),
                               _StatusPill(
                                 color: t.blue,
                                 label: sup.usine.isEmpty
-                                    ? 'Unassigned'
+                                    ? context.tr('Unassigned')
                                     : sup.usine,
                                 icon: Icons.factory_outlined,
                               ),
@@ -2108,12 +2121,12 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                     IconButton(
                       onPressed: () => _showModifyDialog(sup),
                       icon: Icon(Icons.edit, color: t.navy),
-                      tooltip: 'Modify Supervisor',
+                      tooltip: context.tr('Modify Supervisor'),
                     ),
                     IconButton(
                       onPressed: () => _showDeleteConfirmDialog(sup),
                       icon: Icon(Icons.delete_outline, color: t.red),
-                      tooltip: 'Delete Supervisor',
+                      tooltip: context.tr('Delete Supervisor'),
                     ),
                   ],
                 ),
@@ -2125,7 +2138,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                     _FloatingHeroSignal(
                       delay: const Duration(milliseconds: 0),
                       child: _HeroSignal(
-                        label: 'Resolved',
+                        label: context.tr('Resolved'),
                         value: '${solved.length}',
                         color: t.green,
                         icon: Icons.check_circle_outline,
@@ -2134,7 +2147,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                     _FloatingHeroSignal(
                       delay: const Duration(milliseconds: 90),
                       child: _HeroSignal(
-                        label: 'Avg Time',
+                        label: context.tr('Avg Time'),
                         value: avg == null ? '-' : _fmtMin(avg),
                         color: t.orange,
                         icon: Icons.timer_outlined,
@@ -2144,7 +2157,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
                       _FloatingHeroSignal(
                         delay: const Duration(milliseconds: 180),
                         child: _HeroSignal(
-                          label: 'Top Plant',
+                          label: context.tr('Top Plant'),
                           value: dist.entries
                               .reduce((a, b) => a.value >= b.value ? a : b)
                               .key,
@@ -2172,31 +2185,31 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final tiles = [
       _CommandMetric(
         icon: Icons.done_all,
-        label: 'Resolved Alerts',
+        label: context.tr('Resolved Alerts'),
         value: '${solved.length}',
         tone: t.green,
       ),
       _CommandMetric(
         icon: Icons.speed,
-        label: 'Average Resolution',
+        label: context.tr('Average Resolution'),
         value: avg == null ? '-' : _fmtMin(avg),
         tone: t.orange,
       ),
       _CommandMetric(
         icon: Icons.verified_outlined,
-        label: 'Validation Rate',
+        label: context.tr('Validation Rate'),
         value: '$rate%',
         tone: t.blue,
       ),
       _CommandMetric(
         icon: Icons.psychology_alt_outlined,
-        label: 'AI Assigned',
+        label: context.tr('AI Assigned'),
         value: '$ai',
         tone: t.purple,
       ),
       _CommandMetric(
         icon: Icons.warning_amber_rounded,
-        label: 'Critical Load',
+        label: context.tr('Critical Load'),
         value: '$critical',
         tone: t.red,
       ),
@@ -2229,8 +2242,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
     return _SectionShell(
       icon: Icons.show_chart,
-      title: 'Performance Graph',
-      subtitle: 'Resolved alerts over time',
+      title: context.tr('Performance Graph'),
+      subtitle: context.tr('Resolved alerts over time'),
       trailing: _RangeToggle(value: _chartRange, onChanged: _setChartRange),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2261,7 +2274,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
               Icon(Icons.circle, size: 8, color: t.green),
               const SizedBox(width: 7),
               Text(
-                'Validations',
+                context.tr('Validations'),
                 style: TextStyle(fontSize: 11, color: t.muted),
               ),
             ],
@@ -2275,8 +2288,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
     final stats = _typeStats(sup);
     return _SectionShell(
       icon: Icons.analytics_outlined,
-      title: 'Alert Type Breakdown',
-      subtitle: 'Validated alerts by class',
+      title: context.tr('Alert Type Breakdown'),
+      subtitle: context.tr('Validated alerts by class'),
       child: _SupervisorTypeDonutChart(stats: stats),
     );
   }
@@ -2292,18 +2305,18 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
           location: _locationFor(entry.key),
           supervisors: entry.value,
           accent: t.navy,
-          emptyLabel: 'Open slot',
+          emptyLabel: context.tr('Open slot'),
           onAccept: (sup) => _reassign(sup, entry.key),
         ),
       ),
       if (unassigned.isNotEmpty || grouped.isEmpty)
         _buildFactoryDropCard(
           t,
-          factoryName: 'Unassigned',
-          location: 'Awaiting plant placement',
+          factoryName: context.tr('Unassigned'),
+          location: context.tr('Awaiting plant placement'),
           supervisors: unassigned,
           accent: t.orange,
-          emptyLabel: 'No unassigned supervisors',
+          emptyLabel: context.tr('No unassigned supervisors'),
           onAccept: (sup) => _reassign(sup, ''),
           accepts: (sup) => sup.usine.isNotEmpty,
           removable: false,
@@ -2312,8 +2325,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
 
     return _SectionShell(
       icon: Icons.account_tree_outlined,
-      title: 'Assignment Board',
-      subtitle: 'Roster source, factory lanes, and unassigned pool',
+      title: context.tr('Assignment Board'),
+      subtitle: context.tr('Roster source, factory lanes, and unassigned pool'),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth > 980
@@ -2479,8 +2492,8 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return _SectionShell(
       icon: Icons.fact_check_outlined,
-      title: 'Validated Alert Trail',
-      subtitle: '${solved.length} resolved records',
+      title: context.tr('Validated Alert Trail'),
+      subtitle: context.tr('{n} resolved records', {'n': '${solved.length}'}),
       child: solved.isEmpty
           ? Container(
               width: double.infinity,

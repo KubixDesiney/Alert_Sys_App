@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../../models/shift_model.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../common/app_loading_indicator.dart';
 
@@ -210,7 +211,7 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
                   size: 16, color: Colors.white.withValues(alpha: 0.7)),
               const SizedBox(width: 2),
               IconButton(
-                tooltip: 'Close',
+                tooltip: context.tr('Close'),
                 onPressed: widget.onClose,
                 icon: Icon(Icons.close,
                     size: 18, color: Colors.white.withValues(alpha: 0.9)),
@@ -296,7 +297,7 @@ class _ShiftLogsPanelState extends State<ShiftLogsPanel> {
           const Spacer(),
           if (_logs.isNotEmpty)
             IconButton(
-              tooltip: 'Clear all logs',
+              tooltip: context.tr('Clear all logs'),
               onPressed: () => FirebaseDatabase.instance
                   .ref('shift_ai_logs/${widget.shift.id}')
                   .remove(),
@@ -681,7 +682,7 @@ class _ShiftLogDetailsDialog extends StatelessWidget {
                   const Spacer(),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
+                    child: Text(context.tr('Close')),
                   ),
                 ],
               ),

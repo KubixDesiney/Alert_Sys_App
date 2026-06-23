@@ -30,7 +30,15 @@ class AppConfig {
   /// authenticates with [workerSharedSecret].
   static const String githubWorkerBase = String.fromEnvironment(
     'ALERTSYS_GITHUB_WORKER_URL',
-    defaultValue: 'https://alertsys-github.aziz-nagati01.workers.dev',
+    defaultValue: 'https://alertsys-guardian-proxy.pages.dev/github-proxy',
+  );
+
+  /// Industrial ingestion + connector worker base URL. Hosts the SCADA / PLC /
+  /// historian connector engine: per-connector edge push, cloud-pull polling,
+  /// and the "Verify link test" endpoint used by SuperAdmin → Infrastructure.
+  static const String ingestWorkerBase = String.fromEnvironment(
+    'ALERTSYS_INGEST_WORKER_URL',
+    defaultValue: 'https://alertsys-ingest.aziz-nagati01.workers.dev',
   );
 
   /// Deprecated alias for old call sites. New code should choose aiWorkerBase
@@ -55,6 +63,12 @@ class AppConfig {
   static String get notifyTriggerEndpoint => notifyEndpoint;
   static String get aiRetryEndpoint => '$aiWorkerBase/ai-retry';
   static String get evalModelEndpoint => '$aiWorkerBase/eval-model';
+
+  // ── Industrial connector endpoints ────────────────────────────────────────
+  static String get connectorVerifyEndpoint => '$ingestWorkerBase/verify';
+  static String get connectorControlEndpoint => '$ingestWorkerBase/control';
+  static String connectorIngestEndpoint(String connectorId) =>
+      '$ingestWorkerBase/ingest/$connectorId';
 
   // ── Timeouts ────────────────────────────────────────────────────────────
   static const Duration defaultRequestTimeout = Duration(seconds: 8);

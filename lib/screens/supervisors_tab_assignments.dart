@@ -90,7 +90,9 @@ class _AssignmentsSubTabState extends State<_AssignmentsSubTab> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: ${UserFriendlyError.message(e)}')),
+        SnackBar(
+            content: Text(context.tr('Failed: {error}',
+                {'error': UserFriendlyError.message(e)}))),
       );
     }
   }
@@ -688,7 +690,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
             return AlertDialog(
-              title: const Text('Modify Supervisor'),
+              title: Text(context.tr('Modify Supervisor')),
               content: SizedBox(
                 width: 380,
                 child: SingleChildScrollView(
@@ -696,49 +698,49 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SheetLabel('First Name'),
+                      SheetLabel(context.tr('First Name')),
                       TextField(
                         controller: firstCtrl,
-                        decoration: const InputDecoration(
-                          hintText: 'First name',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('First name'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Last Name'),
+                      SheetLabel(context.tr('Last Name')),
                       TextField(
                         controller: lastCtrl,
-                        decoration: const InputDecoration(
-                          hintText: 'Last name',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('Last name'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Email'),
+                      SheetLabel(context.tr('Email')),
                       TextField(
                         controller: emailCtrl,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          hintText: 'Email address',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('Email address'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Phone'),
+                      SheetLabel(context.tr('Phone')),
                       TextField(
                         controller: phoneCtrl,
                         keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          hintText: 'Phone number',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          hintText: context.tr('Phone number'),
+                          border: const OutlineInputBorder(),
                           isDense: true,
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SheetLabel('Assigned Plant'),
+                      SheetLabel(context.tr('Assigned Plant')),
                       DropdownButtonFormField<String>(
                         value: selectedUsine,
                         decoration: const InputDecoration(
@@ -764,7 +766,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
               actions: [
                 TextButton(
                   onPressed: saving ? null : () => Navigator.pop(dialogCtx),
-                  child: const Text('Cancel'),
+                  child: Text(context.tr('Cancel')),
                 ),
                 ElevatedButton(
                   onPressed: saving
@@ -776,9 +778,10 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           final phone = phoneCtrl.text.trim();
                           if (first.isEmpty || last.isEmpty || email.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
+                              SnackBar(
                                 content: Text(
-                                  'First name, last name, and email are required',
+                                  context.tr(
+                                      'First name, last name, and email are required'),
                                 ),
                               ),
                             );
@@ -786,8 +789,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           }
                           if (!email.contains('@')) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please enter a valid email'),
+                              SnackBar(
+                                content: Text(
+                                    context.tr('Please enter a valid email')),
                               ),
                             );
                             return;
@@ -806,9 +810,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             if (!mounted) return;
                             Navigator.pop(dialogCtx);
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
+                              SnackBar(
                                 content: Text(
-                                  'Supervisor updated successfully',
+                                  context.tr('Supervisor updated successfully'),
                                 ),
                                 backgroundColor: _green,
                               ),
@@ -819,7 +823,9 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Update failed: ${UserFriendlyError.message(e)}',
+                                  context.tr('Update failed: {error}', {
+                                    'error': UserFriendlyError.message(e)
+                                  }),
                                 ),
                               ),
                             );
@@ -831,7 +837,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save Changes'),
+                      : Text(context.tr('Save Changes')),
                 ),
               ],
             );
@@ -1044,7 +1050,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                     IconButton(
                       onPressed: () => _showModifyDialog(context),
                       icon: Icon(Icons.edit, color: _navy, size: 20),
-                      tooltip: 'Modify Supervisor',
+                      tooltip: context.tr('Modify Supervisor'),
                     ),
                     IconButton(
                       onPressed: () => _showDeleteConfirmDialog(context),
@@ -1053,7 +1059,7 @@ class _SupervisorCardState extends State<_SupervisorCard> {
                         color: _red,
                         size: 20,
                       ),
-                      tooltip: 'Delete Supervisor',
+                      tooltip: context.tr('Delete Supervisor'),
                     ),
                   ],
                 ),

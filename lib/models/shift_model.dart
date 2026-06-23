@@ -87,6 +87,11 @@ class ShiftModel {
   final bool handleCrossFactoryTransfer;
   final bool fullControl;
 
+  /// When true, the worker's presence engine tracks supervisor activity for
+  /// this shift (inactivity confirmation pushes, active/inactive/absent
+  /// state). Defaults to true so existing shifts keep their prior behavior.
+  final bool presenceChecks;
+
   /// When true, supervisors are randomly drawn from the active pool.
   final bool randomize;
 
@@ -122,6 +127,7 @@ class ShiftModel {
     required this.fullControl,
     required this.randomize,
     required this.createdAt,
+    this.presenceChecks = true,
     this.crossFactoryMaxDistanceKm,
     this.lastHandoverSummary,
     this.lastHandoverAt,
@@ -227,6 +233,7 @@ class ShiftModel {
       handleCrossFactoryTransfer:
           m['fullControl'] == true || m['handleCrossFactoryTransfer'] == true,
       fullControl: m['fullControl'] == true,
+      presenceChecks: m['presenceChecks'] != false,
       randomize: m['randomize'] == true,
       crossFactoryMaxDistanceKm: _coerceNullableDouble(
           m['crossFactoryMaxDistanceKm']),
@@ -255,6 +262,7 @@ class ShiftModel {
         'handleCollaborations': handleCollaborations,
         'handleCrossFactoryTransfer': handleCrossFactoryTransfer,
         'fullControl': fullControl,
+        'presenceChecks': presenceChecks,
         'randomize': randomize,
         if (crossFactoryMaxDistanceKm != null &&
             crossFactoryMaxDistanceKm! > 0)
@@ -280,6 +288,7 @@ class ShiftModel {
     bool? handleCollaborations,
     bool? handleCrossFactoryTransfer,
     bool? fullControl,
+    bool? presenceChecks,
     bool? randomize,
     double? crossFactoryMaxDistanceKm,
     bool clearCrossFactoryMaxDistanceKm = false,
@@ -301,6 +310,7 @@ class ShiftModel {
         handleCrossFactoryTransfer:
             handleCrossFactoryTransfer ?? this.handleCrossFactoryTransfer,
         fullControl: fullControl ?? this.fullControl,
+        presenceChecks: presenceChecks ?? this.presenceChecks,
         randomize: randomize ?? this.randomize,
         crossFactoryMaxDistanceKm: clearCrossFactoryMaxDistanceKm
             ? null

@@ -61,7 +61,7 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
       await ServiceLocator.instance.alertService.takeAlert(
         widget.alert.id,
         uid,
-        s?.bestName ?? 'AI assignment',
+        s?.bestName ?? context.tr('AI assignment'),
       );
       if (!mounted) return;
       setState(() {
@@ -72,7 +72,7 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
       if (!mounted) return;
       setState(() {
         _assigning = false;
-        _assignError = 'Assignment failed. Please retry.';
+        _assignError = context.tr('Assignment failed. Please retry.');
       });
     }
   }
@@ -148,7 +148,7 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'CRITICAL ALERT ARRIVED',
+                            context.tr('CRITICAL ALERT ARRIVED'),
                             style: TextStyle(
                               color: const Color(0xFFFFDDE0),
                               fontSize: 12,
@@ -196,7 +196,11 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${alert.usine} · Line ${alert.convoyeur} · WS ${alert.poste}',
+                        context.tr('{factory} · Line {line} · WS {station}', {
+                          'factory': alert.usine,
+                          'line': '${alert.convoyeur}',
+                          'station': '${alert.poste}',
+                        }),
                         style: const TextStyle(
                           color: Color(0xFFFFCAD0),
                           fontSize: 12.5,
@@ -228,9 +232,10 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                           border: Border.all(color: const Color(0x668E6BFF)),
                         ),
                         child: _loadingSuggestion
-                            ? const Text(
-                                'AI suggestion: analyzing best supervisor...',
-                                style: TextStyle(
+                            ? Text(
+                                context.tr(
+                                    'AI suggestion: analyzing best supervisor...'),
+                                style: const TextStyle(
                                   color: Color(0xFFE7DDFF),
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -238,8 +243,15 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                               )
                             : Text(
                                 _suggestion?.bestUid != null
-                                    ? 'AI suggestion: ${_suggestion?.bestName ?? 'Supervisor'} (${_suggestion?.confidencePct ?? 0}%)'
-                                    : 'AI suggestion: no eligible supervisor right now.',
+                                    ? context.tr(
+                                        'AI suggestion: {name} ({pct}%)', {
+                                        'name': _suggestion?.bestName ??
+                                            context.tr('Supervisor'),
+                                        'pct':
+                                            '${_suggestion?.confidencePct ?? 0}',
+                                      })
+                                    : context.tr(
+                                        'AI suggestion: no eligible supervisor right now.'),
                                 style: const TextStyle(
                                   color: Color(0xFFE7DDFF),
                                   fontSize: 12,
@@ -267,7 +279,7 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                     Icon(Icons.emergency_rounded, color: typeColor, size: 16),
                     const SizedBox(width: 6),
                     Text(
-                      'Immediate attention required',
+                      context.tr('Immediate attention required'),
                       style: TextStyle(
                         color: const Color(0xFFFFD6D9),
                         fontSize: 12,
@@ -289,10 +301,10 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                       ),
                       child: Text(
                         _assigning
-                            ? 'Assigning...'
+                            ? context.tr('Assigning...')
                             : (_assignedDone
-                                  ? 'Assigned'
-                                  : 'Assign Supervisor'),
+                                  ? context.tr('Assigned')
+                                  : context.tr('Assign Supervisor')),
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
@@ -307,9 +319,9 @@ class _CriticalArrivalDialogState extends State<_CriticalArrivalDialog>
                           vertical: 10,
                         ),
                       ),
-                      child: const Text(
-                        'Acknowledge',
-                        style: TextStyle(fontWeight: FontWeight.w800),
+                      child: Text(
+                        context.tr('Acknowledge'),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
                   ],
@@ -399,7 +411,7 @@ class _FactoryMasterBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'PLANT SCOPE',
+                        context.tr('PLANT SCOPE'),
                         style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: FontWeight.w800,
@@ -429,7 +441,7 @@ class _FactoryMasterBar extends StatelessWidget {
                                 (f) => DropdownMenuItem(
                                   value: f,
                                   child: Text(
-                                    f == 'all' ? 'All Plants' : f,
+                                    f == 'all' ? context.tr('All Plants') : f,
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: t.text,
@@ -472,7 +484,7 @@ class _FactoryMasterBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  isAll ? 'Aggregate' : 'Scoped',
+                  isAll ? context.tr('Aggregate') : context.tr('Scoped'),
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
@@ -512,7 +524,7 @@ class _FactoryMasterBar extends StatelessWidget {
               ? IconButton(
                   onPressed: onReset,
                   icon: Icon(Icons.refresh_rounded, color: t.red),
-                  tooltip: 'Reset filters',
+                  tooltip: context.tr('Reset filters'),
                   style: IconButton.styleFrom(
                     backgroundColor: t.card,
                     side: BorderSide(color: t.border),

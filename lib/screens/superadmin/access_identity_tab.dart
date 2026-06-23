@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../firebase_options.dart';
 import '../../services/sso_config_service.dart';
+import '../../l10n/app_strings.dart';
 import '../mfa_enrollment_screen.dart';
 import 'superadmin_theme.dart';
 
@@ -171,12 +172,14 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
                 children: [
                   SaSectionHeader(
                     icon: Icons.vpn_key_outlined,
-                    title: 'Single Sign-On',
-                    subtitle:
-                        'Let staff sign in with your company identity provider',
+                    title: context.tr('Single Sign-On'),
+                    subtitle: context.tr(
+                        'Let staff sign in with your company identity provider'),
                     accent: Sa.violet,
                     trailing: GlowChip(
-                      label: _enabled ? 'ENABLED' : 'DISABLED',
+                      label: _enabled
+                          ? context.tr('ENABLED')
+                          : context.tr('DISABLED'),
                       color: _enabled ? Sa.green : Sa.muted,
                       pulse: _enabled,
                     ),
@@ -184,21 +187,24 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
                   const SizedBox(height: 20),
                   _enableRow(),
                   const SizedBox(height: 18),
-                  Text('IDENTITY PROVIDER', style: Sa.mono(size: 10, color: Sa.muted)),
+                  Text(context.tr('IDENTITY PROVIDER'),
+                      style: Sa.mono(size: 10, color: Sa.muted)),
                   const SizedBox(height: 6),
                   _dropdown(),
                   const SizedBox(height: 16),
-                  _field('PROVIDER ID', _providerId,
+                  _field(context.tr('PROVIDER ID'), _providerId,
                       hint: 'oidc.sias',
-                      help: 'Must match the provider you create in Firebase.'),
-                  _field('BUTTON LABEL', _label, hint: 'Sign in with SIAS'),
-                  _field('ISSUER URL (reference)', _issuer,
+                      help: context.tr(
+                          'Must match the provider you create in Firebase.')),
+                  _field(context.tr('BUTTON LABEL'), _label,
+                      hint: 'Sign in with SIAS'),
+                  _field(context.tr('ISSUER URL (reference)'), _issuer,
                       hint: 'https://login.microsoftonline.com/<tenant>/v2.0'),
                   const SizedBox(height: 4),
                   _saveButton(),
                   if (_status != null) ...[
                     const SizedBox(height: 12),
-                    Text(_status!,
+                    Text(context.tr(_status!),
                         style: Sa.body(
                             size: 12, color: _ok ? Sa.green : Sa.red)),
                   ],
@@ -224,9 +230,9 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Enable SSO', style: Sa.heading(size: 14)),
+              Text(context.tr('Enable SSO'), style: Sa.heading(size: 14)),
               const SizedBox(height: 2),
-              Text('Shows the SSO button on the login screen',
+              Text(context.tr('Shows the SSO button on the login screen'),
                   style: Sa.body(size: 12, color: Sa.muted)),
             ],
           ),
@@ -313,7 +319,9 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
                     strokeWidth: 2, color: Colors.white),
               )
             : const Icon(Icons.save_outlined, size: 18),
-        label: Text(_saving ? 'Saving…' : 'Save configuration'),
+        label: Text(_saving
+            ? context.tr('Saving…')
+            : context.tr('Save configuration')),
         style: ElevatedButton.styleFrom(
           backgroundColor: Sa.cyan,
           foregroundColor: Sa.onAccent,
@@ -333,16 +341,15 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.cloud_done_outlined,
-            title: 'Finish in Firebase Identity Platform',
-            subtitle: 'One-time, server-side — it holds the client secret safely',
+            title: context.tr('Finish in Firebase Identity Platform'),
+            subtitle: context.tr(
+                'One-time, server-side — it holds the client secret safely'),
             accent: Sa.amber,
           ),
           const SizedBox(height: 16),
           Text(
-            'In the Firebase console → Authentication, enable Identity Platform, '
-            'then add a provider whose ID matches the Provider ID above. Paste in '
-            'the client ID, issuer, and client secret from your identity provider, '
-            'and register this redirect URL:',
+            context.tr(
+                'In the Firebase console → Authentication, enable Identity Platform, then add a provider whose ID matches the Provider ID above. Paste in the client ID, issuer, and client secret from your identity provider, and register this redirect URL:'),
             style: Sa.body(size: 12.5, color: Sa.textDim),
           ),
           const SizedBox(height: 12),
@@ -361,7 +368,7 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
                 ),
                 IconButton(
                   icon: Icon(Icons.copy, size: 16, color: Sa.muted),
-                  tooltip: 'Copy redirect URL',
+                  tooltip: context.tr('Copy redirect URL'),
                   onPressed: () => _copy(_redirectUri, 'Redirect URL'),
                 ),
               ],
@@ -369,8 +376,8 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
           ),
           const SizedBox(height: 10),
           Text(
-            'New SSO users are created with no role — grant access from Production '
-            'Managers before they can sign in.',
+            context.tr(
+                'New SSO users are created with no role — grant access from Production Managers before they can sign in.'),
             style: Sa.body(size: 11.5, color: Sa.muted),
           ),
         ],
@@ -379,12 +386,15 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
   }
 
   Widget _previewPanel() {
-    final label = _label.text.trim().isEmpty ? 'Sign in with SSO' : _label.text.trim();
+    final label = _label.text.trim().isEmpty
+        ? context.tr('Sign in with SSO')
+        : _label.text.trim();
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('LOGIN PREVIEW', style: Sa.mono(size: 10, color: Sa.muted)),
+          Text(context.tr('LOGIN PREVIEW'),
+              style: Sa.mono(size: 10, color: Sa.muted)),
           const SizedBox(height: 12),
           Opacity(
             opacity: _enabled ? 1 : 0.4,
@@ -409,8 +419,9 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
           const SizedBox(height: 8),
           Text(
             _enabled
-                ? 'Staff will see this button beneath the email/password fields.'
-                : 'Hidden until you enable SSO above.',
+                ? context.tr(
+                    'Staff will see this button beneath the email/password fields.')
+                : context.tr('Hidden until you enable SSO above.'),
             style: Sa.body(size: 11.5, color: Sa.muted),
           ),
         ],
@@ -426,14 +437,15 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.sms_outlined,
-            title: 'Two-factor authentication (SMS)',
-            subtitle: 'Add a phone second factor to your own account',
+            title: context.tr('Two-factor authentication (SMS)'),
+            subtitle:
+                context.tr('Add a phone second factor to your own account'),
             accent: Sa.green,
           ),
           const SizedBox(height: 14),
           Text(
-            'Enable SMS multi-factor in Firebase Identity Platform, then enrol '
-            'your phone here. Staff enrol the same way from their profile.',
+            context.tr(
+                'Enable SMS multi-factor in Firebase Identity Platform, then enrol your phone here. Staff enrol the same way from their profile.'),
             style: Sa.body(size: 12.5, color: Sa.textDim),
           ),
           const SizedBox(height: 14),
@@ -446,7 +458,7 @@ class _AccessIdentityTabState extends State<AccessIdentityTab> {
                 ),
               ),
               icon: const Icon(Icons.shield_outlined, size: 18),
-              label: const Text('Set up / manage 2FA'),
+              label: Text(context.tr('Set up / manage 2FA')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Sa.green,
                 side: BorderSide(color: Sa.green.withValues(alpha: 0.5)),

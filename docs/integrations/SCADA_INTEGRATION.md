@@ -27,6 +27,35 @@ ripping anything out**.
 The gateway is the integration seam. Anything that can make an authenticated HTTPS
 POST can drive SIA; you do not run SIA logic on the OT network.
 
+Two honest ingestion modes, both handled by `cloudflare_ingest_worker.js`
+(logic in `cloudflare_ingest_connectors.js`):
+
+- **Edge-push** — for OPC-UA / Modbus / any air-gapped OT network: a gateway near
+  the PLC POSTs to `POST /ingest/{connectorId}` with that connector's key. The only
+  real path off an isolated network.
+- **Cloud-pull** — for HTTPS-reachable sources (PI Web API, Ignition, REST): the
+  worker reaches OUT on a per-minute cron, polls each connector with its stored
+  credential, applies thresholds, and creates alerts. Plus a live MQTT-over-WebSocket
+  CONNACK handshake for brokers.
+
+## Configure it in the app (SuperAdmin → Infrastructure → Industrial Connectors)
+
+No YAML, no redeploy. The IT team:
+
+1. Opens **SuperAdmin → Infrastructure → Industrial Connectors**.
+2. Picks a connector tile (OPC-UA · Modbus · MQTT · PI · Ignition · REST · Microcontroller · Custom).
+3. Enters the endpoint, credentials, and tag/threshold mapping.
+4. Clicks **Verify link test** — for pull/MQTT the worker does a *real* handshake
+   (HTTP read of a live value, or an MQTT CONNECT/CONNACK) and reports **LINKED** with
+   the sampled value; for edge-push it confirms genuine inbound packets are flowing
+   (**LINKED**) or hands back the exact ingest URL + key + a ready-to-run gateway
+   snippet (**WAITING** until the first packet).
+
+Non-secret config lives in RTDB `connectors/{id}`; credentials live write-only in
+`connector_secrets/{id}` (SuperAdmin + the worker only, enforced by
+`database.rules.json`). The worker reads the vault and writes live `runtime` status
+back with a service-account JWT (same pattern as the AI / GitHub workers).
+
 ## Supported sources
 
 | Protocol / source | How it reaches SIA | Notes |
@@ -37,7 +66,18 @@ POST can drive SIA; you do not run SIA logic on the OT network.
 | **REST / webhook** | Any system POSTs JSON directly | MES, CMMS, quality systems, custom apps. |
 | **Historian export** | Scheduled query → POST batch (`readings[]`) | Backfill or near-real-time tag exports. |
 
-## Ingestion endpoint contract
+## Worker endpoints
+
+| Method · path | Auth | Purpose |
+|---|---|---|
+| `POST /` | `x-alertsys-ingest: <INGEST_SHARED_SECRET>` | Legacy / generic global push. |
+| `POST /ingest/{connectorId}` | `x-alertsys-ingest: <connector ingest key>` | Per-connector edge-push (attributed + status-tracked). |
+| `POST /verify` | `Authorization: Bearer <WORKER_SHARED_SECRET>` | "Verify link test" — live handshake (pull/MQTT) or first-packet check (push). Body `{ connectorId }`. |
+| `POST /control` | `Authorization: Bearer <WORKER_SHARED_SECRET>` | App actions, e.g. `{ action:'poll', connectorId }` to force a cloud-pull now. |
+| `GET /` · `GET /config` | none | Service status. |
+| cron `* * * * *` | — | Polls every due cloud-pull connector; refreshes MQTT link status. |
+
+## Ingestion payload contract
 
 `POST https://alertsys-ingest.<sub>.workers.dev`
 Header: `x-alertsys-ingest: <INGEST_SHARED_SECRET>`
@@ -95,6 +135,19 @@ getting the right human to the right machine fast, on mobile, with AI assignment
 voice claim, presence, and predictive risk. See `COMPETITIVE_POSITIONING.md`.
 
 ## Deploy
-`npx wrangler deploy --config wrangler.ingest.toml` (set `FB_DB_URL`,
-`NOTIFY_WORKER_URL`, and the `INGEST_SHARED_SECRET` secret first). Tests:
-`worker_test/ingest.test.js`.
+`npx wrangler deploy --config wrangler.ingest.toml`. The worker now has a per-minute
+cron and bundles `cloudflare_ingest_connectors.js` automatically. Set:
+
+- `FB_DB_URL` (var) — the instance RTDB URL.
+- `NOTIFY_WORKER_URL` (var) — for sub-second push on alert creation.
+- `FIREBASE_SERVICE_ACCOUNT` (secret) — required for cloud-pull, `/verify`, and the
+  connector vault (same JSON as the AI / GitHub workers).
+- `WORKER_SHARED_SECRET` (secret) — the bearer the app sends on `/verify` + `/control`.
+- `INGEST_SHARED_SECRET` (secret, optional) — legacy/global push.
+
+Deploy the rules too (adds `connectors` + `connector_secrets`):
+`firebase deploy --only database`.
+
+Tests: `worker_test/ingest.test.js`, `worker_test/connectors.test.js` (connector
+helpers: JSON-path value extraction, poll scheduling, per-connector auth, push-link
+status, MQTT CONNECT/CONNACK byte layout).

@@ -1,0 +1,8 @@
+name = "alertsys-guardian-proxy"
+compatibility_date = "2026-06-18"
+pages_build_output_dir = "."
+
+[[services]]
+binding = "GITHUB_INTERNAL"
+service = "alertsys-github"
+entrypoint = "InternalGithubProxy"

@@ -5,15 +5,17 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/forecast/forecast_training_controller.dart';
+import '../../widgets/common/language_toggle.dart';
 import 'access_identity_tab.dart';
 import 'ai_agents_tab.dart';
 import 'ai_training_tab.dart';
 import 'hardware_tab.dart';
 import 'infrastructure_tab.dart';
-import 'logs_tab.dart';
+import 'monitor/overview_monitor_tab.dart';
 import 'production_managers_tab.dart';
 import 'reliability_tab.dart';
 import 'superadmin_theme.dart';
@@ -35,6 +37,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
   DateTime? _lastCronRun;
 
   static const _tabs = [
+    (icon: Icons.monitor_heart_outlined, label: 'OVERVIEW MONITOR'),
     (icon: Icons.psychology_outlined, label: 'AI TRAINING'),
     (icon: Icons.hub_outlined, label: 'AI AGENTS'),
     (icon: Icons.badge_outlined, label: 'PRODUCTION MANAGERS'),
@@ -42,7 +45,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
     (icon: Icons.health_and_safety_outlined, label: 'RELIABILITY'),
     (icon: Icons.palette_outlined, label: 'BRANDING'),
     (icon: Icons.dns_outlined, label: 'INFRASTRUCTURE'),
-    (icon: Icons.terminal_outlined, label: 'LOGS'),
     (icon: Icons.memory_outlined, label: 'HARDWARE'),
   ];
 
@@ -118,14 +120,14 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                         child: KeyedSubtree(
                           key: ValueKey(_tab),
                           child: switch (_tab) {
-                            0 => const AiTrainingTab(),
-                            1 => const AiAgentsTab(),
-                            2 => const ProductionManagersTab(),
-                            3 => const AccessIdentityTab(),
-                            4 => const ReliabilityTab(),
-                            5 => const ThemeStudioTab(),
-                            6 => const InfrastructureTab(),
-                            7 => const SuperAdminLogsTab(),
+                            0 => const OverviewMonitorTab(),
+                            1 => const AiTrainingTab(),
+                            2 => const AiAgentsTab(),
+                            3 => const ProductionManagersTab(),
+                            4 => const AccessIdentityTab(),
+                            5 => const ReliabilityTab(),
+                            6 => const ThemeStudioTab(),
+                            7 => const InfrastructureTab(),
                             _ => const HardwareTab(),
                           },
                         ),
@@ -153,10 +155,11 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_tabs[_tab].label, style: Sa.display(size: wide ? 18 : 14)),
+                Text(context.tr(_tabs[_tab].label),
+                    style: Sa.display(size: wide ? 18 : 14)),
                 const SizedBox(height: 2),
                 Text(
-                  'COMMAND CENTER · SMART INDUSTRIAL ALERT',
+                  context.tr('COMMAND CENTER · SMART INDUSTRIAL ALERT'),
                   style: Sa.mono(size: 9, color: Sa.muted),
                 ),
               ],
@@ -168,6 +171,8 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
             const _HeaderClock(),
             const SizedBox(width: 14),
           ],
+          LanguageToggle(color: Sa.muted),
+          const SizedBox(width: 8),
           _ThemeToggleButton(
             isDark: themeProvider.isDark,
             onToggle: themeProvider.toggle,
@@ -216,18 +221,18 @@ class _SystemStatusChipState extends State<_SystemStatusChip> {
     String label;
     if (last == null) {
       color = Sa.muted;
-      label = 'SYSTEM: PROBING';
+      label = context.tr('SYSTEM: PROBING');
     } else {
       final age = DateTime.now().toUtc().difference(last.toUtc());
       if (age.inMinutes <= 3) {
         color = Sa.green;
-        label = 'SYSTEM: NOMINAL';
+        label = context.tr('SYSTEM: NOMINAL');
       } else if (age.inMinutes <= 10) {
         color = Sa.amber;
-        label = 'SYSTEM: DEGRADED';
+        label = context.tr('SYSTEM: DEGRADED');
       } else {
         color = Sa.red;
-        label = 'SYSTEM: CRON STALLED';
+        label = context.tr('SYSTEM: CRON STALLED');
       }
     }
     return GlowChip(label: label, color: color, pulse: true);
@@ -364,8 +369,9 @@ class _NavRail extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('COMMAND', style: Sa.display(size: 12.5)),
-                        Text('CENTER',
+                        Text(context.tr('COMMAND'),
+                            style: Sa.display(size: 12.5)),
+                        Text(context.tr('CENTER'),
                             style: Sa.display(size: 12.5, color: Sa.cyan)),
                       ],
                     ),
@@ -537,7 +543,7 @@ class _NavItemState extends State<_NavItem> {
                 const SizedBox(width: 11),
                 Expanded(
                   child: Text(
-                    widget.label,
+                    context.tr(widget.label),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Sa.heading(size: 12, color: color),
@@ -567,7 +573,7 @@ class _LogoutButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Sign out',
+      message: context.tr('Sign out'),
       child: InkWell(
         onTap: () async {
           final training = ForecastTrainingController.instance.training;
@@ -579,24 +585,25 @@ class _LogoutButton extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 side: BorderSide(color: Sa.border),
               ),
-              title:
-                  Text('Sign out of the console?', style: Sa.heading(size: 16)),
+              title: Text(context.tr('Sign out of the console?'),
+                  style: Sa.heading(size: 16)),
               content: training
                   ? Text(
-                      'A model training run is in progress. It keeps running '
-                      'while this app stays open, and its checkpoint lets any '
-                      'future session finish it — signing out is safe.',
+                      context.tr(
+                          'A model training run is in progress. It keeps running while this app stays open, and its checkpoint lets any future session finish it — signing out is safe.'),
                       style: Sa.body(size: 12.5, color: Sa.textDim),
                     )
                   : null,
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, false),
-                  child: Text('Cancel', style: Sa.body(color: Sa.textDim)),
+                  child:
+                      Text(context.tr('Cancel'), style: Sa.body(color: Sa.textDim)),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: Text('Sign out', style: Sa.body(color: Sa.red)),
+                  child:
+                      Text(context.tr('Sign out'), style: Sa.body(color: Sa.red)),
                 ),
               ],
             ),

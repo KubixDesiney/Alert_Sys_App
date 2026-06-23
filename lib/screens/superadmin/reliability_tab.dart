@@ -7,6 +7,7 @@ import 'package:firebase_database/firebase_database.dart';
 
 import '../../services/monitoring_config_service.dart';
 import '../../services/telemetry_service.dart';
+import '../../l10n/app_strings.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin -> Reliability.
@@ -159,20 +160,20 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.cloud_done_outlined,
-            title: 'Backups',
-            subtitle: 'Nightly snapshot to Cloudflare R2',
+            title: context.tr('Backups'),
+            subtitle: context.tr('Nightly snapshot to Cloudflare R2'),
             accent: Sa.cyan,
             trailing: GlowChip(label: label, color: color, pulse: ok),
           ),
           const SizedBox(height: 16),
-          _kv('Last backup', _ago(b?['at']?.toString())),
-          if (bytes != null) _kv('Size', '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB'),
+          _kv(context.tr('Last backup'), _ago(b?['at']?.toString())),
+          if (bytes != null) _kv(context.tr('Size'), '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB'),
           if (b != null && b['ok'] == false)
-            _kv('Error', (b['error'] ?? '').toString(), color: Sa.red),
+            _kv(context.tr('Error'), (b['error'] ?? '').toString(), color: Sa.red),
           const SizedBox(height: 6),
           Text(
-            'Storage and retention are managed in Cloudflare (alertsys-backups, '
-            'last 30 nightly). See DISASTER_RECOVERY.md.',
+            context.tr(
+                'Storage and retention are managed in Cloudflare (alertsys-backups, last 30 nightly). See DISASTER_RECOVERY.md.'),
             style: Sa.body(size: 11.5, color: Sa.muted),
           ),
         ],
@@ -185,7 +186,9 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
     final state = (m?['state'] ?? '').toString();
     final degraded = state == 'degraded';
     final color = m == null ? Sa.muted : (degraded ? Sa.red : Sa.green);
-    final label = m == null ? 'PROBING' : (degraded ? 'DEGRADED' : 'NOMINAL');
+    final label = m == null
+        ? context.tr('PROBING')
+        : (degraded ? context.tr('DEGRADED') : context.tr('NOMINAL'));
     final problems = (m?['problems'] is List) ? (m!['problems'] as List) : const [];
     return GlassPanel(
       accent: degraded ? Sa.red : Sa.green,
@@ -194,16 +197,17 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.radar_outlined,
-            title: 'System monitor',
-            subtitle: 'Deadman switch · every 5 min',
+            title: context.tr('System monitor'),
+            subtitle: context.tr('Deadman switch · every 5 min'),
             accent: degraded ? Sa.red : Sa.green,
             trailing: GlowChip(label: label, color: color, pulse: !degraded && m != null),
           ),
           const SizedBox(height: 16),
-          _kv('Last check', _ago(m?['at']?.toString())),
+          _kv(context.tr('Last check'), _ago(m?['at']?.toString())),
           const SizedBox(height: 8),
           if (problems.isEmpty)
-            Text('All checks passing.', style: Sa.body(size: 12.5, color: Sa.green))
+            Text(context.tr('All checks passing.'),
+                style: Sa.body(size: 12.5, color: Sa.green))
           else
             ...problems.map((p) => Padding(
                   padding: const EdgeInsets.only(bottom: 4),
@@ -230,11 +234,11 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.notifications_active_outlined,
-            title: 'Alert destination',
-            subtitle: 'Get pinged the moment the system degrades',
+            title: context.tr('Alert destination'),
+            subtitle: context.tr('Get pinged the moment the system degrades'),
             accent: Sa.violet,
             trailing: GlowChip(
-              label: _cfg.webhookEnabled ? 'ON' : 'OFF',
+              label: _cfg.webhookEnabled ? context.tr('ON') : context.tr('OFF'),
               color: _cfg.webhookEnabled ? Sa.green : Sa.muted,
               pulse: _cfg.webhookEnabled,
             ),
@@ -246,8 +250,8 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Enable alerts', style: Sa.heading(size: 14)),
-                    Text('Post to your chat tool on every state change',
+                    Text(context.tr('Enable alerts'), style: Sa.heading(size: 14)),
+                    Text(context.tr('Post to your chat tool on every state change'),
                         style: Sa.body(size: 12, color: Sa.muted)),
                   ],
                 ),
@@ -260,7 +264,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
             ],
           ),
           const SizedBox(height: 14),
-          Text('PROVIDER', style: Sa.mono(size: 10, color: Sa.muted)),
+          Text(context.tr('PROVIDER'), style: Sa.mono(size: 10, color: Sa.muted)),
           const SizedBox(height: 10),
           Wrap(
             spacing: 10,
@@ -268,7 +272,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
             children: kWebhookProviders.map(_providerTile).toList(),
           ),
           const SizedBox(height: 18),
-          Text('WEBHOOK URL', style: Sa.mono(size: 10, color: Sa.muted)),
+          Text(context.tr('WEBHOOK URL'), style: Sa.mono(size: 10, color: Sa.muted)),
           const SizedBox(height: 6),
           TextField(
             controller: _url,
@@ -281,7 +285,8 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
           ],
           if (selected.needsChatId) ...[
             const SizedBox(height: 14),
-            Text('TELEGRAM CHAT ID', style: Sa.mono(size: 10, color: Sa.muted)),
+            Text(context.tr('TELEGRAM CHAT ID'),
+                style: Sa.mono(size: 10, color: Sa.muted)),
             const SizedBox(height: 6),
             TextField(
               controller: _chatId,
@@ -299,7 +304,8 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
           ),
           if (_status != null) ...[
             const SizedBox(height: 12),
-            Text(_status!, style: Sa.body(size: 12, color: _ok ? Sa.green : Sa.red)),
+            Text(context.tr(_status!),
+                style: Sa.body(size: 12, color: _ok ? Sa.green : Sa.red)),
           ],
         ],
       ),
@@ -367,8 +373,10 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.monitor_heart_outlined,
-            title: 'App health (today)',
-            subtitle: 'Crash-free sessions & error rate — SLA alert below $slo%',
+            title: context.tr('App health (today)'),
+            subtitle: context.tr(
+                'Crash-free sessions & error rate — SLA alert below {slo}%',
+                {'slo': '$slo'}),
             accent: Sa.green,
           ),
           const SizedBox(height: 12),
@@ -392,19 +400,19 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Expanded(child: _metric('Crash-free', sessions == 0 ? '—' : '${pct.toStringAsFixed(1)}%', cfColor)),
-                    Expanded(child: _metric('Sessions', '$sessions', Sa.cyan)),
-                    Expanded(child: _metric('Crashed', '$crashed', crashed > 0 ? Sa.amber : Sa.muted)),
-                    Expanded(child: _metric('Errors', '$errors', errors > 0 ? Sa.amber : Sa.muted)),
+                    Expanded(child: _metric(context.tr('Crash-free'), sessions == 0 ? '—' : '${pct.toStringAsFixed(1)}%', cfColor)),
+                    Expanded(child: _metric(context.tr('Sessions'), '$sessions', Sa.cyan)),
+                    Expanded(child: _metric(context.tr('Crashed'), '$crashed', crashed > 0 ? Sa.amber : Sa.muted)),
+                    Expanded(child: _metric(context.tr('Errors'), '$errors', errors > 0 ? Sa.amber : Sa.muted)),
                   ]),
                   if (sessions > 0) ...[
                     const SizedBox(height: 8),
                     Text(
                       breaching
-                          ? 'Below SLO — the monitor will alert your webhook.'
+                          ? context.tr('Below SLO — the monitor will alert your webhook.')
                           : enough
-                              ? 'Meeting the $slo% crash-free SLO.'
-                              : 'Collecting data ($sessions/20 sessions before SLO alerting).',
+                              ? context.tr('Meeting the {slo}% crash-free SLO.', {'slo': '$slo'})
+                              : context.tr('Collecting data ({n}/20 sessions before SLO alerting).', {'n': '$sessions'}),
                       style: Sa.body(size: 11.5, color: breaching ? Sa.red : Sa.muted),
                     ),
                   ],
@@ -429,14 +437,14 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
   Widget _checksPanel() {
     final c = _cfg.checks;
     final items = <(String, String, bool, MonitorChecks Function(bool))>[
-      ('AI worker', 'Assignment / escalation / predictions edge', c.aiWorker, (v) => c.copyWith(aiWorker: v)),
-      ('Notification worker', 'Push fan-out edge', c.notifyWorker, (v) => c.copyWith(notifyWorker: v)),
-      ('Cron freshness', 'The every-minute engine is alive', c.cron, (v) => c.copyWith(cron: v)),
-      ('Backups', 'Nightly snapshot ran and succeeded', c.backup, (v) => c.copyWith(backup: v)),
-      ('Error spike', 'Surge of client errors in the last hour', c.errorSpike, (v) => c.copyWith(errorSpike: v)),
-      ('Notification backlog', 'Notify worker keeping up', c.notificationBacklog, (v) => c.copyWith(notificationBacklog: v)),
-      ('App error budget', 'Crash-free below the ${_cfg.crashFreeSlo}% SLO', c.appErrorBudget, (v) => c.copyWith(appErrorBudget: v)),
-      ('AI model drift', 'A deployed agent model regressed in quality', c.modelDrift, (v) => c.copyWith(modelDrift: v)),
+      (context.tr('AI worker'), context.tr('Assignment / escalation / predictions edge'), c.aiWorker, (v) => c.copyWith(aiWorker: v)),
+      (context.tr('Notification worker'), context.tr('Push fan-out edge'), c.notifyWorker, (v) => c.copyWith(notifyWorker: v)),
+      (context.tr('Cron freshness'), context.tr('The every-minute engine is alive'), c.cron, (v) => c.copyWith(cron: v)),
+      (context.tr('Backups'), context.tr('Nightly snapshot ran and succeeded'), c.backup, (v) => c.copyWith(backup: v)),
+      (context.tr('Error spike'), context.tr('Surge of client errors in the last hour'), c.errorSpike, (v) => c.copyWith(errorSpike: v)),
+      (context.tr('Notification backlog'), context.tr('Notify worker keeping up'), c.notificationBacklog, (v) => c.copyWith(notificationBacklog: v)),
+      (context.tr('App error budget'), context.tr('Crash-free below the {slo}% SLO', {'slo': '${_cfg.crashFreeSlo}'}), c.appErrorBudget, (v) => c.copyWith(appErrorBudget: v)),
+      (context.tr('AI model drift'), context.tr('A deployed agent model regressed in quality'), c.modelDrift, (v) => c.copyWith(modelDrift: v)),
     ];
     return GlassPanel(
       accent: Sa.blue,
@@ -445,8 +453,8 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
         children: [
           SaSectionHeader(
             icon: Icons.checklist_outlined,
-            title: 'What gets monitored',
-            subtitle: 'Toggle the checks the deadman switch runs',
+            title: context.tr('What gets monitored'),
+            subtitle: context.tr('Toggle the checks the deadman switch runs'),
             accent: Sa.blue,
           ),
           const SizedBox(height: 8),
@@ -472,7 +480,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
                 ),
               )),
           const SizedBox(height: 8),
-          Text('Saved with the Save button above; applied on the next monitor run.',
+          Text(context.tr('Saved with the Save button above; applied on the next monitor run.'),
               style: Sa.body(size: 11.5, color: Sa.muted)),
         ],
       ),
@@ -537,7 +545,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
       icon: _testing
           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
           : const Icon(Icons.send_outlined, size: 18),
-      label: Text(_testing ? 'Sending…' : 'Send test'),
+      label: Text(_testing ? context.tr('Sending…') : context.tr('Send test')),
       style: OutlinedButton.styleFrom(
         foregroundColor: Sa.cyan,
         side: BorderSide(color: Sa.cyan.withValues(alpha: 0.5)),
@@ -555,7 +563,9 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
         icon: _saving
             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : const Icon(Icons.save_outlined, size: 18),
-        label: Text(_saving ? 'Saving…' : 'Save monitoring settings'),
+        label: Text(_saving
+            ? context.tr('Saving…')
+            : context.tr('Save monitoring settings')),
         style: ElevatedButton.styleFrom(
           backgroundColor: Sa.cyan,
           foregroundColor: Sa.onAccent,

@@ -5,6 +5,7 @@ import '../../services/predictive_intel_service.dart';
 import '../../services/predictive_models.dart';
 import '../../services/service_locator.dart';
 import '../../utils/alert_claim_error.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
 
@@ -67,7 +68,8 @@ class CriticalAlertsCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Critical · ${alerts.length} pending',
+                      context.tr(
+                          'Critical · {n} pending', {'n': '${alerts.length}'}),
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
@@ -75,7 +77,7 @@ class CriticalAlertsCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Awaiting assignment for over 10 minutes',
+                      context.tr('Awaiting assignment for over 10 minutes'),
                       style: TextStyle(
                         fontSize: 11,
                         color: theme.red.withValues(alpha: 0.85),
@@ -211,7 +213,8 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                   width: 4,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: typeMeta(alert.type, context.appTheme).color,
+                    color: typeMeta(alert.type, context.appTheme, context)
+                        .color,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
@@ -221,7 +224,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${typeMeta(alert.type, context.appTheme).label} — ${widget.describe(alert)}',
+                        '${typeMeta(alert.type, context.appTheme, context).label} — ${widget.describe(alert)}',
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
@@ -232,7 +235,11 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${alert.usine} · Line ${alert.convoyeur} · WS ${alert.poste}',
+                        context.tr('{factory} · Line {line} · WS {station}', {
+                          'factory': alert.usine,
+                          'line': '${alert.convoyeur}',
+                          'station': '${alert.poste}',
+                        }),
                         style: TextStyle(fontSize: 11, color: theme.muted),
                       ),
                     ],
@@ -260,13 +267,13 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
             ),
           ),
           const SizedBox(height: 9),
-          _buildSuggestionStrip(theme),
+          _buildSuggestionStrip(context, theme),
         ],
       ),
     );
   }
 
-  Widget _buildSuggestionStrip(AppTheme theme) {
+  Widget _buildSuggestionStrip(BuildContext context, AppTheme theme) {
     if (_loading) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -287,7 +294,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
             ),
             const SizedBox(width: 8),
             Text(
-              'AI is matching the best supervisor…',
+              context.tr('AI is matching the best supervisor…'),
               style: TextStyle(
                 fontSize: 11.5,
                 color: theme.purple,
@@ -313,7 +320,9 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Assigned to ${_suggestion?.bestName ?? 'supervisor'} — supervisor notified.',
+                context.tr('Assigned to {name} — supervisor notified.', {
+                  'name': _suggestion?.bestName ?? context.tr('supervisor')
+                }),
                 style: TextStyle(
                   fontSize: 11.5,
                   color: theme.green,
@@ -341,7 +350,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'No eligible supervisor right now.',
+                context.tr('No eligible supervisor right now.'),
                 style: TextStyle(fontSize: 11, color: theme.muted),
               ),
             ),
@@ -352,7 +361,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                 minimumSize: const Size(0, 28),
               ),
               child: Text(
-                'Retry',
+                context.tr('Retry'),
                 style: TextStyle(
                   fontSize: 11,
                   color: theme.navy,
@@ -398,7 +407,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                     Text.rich(
                       TextSpan(children: [
                         TextSpan(
-                          text: 'AI suggests: ',
+                          text: context.tr('AI suggests: '),
                           style: TextStyle(
                             fontSize: 11.5,
                             color: theme.muted,
@@ -406,7 +415,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                           ),
                         ),
                         TextSpan(
-                          text: s.bestName ?? 'supervisor',
+                          text: s.bestName ?? context.tr('supervisor'),
                           style: TextStyle(
                             fontSize: 12.5,
                             color: theme.text,
@@ -414,7 +423,8 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                           ),
                         ),
                         TextSpan(
-                          text: '  ·  ${s.confidencePct}% match',
+                          text: context.tr(
+                              '  ·  {pct}% match', {'pct': '${s.confidencePct}'}),
                           style: TextStyle(
                             fontSize: 11,
                             color: theme.purple,
@@ -470,7 +480,7 @@ class _CriticalAlertRowAIState extends State<_CriticalAlertRowAI>
                           valueColor: AlwaysStoppedAnimation(Colors.white),
                         ),
                       )
-                    : const Text('Assign'),
+                    : Text(context.tr('Assign')),
               ),
             ],
           ),

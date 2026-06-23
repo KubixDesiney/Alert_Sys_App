@@ -6,7 +6,6 @@ class _MachineDetailPopover extends StatelessWidget {
   final HwMachine machine;
   final HwFactoryCatalog catalog;
   final List<HwDeviceBinding> bindings;
-  final String Function(String id) circuitNameFor;
   final _MachinePopoverPlacement placement;
   final VoidCallback onClose;
   final VoidCallback onEdit;
@@ -15,7 +14,6 @@ class _MachineDetailPopover extends StatelessWidget {
     required this.machine,
     required this.catalog,
     required this.bindings,
-    required this.circuitNameFor,
     required this.placement,
     required this.onClose,
     required this.onEdit,
@@ -35,9 +33,9 @@ class _MachineDetailPopover extends StatelessWidget {
       machine.conveyorLabel,
     ]);
     final description = machine.description.trim().isEmpty
-        ? 'No description recorded.'
+        ? context.tr('No description recorded.')
         : machine.description.trim();
-    final hardware = _hardwareSummary();
+    final hardware = _hardwareSummary(context);
 
     return Material(
       color: Colors.transparent,
@@ -131,31 +129,33 @@ class _MachineDetailPopover extends StatelessWidget {
                           ),
                           _PopoverIconButton(
                             icon: Icons.edit_outlined,
-                            tooltip: 'Edit machine',
+                            tooltip: context.tr('Edit machine'),
                             color: Sa.amber,
                             onTap: onEdit,
                           ),
                           const SizedBox(width: 4),
                           _PopoverIconButton(
                             icon: Icons.close,
-                            tooltip: 'Close',
+                            tooltip: context.tr('Close'),
                             color: Sa.textDim,
                             onTap: onClose,
                           ),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      _MachineInfoLine('ID', machine.id),
-                      _MachineInfoLine('NAME', machine.displayName),
-                      _MachineInfoLine('HARDWARE', hardware, maxLines: 3),
+                      _MachineInfoLine(context.tr('ID'), machine.id),
+                      _MachineInfoLine(context.tr('NAME'), machine.displayName),
+                      _MachineInfoLine(context.tr('HARDWARE'), hardware, maxLines: 3),
                       _MachineInfoLine(
-                        'LOCATION',
-                        location.isEmpty ? 'Unassigned' : location,
+                        context.tr('LOCATION'),
+                        location.isEmpty ? context.tr('Unassigned') : location,
                       ),
-                      _MachineInfoLine('STATUS', machine.status.label),
-                      _MachineInfoLine('DESCRIPTION', description, maxLines: 3),
                       _MachineInfoLine(
-                        'DATE',
+                          context.tr('STATUS'), context.tr(machine.status.label)),
+                      _MachineInfoLine(
+                          context.tr('DESCRIPTION'), description, maxLines: 3),
+                      _MachineInfoLine(
+                        context.tr('DATE'),
                         _formatDateTime(machine.updatedAtMs),
                       ),
                     ],
@@ -169,16 +169,14 @@ class _MachineDetailPopover extends StatelessWidget {
     );
   }
 
-  String _hardwareSummary() {
-    if (bindings.isEmpty) return 'No wired hardware.';
+  String _hardwareSummary(BuildContext context) {
+    if (bindings.isEmpty) return context.tr('No wired hardware.');
     return bindings
         .map((binding) {
           final parts = <String>[hwControllerLabel(binding.controllerType)];
           if (binding.peripherals.isNotEmpty) {
             parts.add(binding.peripherals.join(', '));
           }
-          final circuitName = circuitNameFor(binding.circuitId);
-          if (circuitName.isNotEmpty) parts.add(circuitName);
           return parts.join(' + ');
         })
         .join(' / ');

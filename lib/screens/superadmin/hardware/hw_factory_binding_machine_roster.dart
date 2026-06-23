@@ -27,12 +27,12 @@ class _MachineRoster extends StatelessWidget {
               Icon(Icons.view_in_ar, size: 16, color: Sa.violet),
               const SizedBox(width: 8),
               Text(
-                'PLANT MACHINES',
+                context.tr('PLANT MACHINES'),
                 style: Sa.mono(size: 10, color: Sa.violet),
               ),
               const Spacer(),
               Text(
-                'MACH-XXX · read from /assets + lab',
+                context.tr('MACH-XXX · read from /assets + lab'),
                 style: Sa.mono(size: 8, color: Sa.muted),
               ),
             ],
@@ -56,8 +56,9 @@ class _MachineRoster extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
               child: Text(
-                'No machines found yet. Add one, or create stations in the '
-                'factory hierarchy — their MACH-XXX assets appear here.',
+                context.tr(
+                  'No machines found yet. Add one, or create stations in the factory hierarchy — their MACH-XXX assets appear here.',
+                ),
                 style: Sa.body(size: 11.5, color: Sa.muted),
               ),
             )
@@ -181,7 +182,7 @@ class _MachineStatusPill extends StatelessWidget {
           Icon(status.icon, size: 9, color: status.color),
           const SizedBox(width: 4),
           Text(
-            status.label,
+            context.tr(status.label),
             style: Sa.mono(
               size: 7.5,
               color: status.color,

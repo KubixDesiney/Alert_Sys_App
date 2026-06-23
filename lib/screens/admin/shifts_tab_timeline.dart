@@ -11,11 +11,11 @@ class _TimelineView extends StatelessWidget {
     final nowMinutes = now.hour * 60 + now.minute + now.second / 60;
 
     if (shifts.isEmpty) {
-      return const _EmptyState(
+      return _EmptyState(
         icon: Icons.timeline,
-        title: 'No timeline yet',
-        message:
-            'Once you create shifts, they\'ll appear here as colored blocks across a 24-hour timeline. The pulsing line shows the current time.',
+        title: context.tr('No timeline yet'),
+        message: context.tr(
+            'Once you create shifts, they\'ll appear here as colored blocks across a 24-hour timeline. The pulsing line shows the current time.'),
       );
     }
 
@@ -34,7 +34,7 @@ class _TimelineView extends StatelessWidget {
               Icon(Icons.access_time, color: t.navy, size: 18),
               const SizedBox(width: 6),
               Text(
-                '24-hour timeline',
+                context.tr('24-hour timeline'),
                 style: TextStyle(
                   color: t.text,
                   fontSize: 13,
@@ -63,10 +63,10 @@ class _TimelineView extends StatelessWidget {
             spacing: 12,
             runSpacing: 8,
             children: [
-              _legendDot(const Color(0xFFFCD34D), 'Morning'),
-              _legendDot(const Color(0xFFFB923C), 'Evening'),
-              _legendDot(const Color(0xFF6366F1), 'Night'),
-              _legendDot(t.green, 'Now'),
+              _legendDot(const Color(0xFFFCD34D), context.tr('Morning')),
+              _legendDot(const Color(0xFFFB923C), context.tr('Evening')),
+              _legendDot(const Color(0xFF6366F1), context.tr('Night')),
+              _legendDot(t.green, context.tr('Now')),
             ],
           ),
         ],
@@ -522,7 +522,7 @@ class _ViewLogsButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onTap,
       icon: const Icon(Icons.history, size: 14),
-      label: const Text('AI logs'),
+      label: Text(context.tr('AI logs')),
       style: OutlinedButton.styleFrom(
         foregroundColor: t.navy,
         side: BorderSide(color: t.navy.withValues(alpha: 0.3)),

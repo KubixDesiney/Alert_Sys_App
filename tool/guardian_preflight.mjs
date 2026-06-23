@@ -47,7 +47,7 @@ export function checkSecrets(env = {}) {
       name: 'Console → workflow trigger',
       present: has('WORKER_SHARED_SECRET'),
       requires: 'WORKER_SHARED_SECRET (shared with the GitHub proxy worker)',
-      unlocks: 'the Simulate button in the SuperAdmin console dispatching this drill',
+      unlocks: 'Guardian dispatch flows in the SuperAdmin console',
     },
   ];
 

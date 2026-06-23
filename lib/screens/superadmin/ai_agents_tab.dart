@@ -18,6 +18,7 @@ import '../../services/ai_model_config_service.dart';
 import '../../services/predictive_scope.dart';
 import 'guardian_github_view.dart';
 import 'guardian_pipeline_view.dart';
+import '../../l10n/app_strings.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin tab: the AI AGENT FLEET.
@@ -99,15 +100,19 @@ class _AgentSpec {
   /// Rebuilds a custom agent spec from its registry record. [apiToken] is
   /// supplied separately from `ai_agent_secrets/{id}` — the registry record
   /// itself never holds the credential.
-  factory _AgentSpec.fromRegistry(String id, Map<String, dynamic> m,
-      {String? apiToken}) {
+  factory _AgentSpec.fromRegistry(
+    String id,
+    Map<String, dynamic> m, {
+    String? apiToken,
+  }) {
     return _AgentSpec(
       id: id,
       name: (m['name'] ?? 'AGENT').toString(),
       codename: (m['codename'] ?? 'CUSTOM UNIT').toString(),
       role: (m['role'] ?? m['description'] ?? 'Operator-deployed agent')
           .toString(),
-      icon: _kAgentIcons[(m['iconKey'] ?? '').toString()] ??
+      icon:
+          _kAgentIcons[(m['iconKey'] ?? '').toString()] ??
           Icons.smart_toy_outlined,
       custom: true,
       logoData: (m['logoData'] ?? '').toString().isEmpty
@@ -231,15 +236,18 @@ class _AgentAvatar extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [
-          accent.withValues(alpha: 0.30),
-          accent.withValues(alpha: 0.08),
-        ]),
+        gradient: LinearGradient(
+          colors: [
+            accent.withValues(alpha: 0.30),
+            accent.withValues(alpha: 0.08),
+          ],
+        ),
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: accent.withValues(alpha: 0.55)),
       ),
       child: Center(
-          child: _AgentGlyph(spec: spec, size: size, radius: radius)),
+        child: _AgentGlyph(spec: spec, size: size, radius: radius),
+      ),
     );
   }
 }
@@ -260,11 +268,13 @@ class _AgentGlyph extends StatelessWidget {
     if (spec.logoAsset != null) {
       return Padding(
         padding: EdgeInsets.all(size * 0.12),
-        child: Image.asset(spec.logoAsset!,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, __, ___) =>
-                Icon(spec.icon, size: size * 0.52, color: accent)),
+        child: Image.asset(
+          spec.logoAsset!,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (_, __, ___) =>
+              Icon(spec.icon, size: size * 0.52, color: accent),
+        ),
       );
     }
     if (bytes != null) {
@@ -272,11 +282,13 @@ class _AgentGlyph extends StatelessWidget {
         padding: EdgeInsets.all(size * 0.1),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(radius * 0.6),
-          child: Image.memory(bytes,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (_, __, ___) =>
-                  Icon(spec.icon, size: size * 0.52, color: accent)),
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) =>
+                Icon(spec.icon, size: size * 0.52, color: accent),
+          ),
         ),
       );
     }
@@ -438,8 +450,10 @@ class _Providers {
   ];
 
   static _Provider of(String? id) {
-    return list.firstWhere((p) => p.id == id,
-        orElse: () => list.last); // 'other'
+    return list.firstWhere(
+      (p) => p.id == id,
+      orElse: () => list.last,
+    ); // 'other'
   }
 }
 
@@ -459,7 +473,9 @@ class _ProviderMark extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: _ProviderMarkPainter(id: id, color: c)),
+      child: CustomPaint(
+        painter: _ProviderMarkPainter(id: id, color: c),
+      ),
     );
   }
 }
@@ -469,15 +485,12 @@ class _ProviderLogo extends StatelessWidget {
   final double size;
   final Color? color;
 
-  const _ProviderLogo({
-    required this.provider,
-    this.size = 18,
-    this.color,
-  });
+  const _ProviderLogo({required this.provider, this.size = 18, this.color});
 
   @override
   Widget build(BuildContext context) {
-    final c = color ??
+    final c =
+        color ??
         (provider.color == const Color(0xFF111827) && !Sa.isDark
             ? const Color(0xFF334155)
             : provider.color);
@@ -512,7 +525,9 @@ class _ProviderMarkPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
     final r = size.shortestSide / 2;
-    final fill = Paint()..color = color..isAntiAlias = true;
+    final fill = Paint()
+      ..color = color
+      ..isAntiAlias = true;
     final stroke = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
@@ -526,10 +541,19 @@ class _ProviderMarkPainter extends CustomPainter {
         for (var i = 0; i < 6; i++) {
           final a = i * math.pi / 3;
           final p = c + Offset(math.cos(a), math.sin(a)) * r * 0.46;
-          canvas.drawCircle(p, r * 0.42, fill..color = color.withValues(alpha: 0.85));
+          canvas.drawCircle(
+            p,
+            r * 0.42,
+            fill..color = color.withValues(alpha: 0.85),
+          );
         }
-        canvas.drawCircle(c, r * 0.30,
-            Paint()..color = color.withValues(alpha: 0.0001)..blendMode = BlendMode.clear);
+        canvas.drawCircle(
+          c,
+          r * 0.30,
+          Paint()
+            ..color = color.withValues(alpha: 0.0001)
+            ..blendMode = BlendMode.clear,
+        );
         break;
       case 'gemini':
         // Four-point spark (Google Gemini star).
@@ -537,7 +561,11 @@ class _ProviderMarkPainter extends CustomPainter {
         for (var i = 0; i < 4; i++) {
           final a = i * math.pi / 2;
           final tip = c + Offset(math.cos(a), math.sin(a)) * r;
-          final l = c + Offset(math.cos(a + math.pi / 4), math.sin(a + math.pi / 4)) * r * 0.30;
+          final l =
+              c +
+              Offset(math.cos(a + math.pi / 4), math.sin(a + math.pi / 4)) *
+                  r *
+                  0.30;
           if (i == 0) {
             path.moveTo(tip.dx, tip.dy);
           } else {
@@ -558,8 +586,12 @@ class _ProviderMarkPainter extends CustomPainter {
         final h = size.height / 3;
         for (var i = 0; i < 3; i++) {
           canvas.drawRect(
-            Rect.fromLTWH(size.width * 0.12, i * h + h * 0.12,
-                size.width * 0.76, h * 0.76),
+            Rect.fromLTWH(
+              size.width * 0.12,
+              i * h + h * 0.12,
+              size.width * 0.76,
+              h * 0.76,
+            ),
             Paint()..color = bands[i],
           );
         }
@@ -569,7 +601,10 @@ class _ProviderMarkPainter extends CustomPainter {
         for (var i = 0; i < 10; i++) {
           final a = i * math.pi / 5;
           canvas.drawLine(
-              c, c + Offset(math.cos(a), math.sin(a)) * r * 0.92, stroke);
+            c,
+            c + Offset(math.cos(a), math.sin(a)) * r * 0.92,
+            stroke,
+          );
         }
         canvas.drawCircle(c, r * 0.20, fill);
         break;
@@ -581,10 +616,16 @@ class _ProviderMarkPainter extends CustomPainter {
         break;
       case 'xai':
         // Sharp X.
-        canvas.drawLine(c + Offset(-r * 0.6, -r * 0.6),
-            c + Offset(r * 0.6, r * 0.6), stroke);
-        canvas.drawLine(c + Offset(r * 0.6, -r * 0.6),
-            c + Offset(-r * 0.6, r * 0.6), stroke);
+        canvas.drawLine(
+          c + Offset(-r * 0.6, -r * 0.6),
+          c + Offset(r * 0.6, r * 0.6),
+          stroke,
+        );
+        canvas.drawLine(
+          c + Offset(r * 0.6, -r * 0.6),
+          c + Offset(-r * 0.6, r * 0.6),
+          stroke,
+        );
         break;
       case 'cloudflare':
         // Cloud arc.
@@ -592,8 +633,12 @@ class _ProviderMarkPainter extends CustomPainter {
         canvas.drawCircle(c + Offset(r * 0.3, r * 0.15), r * 0.5, fill);
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.18, size.height * 0.5,
-                size.width * 0.7, size.height * 0.28),
+            Rect.fromLTWH(
+              size.width * 0.18,
+              size.height * 0.5,
+              size.width * 0.7,
+              size.height * 0.28,
+            ),
             Radius.circular(r * 0.3),
           ),
           fill,
@@ -601,11 +646,16 @@ class _ProviderMarkPainter extends CustomPainter {
         break;
       default:
         // Monogram fallback (Meta, Cohere, Perplexity, Azure, Other).
-        final letter = (_Providers.of(id).name.isNotEmpty
-                ? _Providers.of(id).name[0]
-                : '?')
-            .toUpperCase();
-        canvas.drawCircle(c, r * 0.92, stroke..strokeWidth = math.max(1.2, r * 0.12));
+        final letter =
+            (_Providers.of(id).name.isNotEmpty
+                    ? _Providers.of(id).name[0]
+                    : '?')
+                .toUpperCase();
+        canvas.drawCircle(
+          c,
+          r * 0.92,
+          stroke..strokeWidth = math.max(1.2, r * 0.12),
+        );
         final tp = TextPainter(
           text: TextSpan(
             text: letter,
@@ -659,7 +709,8 @@ class _ProviderTile extends StatelessWidget {
             width: selected ? 1.4 : 1,
           ),
           boxShadow: [
-            if (selected) BoxShadow(color: c.withValues(alpha: 0.3), blurRadius: 14),
+            if (selected)
+              BoxShadow(color: c.withValues(alpha: 0.3), blurRadius: 14),
           ],
         ),
         child: Column(
@@ -673,7 +724,9 @@ class _ProviderTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: c.withValues(alpha: 0.4)),
               ),
-              child: Center(child: _ProviderLogo(provider: provider, size: 22, color: c)),
+              child: Center(
+                child: _ProviderLogo(provider: provider, size: 22, color: c),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -699,11 +752,11 @@ class _ProviderTile extends StatelessWidget {
 class _DragScrollBehavior extends MaterialScrollBehavior {
   @override
   Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 }
 
 class _AiAgentsTabState extends State<AiAgentsTab> {
@@ -720,58 +773,63 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
   void initState() {
     super.initState();
     for (final agent in _kAgents) {
-      _subs.add(FirebaseDatabase.instance
-          .ref('ai_agents/${agent.id}/enabled')
-          .onValue
-          .listen((event) {
-        if (mounted) {
-          setState(() => _enabled[agent.id] = event.snapshot.value != false);
-        }
-      }, onError: (_) {}));
+      _subs.add(
+        FirebaseDatabase.instance
+            .ref('ai_agents/${agent.id}/enabled')
+            .onValue
+            .listen((event) {
+              if (mounted) {
+                setState(
+                  () => _enabled[agent.id] = event.snapshot.value != false,
+                );
+              }
+            }, onError: (_) {}),
+      );
     }
     // Operator-created agents live in a lightweight registry so discovery never
     // streams the heavy worker logs/stats under the built-in agent nodes. The
     // API token never lives in this record — it is stored separately under
     // `ai_agent_secrets/{id}`, which only superadmin can read.
-    _subs.add(FirebaseDatabase.instance
-        .ref('ai_agents/registry')
-        .onValue
-        .listen((event) {
-      final v = event.snapshot.value;
-      final raw = <String, Map<String, dynamic>>{};
-      if (v is Map) {
-        v.forEach((k, val) {
-          if (val is Map) raw[k.toString()] = Map<String, dynamic>.from(val);
-        });
-      }
-      _registryRaw = raw;
-      _rebuildCustom();
-    }, onError: (_) {}));
-    _subs.add(FirebaseDatabase.instance
-        .ref('ai_agent_secrets')
-        .onValue
-        .listen((event) {
-      final v = event.snapshot.value;
-      final secrets = <String, String>{};
-      if (v is Map) {
-        v.forEach((k, val) {
-          if (val is Map && val['apiToken'] != null) {
-            secrets[k.toString()] = val['apiToken'].toString();
-          }
-        });
-      }
-      _secrets = secrets;
-      _rebuildCustom();
-    }, onError: (_) {}));
-    _subs.add(FirebaseDatabase.instance
-        .ref('workers/health/lastRun')
-        .onValue
-        .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted && v is Map) {
-        setState(() => _health = Map<String, dynamic>.from(v));
-      }
-    }, onError: (_) {}));
+    _subs.add(
+      FirebaseDatabase.instance.ref('ai_agents/registry').onValue.listen((
+        event,
+      ) {
+        final v = event.snapshot.value;
+        final raw = <String, Map<String, dynamic>>{};
+        if (v is Map) {
+          v.forEach((k, val) {
+            if (val is Map) raw[k.toString()] = Map<String, dynamic>.from(val);
+          });
+        }
+        _registryRaw = raw;
+        _rebuildCustom();
+      }, onError: (_) {}),
+    );
+    _subs.add(
+      FirebaseDatabase.instance.ref('ai_agent_secrets').onValue.listen((event) {
+        final v = event.snapshot.value;
+        final secrets = <String, String>{};
+        if (v is Map) {
+          v.forEach((k, val) {
+            if (val is Map && val['apiToken'] != null) {
+              secrets[k.toString()] = val['apiToken'].toString();
+            }
+          });
+        }
+        _secrets = secrets;
+        _rebuildCustom();
+      }, onError: (_) {}),
+    );
+    _subs.add(
+      FirebaseDatabase.instance.ref('workers/health/lastRun').onValue.listen((
+        event,
+      ) {
+        final v = event.snapshot.value;
+        if (mounted && v is Map) {
+          setState(() => _health = Map<String, dynamic>.from(v));
+        }
+      }, onError: (_) {}),
+    );
   }
 
   /// Recomputes [_custom] from the latest registry + secrets snapshots.
@@ -810,24 +868,36 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
         'updatedAt': DateTime.now().toUtc().toIso8601String(),
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text(
-            value
-                ? '${agent.name} is back online.'
-                : '${agent.name} taken offline — the worker stands down within 60s.',
-            style: Sa.body(size: 12.5),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              value
+                  ? context.tr('{name} is back online.', {'name': agent.name})
+                  : context.tr(
+                      '{name} taken offline — the worker stands down within 60s.',
+                      {'name': agent.name},
+                    ),
+              style: Sa.body(size: 12.5),
+            ),
           ),
-        ));
+        );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _enabled[agent.id] = !value);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Could not update ${agent.name}: $e',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              context.tr('Could not update {name}: {error}', {
+                'name': agent.name,
+                'error': '$e',
+              }),
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     }
   }
@@ -839,7 +909,8 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
       builder: (_) => _AgentEditorDialog(editing: editing),
     );
     if (result == null) return;
-    final id = editing?.id ??
+    final id =
+        editing?.id ??
         'custom_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
     final apiToken = (result['apiToken'] ?? '').toString().trim();
     final record = <String, dynamic>{
@@ -867,23 +938,33 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
       ]);
       if (mounted) {
         setState(() => _selectedId = id);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text(
-            editing == null
-                ? '${record['name']} deployed to the fleet.'
-                : '${record['name']} updated.',
-            style: Sa.body(size: 12.5),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              editing == null
+                  ? context.tr('{name} deployed to the fleet.', {
+                      'name': '${record['name']}',
+                    })
+                  : context.tr('{name} updated.', {
+                      'name': '${record['name']}',
+                    }),
+              style: Sa.body(size: 12.5),
+            ),
           ),
-        ));
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Could not save agent: $e',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              context.tr('Could not save agent: {error}', {'error': '$e'}),
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     }
   }
@@ -900,27 +981,35 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
         FirebaseDatabase.instance
             .ref('ai_agents/registry/${agent.id}')
             .remove(),
-        FirebaseDatabase.instance
-            .ref('ai_agent_secrets/${agent.id}')
-            .remove(),
+        FirebaseDatabase.instance.ref('ai_agent_secrets/${agent.id}').remove(),
       ]);
       if (mounted) {
         setState(() {
           if (_selectedId == agent.id) _selectedId = 'shift';
         });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('${agent.name} decommissioned and wiped.',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              context.tr('{name} decommissioned and wiped.', {
+                'name': agent.name,
+              }),
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Delete failed: $e',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              context.tr('Delete failed: {error}', {'error': '$e'}),
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     }
   }
@@ -928,12 +1017,16 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
   @override
   Widget build(BuildContext context) {
     final agents = _agents;
-    final agent =
-        agents.firstWhere((a) => a.id == _selectedId, orElse: () => agents.first);
-    final online =
-        agents.where((a) => !a.maintenance && _isEnabled(a.id)).length;
+    final agent = agents.firstWhere(
+      (a) => a.id == _selectedId,
+      orElse: () => agents.first,
+    );
+    final online = agents
+        .where((a) => !a.maintenance && _isEnabled(a.id))
+        .length;
     final cronAt = DateTime.tryParse((_health?['timestamp'] ?? '').toString());
-    final cronFresh = cronAt != null &&
+    final cronFresh =
+        cronAt != null &&
         DateTime.now().toUtc().difference(cronAt.toUtc()).inMinutes <= 3;
 
     return Column(
@@ -974,8 +1067,7 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
                       enabled: _isEnabled(a.id),
                       onTap: () => setState(() => _selectedId = a.id),
                       onToggle: a.maintenance ? null : (v) => _setEnabled(a, v),
-                      onDelete:
-                          a.custom ? () => _deleteAgent(a) : null,
+                      onDelete: a.custom ? () => _deleteAgent(a) : null,
                     );
                   },
                 ),
@@ -991,22 +1083,34 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
               key: ValueKey(agent.id),
               child: switch (agent.id) {
                 'shift' => _ShiftAgentPanel(
-                    spec: agent, enabled: _isEnabled('shift'), health: _health),
+                  spec: agent,
+                  enabled: _isEnabled('shift'),
+                  health: _health,
+                ),
                 'briefing' => _BriefingAgentPanel(
-                    spec: agent, enabled: _isEnabled('briefing')),
-                'assist' =>
-                  _AssistAgentPanel(spec: agent, enabled: _isEnabled('assist')),
+                  spec: agent,
+                  enabled: _isEnabled('briefing'),
+                ),
+                'assist' => _AssistAgentPanel(
+                  spec: agent,
+                  enabled: _isEnabled('assist'),
+                ),
                 'security' => _SecurityAgentPanel(
-                    spec: agent, enabled: _isEnabled('security'), health: _health),
+                  spec: agent,
+                  enabled: _isEnabled('security'),
+                  health: _health,
+                ),
                 'predictive' => _PredictiveAgentPanel(
-                    spec: agent, enabled: _isEnabled('predictive')),
+                  spec: agent,
+                  enabled: _isEnabled('predictive'),
+                ),
                 'guardian' => _GuardianAgentPanel(spec: agent),
                 _ => _CustomAgentPanel(
-                    spec: agent,
-                    enabled: _isEnabled(agent.id),
-                    onEdit: () => _openEditor(editing: agent),
-                    onDelete: () => _deleteAgent(agent),
-                  ),
+                  spec: agent,
+                  enabled: _isEnabled(agent.id),
+                  onEdit: () => _openEditor(editing: agent),
+                  onDelete: () => _deleteAgent(agent),
+                ),
               },
             ),
           ),
@@ -1053,9 +1157,11 @@ class _FleetStrip extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('AI AGENT FLEET', style: Sa.display(size: 15)),
+                Text(context.tr('AI AGENT FLEET'), style: Sa.display(size: 15)),
                 Text(
-                  'Six autonomous units · toggles propagate to the edge worker within 60 seconds',
+                  context.tr(
+                    'Six autonomous units · toggles propagate to the edge worker within 60 seconds',
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Sa.mono(size: 9, color: Sa.muted),
@@ -1068,23 +1174,32 @@ class _FleetStrip extends StatelessWidget {
             runSpacing: 6,
             children: [
               GlowChip(
-                label: '$online/$total UNITS ONLINE',
+                label: context.tr('{online}/{total} UNITS ONLINE', {
+                  'online': '$online',
+                  'total': '$total',
+                }),
                 color: online == total ? Sa.green : Sa.amber,
                 pulse: true,
               ),
               GlowChip(
-                label: cronFresh ? 'EDGE LINK LIVE' : 'EDGE LINK STALE',
+                label: cronFresh
+                    ? context.tr('EDGE LINK LIVE')
+                    : context.tr('EDGE LINK STALE'),
                 color: cronFresh ? Sa.cyan : Sa.red,
                 icon: Icons.cell_tower,
               ),
               GlowChip(
-                label: '$assignments ASSIGNED · LAST CRON',
+                label: context.tr('{count} ASSIGNED · LAST CRON', {
+                  'count': '$assignments',
+                }),
                 color: Sa.violet,
                 icon: Icons.auto_awesome,
               ),
               if (secActions > 0)
                 GlowChip(
-                  label: '$secActions THREATS BLOCKED',
+                  label: context.tr('{count} THREATS BLOCKED', {
+                    'count': '$secActions',
+                  }),
                   color: Sa.red,
                   icon: Icons.gpp_maybe_outlined,
                 ),
@@ -1136,7 +1251,7 @@ class _CorePainter extends CustomPainter {
   final Color color;
   final Animation<double> tick;
   _CorePainter({required this.color, required this.tick})
-      : super(repaint: tick);
+    : super(repaint: tick);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1161,7 +1276,10 @@ class _CorePainter extends CustomPainter {
     }
     final glow = 0.5 + 0.5 * math.sin(t * math.pi * 4);
     canvas.drawCircle(
-        c, r * 0.42, Paint()..color = color.withValues(alpha: 0.12 + 0.1 * glow));
+      c,
+      r * 0.42,
+      Paint()..color = color.withValues(alpha: 0.12 + 0.1 * glow),
+    );
     canvas.drawCircle(c, r * 0.22, Paint()..color = color);
   }
 
@@ -1201,8 +1319,8 @@ class _AgentCardState extends State<_AgentCard> {
     final borderColor = widget.selected
         ? accent
         : _hover
-            ? accent.withValues(alpha: 0.55)
-            : Sa.border;
+        ? accent.withValues(alpha: 0.55)
+        : Sa.border;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1223,7 +1341,9 @@ class _AgentCardState extends State<_AgentCard> {
             boxShadow: [
               if (widget.selected)
                 BoxShadow(
-                    color: accent.withValues(alpha: 0.22), blurRadius: 18),
+                  color: accent.withValues(alpha: 0.22),
+                  blurRadius: 18,
+                ),
             ],
           ),
           child: Column(
@@ -1237,14 +1357,18 @@ class _AgentCardState extends State<_AgentCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(spec.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Sa.heading(size: 11.5)),
-                        Text(spec.codename,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Sa.mono(size: 7.5, color: Sa.muted)),
+                        Text(
+                          context.tr(spec.name),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Sa.heading(size: 11.5),
+                        ),
+                        Text(
+                          spec.codename,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Sa.mono(size: 7.5, color: Sa.muted),
+                        ),
                       ],
                     ),
                   ),
@@ -1253,8 +1377,11 @@ class _AgentCardState extends State<_AgentCard> {
                       onTap: widget.onDelete,
                       child: Padding(
                         padding: const EdgeInsets.only(left: 4),
-                        child: Icon(Icons.delete_outline,
-                            size: 15, color: Sa.red.withValues(alpha: 0.85)),
+                        child: Icon(
+                          Icons.delete_outline,
+                          size: 15,
+                          color: Sa.red.withValues(alpha: 0.85),
+                        ),
                       ),
                     ),
                 ],
@@ -1262,7 +1389,7 @@ class _AgentCardState extends State<_AgentCard> {
               const SizedBox(height: 8),
               Expanded(
                 child: Text(
-                  spec.role,
+                  context.tr(spec.role),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Sa.body(size: 10.5, color: Sa.textDim),
@@ -1271,16 +1398,20 @@ class _AgentCardState extends State<_AgentCard> {
               Row(
                 children: [
                   if (spec.maintenance)
-                    GlowChip(label: 'MAINTENANCE', color: Sa.amber)
+                    GlowChip(label: context.tr('MAINTENANCE'), color: Sa.amber)
                   else if (spec.custom)
                     GlowChip(
-                      label: live ? 'ONLINE' : 'OFFLINE',
+                      label: live
+                          ? context.tr('ONLINE')
+                          : context.tr('OFFLINE'),
                       color: live ? accent : Sa.muted,
                       pulse: live,
                     )
                   else
                     GlowChip(
-                      label: live ? 'ONLINE' : 'OFFLINE',
+                      label: live
+                          ? context.tr('ONLINE')
+                          : context.tr('OFFLINE'),
                       color: live ? Sa.green : Sa.muted,
                       pulse: live,
                     ),
@@ -1351,20 +1482,24 @@ class _AddAgentCardState extends State<_AddAgentCard> {
                 height: 42,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: [
-                    accent.withValues(alpha: 0.22),
-                    accent.withValues(alpha: 0.02),
-                  ]),
+                  gradient: RadialGradient(
+                    colors: [
+                      accent.withValues(alpha: 0.22),
+                      accent.withValues(alpha: 0.02),
+                    ],
+                  ),
                   border: Border.all(color: accent.withValues(alpha: 0.5)),
                 ),
                 child: Icon(Icons.add, color: accent, size: 22),
               ),
               const SizedBox(height: 10),
-              Text('DEPLOY AGENT', style: Sa.heading(size: 11.5)),
+              Text(context.tr('DEPLOY AGENT'), style: Sa.heading(size: 11.5)),
               const SizedBox(height: 2),
-              Text('Add a unit to the fleet',
-                  textAlign: TextAlign.center,
-                  style: Sa.mono(size: 7.5, color: Sa.muted)),
+              Text(
+                context.tr('Add a unit to the fleet'),
+                textAlign: TextAlign.center,
+                style: Sa.mono(size: 7.5, color: Sa.muted),
+              ),
             ],
           ),
         ),
@@ -1400,7 +1535,8 @@ class _NeonToggle extends StatelessWidget {
               ? accent.withValues(alpha: 0.30)
               : Sa.muted.withValues(alpha: 0.18),
           border: Border.all(
-              color: value ? accent : Sa.muted.withValues(alpha: 0.6)),
+            color: value ? accent : Sa.muted.withValues(alpha: 0.6),
+          ),
           boxShadow: [
             if (value)
               BoxShadow(color: accent.withValues(alpha: 0.4), blurRadius: 9),
@@ -1473,8 +1609,9 @@ class _OfflineBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '${spec.name} is OFFLINE. The edge worker skips its duties until you re-enable it; '
-              'history below stays readable.',
+              context.tr(
+                  '{name} is OFFLINE. The edge worker skips its duties until you re-enable it; history below stays readable.',
+                  {'name': context.tr(spec.name)}),
               style: Sa.body(size: 12, color: Sa.red),
             ),
           ),
@@ -1484,14 +1621,20 @@ class _OfflineBanner extends StatelessWidget {
   }
 }
 
-String _agoIso(Object? iso) {
+String _agoIso(BuildContext context, Object? iso) {
   final t = DateTime.tryParse((iso ?? '').toString());
   if (t == null) return '—';
   final d = DateTime.now().toUtc().difference(t.toUtc());
-  if (d.inSeconds < 60) return '${d.inSeconds}s ago';
-  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-  if (d.inHours < 24) return '${d.inHours}h ago';
-  return '${d.inDays}d ago';
+  if (d.inSeconds < 60) {
+    return context.tr('{n}s ago', {'n': '${d.inSeconds}'});
+  }
+  if (d.inMinutes < 60) {
+    return context.tr('{n}m ago', {'n': '${d.inMinutes}'});
+  }
+  if (d.inHours < 24) {
+    return context.tr('{n}h ago', {'n': '${d.inHours}'});
+  }
+  return context.tr('{n}d ago', {'n': '${d.inDays}'});
 }
 
 List<Map<String, dynamic>> _mapToSortedList(Object? value, String sortKey) {
@@ -1504,8 +1647,11 @@ List<Map<String, dynamic>> _mapToSortedList(Object? value, String sortKey) {
         list.add(m);
       }
     });
-    list.sort((a, b) =>
-        (b[sortKey] ?? '').toString().compareTo((a[sortKey] ?? '').toString()));
+    list.sort(
+      (a, b) => (b[sortKey] ?? '').toString().compareTo(
+        (a[sortKey] ?? '').toString(),
+      ),
+    );
   }
   return list;
 }
@@ -1547,7 +1693,10 @@ class _LogTile extends StatelessWidget {
                   children: [
                     GlowChip(label: kind.toUpperCase(), color: color),
                     const Spacer(),
-                    Text(_agoIso(at), style: Sa.mono(size: 10, color: Sa.muted)),
+                    Text(
+                      _agoIso(ctx, at),
+                      style: Sa.mono(size: 10, color: Sa.muted),
+                    ),
                     const SizedBox(width: 6),
                     IconButton(
                       onPressed: () => Navigator.pop(ctx),
@@ -1570,9 +1719,11 @@ class _LogTile extends StatelessWidget {
                       ),
                       child: SelectableText(
                         details.entries
-                            .where((e) =>
-                                e.key != 'id' &&
-                                (e.value ?? '').toString().isNotEmpty)
+                            .where(
+                              (e) =>
+                                  e.key != 'id' &&
+                                  (e.value ?? '').toString().isNotEmpty,
+                            )
                             .map((e) => '${e.key.padRight(16)} ${e.value}')
                             .join('\n'),
                         style: Sa.mono(size: 10.5, color: Sa.termDim),
@@ -1616,8 +1767,11 @@ class _LogTile extends StatelessWidget {
                   kind.toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      Sa.mono(size: 9, color: color, weight: FontWeight.w700),
+                  style: Sa.mono(
+                    size: 9,
+                    color: color,
+                    weight: FontWeight.w700,
+                  ),
                 ),
               ),
               Expanded(
@@ -1629,7 +1783,10 @@ class _LogTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(_agoIso(at), style: Sa.mono(size: 9.5, color: Sa.muted)),
+              Text(
+                _agoIso(context, at),
+                style: Sa.mono(size: 9.5, color: Sa.muted),
+              ),
               const SizedBox(width: 6),
               Icon(Icons.open_in_full, size: 11, color: Sa.muted),
             ],
@@ -1667,7 +1824,8 @@ class _SettingTile extends StatelessWidget {
         color: Sa.bgRaised.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-            color: value ? accent.withValues(alpha: 0.35) : Sa.border),
+          color: value ? accent.withValues(alpha: 0.35) : Sa.border,
+        ),
       ),
       child: Row(
         children: [
@@ -1678,8 +1836,10 @@ class _SettingTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: Sa.heading(size: 12.5)),
-                Text(description,
-                    style: Sa.body(size: 10.5, color: Sa.textDim)),
+                Text(
+                  description,
+                  style: Sa.body(size: 10.5, color: Sa.textDim),
+                ),
               ],
             ),
           ),
@@ -1714,10 +1874,12 @@ class _KindBar extends StatelessWidget {
         children: [
           SizedBox(
             width: 130,
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Sa.mono(size: 9.5, color: Sa.textDim)),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Sa.mono(size: 9.5, color: Sa.textDim),
+            ),
           ),
           Expanded(
             child: ClipRRect(
@@ -1736,10 +1898,9 @@ class _KindBar extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [
-                              color,
-                              color.withValues(alpha: 0.55),
-                            ]),
+                            gradient: LinearGradient(
+                              colors: [color, color.withValues(alpha: 0.55)],
+                            ),
                           ),
                         ),
                       ),
@@ -1752,9 +1913,11 @@ class _KindBar extends StatelessWidget {
           const SizedBox(width: 10),
           SizedBox(
             width: 36,
-            child: Text('$count',
-                textAlign: TextAlign.right,
-                style: Sa.mono(size: 10.5, weight: FontWeight.w700)),
+            child: Text(
+              '$count',
+              textAlign: TextAlign.right,
+              style: Sa.mono(size: 10.5, weight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -1770,8 +1933,11 @@ class _ShiftAgentPanel extends StatefulWidget {
   final _AgentSpec spec;
   final bool enabled;
   final Map<String, dynamic>? health;
-  const _ShiftAgentPanel(
-      {required this.spec, required this.enabled, required this.health});
+  const _ShiftAgentPanel({
+    required this.spec,
+    required this.enabled,
+    required this.health,
+  });
 
   @override
   State<_ShiftAgentPanel> createState() => _ShiftAgentPanelState();
@@ -1793,43 +1959,49 @@ class _ShiftAgentPanelState extends State<_ShiftAgentPanel> {
         .ref('ai_feedback/summary')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      final mem = <_BrainMemory>[];
-      if (v is Map) {
-        v.forEach((id, row) {
-          if (row is Map) mem.add(_BrainMemory.fromMap(id.toString(), row));
-        });
-        mem.sort((a, b) => b.weight.compareTo(a.weight));
-      }
-      if (mounted) setState(() => _memory = mem);
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          final mem = <_BrainMemory>[];
+          if (v is Map) {
+            v.forEach((id, row) {
+              if (row is Map) mem.add(_BrainMemory.fromMap(id.toString(), row));
+            });
+            mem.sort((a, b) => b.weight.compareTo(a.weight));
+          }
+          if (mounted) setState(() => _memory = mem);
+        }, onError: (_) {});
     _sub = FirebaseDatabase.instance
         .ref('shift_ai_logs')
         .limitToLast(25)
         .onValue
-        .listen((event) {
-      final v = event.snapshot.value;
-      final flat = <Map<String, dynamic>>[];
-      if (v is Map) {
-        v.forEach((shiftId, logs) {
-          if (logs is Map) {
-            logs.forEach((logId, entry) {
-              if (entry is Map) {
-                final m = Map<String, dynamic>.from(entry);
-                m['id'] = logId.toString();
-                m['shiftId'] = (m['shiftId'] ?? shiftId).toString();
-                flat.add(m);
-              }
-            });
-          }
-        });
-        flat.sort((a, b) =>
-            (b['at'] ?? '').toString().compareTo((a['at'] ?? '').toString()));
-      }
-      if (mounted) setState(() => _logs = flat.take(120).toList());
-    }, onError: (e) {
-      if (mounted) setState(() => _error = '$e');
-    });
+        .listen(
+          (event) {
+            final v = event.snapshot.value;
+            final flat = <Map<String, dynamic>>[];
+            if (v is Map) {
+              v.forEach((shiftId, logs) {
+                if (logs is Map) {
+                  logs.forEach((logId, entry) {
+                    if (entry is Map) {
+                      final m = Map<String, dynamic>.from(entry);
+                      m['id'] = logId.toString();
+                      m['shiftId'] = (m['shiftId'] ?? shiftId).toString();
+                      flat.add(m);
+                    }
+                  });
+                }
+              });
+              flat.sort(
+                (a, b) => (b['at'] ?? '').toString().compareTo(
+                  (a['at'] ?? '').toString(),
+                ),
+              );
+            }
+            if (mounted) setState(() => _logs = flat.take(120).toList());
+          },
+          onError: (e) {
+            if (mounted) setState(() => _error = '$e');
+          },
+        );
   }
 
   @override
@@ -1841,12 +2013,16 @@ class _ShiftAgentPanelState extends State<_ShiftAgentPanel> {
 
   String _bucket(String kind) {
     final k = kind.toLowerCase();
-    if (k.contains('assign') || k.contains('transfer')) return 'Assignments';
-    if (k.contains('collab')) return 'Collaborations';
-    if (k.contains('handover')) return 'Handovers';
-    if (k.contains('presence')) return 'Presence checks';
-    if (k.contains('block') || k.contains('skip')) return 'Blocked / skipped';
-    return 'Other';
+    if (k.contains('assign') || k.contains('transfer')) {
+      return context.tr('Assignments');
+    }
+    if (k.contains('collab')) return context.tr('Collaborations');
+    if (k.contains('handover')) return context.tr('Handovers');
+    if (k.contains('presence')) return context.tr('Presence checks');
+    if (k.contains('block') || k.contains('skip')) {
+      return context.tr('Blocked / skipped');
+    }
+    return context.tr('Other');
   }
 
   Color _kindColor(String kind) {
@@ -1871,167 +2047,183 @@ class _ShiftAgentPanelState extends State<_ShiftAgentPanel> {
       final b = _bucket((l['kind'] ?? '').toString());
       buckets[b] = (buckets[b] ?? 0) + 1;
     }
-    final maxBucket =
-        buckets.values.isEmpty ? 0 : buckets.values.reduce(math.max);
+    final maxBucket = buckets.values.isEmpty
+        ? 0
+        : buckets.values.reduce(math.max);
     final health = widget.health;
 
-    return _AgentScroll(children: [
-      if (!widget.enabled) _OfflineBanner(spec: spec),
-      _SegTabs(
-        tabs: const ['COMMAND DECK', 'BRAIN'],
-        icons: const [Icons.dashboard_customize_outlined, Icons.psychology],
-        index: _view,
-        accent: spec.accent,
-        onChanged: (i) => setState(() => _view = i),
-      ),
-      if (_view == 1)
-        _ShiftBrainView(
-          logs: _logs,
-          memory: _memory,
+    return _AgentScroll(
+      children: [
+        if (!widget.enabled) _OfflineBanner(spec: spec),
+        _SegTabs(
+          tabs: [context.tr('COMMAND DECK'), context.tr('BRAIN')],
+          icons: const [Icons.dashboard_customize_outlined, Icons.psychology],
+          index: _view,
           accent: spec.accent,
-          enabled: widget.enabled,
+          onChanged: (i) => setState(() => _view = i),
         ),
-      if (_view == 0)
-        GlassPanel(
-        accent: spec.accent,
-        glow: widget.enabled,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: spec.icon,
-              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
-              title: 'COMMAND DECK',
-              subtitle:
-                  'Every decision the AI commander takes across active shifts — assignments, collaborations, handovers, presence.',
-              accent: spec.accent,
-              trailing: GlowChip(
-                label: 'MODEL ENGINE',
-                color: spec.accent,
-                icon: Icons.hub_outlined,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
+        if (_view == 1)
+          _ShiftBrainView(
+            logs: _logs,
+            memory: _memory,
+            accent: spec.accent,
+            enabled: widget.enabled,
+          ),
+        if (_view == 0)
+          GlassPanel(
+            accent: spec.accent,
+            glow: widget.enabled,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SaStatTile(
-                  label: 'Actions · 24h',
-                  value: '${last24.length}',
-                  icon: Icons.bolt_outlined,
-                  color: spec.accent,
+                SaSectionHeader(
+                  icon: spec.icon,
+                  leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
+                  title: context.tr('COMMAND DECK'),
+                  subtitle: context.tr(
+                    'Every decision the AI commander takes across active shifts — assignments, collaborations, handovers, presence.',
+                  ),
+                  accent: spec.accent,
+                  trailing: GlowChip(
+                    label: context.tr('MODEL ENGINE'),
+                    color: spec.accent,
+                    icon: Icons.hub_outlined,
+                  ),
                 ),
-                SaStatTile(
-                  label: 'Assignments · last cron',
-                  value: '${(health?['assignmentsMade'] as num?)?.toInt() ?? 0}',
-                  icon: Icons.assignment_turned_in_outlined,
-                  color: Sa.green,
-                ),
-                SaStatTile(
-                  label: 'Collabs · last cron',
-                  value:
-                      '${(health?['collaborationsApproved'] as num?)?.toInt() ?? 0}',
-                  icon: Icons.handshake_outlined,
-                  color: Sa.blue,
-                ),
-                SaStatTile(
-                  label: 'Handovers · last cron',
-                  value:
-                      '${(health?['handoversGenerated'] as num?)?.toInt() ?? 0}',
-                  icon: Icons.swap_horiz,
-                  color: Sa.violet,
-                ),
-                SaStatTile(
-                  label: 'Last pulse',
-                  value: _agoIso(health?['timestamp']),
-                  icon: Icons.monitor_heart_outlined,
-                  color: Sa.amber,
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    SaStatTile(
+                      label: context.tr('Actions · 24h'),
+                      value: '${last24.length}',
+                      icon: Icons.bolt_outlined,
+                      color: spec.accent,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Assignments · last cron'),
+                      value:
+                          '${(health?['assignmentsMade'] as num?)?.toInt() ?? 0}',
+                      icon: Icons.assignment_turned_in_outlined,
+                      color: Sa.green,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Collabs · last cron'),
+                      value:
+                          '${(health?['collaborationsApproved'] as num?)?.toInt() ?? 0}',
+                      icon: Icons.handshake_outlined,
+                      color: Sa.blue,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Handovers · last cron'),
+                      value:
+                          '${(health?['handoversGenerated'] as num?)?.toInt() ?? 0}',
+                      icon: Icons.swap_horiz,
+                      color: Sa.violet,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Last pulse'),
+                      value: _agoIso(context, health?['timestamp']),
+                      icon: Icons.monitor_heart_outlined,
+                      color: Sa.amber,
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-      if (_view == 0)
-        _ModelEnginePanel(
-            agent: 'shift', accent: spec.accent, enabled: widget.enabled),
-      if (_view == 0)
-        GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.stacked_bar_chart,
-              title: 'TASK BREAKDOWN',
-              subtitle: 'Distribution of the commander’s recent decisions.',
-              accent: spec.accent,
+          ),
+        if (_view == 0)
+          _ModelEnginePanel(
+            agent: 'shift',
+            accent: spec.accent,
+            enabled: widget.enabled,
+          ),
+        if (_view == 0)
+          GlassPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SaSectionHeader(
+                  icon: Icons.stacked_bar_chart,
+                  title: context.tr('TASK BREAKDOWN'),
+                  subtitle: context.tr(
+                    'Distribution of the commander’s recent decisions.',
+                  ),
+                  accent: spec.accent,
+                ),
+                const SizedBox(height: 14),
+                if (buckets.isEmpty)
+                  Text(
+                    context.tr('No shift AI activity recorded yet.'),
+                    style: Sa.body(size: 12, color: Sa.textDim),
+                  )
+                else
+                  ...buckets.entries.map(
+                    (e) => _KindBar(
+                      label: e.key,
+                      count: e.value,
+                      max: maxBucket,
+                      color: spec.accent,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 14),
-            if (buckets.isEmpty)
-              Text('No shift AI activity recorded yet.',
-                  style: Sa.body(size: 12, color: Sa.textDim))
-            else
-              ...buckets.entries.map((e) => _KindBar(
-                    label: e.key,
-                    count: e.value,
-                    max: maxBucket,
-                    color: spec.accent,
-                  )),
-          ],
-        ),
-      ),
-      if (_view == 0)
-        GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.receipt_long_outlined,
-              title: 'ACTION LOG',
-              subtitle:
-                  'Tap any entry for the full unredacted reasoning, confidence and gate diagnostics.',
-              accent: spec.accent,
+          ),
+        if (_view == 0)
+          GlassPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SaSectionHeader(
+                  icon: Icons.receipt_long_outlined,
+                  title: context.tr('ACTION LOG'),
+                  subtitle: context.tr(
+                    'Tap any entry for the full unredacted reasoning, confidence and gate diagnostics.',
+                  ),
+                  accent: spec.accent,
+                ),
+                const SizedBox(height: 12),
+                if (_error != null)
+                  SaEmptyState(
+                    icon: Icons.lock_outline,
+                    title: context.tr('Cannot read shift AI logs'),
+                    message: _error!,
+                    accent: Sa.red,
+                  )
+                else if (_logs.isEmpty)
+                  SaEmptyState(
+                    icon: Icons.nights_stay_outlined,
+                    title: context.tr('No actions yet'),
+                    message: context.tr(
+                      'The commander logs here the moment a shift with AI Commander enabled goes live.',
+                    ),
+                    accent: spec.accent,
+                  )
+                else
+                  ..._logs.take(40).map((l) {
+                    final kind = (l['kind'] ?? 'action').toString();
+                    final who = (l['supervisorName'] ?? '').toString();
+                    final alert = (l['alertLabel'] ?? '').toString();
+                    final reason = (l['reason'] ?? '').toString();
+                    final title = [
+                      if (alert.isNotEmpty) alert,
+                      if (who.isNotEmpty) '→ $who',
+                      if (alert.isEmpty && who.isEmpty) reason,
+                    ].join(' ');
+                    return _LogTile(
+                      kind: kind,
+                      color: _kindColor(kind),
+                      title: title.isEmpty ? '—' : title,
+                      at: (l['at'] ?? '').toString(),
+                      details: l,
+                    );
+                  }),
+              ],
             ),
-            const SizedBox(height: 12),
-            if (_error != null)
-              SaEmptyState(
-                icon: Icons.lock_outline,
-                title: 'Cannot read shift AI logs',
-                message: _error!,
-                accent: Sa.red,
-              )
-            else if (_logs.isEmpty)
-              SaEmptyState(
-                icon: Icons.nights_stay_outlined,
-                title: 'No actions yet',
-                message:
-                    'The commander logs here the moment a shift with AI Commander enabled goes live.',
-                accent: spec.accent,
-              )
-            else
-              ..._logs.take(40).map((l) {
-                final kind = (l['kind'] ?? 'action').toString();
-                final who = (l['supervisorName'] ?? '').toString();
-                final alert = (l['alertLabel'] ?? '').toString();
-                final reason = (l['reason'] ?? '').toString();
-                final title = [
-                  if (alert.isNotEmpty) alert,
-                  if (who.isNotEmpty) '→ $who',
-                  if (alert.isEmpty && who.isEmpty) reason,
-                ].join(' ');
-                return _LogTile(
-                  kind: kind,
-                  color: _kindColor(kind),
-                  title: title.isEmpty ? '—' : title,
-                  at: (l['at'] ?? '').toString(),
-                  details: l,
-                );
-              }),
-          ],
-        ),
-      ),
-    ]);
+          ),
+      ],
+    );
   }
 }
 
@@ -2092,13 +2284,18 @@ class _SegTabs extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(icons[i],
-                          size: 16, color: i == index ? accent : Sa.muted),
+                      Icon(
+                        icons[i],
+                        size: 16,
+                        color: i == index ? accent : Sa.muted,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         tabs[i],
                         style: Sa.body(
-                            size: 12.5, color: i == index ? Sa.text : Sa.muted),
+                          size: 12.5,
+                          color: i == index ? Sa.text : Sa.muted,
+                        ),
                       ),
                     ],
                   ),
@@ -2115,79 +2312,200 @@ class _SegTabs extends StatelessWidget {
 class _BrainFactor {
   final String label;
   final String desc;
-  final double weight; // 0..1 — the *baseline* influence (also the RTDB default)
+  final double
+  weight; // 0..1 — the *baseline* influence (also the RTDB default)
   final Color color;
   final List<String> keys; // keywords detected in decision reasons
   final String slug; // stable id used as the RTDB key and worker component key
   const _BrainFactor(
-      this.label, this.desc, this.weight, this.color, this.keys, this.slug);
+    this.label,
+    this.desc,
+    this.weight,
+    this.color,
+    this.keys,
+    this.slug,
+  );
 }
 
 // The [slug]s here MUST mirror `_SHIFT_ASSIGN_DEFAULTS` in cloudflare_ai_worker.js —
 // they are the live RTDB keys the worker reads to retune assignment scoring.
 const List<_BrainFactor> _kShiftFactors = [
-  _BrainFactor('Factory fit', 'Same plant as the alert.', 0.95,
-      Color(0xFF378ADD), ['factory', 'plant', 'usine', 'same site'], 'factory'),
-  _BrainFactor('Type skill', 'Proven experience with this alert type.', 0.80,
-      Color(0xFF7F77DD), ['type', 'experience', 'skill'], 'type'),
-  _BrainFactor('Speed', 'How fast they resolve, historically.', 0.62,
-      Color(0xFF1D9E75), ['fast', 'speed', 'resolution time', 'quick'], 'speed'),
-  _BrainFactor('Station familiarity', 'Knows this conveyor / workstation.', 0.55,
-      Color(0xFFBA7517),
-      ['station', 'conveyor', 'convoyeur', 'workstation', 'poste'], 'station'),
-  _BrainFactor('Load balance', 'Current workload — avoids overloading.', 0.70,
-      Color(0xFFD4537E), ['load', 'workload', 'busy', 'balance'], 'load'),
-  _BrainFactor('Critical record', 'Track record on critical alerts.', 0.50,
-      Color(0xFFE24B4A), ['critical'], 'critical'),
   _BrainFactor(
-      'Reinforcement',
-      'Learned bias from accept / reject feedback.',
-      0.65,
-      Color(0xFF534AB7),
-      ['feedback', 'reinforcement', 'adjust', 'learned'],
-      'reinforcement'),
+    'Factory fit',
+    'Same plant as the alert.',
+    0.95,
+    Color(0xFF378ADD),
+    ['factory', 'plant', 'usine', 'same site'],
+    'factory',
+  ),
+  _BrainFactor(
+    'Type skill',
+    'Proven experience with this alert type.',
+    0.80,
+    Color(0xFF7F77DD),
+    ['type', 'experience', 'skill'],
+    'type',
+  ),
+  _BrainFactor(
+    'Speed',
+    'How fast they resolve, historically.',
+    0.62,
+    Color(0xFF1D9E75),
+    ['fast', 'speed', 'resolution time', 'quick'],
+    'speed',
+  ),
+  _BrainFactor(
+    'Station familiarity',
+    'Knows this conveyor / workstation.',
+    0.55,
+    Color(0xFFBA7517),
+    ['station', 'conveyor', 'convoyeur', 'workstation', 'poste'],
+    'station',
+  ),
+  _BrainFactor(
+    'Load balance',
+    'Current workload — avoids overloading.',
+    0.70,
+    Color(0xFFD4537E),
+    ['load', 'workload', 'busy', 'balance'],
+    'load',
+  ),
+  _BrainFactor(
+    'Critical record',
+    'Track record on critical alerts.',
+    0.50,
+    Color(0xFFE24B4A),
+    ['critical'],
+    'critical',
+  ),
+  _BrainFactor(
+    'Reinforcement',
+    'Learned bias from accept / reject feedback.',
+    0.65,
+    Color(0xFF534AB7),
+    ['feedback', 'reinforcement', 'adjust', 'learned'],
+    'reinforcement',
+  ),
 ];
 
 /// How the commander weighs whether to approve a collaboration and who assists.
 const List<_BrainFactor> _kShiftCollabFactors = [
-  _BrainFactor('Assistant consensus', 'Every requested assistant accepted.',
-      0.92, Color(0xFF378ADD), ['accept', 'consensus', 'agreed', 'assistant'],
-      'consensus'),
-  _BrainFactor('Requester need', 'How badly the owner needs a hand.', 0.78,
-      Color(0xFF7F77DD), ['help', 'request', 'need', 'backup'], 'need'),
-  _BrainFactor('Workload room', 'The assistant still has capacity to help.',
-      0.70, Color(0xFFD4537E), ['load', 'workload', 'busy', 'capacity'], 'room'),
-  _BrainFactor('Skill overlap', 'The assistant knows this alert type.', 0.66,
-      Color(0xFF1D9E75), ['type', 'skill', 'experience'], 'skill'),
-  _BrainFactor('Same factory', 'Assistant is in the same plant.', 0.58,
-      Color(0xFFBA7517), ['factory', 'plant', 'usine', 'same site'], 'factory'),
-  _BrainFactor('Critical priority', 'Critical alerts get backup first.', 0.55,
-      Color(0xFFE24B4A), ['critical'], 'critical'),
-  _BrainFactor('Commander authority', 'Can skip PM approval under his command.',
-      0.48, Color(0xFF534AB7), ['approval', 'commander', 'authority', 'pm'],
-      'authority'),
+  _BrainFactor(
+    'Assistant consensus',
+    'Every requested assistant accepted.',
+    0.92,
+    Color(0xFF378ADD),
+    ['accept', 'consensus', 'agreed', 'assistant'],
+    'consensus',
+  ),
+  _BrainFactor(
+    'Requester need',
+    'How badly the owner needs a hand.',
+    0.78,
+    Color(0xFF7F77DD),
+    ['help', 'request', 'need', 'backup'],
+    'need',
+  ),
+  _BrainFactor(
+    'Workload room',
+    'The assistant still has capacity to help.',
+    0.70,
+    Color(0xFFD4537E),
+    ['load', 'workload', 'busy', 'capacity'],
+    'room',
+  ),
+  _BrainFactor(
+    'Skill overlap',
+    'The assistant knows this alert type.',
+    0.66,
+    Color(0xFF1D9E75),
+    ['type', 'skill', 'experience'],
+    'skill',
+  ),
+  _BrainFactor(
+    'Same factory',
+    'Assistant is in the same plant.',
+    0.58,
+    Color(0xFFBA7517),
+    ['factory', 'plant', 'usine', 'same site'],
+    'factory',
+  ),
+  _BrainFactor(
+    'Critical priority',
+    'Critical alerts get backup first.',
+    0.55,
+    Color(0xFFE24B4A),
+    ['critical'],
+    'critical',
+  ),
+  _BrainFactor(
+    'Commander authority',
+    'Can skip PM approval under his command.',
+    0.48,
+    Color(0xFF534AB7),
+    ['approval', 'commander', 'authority', 'pm'],
+    'authority',
+  ),
 ];
 
 /// How the commander weighs pulling a supervisor across plants.
 const List<_BrainFactor> _kShiftCrossFactors = [
-  _BrainFactor('Proximity', 'Distance from home plant to the alert.', 0.95,
-      Color(0xFF378ADD), ['distance', 'km', 'proximity', 'haversine', 'near'],
-      'proximity'),
-  _BrainFactor('Distance cap', 'Stays within the shift transfer limit.', 0.85,
-      Color(0xFFE24B4A), ['limit', 'cap', 'threshold', 'blocked', 'too far'],
-      'cap'),
-  _BrainFactor('Roster eligibility', 'On the active shift roster.', 0.74,
-      Color(0xFF7F77DD), ['roster', 'shift', 'rostered'], 'roster'),
-  _BrainFactor('Coverage gap', 'The target plant is short-handed.', 0.68,
-      Color(0xFFBA7517), ['coverage', 'gap', 'short', 'understaffed'],
-      'coverage'),
-  _BrainFactor('Type skill', 'Proven on this alert type.', 0.62,
-      Color(0xFF1D9E75), ['type', 'skill', 'experience'], 'skill'),
-  _BrainFactor('Availability', 'Free to take a transfer right now.', 0.56,
-      Color(0xFFD4537E), ['available', 'free', 'idle', 'load'], 'availability'),
-  _BrainFactor('Commander authority', 'Cross-factory transfer is enabled.',
-      0.50, Color(0xFF1AA8B0), ['cross', 'transfer', 'commander', 'authority'],
-      'authority'),
+  _BrainFactor(
+    'Proximity',
+    'Distance from home plant to the alert.',
+    0.95,
+    Color(0xFF378ADD),
+    ['distance', 'km', 'proximity', 'haversine', 'near'],
+    'proximity',
+  ),
+  _BrainFactor(
+    'Distance cap',
+    'Stays within the shift transfer limit.',
+    0.85,
+    Color(0xFFE24B4A),
+    ['limit', 'cap', 'threshold', 'blocked', 'too far'],
+    'cap',
+  ),
+  _BrainFactor(
+    'Roster eligibility',
+    'On the active shift roster.',
+    0.74,
+    Color(0xFF7F77DD),
+    ['roster', 'shift', 'rostered'],
+    'roster',
+  ),
+  _BrainFactor(
+    'Coverage gap',
+    'The target plant is short-handed.',
+    0.68,
+    Color(0xFFBA7517),
+    ['coverage', 'gap', 'short', 'understaffed'],
+    'coverage',
+  ),
+  _BrainFactor(
+    'Type skill',
+    'Proven on this alert type.',
+    0.62,
+    Color(0xFF1D9E75),
+    ['type', 'skill', 'experience'],
+    'skill',
+  ),
+  _BrainFactor(
+    'Availability',
+    'Free to take a transfer right now.',
+    0.56,
+    Color(0xFFD4537E),
+    ['available', 'free', 'idle', 'load'],
+    'availability',
+  ),
+  _BrainFactor(
+    'Commander authority',
+    'Cross-factory transfer is enabled.',
+    0.50,
+    Color(0xFF1AA8B0),
+    ['cross', 'transfer', 'commander', 'authority'],
+    'authority',
+  ),
 ];
 
 /// One selectable "mind" of the Shift Commander — a brain visual plus the
@@ -2231,7 +2549,8 @@ final List<_ShiftBrainCategory> _kShiftBrains = [
     slug: 'assignments',
     liveScoring: true,
     icon: Icons.assignment_ind_outlined,
-    brainSubtitle: 'How the AI weighs every supervisor before it assigns an alert.',
+    brainSubtitle:
+        'How the AI weighs every supervisor before it assigns an alert.',
     description:
         'When an alert needs an owner, the commander checks who’s nearby, skilled and free — and remembers who handled similar alerts well — then assigns the best fit automatically.',
     coreBottom: 'DECIDES',
@@ -2247,7 +2566,8 @@ final List<_ShiftBrainCategory> _kShiftBrains = [
     tab: 'Collaborations',
     slug: 'collaborations',
     icon: Icons.groups_2_outlined,
-    brainSubtitle: 'How the AI decides to approve a collaboration and who assists.',
+    brainSubtitle:
+        'How the AI decides to approve a collaboration and who assists.',
     description:
         'When a supervisor asks for backup, the commander checks who already agreed, who has room to help and who knows the alert — then approves the collaboration without waiting on a manager.',
     coreBottom: 'APPROVES',
@@ -2373,10 +2693,9 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
     for (final c in _kShiftBrains) {
       _weights[c.slug] = {for (final f in c.factors) f.slug: f.weight};
     }
-    _weightsSub = FirebaseDatabase.instance
-        .ref(_kWeightsPath)
-        .onValue
-        .listen((event) {
+    _weightsSub = FirebaseDatabase.instance.ref(_kWeightsPath).onValue.listen((
+      event,
+    ) {
       final v = event.snapshot.value;
       if (v is! Map || !mounted) return;
       setState(() {
@@ -2418,8 +2737,8 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
     final batch = Map<String, double>.from(_dirty);
     try {
       await FirebaseDatabase.instance.ref(_kWeightsPath).update(
-            <String, Object?>{for (final e in batch.entries) e.key: e.value},
-          );
+        <String, Object?>{for (final e in batch.entries) e.key: e.value},
+      );
       // Drop only the keys that weren't re-edited mid-flight.
       for (final e in batch.entries) {
         if (_dirty[e.key] == e.value) _dirty.remove(e.key);
@@ -2448,22 +2767,32 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
   List<String> _warningsFor(_ShiftBrainCategory cat) {
     final out = <String>[];
     final vals = [for (final f in cat.factors) _w(cat.slug, f.slug)];
-    final avg =
-        vals.isEmpty ? 0.0 : vals.reduce((a, b) => a + b) / vals.length;
+    final avg = vals.isEmpty ? 0.0 : vals.reduce((a, b) => a + b) / vals.length;
     if (avg < 0.12) {
       out.add(
-          'Almost every factor is near zero — the commander has little left to weigh, so picks become close to random.');
+        context.tr(
+          'Almost every factor is near zero — the commander has little left to weigh, so picks become close to random.',
+        ),
+      );
     }
     for (final f in cat.factors) {
       if (_w(cat.slug, f.slug) <= 0.02) {
-        out.add('“${f.label}” is switched off — it no longer sways the decision.');
+        out.add(
+          context.tr(
+            '“{label}” is switched off — it no longer sways the decision.',
+            {'label': context.tr(f.label)},
+          ),
+        );
       }
     }
     if (cat.factors.length >= 3) {
       final sorted = [...vals]..sort();
       if (sorted.last >= 0.9 && sorted[sorted.length - 2] <= 0.12) {
         out.add(
-            'One factor dominates everything else — the commander will mostly ignore the rest.');
+          context.tr(
+            'One factor dominates everything else — the commander will mostly ignore the rest.',
+          ),
+        );
       }
     }
     double v(String s) => _w(cat.slug, s);
@@ -2471,32 +2800,50 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
       case 'assignments':
         if (v('factory') < 0.15) {
           out.add(
-              'Factory fit is near zero — supervisors from any plant score the same, so alerts can land on a distant factory.');
+            context.tr(
+              'Factory fit is near zero — supervisors from any plant score the same, so alerts can land on a distant factory.',
+            ),
+          );
         }
         if (v('load') < 0.10) {
           out.add(
-              'Load balancing is off — a single supervisor can be piled with every new alert.');
+            context.tr(
+              'Load balancing is off — a single supervisor can be piled with every new alert.',
+            ),
+          );
         }
         break;
       case 'crossFactory':
         if (v('cap') < 0.15) {
           out.add(
-              'Distance cap barely counts — the commander may pull supervisors from far-away plants.');
+            context.tr(
+              'Distance cap barely counts — the commander may pull supervisors from far-away plants.',
+            ),
+          );
         }
         if (v('proximity') < 0.15) {
           out.add(
-              'Proximity barely counts — distant supervisors compete as if they were next door.');
+            context.tr(
+              'Proximity barely counts — distant supervisors compete as if they were next door.',
+            ),
+          );
         }
         break;
       case 'collaborations':
         if (v('consensus') < 0.15) {
           out.add(
-              'Assistant consensus barely counts — collaborations may be approved before everyone agrees.');
+            context.tr(
+              'Assistant consensus barely counts — collaborations may be approved before everyone agrees.',
+            ),
+          );
         }
         break;
     }
     final seen = <String>{};
-    final dedup = [for (final w in out) if (seen.add(w)) w];
+    final dedup = [
+      for (final w in out)
+        if (seen.add(w)) w,
+    ];
     return dedup.take(6).toList();
   }
 
@@ -2514,8 +2861,12 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
             Icon(Icons.warning_amber_rounded, color: Sa.amber, size: 22),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('Check the ${cat.tab.toLowerCase()} weighting',
-                  style: Sa.heading(size: 16, color: Sa.text)),
+              child: Text(
+                context.tr('Check the {tab} weighting', {
+                  'tab': context.tr(cat.tab).toLowerCase(),
+                }),
+                style: Sa.heading(size: 16, color: Sa.text),
+              ),
             ),
           ],
         ),
@@ -2525,7 +2876,9 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'These settings may make the Shift Commander behave in ways you might not expect:',
+                context.tr(
+                  'These settings may make the Shift Commander behave in ways you might not expect:',
+                ),
                 style: Sa.body(size: 12.5, color: Sa.textDim),
               ),
               const SizedBox(height: 14),
@@ -2541,8 +2894,11 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
                       ),
                       const SizedBox(width: 9),
                       Expanded(
-                          child: Text(w,
-                              style: Sa.body(size: 12.5, color: Sa.text))),
+                        child: Text(
+                          w,
+                          style: Sa.body(size: 12.5, color: Sa.text),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2555,13 +2911,17 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
               Navigator.pop(ctx);
               _resetCategory(cat);
             },
-            child: Text('Reset to defaults',
-                style: TextStyle(
-                    color: Sa.amber, fontWeight: FontWeight.w600)),
+            child: Text(
+              context.tr('Reset to defaults'),
+              style: TextStyle(color: Sa.amber, fontWeight: FontWeight.w600),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Keep anyway', style: TextStyle(color: Sa.muted)),
+            child: Text(
+              context.tr('Keep anyway'),
+              style: TextStyle(color: Sa.muted),
+            ),
           ),
         ],
       ),
@@ -2587,8 +2947,9 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
         confs.add(c.toDouble() > 1 ? c.toDouble() / 100 : c.toDouble());
       }
     }
-    final avgConf =
-        confs.isEmpty ? 0.0 : confs.reduce((a, b) => a + b) / confs.length;
+    final avgConf = confs.isEmpty
+        ? 0.0
+        : confs.reduce((a, b) => a + b) / confs.length;
     final learned = memory.where((m) => m.adjustment.abs() >= 0.5).length;
 
     final fireCounts = <int>[for (final _ in factors) 0];
@@ -2613,14 +2974,15 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
             children: [
               SaSectionHeader(
                 icon: Icons.psychology,
-                title: 'INSIDE THE COMMANDER’S MIND',
-                subtitle: cat.brainSubtitle,
+                title: context.tr('INSIDE THE COMMANDER’S MIND'),
+                subtitle: context.tr(cat.brainSubtitle),
                 accent: accent,
                 trailing: GlowChip(
-                    label: 'COGNITION',
-                    color: accent,
-                    icon: Icons.bolt,
-                    pulse: enabled),
+                  label: context.tr('COGNITION'),
+                  color: accent,
+                  icon: Icons.bolt,
+                  pulse: enabled,
+                ),
               ),
               const SizedBox(height: 12),
               _SegTabs(
@@ -2655,7 +3017,7 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
               ),
               const SizedBox(height: 8),
               Text(
-                cat.description,
+                context.tr(cat.description),
                 style: Sa.body(size: 11.5, color: Sa.textDim),
               ),
             ],
@@ -2668,8 +3030,10 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
             children: [
               SaSectionHeader(
                 icon: Icons.memory,
-                title: 'WHAT HE KNOWS',
-                subtitle: 'The memory the commander carries into each decision.',
+                title: context.tr('WHAT HE KNOWS'),
+                subtitle: context.tr(
+                  'The memory the commander carries into each decision.',
+                ),
                 accent: accent,
               ),
               const SizedBox(height: 14),
@@ -2678,109 +3042,123 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
                 runSpacing: 10,
                 children: [
                   SaStatTile(
-                      label: 'Supervisors profiled',
-                      value: '${memory.length}',
-                      icon: Icons.badge_outlined,
-                      color: accent),
+                    label: context.tr('Supervisors profiled'),
+                    value: '${memory.length}',
+                    icon: Icons.badge_outlined,
+                    color: accent,
+                  ),
                   SaStatTile(
-                      label: 'Decisions in memory',
-                      value: '${logs.length}',
-                      icon: Icons.history_toggle_off,
-                      color: Sa.blue),
+                    label: context.tr('Decisions in memory'),
+                    value: '${logs.length}',
+                    icon: Icons.history_toggle_off,
+                    color: Sa.blue,
+                  ),
                   SaStatTile(
-                      label: 'Signals learned',
-                      value: '$learned',
-                      icon: Icons.auto_graph,
-                      color: Sa.green),
+                    label: context.tr('Signals learned'),
+                    value: '$learned',
+                    icon: Icons.auto_graph,
+                    color: Sa.green,
+                  ),
                   SaStatTile(
-                      label: 'Avg confidence',
-                      value: '${(avgConf * 100).round()}%',
-                      icon: Icons.speed,
-                      color: Sa.amber),
+                    label: context.tr('Avg confidence'),
+                    value: '${(avgConf * 100).round()}%',
+                    icon: Icons.speed,
+                    color: Sa.amber,
+                  ),
                 ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 14),
-        Builder(builder: (context) {
-          final warnings = _warningsFor(cat);
-          return GlassPanel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SaSectionHeader(
-                  icon: Icons.tune,
-                  title: 'REASONING FACTORS',
-                  subtitle: cat.reasoningSubtitle,
-                  accent: accent,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (warnings.isNotEmpty) ...[
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _showWeightWarnings(cat, warnings),
-                          child: GlowChip(
-                            label: '${warnings.length} '
-                                'WARNING${warnings.length > 1 ? 'S' : ''}',
-                            color: Sa.amber,
-                            icon: Icons.warning_amber_rounded,
-                            pulse: true,
+        Builder(
+          builder: (context) {
+            final warnings = _warningsFor(cat);
+            return GlassPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SaSectionHeader(
+                    icon: Icons.tune,
+                    title: context.tr('REASONING FACTORS'),
+                    subtitle: context.tr(cat.reasoningSubtitle),
+                    accent: accent,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (warnings.isNotEmpty) ...[
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _showWeightWarnings(cat, warnings),
+                            child: GlowChip(
+                              label: warnings.length > 1
+                                  ? context.tr('{count} WARNINGS', {
+                                      'count': '${warnings.length}',
+                                    })
+                                  : context.tr('{count} WARNING', {
+                                      'count': '${warnings.length}',
+                                    }),
+                              color: Sa.amber,
+                              icon: Icons.warning_amber_rounded,
+                              pulse: true,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
+                          const SizedBox(width: 6),
+                        ],
+                        _ResetWeightsButton(onReset: () => _resetCategory(cat)),
                       ],
-                      _ResetWeightsButton(
-                          onReset: () => _resetCategory(cat)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(Icons.drag_indicator, size: 15, color: Sa.muted),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          cat.liveScoring
+                              ? context.tr(
+                                  'Drag any bar to retune — changes feed the Shift Commander’s live assignment scoring instantly.',
+                                )
+                              : context.tr(
+                                  'Drag any bar to retune — changes save to the Shift Commander instantly.',
+                                ),
+                          style: Sa.body(size: 11, color: Sa.textDim),
+                        ),
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Icon(Icons.drag_indicator, size: 15, color: Sa.muted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        cat.liveScoring
-                            ? 'Drag any bar to retune — changes feed the Shift Commander’s live assignment scoring instantly.'
-                            : 'Drag any bar to retune — changes save to the Shift Commander instantly.',
-                        style: Sa.body(size: 11, color: Sa.textDim),
-                      ),
+                  const SizedBox(height: 12),
+                  _SegTabs(
+                    tabs: brainTabs,
+                    icons: brainIcons,
+                    index: _brainTab,
+                    accent: accent,
+                    onChanged: selectBrain,
+                  ),
+                  if (warnings.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _WeightWarningBanner(
+                      message: warnings.first,
+                      extra: warnings.length - 1,
+                      onTap: () => _showWeightWarnings(cat, warnings),
                     ),
                   ],
-                ),
-                const SizedBox(height: 12),
-                _SegTabs(
-                  tabs: brainTabs,
-                  icons: brainIcons,
-                  index: _brainTab,
-                  accent: accent,
-                  onChanged: selectBrain,
-                ),
-                if (warnings.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _WeightWarningBanner(
-                    message: warnings.first,
-                    extra: warnings.length - 1,
-                    onTap: () => _showWeightWarnings(cat, warnings),
-                  ),
+                  const SizedBox(height: 6),
+                  for (var i = 0; i < factors.length; i++)
+                    _BrainFactorRow(
+                      factor: factors[i],
+                      value: _w(cat.slug, factors[i].slug),
+                      fired: fireCounts[i],
+                      maxFired: maxFire,
+                      onChanged: (v) =>
+                          _setWeight(cat.slug, factors[i].slug, v),
+                    ),
                 ],
-                const SizedBox(height: 6),
-                for (var i = 0; i < factors.length; i++)
-                  _BrainFactorRow(
-                    factor: factors[i],
-                    value: _w(cat.slug, factors[i].slug),
-                    fired: fireCounts[i],
-                    maxFired: maxFire,
-                    onChanged: (v) =>
-                        _setWeight(cat.slug, factors[i].slug, v),
-                  ),
-              ],
-            ),
-          );
-        }),
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 14),
         GlassPanel(
           child: Column(
@@ -2788,18 +3166,20 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
             children: [
               SaSectionHeader(
                 icon: Icons.model_training,
-                title: 'LEARNED SIGNALS',
-                subtitle:
-                    'Per-supervisor reinforcement from accepted, rejected and resolved assignments.',
+                title: context.tr('LEARNED SIGNALS'),
+                subtitle: context.tr(
+                  'Per-supervisor reinforcement from accepted, rejected and resolved assignments.',
+                ),
                 accent: accent,
               ),
               const SizedBox(height: 12),
               if (memory.isEmpty)
                 SaEmptyState(
                   icon: Icons.school_outlined,
-                  title: 'Nothing learned yet',
-                  message:
-                      'Once supervisors accept or reject AI assignments, the commander starts tuning their rank here.',
+                  title: context.tr('Nothing learned yet'),
+                  message: context.tr(
+                    'Once supervisors accept or reject AI assignments, the commander starts tuning their rank here.',
+                  ),
                   accent: accent,
                 )
               else
@@ -2816,22 +3196,26 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
             children: [
               SaSectionHeader(
                 icon: Icons.alt_route,
-                title: 'THOUGHT REPLAY',
-                subtitle:
-                    'Recent decisions — the situation, the pick, the confidence, the reasoning.',
+                title: context.tr('THOUGHT REPLAY'),
+                subtitle: context.tr(
+                  'Recent decisions — the situation, the pick, the confidence, the reasoning.',
+                ),
                 accent: accent,
               ),
               const SizedBox(height: 12),
               if (logs.isEmpty)
                 SaEmptyState(
                   icon: Icons.nights_stay_outlined,
-                  title: 'No thoughts yet',
-                  message:
-                      'When a shift with AI Commander goes live, each decision replays here.',
+                  title: context.tr('No thoughts yet'),
+                  message: context.tr(
+                    'When a shift with AI Commander goes live, each decision replays here.',
+                  ),
                   accent: accent,
                 )
               else
-                ...logs.take(8).map((l) => _ThoughtCard(log: l, accent: accent)),
+                ...logs
+                    .take(8)
+                    .map((l) => _ThoughtCard(log: l, accent: accent)),
             ],
           ),
         ),
@@ -2916,7 +3300,10 @@ class _CortexHeroState extends State<_CortexHero>
   @override
   void initState() {
     super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(seconds: 24));
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 24),
+    );
     _buildMesh();
     if (widget.animate) {
       _c.repeat();
@@ -2933,8 +3320,15 @@ class _CortexHeroState extends State<_CortexHero>
     const nv = 20; // latitudes (crown→underside)
     final verts = <_P3>[];
 
-    double bump(double u, double v, double u0, double v0, double amp, double su,
-        double sv) {
+    double bump(
+      double u,
+      double v,
+      double u0,
+      double v0,
+      double amp,
+      double su,
+      double sv,
+    ) {
       var du = (u - u0).abs();
       if (du > math.pi) du = 2 * math.pi - du; // wrap on the ring
       final dv = v - v0;
@@ -2946,12 +3340,29 @@ class _CortexHeroState extends State<_CortexHero>
       final v = 0.08 * math.pi + (0.84 * math.pi) * (j / (nv - 1));
       for (var i = 0; i < nu; i++) {
         final u = 2 * math.pi * (i / nu);
-        final fold = 0.055 * math.sin(7 * u) * math.sin(6 * v) +
+        final fold =
+            0.055 * math.sin(7 * u) * math.sin(6 * v) +
             0.035 * math.sin(11 * u + 2) * math.sin(9 * v + 1) +
             0.025 * math.cos(5 * u) * math.sin(8 * v);
         var r = 1.0 + fold;
-        r += bump(u, v, math.pi, 0.72 * math.pi, 0.16, 0.55, 0.34); // cerebellum
-        r += bump(u, v, 0.18 * math.pi, 0.66 * math.pi, 0.10, 0.60, 0.30); // temporal
+        r += bump(
+          u,
+          v,
+          math.pi,
+          0.72 * math.pi,
+          0.16,
+          0.55,
+          0.34,
+        ); // cerebellum
+        r += bump(
+          u,
+          v,
+          0.18 * math.pi,
+          0.66 * math.pi,
+          0.10,
+          0.60,
+          0.30,
+        ); // temporal
         final x = r * math.sin(v) * math.cos(u) * 1.16;
         var y = r * math.cos(v) * 0.82;
         final z = r * math.sin(v) * math.sin(u) * 0.80;
@@ -3001,17 +3412,26 @@ class _CortexHeroState extends State<_CortexHero>
               painter: _CortexPainter(
                 tick: _c,
                 accent: widget.accent,
-                inputs: widget.inputs,
+                inputs: [
+                  for (final inp in widget.inputs)
+                    _CortexInput(
+                      ctx.tr(inp.label),
+                      inp.color,
+                      inp.weight,
+                      inp.activity,
+                    ),
+                ],
                 nodes: _nodes,
                 edges: _edges,
                 showLabels: showLabels,
                 dim: widget.animate ? 1.0 : 0.5,
-                inHeader: widget.inHeader,
-                coreTop: widget.coreTop,
-                coreBottom: widget.coreBottom,
+                inHeader: ctx.tr(widget.inHeader),
+                coreTop: ctx.tr(widget.coreTop),
+                coreBottom: ctx.tr(widget.coreBottom),
                 outIcon: widget.outIcon,
-                outTop: widget.outTop,
-                outBottom: widget.outBottom,
+                outTop: ctx.tr(widget.outTop),
+                outBottom: ctx.tr(widget.outBottom),
+                outHeader: ctx.tr('DECISION'),
                 outColor: widget.outColor,
                 isDark: Sa.isDark,
               ),
@@ -3037,6 +3457,7 @@ class _CortexPainter extends CustomPainter {
   final IconData outIcon;
   final String outTop;
   final String outBottom;
+  final String outHeader;
   final Color outColor;
   final bool isDark;
 
@@ -3054,16 +3475,23 @@ class _CortexPainter extends CustomPainter {
     required this.outIcon,
     required this.outTop,
     required this.outBottom,
+    required this.outHeader,
     required this.outColor,
     required this.isDark,
   }) : super(repaint: tick);
 
-  void _text(Canvas c, String s, Offset at, Color col, double size,
-      {bool center = false,
-      bool rightAlign = false,
-      double maxW = 240,
-      FontWeight weight = FontWeight.w600,
-      bool mono = false}) {
+  void _text(
+    Canvas c,
+    String s,
+    Offset at,
+    Color col,
+    double size, {
+    bool center = false,
+    bool rightAlign = false,
+    double maxW = 240,
+    FontWeight weight = FontWeight.w600,
+    bool mono = false,
+  }) {
     final tp = TextPainter(
       text: TextSpan(
         text: s,
@@ -3161,8 +3589,9 @@ class _CortexPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 0.8 + 1.5 * inp.weight
           ..strokeCap = StrokeCap.round
-          ..color =
-              inp.color.withValues(alpha: (0.13 + 0.22 * inp.weight) * dim),
+          ..color = inp.color.withValues(
+            alpha: (0.13 + 0.22 * inp.weight) * dim,
+          ),
       );
     }
 
@@ -3214,26 +3643,30 @@ class _CortexPainter extends CustomPainter {
       final p = proj[i];
       final dn = (p.z + 1) / 2;
       if (dn > 0.74) {
-        canvas.drawCircle(Offset(p.x, p.y), 0.7 + 1.1 * ((dn - 0.74) / 0.26),
-            Paint()..color = near.withValues(alpha: 0.55 * dn * dim));
+        canvas.drawCircle(
+          Offset(p.x, p.y),
+          0.7 + 1.1 * ((dn - 0.74) / 0.26),
+          Paint()..color = near.withValues(alpha: 0.55 * dn * dim),
+        );
       }
     }
 
     // inner nucleus glow
     canvas.drawCircle(
-        Offset(cx, cy),
-        r * 0.42 * (0.85 + 0.15 * breathe),
-        Paint()
-          ..color = near.withValues(alpha: (0.05 + 0.05 * breathe) * dim));
+      Offset(cx, cy),
+      r * 0.42 * (0.85 + 0.15 * breathe),
+      Paint()..color = near.withValues(alpha: (0.05 + 0.05 * breathe) * dim),
+    );
 
     // integration rings — one faint full ring, one sweeping arc
     canvas.drawCircle(
-        Offset(cx, cy),
-        r + 7,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = accent.withValues(alpha: 0.14 * dim));
+      Offset(cx, cy),
+      r + 7,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = accent.withValues(alpha: 0.14 * dim),
+    );
     canvas.drawArc(
       Rect.fromCircle(center: Offset(cx, cy), radius: r + 7),
       rot,
@@ -3248,18 +3681,40 @@ class _CortexPainter extends CustomPainter {
 
     // ── core nucleus label (legible disc over the busy mesh)
     canvas.drawCircle(
-        Offset(cx, cy), 23, Paint()..color = Sa.bg.withValues(alpha: 0.58));
+      Offset(cx, cy),
+      23,
+      Paint()..color = Sa.bg.withValues(alpha: 0.58),
+    );
     canvas.drawCircle(
-        Offset(cx, cy),
-        23,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1
-          ..color = accent.withValues(alpha: 0.55 * dim));
-    _text(canvas, coreTop, Offset(cx, cy - 6), Sa.text, 8.5,
-        center: true, mono: true, weight: FontWeight.w700, maxW: 60);
-    _text(canvas, coreBottom, Offset(cx, cy + 6), accent, 8,
-        center: true, mono: true, weight: FontWeight.w700, maxW: 60);
+      Offset(cx, cy),
+      23,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = accent.withValues(alpha: 0.55 * dim),
+    );
+    _text(
+      canvas,
+      coreTop,
+      Offset(cx, cy - 6),
+      Sa.text,
+      8.5,
+      center: true,
+      mono: true,
+      weight: FontWeight.w700,
+      maxW: 60,
+    );
+    _text(
+      canvas,
+      coreBottom,
+      Offset(cx, cy + 6),
+      accent,
+      8,
+      center: true,
+      mono: true,
+      weight: FontWeight.w700,
+      maxW: 60,
+    );
 
     // ── input nodes, labels and travelling thought-pulses
     for (var i = 0; i < n; i++) {
@@ -3268,23 +3723,37 @@ class _CortexPainter extends CustomPainter {
       final node = Offset(nodeX, ny);
       final nr = 3.2 + 4.2 * inp.weight;
       canvas.drawCircle(
-          node,
-          nr + 4,
-          Paint()
-            ..color = inp.color
-                .withValues(alpha: (0.10 + 0.28 * inp.activity) * dim));
+        node,
+        nr + 4,
+        Paint()
+          ..color = inp.color.withValues(
+            alpha: (0.10 + 0.28 * inp.activity) * dim,
+          ),
+      );
       canvas.drawCircle(
-          node, nr, Paint()..color = inp.color.withValues(alpha: 0.85 * dim));
+        node,
+        nr,
+        Paint()..color = inp.color.withValues(alpha: 0.85 * dim),
+      );
       canvas.drawCircle(
-          node,
-          nr,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1
-            ..color = inp.color.withValues(alpha: 0.9 * dim));
+        node,
+        nr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = inp.color.withValues(alpha: 0.9 * dim),
+      );
       if (showLabels) {
-        _text(canvas, inp.label, Offset(nodeX - 13, ny), Sa.textDim, 10.5,
-            rightAlign: true, maxW: labelW - 16, weight: FontWeight.w500);
+        _text(
+          canvas,
+          inp.label,
+          Offset(nodeX - 13, ny),
+          Sa.textDim,
+          10.5,
+          rightAlign: true,
+          maxW: labelW - 16,
+          weight: FontWeight.w500,
+        );
       }
       final metrics = paths[i].computeMetrics().toList();
       if (metrics.isNotEmpty) {
@@ -3296,22 +3765,36 @@ class _CortexPainter extends CustomPainter {
           final tan = m.getTangentForOffset(m.length * ph);
           if (tan == null) continue;
           final pr = 1.5 + 1.4 * inp.activity;
-          canvas.drawCircle(tan.position, pr + 2,
-              Paint()..color = inp.color.withValues(alpha: 0.18 * dim));
           canvas.drawCircle(
-              tan.position,
-              pr,
-              Paint()
-                ..color = inp.color
-                    .withValues(alpha: (0.45 + 0.5 * inp.activity) * dim));
+            tan.position,
+            pr + 2,
+            Paint()..color = inp.color.withValues(alpha: 0.18 * dim),
+          );
+          canvas.drawCircle(
+            tan.position,
+            pr,
+            Paint()
+              ..color = inp.color.withValues(
+                alpha: (0.45 + 0.5 * inp.activity) * dim,
+              ),
+          );
         }
       }
     }
 
     // ── input column header
     if (showLabels) {
-      _text(canvas, inHeader, Offset(nodeX - 13, 15), Sa.muted, 8.5,
-          rightAlign: true, mono: true, weight: FontWeight.w700, maxW: labelW);
+      _text(
+        canvas,
+        inHeader,
+        Offset(nodeX - 13, 15),
+        Sa.muted,
+        8.5,
+        rightAlign: true,
+        mono: true,
+        weight: FontWeight.w700,
+        maxW: labelW,
+      );
     }
 
     // ── output: connector, travelling pulse, arrowhead, decision orb, label
@@ -3319,54 +3802,83 @@ class _CortexPainter extends CustomPainter {
     final orbCenter = Offset(ox, oy);
     final approach = orbCenter - const Offset(orbR + 3, 0);
     canvas.drawLine(
-        rim,
-        approach,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6
-          ..strokeCap = StrokeCap.round
-          ..color = outColor.withValues(alpha: 0.42 * dim));
+      rim,
+      approach,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round
+        ..color = outColor.withValues(alpha: 0.42 * dim),
+    );
     final op = (t * 6) % 1.0;
     final opp = Offset.lerp(rim, approach, op)!;
     canvas.drawCircle(
-        opp, 2.6, Paint()..color = outColor.withValues(alpha: 0.85 * dim));
+      opp,
+      2.6,
+      Paint()..color = outColor.withValues(alpha: 0.85 * dim),
+    );
     final ah = Path()
       ..moveTo(orbCenter.dx - orbR - 1, oy)
       ..lineTo(orbCenter.dx - orbR - 8, oy - 4)
       ..lineTo(orbCenter.dx - orbR - 8, oy + 4)
       ..close();
-    canvas.drawPath(
-        ah, Paint()..color = outColor.withValues(alpha: 0.6 * dim));
+    canvas.drawPath(ah, Paint()..color = outColor.withValues(alpha: 0.6 * dim));
     canvas.drawCircle(
-        orbCenter,
-        orbR + 8,
-        Paint()
-          ..color =
-              outColor.withValues(alpha: (0.10 + 0.12 * breathe) * dim));
+      orbCenter,
+      orbR + 8,
+      Paint()
+        ..color = outColor.withValues(alpha: (0.10 + 0.12 * breathe) * dim),
+    );
     canvas.drawCircle(
-        orbCenter,
-        orbR,
-        Paint()
-          ..shader = ui.Gradient.radial(orbCenter, orbR, [
-            outColor.withValues(alpha: 0.95 * dim),
-            outColor.withValues(alpha: 0.55 * dim),
-          ]));
+      orbCenter,
+      orbR,
+      Paint()
+        ..shader = ui.Gradient.radial(orbCenter, orbR, [
+          outColor.withValues(alpha: 0.95 * dim),
+          outColor.withValues(alpha: 0.55 * dim),
+        ]),
+    );
     canvas.drawCircle(
-        orbCenter,
-        orbR,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4
-          ..color = outColor);
+      orbCenter,
+      orbR,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4
+        ..color = outColor,
+    );
     _glyph(canvas, outIcon, orbCenter, Sa.onAccent, 16);
     final outMaxW = (w - ox) * 2 - 8;
-    _text(canvas, outTop, Offset(ox, oy + orbR + 14), Sa.text, 10,
-        center: true, weight: FontWeight.w600, maxW: outMaxW);
-    _text(canvas, outBottom, Offset(ox, oy + orbR + 27), Sa.muted, 9,
-        center: true, maxW: outMaxW);
+    _text(
+      canvas,
+      outTop,
+      Offset(ox, oy + orbR + 14),
+      Sa.text,
+      10,
+      center: true,
+      weight: FontWeight.w600,
+      maxW: outMaxW,
+    );
+    _text(
+      canvas,
+      outBottom,
+      Offset(ox, oy + orbR + 27),
+      Sa.muted,
+      9,
+      center: true,
+      maxW: outMaxW,
+    );
     if (showLabels) {
-      _text(canvas, 'DECISION', Offset(ox, 15), Sa.muted, 8.5,
-          center: true, mono: true, weight: FontWeight.w700, maxW: 120);
+      _text(
+        canvas,
+        outHeader,
+        Offset(ox, 15),
+        Sa.muted,
+        8.5,
+        center: true,
+        mono: true,
+        weight: FontWeight.w700,
+        maxW: 120,
+      );
     }
   }
 
@@ -3379,7 +3891,6 @@ class _CortexPainter extends CustomPainter {
       old.outColor != outColor ||
       old.isDark != isDark;
 }
-
 
 /// A reasoning factor with a draggable influence bar and recent firing count.
 ///
@@ -3414,22 +3925,30 @@ class _BrainFactorRow extends StatelessWidget {
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(
-                    color: factor.color,
-                    borderRadius: BorderRadius.circular(3)),
+                  color: factor.color,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                  child:
-                      Text(factor.label, style: Sa.body(size: 13, color: Sa.text))),
-              Text('${(influence * 100).round()}% weight',
-                  style: Sa.mono(size: 11, color: factor.color)),
+                child: Text(
+                  factor.label,
+                  style: Sa.body(size: 13, color: Sa.text),
+                ),
+              ),
+              Text(
+                '${(influence * 100).round()}% weight',
+                style: Sa.mono(size: 11, color: factor.color),
+              ),
             ],
           ),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(left: 18),
-            child:
-                Text(factor.desc, style: Sa.body(size: 11, color: Sa.textDim)),
+            child: Text(
+              factor.desc,
+              style: Sa.body(size: 11, color: Sa.textDim),
+            ),
           ),
           const SizedBox(height: 7),
           Padding(
@@ -3446,11 +3965,14 @@ class _BrainFactorRow extends StatelessWidget {
                 const SizedBox(width: 10),
                 SizedBox(
                   width: 56,
-                  child: Text(fired > 0 ? 'fired $fired×' : 'idle',
-                      textAlign: TextAlign.right,
-                      style: Sa.mono(
-                          size: 10,
-                          color: fired > 0 ? factor.color : Sa.muted)),
+                  child: Text(
+                    fired > 0 ? 'fired $fired×' : 'idle',
+                    textAlign: TextAlign.right,
+                    style: Sa.mono(
+                      size: 10,
+                      color: fired > 0 ? factor.color : Sa.muted,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -3498,8 +4020,9 @@ class _WeightSlider extends StatelessWidget {
                 Container(
                   height: 8,
                   decoration: BoxDecoration(
-                      color: Sa.panelSolid,
-                      borderRadius: BorderRadius.circular(6)),
+                    color: Sa.panelSolid,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
                 // fill
                 Container(
@@ -3510,9 +4033,10 @@ class _WeightSlider extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     boxShadow: [
                       BoxShadow(
-                          color: color.withValues(alpha: 0.45),
-                          blurRadius: 7,
-                          spreadRadius: -2),
+                        color: color.withValues(alpha: 0.45),
+                        blurRadius: 7,
+                        spreadRadius: -2,
+                      ),
                     ],
                   ),
                 ),
@@ -3528,9 +4052,10 @@ class _WeightSlider extends StatelessWidget {
                       border: Border.all(color: color, width: 2.5),
                       boxShadow: [
                         BoxShadow(
-                            color: color.withValues(alpha: 0.5),
-                            blurRadius: 6,
-                            spreadRadius: -1),
+                          color: color.withValues(alpha: 0.5),
+                          blurRadius: 6,
+                          spreadRadius: -1,
+                        ),
                       ],
                     ),
                   ),
@@ -3554,7 +4079,10 @@ class _ResetWeightsButton extends StatelessWidget {
     return TextButton.icon(
       onPressed: onReset,
       icon: Icon(Icons.restart_alt, size: 15, color: Sa.muted),
-      label: Text('Reset', style: Sa.body(size: 11.5, color: Sa.muted)),
+      label: Text(
+        context.tr('Reset'),
+        style: Sa.body(size: 11.5, color: Sa.muted),
+      ),
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         minimumSize: Size.zero,
@@ -3570,8 +4098,11 @@ class _WeightWarningBanner extends StatelessWidget {
   final String message;
   final int extra; // additional warnings beyond [message]
   final VoidCallback onTap;
-  const _WeightWarningBanner(
-      {required this.message, required this.extra, required this.onTap});
+  const _WeightWarningBanner({
+    required this.message,
+    required this.extra,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -3591,13 +4122,20 @@ class _WeightWarningBanner extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                extra > 0 ? '$message  (+$extra more)' : message,
+                extra > 0
+                    ? context.tr('{message}  (+{extra} more)', {
+                        'message': message,
+                        'extra': '$extra',
+                      })
+                    : message,
                 style: Sa.body(size: 11.5, color: Sa.text),
               ),
             ),
             const SizedBox(width: 6),
-            Text('Review',
-                style: Sa.body(size: 11.5, color: Sa.amber)),
+            Text(
+              context.tr('Review'),
+              style: Sa.body(size: 11.5, color: Sa.amber),
+            ),
             Icon(Icons.chevron_right, color: Sa.amber, size: 18),
           ],
         ),
@@ -3613,8 +4151,11 @@ class _BrainMemoryTile extends StatelessWidget {
   const _BrainMemoryTile({required this.memory, required this.accent});
 
   static String _initials(String n) {
-    final parts =
-        n.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final parts = n
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((e) => e.isNotEmpty)
+        .toList();
     if (parts.isEmpty) return '?';
     if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
     return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
@@ -3622,14 +4163,16 @@ class _BrainMemoryTile extends StatelessWidget {
   }
 
   Widget _miniChip(String s, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        decoration: BoxDecoration(
-            color: c.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(20)),
-        child: Text(s,
-            style: TextStyle(
-                fontSize: 10, color: c, fontWeight: FontWeight.w500)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      s,
+      style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w500),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -3652,10 +4195,13 @@ class _BrainMemoryTile extends StatelessWidget {
             height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8)),
-            child: Text(_initials(memory.name),
-                style: Sa.body(size: 11, color: accent)),
+              color: accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _initials(memory.name),
+              style: Sa.body(size: 11, color: accent),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -3663,10 +4209,12 @@ class _BrainMemoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(memory.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Sa.body(size: 12.5, color: Sa.text)),
+                Text(
+                  memory.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Sa.body(size: 12.5, color: Sa.text),
+                ),
                 const SizedBox(height: 5),
                 Wrap(
                   spacing: 6,
@@ -3702,14 +4250,16 @@ class _ThoughtCard extends StatelessWidget {
   const _ThoughtCard({required this.log, required this.accent});
 
   Widget _pill(String s, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-            color: c.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(6)),
-        child: Text(s,
-            style: TextStyle(
-                fontSize: 10.5, color: c, fontWeight: FontWeight.w500)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: c.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      s,
+      style: TextStyle(fontSize: 10.5, color: c, fontWeight: FontWeight.w500),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -3722,7 +4272,8 @@ class _ThoughtCard extends StatelessWidget {
     final conf = cRaw is num
         ? (cRaw.toDouble() > 1 ? cRaw.toDouble() : cRaw.toDouble() * 100)
         : null;
-    final blocked = kind.toLowerCase().contains('block') ||
+    final blocked =
+        kind.toLowerCase().contains('block') ||
         kind.toLowerCase().contains('skip');
     final tone = blocked ? Sa.amber : accent;
     final head = [
@@ -3746,23 +4297,31 @@ class _ThoughtCard extends StatelessWidget {
               Icon(blocked ? Icons.block : Icons.bolt, size: 14, color: tone),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(head.isEmpty ? 'Decision' : head,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Sa.body(size: 12.5, color: Sa.text)),
+                child: Text(
+                  head.isEmpty ? context.tr('Decision') : head,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Sa.body(size: 12.5, color: Sa.text),
+                ),
               ),
               if (conf != null)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                      color: tone.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(20)),
-                  child: Text('${conf.round()}%',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: tone,
-                          fontWeight: FontWeight.w600)),
+                    color: tone.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${conf.round()}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: tone,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -3775,10 +4334,12 @@ class _ThoughtCard extends StatelessWidget {
                 Icon(Icons.arrow_forward, size: 13, color: Sa.muted),
                 const SizedBox(width: 8),
                 Flexible(
-                  child: Text(who,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Sa.body(size: 12.5, color: Sa.text)),
+                  child: Text(
+                    who,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Sa.body(size: 12.5, color: Sa.text),
+                  ),
                 ),
               ],
             ],
@@ -3793,7 +4354,10 @@ class _ThoughtCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Sa.termBorder),
               ),
-              child: Text(reason, style: Sa.mono(size: 10.5, color: Sa.termText)),
+              child: Text(
+                reason,
+                style: Sa.mono(size: 10.5, color: Sa.termText),
+              ),
             ),
           ],
         ],
@@ -3831,11 +4395,11 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
         .ref('ai_agents/briefing/stats')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted && v is Map) {
-        setState(() => _stats = Map<String, dynamic>.from(v));
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted && v is Map) {
+            setState(() => _stats = Map<String, dynamic>.from(v));
+          }
+        }, onError: (_) {});
     _probeCounts();
     _loadFactories();
   }
@@ -3846,25 +4410,28 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
         .ref(predictiveBriefingPath(_selectedFactory))
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted) {
-        setState(() => _latest = v is Map ? Map<String, dynamic>.from(v) : null);
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted) {
+            setState(
+              () => _latest = v is Map ? Map<String, dynamic>.from(v) : null,
+            );
+          }
+        }, onError: (_) {});
   }
 
   Future<void> _loadFactories() async {
     try {
-      final snap =
-          await FirebaseDatabase.instance.ref('hierarchy/factories').get();
+      final snap = await FirebaseDatabase.instance
+          .ref('hierarchy/factories')
+          .get();
       if (snap.value is Map && mounted) {
-        final names = (snap.value as Map)
-            .values
-            .whereType<Map>()
-            .map((f) => (f['name'] ?? '').toString())
-            .where((n) => n.isNotEmpty)
-            .toList()
-          ..sort();
+        final names =
+            (snap.value as Map).values
+                .whereType<Map>()
+                .map((f) => (f['name'] ?? '').toString())
+                .where((n) => n.isNotEmpty)
+                .toList()
+              ..sort();
         setState(() => _factories = names);
       }
     } catch (_) {}
@@ -3877,8 +4444,9 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
           ? 'ai_briefing/history'
           : 'ai_briefing/factory/$slug/history';
       final hist = await FirebaseDatabase.instance.ref(histPath).get();
-      final fact =
-          await FirebaseDatabase.instance.ref('ai_briefing/factory').get();
+      final fact = await FirebaseDatabase.instance
+          .ref('ai_briefing/factory')
+          .get();
       if (mounted) {
         setState(() {
           _historyCount = hist.children.length;
@@ -3906,26 +4474,34 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
           ? 'factory=${Uri.encodeQueryComponent(scope)}&'
           : '';
       final res = await http
-          .get(Uri.parse('${AppConfig.briefingEndpoint}?${factoryQuery}force=1'))
+          .get(
+            Uri.parse('${AppConfig.briefingEndpoint}?${factoryQuery}force=1'),
+          )
           .timeout(const Duration(seconds: 25));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text(
-            res.statusCode == 200
-                ? 'Briefing regenerated — PM dashboards update live.'
-                : 'Briefing endpoint replied ${res.statusCode}.',
-            style: Sa.body(size: 12.5),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              res.statusCode == 200
+                  ? 'Briefing regenerated — PM dashboards update live.'
+                  : 'Briefing endpoint replied ${res.statusCode}.',
+              style: Sa.body(size: 12.5),
+            ),
           ),
-        ));
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Regeneration failed: $e',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              'Regeneration failed: $e',
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _regenerating = false);
@@ -3945,157 +4521,185 @@ class _BriefingAgentPanelState extends State<_BriefingAgentPanel> {
     final latest = _latest;
     final model = (latest?['model'] ?? '—').toString();
 
-    return _AgentScroll(children: [
-      if (!widget.enabled) _OfflineBanner(spec: spec),
-      GlassPanel(
-        accent: spec.accent,
-        glow: widget.enabled,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: spec.icon,
-              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
-              title: 'BRIEFING DESK',
-              subtitle:
+    return _AgentScroll(
+      children: [
+        if (!widget.enabled) _OfflineBanner(spec: spec),
+        GlassPanel(
+          accent: spec.accent,
+          glow: widget.enabled,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: spec.icon,
+                leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
+                title: context.tr('BRIEFING DESK'),
+                subtitle: context.tr(
                   'Writes the factory-aware morning briefing each Production Manager wakes up to.',
-              accent: spec.accent,
-              trailing: SaButton(
-                label: 'REGENERATE NOW',
-                icon: Icons.bolt,
-                color: spec.accent,
-                busy: _regenerating,
-                onPressed: widget.enabled ? _regenerate : null,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SaStatTile(
-                  label: 'Briefings archived',
-                  value: '$_historyCount',
-                  icon: Icons.inventory_2_outlined,
-                  color: spec.accent,
                 ),
-                SaStatTile(
-                  label: 'Factory scopes',
-                  value: '$_factoryCount',
-                  icon: Icons.factory_outlined,
-                  color: Sa.violet,
-                ),
-                SaStatTile(
-                  label: 'Generated total',
-                  value: '${(_stats?['generated'] as num?)?.toInt() ?? '—'}',
-                  icon: Icons.auto_awesome,
-                  color: Sa.green,
-                ),
-                SaStatTile(
-                  label: 'Last generated',
-                  value: _agoIso(_stats?['lastGeneratedAt'] ??
-                      latest?['generatedAt']),
-                  icon: Icons.schedule,
-                  color: Sa.amber,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      _ModelEnginePanel(
-          agent: 'briefing', accent: spec.accent, enabled: widget.enabled),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.article_outlined,
-              title: 'LATEST DISPATCH',
-              subtitle: 'The exact words the PMs are reading right now.',
-              accent: spec.accent,
-              trailing: Wrap(
-                spacing: 6,
-                children: [
-                  GlowChip(
-                    label: model.contains('llama')
-                        ? 'LLAMA 3.2 3B'
-                        : model.toUpperCase(),
-                    color: spec.accent,
-                    icon: Icons.memory,
-                  ),
-                  if ((latest?['date'] ?? '').toString().isNotEmpty)
-                    GlowChip(
-                        label: (latest?['date'] ?? '').toString(),
-                        color: Sa.muted),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _FactoryScopeBar(
-              factories: _factories,
-              selected: _selectedFactory,
-              onSelect: _selectFactory,
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 14),
-            if (latest == null)
-              SaEmptyState(
-                icon: Icons.hourglass_empty,
-                title: _selectedFactory == null
-                    ? 'No briefing yet today'
-                    : 'No briefing yet for $_selectedFactory',
-                message:
-                    'The officer writes the first dispatch when a PM opens their dashboard (or hit REGENERATE NOW).',
                 accent: spec.accent,
-              )
-            else ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Sa.termBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Sa.termBorder),
-                ),
-                child: SelectableText(
-                  (latest['summary'] ?? '—').toString(),
-                  style: Sa.mono(size: 11.5, color: Sa.termText),
+                trailing: SaButton(
+                  label: context.tr('REGENERATE NOW'),
+                  icon: Icons.bolt,
+                  color: spec.accent,
+                  busy: _regenerating,
+                  onPressed: widget.enabled ? _regenerate : null,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Wrap(
-                spacing: 8,
-                runSpacing: 6,
+                spacing: 10,
+                runSpacing: 10,
                 children: [
-                  if (latest['accuracyPct'] != null)
-                    GlowChip(
-                        label: 'MODEL ACCURACY ${latest['accuracyPct']}%',
-                        color: Sa.violet),
-                  if (latest['topSupervisor'] is Map)
-                    GlowChip(
-                      label:
-                          'TOP: ${((latest['topSupervisor'] as Map)['name'] ?? '—')}'
-                          .toUpperCase(),
-                      color: Sa.green,
-                      icon: Icons.emoji_events_outlined,
+                  SaStatTile(
+                    label: context.tr('Briefings archived'),
+                    value: '$_historyCount',
+                    icon: Icons.inventory_2_outlined,
+                    color: spec.accent,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Factory scopes'),
+                    value: '$_factoryCount',
+                    icon: Icons.factory_outlined,
+                    color: Sa.violet,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Generated total'),
+                    value: '${(_stats?['generated'] as num?)?.toInt() ?? '—'}',
+                    icon: Icons.auto_awesome,
+                    color: Sa.green,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Last generated'),
+                    value: _agoIso(
+                      context,
+                      _stats?['lastGeneratedAt'] ?? latest?['generatedAt'],
                     ),
-                  if (latest['predictiveInsight'] is Map &&
-                      (latest['predictiveInsight'] as Map)['type'] != null)
-                    GlowChip(
-                      label:
-                          'PREDICTS ${((latest['predictiveInsight'] as Map)['type'] ?? '')}'
-                              .toUpperCase(),
-                      color: Sa.amber,
-                      icon: Icons.online_prediction,
-                    ),
+                    icon: Icons.schedule,
+                    color: Sa.amber,
+                  ),
                 ],
               ),
             ],
-          ],
+          ),
         ),
-      ),
-    ]);
+        _ModelEnginePanel(
+          agent: 'briefing',
+          accent: spec.accent,
+          enabled: widget.enabled,
+        ),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.article_outlined,
+                title: context.tr('LATEST DISPATCH'),
+                subtitle: context.tr(
+                  'The exact words the PMs are reading right now.',
+                ),
+                accent: spec.accent,
+                trailing: Wrap(
+                  spacing: 6,
+                  children: [
+                    GlowChip(
+                      label: model.contains('llama')
+                          ? 'LLAMA 3.2 3B'
+                          : model.toUpperCase(),
+                      color: spec.accent,
+                      icon: Icons.memory,
+                    ),
+                    if ((latest?['date'] ?? '').toString().isNotEmpty)
+                      GlowChip(
+                        label: (latest?['date'] ?? '').toString(),
+                        color: Sa.muted,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _FactoryScopeBar(
+                factories: _factories,
+                selected: _selectedFactory,
+                onSelect: _selectFactory,
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 14),
+              if (latest == null)
+                SaEmptyState(
+                  icon: Icons.hourglass_empty,
+                  title: _selectedFactory == null
+                      ? context.tr('No briefing yet today')
+                      : context.tr('No briefing yet for {factory}', {
+                          'factory': _selectedFactory!,
+                        }),
+                  message: context.tr(
+                    'The officer writes the first dispatch when a PM opens their dashboard (or hit REGENERATE NOW).',
+                  ),
+                  accent: spec.accent,
+                )
+              else ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Sa.termBg,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Sa.termBorder),
+                  ),
+                  child: SelectableText(
+                    (latest['summary'] ?? '—').toString(),
+                    style: Sa.mono(size: 11.5, color: Sa.termText),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    if (latest['accuracyPct'] != null)
+                      GlowChip(
+                        label: context.tr('MODEL ACCURACY {pct}%', {
+                          'pct': '${latest['accuracyPct']}',
+                        }),
+                        color: Sa.violet,
+                      ),
+                    if (latest['topSupervisor'] is Map)
+                      GlowChip(
+                        label: context
+                            .tr('TOP: {name}', {
+                              'name':
+                                  ((latest['topSupervisor']
+                                              as Map)['name'] ??
+                                          '—')
+                                      .toString(),
+                            })
+                            .toUpperCase(),
+                        color: Sa.green,
+                        icon: Icons.emoji_events_outlined,
+                      ),
+                    if (latest['predictiveInsight'] is Map &&
+                        (latest['predictiveInsight'] as Map)['type'] != null)
+                      GlowChip(
+                        label: context
+                            .tr('PREDICTS {type}', {
+                              'type':
+                                  ((latest['predictiveInsight'] as Map)['type'] ??
+                                          '')
+                                      .toString(),
+                            })
+                            .toUpperCase(),
+                        color: Sa.amber,
+                        icon: Icons.online_prediction,
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -4129,7 +4733,7 @@ class _FactoryScopeBar extends StatelessWidget {
             child: Icon(Icons.tune, size: 14, color: Sa.muted),
           ),
           _ScopeChip(
-            label: 'ALL FACTORIES',
+            label: context.tr('ALL FACTORIES'),
             selected: selected == null,
             color: accent,
             onTap: () => onSelect(null),
@@ -4173,10 +4777,12 @@ class _ScopeChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           gradient: selected
-              ? LinearGradient(colors: [
-                  color.withValues(alpha: 0.32),
-                  color.withValues(alpha: 0.14),
-                ])
+              ? LinearGradient(
+                  colors: [
+                    color.withValues(alpha: 0.32),
+                    color.withValues(alpha: 0.14),
+                  ],
+                )
               : null,
           color: selected ? null : Sa.termBg,
           borderRadius: BorderRadius.circular(99),
@@ -4243,21 +4849,22 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
         .ref('ai_agents/assist/stats')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted && v is Map) {
-        setState(() => _stats = Map<String, dynamic>.from(v));
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted && v is Map) {
+            setState(() => _stats = Map<String, dynamic>.from(v));
+          }
+        }, onError: (_) {});
     _logsSub = FirebaseDatabase.instance
         .ref('ai_agents/assist/logs')
         .limitToLast(40)
         .onValue
         .listen((event) {
-      if (mounted) {
-        setState(
-            () => _logs = _mapToSortedList(event.snapshot.value, 'at'));
-      }
-    }, onError: (_) {});
+          if (mounted) {
+            setState(
+              () => _logs = _mapToSortedList(event.snapshot.value, 'at'),
+            );
+          }
+        }, onError: (_) {});
     _loadPrompt();
     _loadKnowledge();
   }
@@ -4297,9 +4904,11 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
           list.add(m);
         }
       }
-      list.sort((a, b) => (b['resolvedAt'] ?? '')
-          .toString()
-          .compareTo((a['resolvedAt'] ?? '').toString()));
+      list.sort(
+        (a, b) => (b['resolvedAt'] ?? '').toString().compareTo(
+          (a['resolvedAt'] ?? '').toString(),
+        ),
+      );
       if (mounted) setState(() => _knowledge = list);
     } catch (_) {
     } finally {
@@ -4318,19 +4927,27 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
       });
       if (mounted) {
         setState(() => _overrideActive = true);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Prompt override deployed — live within 60s.',
-              style: Sa.body(size: 12.5)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              'Prompt override deployed — live within 60s.',
+              style: Sa.body(size: 12.5),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Save failed: $e',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              'Save failed: $e',
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _savingPrompt = false);
@@ -4366,224 +4983,259 @@ class _AssistAgentPanelState extends State<_AssistAgentPanel> {
   @override
   Widget build(BuildContext context) {
     final spec = widget.spec;
-    return _AgentScroll(children: [
-      if (!widget.enabled) _OfflineBanner(spec: spec),
-      GlassPanel(
-        accent: spec.accent,
-        glow: widget.enabled,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: spec.icon,
-              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
-              title: 'CO-PILOT STATUS',
-              subtitle:
+    return _AgentScroll(
+      children: [
+        if (!widget.enabled) _OfflineBanner(spec: spec),
+        GlassPanel(
+          accent: spec.accent,
+          glow: widget.enabled,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: spec.icon,
+                leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
+                title: context.tr('CO-PILOT STATUS'),
+                subtitle: context.tr(
                   'Serves resolution suggestions to supervisors, grounded in this plant’s real past fixes.',
-              accent: spec.accent,
-              trailing: GlowChip(
-                label: 'MODEL ENGINE',
-                color: spec.accent,
-                icon: Icons.hub_outlined,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SaStatTile(
-                  label: 'Suggestions served',
-                  value: '${(_stats?['served'] as num?)?.toInt() ?? 0}',
-                  icon: Icons.tips_and_updates_outlined,
-                  color: spec.accent,
                 ),
-                SaStatTile(
-                  label: 'Last served',
-                  value: _agoIso(_stats?['lastServedAt']),
-                  icon: Icons.schedule,
-                  color: Sa.amber,
-                ),
-                SaStatTile(
-                  label: 'Knowledge entries',
-                  value: '${_knowledge.length}',
-                  icon: Icons.school_outlined,
-                  color: Sa.violet,
-                ),
-                SaStatTile(
-                  label: 'Prompt',
-                  value: _overrideActive ? 'CUSTOM' : 'FACTORY DEFAULT',
-                  icon: Icons.edit_note,
-                  color: _overrideActive ? Sa.green : Sa.muted,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      _ModelEnginePanel(
-          agent: 'assist', accent: spec.accent, enabled: widget.enabled),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.edit_note,
-              title: 'PROMPT LAB',
-              subtitle:
-                  'The exact instruction sent to Llama on Cloudflare for every suggestion. Edit, deploy, or revert to the factory default.',
-              accent: spec.accent,
-              trailing: _overrideActive
-                  ? GlowChip(
-                      label: 'OVERRIDE ACTIVE', color: Sa.green, pulse: true)
-                  : GlowChip(label: 'DEFAULT', color: Sa.muted),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final ph in const [
-                  '{type}',
-                  '{description}',
-                  '{usine}',
-                  '{convoyeur}',
-                  '{poste}',
-                  '{history}',
-                ])
-                  Tooltip(
-                    message: switch (ph) {
-                      '{type}' => 'Human-readable alert type',
-                      '{description}' => 'Supervisor’s sanitized description',
-                      '{usine}' => 'Factory name',
-                      '{convoyeur}' => 'Conveyor line number',
-                      '{poste}' => 'Workstation number',
-                      _ => 'Block of past resolutions for this exact location',
-                    },
-                    child: GlowChip(label: ph, color: spec.accent),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: Sa.termBg.withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Sa.termBorder, width: 1.5),
-              ),
-              child: TextField(
-                controller: _prompt,
-                maxLines: 12,
-                minLines: 6,
-                style: Sa.mono(size: 11, color: Sa.termText),
-                cursorColor: spec.accent,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(12),
-                  filled: true,
-                  fillColor: Colors.transparent,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                SaButton(
-                  label: 'DEPLOY PROMPT',
-                  icon: Icons.rocket_launch_outlined,
-                  color: spec.accent,
-                  busy: _savingPrompt,
-                  onPressed: _savePrompt,
-                ),
-                const SizedBox(width: 10),
-                SaButton(
-                  label: 'REVERT TO DEFAULT',
-                  icon: Icons.history,
-                  color: Sa.amber,
-                  outlined: true,
-                  onPressed: _overrideActive ? _resetPrompt : null,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.school_outlined,
-              title: 'KNOWLEDGE BASE',
-              subtitle:
-                  'What the agent learns from: the latest validated resolutions it cites when supervisors ask for help.',
-              accent: spec.accent,
-              trailing: IconButton(
-                tooltip: 'Refresh',
-                onPressed: _loadKnowledge,
-                icon: Icon(Icons.refresh, size: 16, color: spec.accent),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_knowledgeLoading)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: spec.accent),
-                ),
-              )
-            else if (_knowledge.isEmpty)
-              SaEmptyState(
-                icon: Icons.menu_book_outlined,
-                title: 'No learned fixes yet',
-                message:
-                    'Resolved alerts with a written resolution become this agent’s study material automatically.',
                 accent: spec.accent,
-              )
-            else
-              ..._knowledge.take(20).map((k) => _LogTile(
-                    kind: (k['type'] ?? 'fix').toString(),
+                trailing: GlowChip(
+                  label: context.tr('MODEL ENGINE'),
+                  color: spec.accent,
+                  icon: Icons.hub_outlined,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SaStatTile(
+                    label: context.tr('Suggestions served'),
+                    value: '${(_stats?['served'] as num?)?.toInt() ?? 0}',
+                    icon: Icons.tips_and_updates_outlined,
                     color: spec.accent,
-                    title:
-                        '${k['usine'] ?? ''} · L${k['convoyeur'] ?? '?'} WS${k['poste'] ?? '?'} — ${k['resolutionReason'] ?? ''}',
-                    at: (k['resolvedAt'] ?? '').toString(),
-                    details: k,
-                  )),
-          ],
+                  ),
+                  SaStatTile(
+                    label: context.tr('Last served'),
+                    value: _agoIso(context, _stats?['lastServedAt']),
+                    icon: Icons.schedule,
+                    color: Sa.amber,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Knowledge entries'),
+                    value: '${_knowledge.length}',
+                    icon: Icons.school_outlined,
+                    color: Sa.violet,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Prompt'),
+                    value: _overrideActive
+                        ? context.tr('CUSTOM')
+                        : context.tr('FACTORY DEFAULT'),
+                    icon: Icons.edit_note,
+                    color: _overrideActive ? Sa.green : Sa.muted,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.receipt_long_outlined,
-              title: 'SERVICE LOG',
-              subtitle: 'Recent suggestion requests answered at the edge.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 12),
-            if (_logs.isEmpty)
-              Text(
-                'No requests logged yet — entries appear the moment a supervisor asks for an AI suggestion.',
-                style: Sa.body(size: 12, color: Sa.textDim),
-              )
-            else
-              ..._logs.take(30).map((l) => _LogTile(
-                    kind: (l['outcome'] ?? 'served').toString(),
-                    color: (l['outcome'] ?? '') == 'fallback'
-                        ? Sa.amber
-                        : spec.accent,
-                    title:
-                        '${l['type'] ?? ''} @ ${l['usine'] ?? ''} L${l['convoyeur'] ?? '?'} WS${l['poste'] ?? '?'} · ${l['historyUsed'] ?? 0} past fixes cited',
-                    at: (l['at'] ?? '').toString(),
-                    details: l,
-                  )),
-          ],
+        _ModelEnginePanel(
+          agent: 'assist',
+          accent: spec.accent,
+          enabled: widget.enabled,
         ),
-      ),
-    ]);
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.edit_note,
+                title: context.tr('PROMPT LAB'),
+                subtitle: context.tr(
+                  'The exact instruction sent to Llama on Cloudflare for every suggestion. Edit, deploy, or revert to the factory default.',
+                ),
+                accent: spec.accent,
+                trailing: _overrideActive
+                    ? GlowChip(
+                        label: context.tr('OVERRIDE ACTIVE'),
+                        color: Sa.green,
+                        pulse: true,
+                      )
+                    : GlowChip(label: context.tr('DEFAULT'), color: Sa.muted),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final ph in const [
+                    '{type}',
+                    '{description}',
+                    '{usine}',
+                    '{convoyeur}',
+                    '{poste}',
+                    '{history}',
+                  ])
+                    Tooltip(
+                      message: switch (ph) {
+                        '{type}' => context.tr('Human-readable alert type'),
+                        '{description}' => context.tr(
+                          'Supervisor’s sanitized description',
+                        ),
+                        '{usine}' => context.tr('Factory name'),
+                        '{convoyeur}' => context.tr('Conveyor line number'),
+                        '{poste}' => context.tr('Workstation number'),
+                        _ => context.tr(
+                          'Block of past resolutions for this exact location',
+                        ),
+                      },
+                      child: GlowChip(label: ph, color: spec.accent),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Sa.termBg.withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Sa.termBorder, width: 1.5),
+                ),
+                child: TextField(
+                  controller: _prompt,
+                  maxLines: 12,
+                  minLines: 6,
+                  style: Sa.mono(size: 11, color: Sa.termText),
+                  cursorColor: spec.accent,
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.all(12),
+                    filled: true,
+                    fillColor: Colors.transparent,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  SaButton(
+                    label: context.tr('DEPLOY PROMPT'),
+                    icon: Icons.rocket_launch_outlined,
+                    color: spec.accent,
+                    busy: _savingPrompt,
+                    onPressed: _savePrompt,
+                  ),
+                  const SizedBox(width: 10),
+                  SaButton(
+                    label: context.tr('REVERT TO DEFAULT'),
+                    icon: Icons.history,
+                    color: Sa.amber,
+                    outlined: true,
+                    onPressed: _overrideActive ? _resetPrompt : null,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.school_outlined,
+                title: context.tr('KNOWLEDGE BASE'),
+                subtitle: context.tr(
+                  'What the agent learns from: the latest validated resolutions it cites when supervisors ask for help.',
+                ),
+                accent: spec.accent,
+                trailing: IconButton(
+                  tooltip: context.tr('Refresh'),
+                  onPressed: _loadKnowledge,
+                  icon: Icon(Icons.refresh, size: 16, color: spec.accent),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_knowledgeLoading)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: spec.accent,
+                    ),
+                  ),
+                )
+              else if (_knowledge.isEmpty)
+                SaEmptyState(
+                  icon: Icons.menu_book_outlined,
+                  title: context.tr('No learned fixes yet'),
+                  message: context.tr(
+                    'Resolved alerts with a written resolution become this agent’s study material automatically.',
+                  ),
+                  accent: spec.accent,
+                )
+              else
+                ..._knowledge
+                    .take(20)
+                    .map(
+                      (k) => _LogTile(
+                        kind: (k['type'] ?? 'fix').toString(),
+                        color: spec.accent,
+                        title:
+                            '${k['usine'] ?? ''} · L${k['convoyeur'] ?? '?'} WS${k['poste'] ?? '?'} — ${k['resolutionReason'] ?? ''}',
+                        at: (k['resolvedAt'] ?? '').toString(),
+                        details: k,
+                      ),
+                    ),
+            ],
+          ),
+        ),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.receipt_long_outlined,
+                title: context.tr('SERVICE LOG'),
+                subtitle: context.tr(
+                  'Recent suggestion requests answered at the edge.',
+                ),
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 12),
+              if (_logs.isEmpty)
+                Text(
+                  context.tr(
+                    'No requests logged yet — entries appear the moment a supervisor asks for an AI suggestion.',
+                  ),
+                  style: Sa.body(size: 12, color: Sa.textDim),
+                )
+              else
+                ..._logs
+                    .take(30)
+                    .map(
+                      (l) => _LogTile(
+                        kind: (l['outcome'] ?? 'served').toString(),
+                        color: (l['outcome'] ?? '') == 'fallback'
+                            ? Sa.amber
+                            : spec.accent,
+                        title: context.tr('{prefix} · {count} past fixes cited', {
+                          'prefix':
+                              '${l['type'] ?? ''} @ ${l['usine'] ?? ''} L${l['convoyeur'] ?? '?'} WS${l['poste'] ?? '?'}',
+                          'count': '${l['historyUsed'] ?? 0}',
+                        }),
+                        at: (l['at'] ?? '').toString(),
+                        details: l,
+                      ),
+                    ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -4628,11 +5280,13 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
         .ref('ai_model_evals/${widget.agent}/driftStatus')
         .onValue
         .listen((e) {
-      final v = e.snapshot.value;
-      if (mounted) {
-        setState(() => _drift = v is Map ? Map<String, dynamic>.from(v) : null);
-      }
-    }, onError: (_) {});
+          final v = e.snapshot.value;
+          if (mounted) {
+            setState(
+              () => _drift = v is Map ? Map<String, dynamic>.from(v) : null,
+            );
+          }
+        }, onError: (_) {});
   }
 
   Future<void> _load() async {
@@ -4654,7 +5308,12 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
     final model = aiModelById(_modelId);
     final key = _key.text.trim();
     if (model.needsKey && key.isEmpty) {
-      _toast('${model.label} needs an API key — paste it first.', err: true);
+      _toast(
+        context.tr('{label} needs an API key — paste it first.', {
+          'label': model.label,
+        }),
+        err: true,
+      );
       return;
     }
     setState(() => _saving = true);
@@ -4663,9 +5322,13 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
         widget.agent,
         AiModelConfig(modelId: _modelId, apiKey: model.needsKey ? key : ''),
       );
-      _toast('Model saved — ${model.label}. Live within 60s.');
+      _toast(
+        context.tr('Model saved — {label}. Live within 60s.', {
+          'label': model.label,
+        }),
+      );
     } catch (e) {
-      _toast('Save failed: $e', err: true);
+      _toast(context.tr('Save failed: {error}', {'error': '$e'}), err: true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -4675,7 +5338,12 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
     final model = aiModelById(_modelId);
     final key = _key.text.trim();
     if (model.needsKey && key.isEmpty) {
-      _toast('${model.label} needs an API key to test.', err: true);
+      _toast(
+        context.tr('{label} needs an API key to test.', {
+          'label': model.label,
+        }),
+        err: true,
+      );
       return;
     }
     setState(() => _testing = true);
@@ -4686,7 +5354,7 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
       );
       if (mounted) setState(() => _eval = result);
     } catch (e) {
-      _toast('Test failed: $e', err: true);
+      _toast(context.tr('Test failed: {error}', {'error': '$e'}), err: true);
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -4696,8 +5364,9 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
     final d = _drift!;
     final drifting = d['drift'] == true;
     final score = (d['score'] is num) ? (d['score'] as num).toDouble() : 0.0;
-    final baseline =
-        (d['baseline'] is num) ? (d['baseline'] as num).toDouble() : null;
+    final baseline = (d['baseline'] is num)
+        ? (d['baseline'] as num).toDouble()
+        : null;
     final c = drifting ? Sa.red : Sa.green;
     final reason = (d['reason'] ?? '').toString();
     return Container(
@@ -4710,19 +5379,37 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
       ),
       child: Row(
         children: [
-          Icon(drifting ? Icons.warning_amber_rounded : Icons.verified_outlined,
-              size: 16, color: c),
+          Icon(
+            drifting ? Icons.warning_amber_rounded : Icons.verified_outlined,
+            size: 16,
+            color: c,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               drifting
-                  ? 'Drift detected — ${reason.isNotEmpty ? reason : 'quality regressed'}'
-                  : 'Quality stable · ${(score * 100).round()}%${baseline != null ? ' vs ${(baseline * 100).round()}% baseline' : ''}',
+                  ? context.tr('Drift detected — {reason}', {
+                      'reason': reason.isNotEmpty
+                          ? reason
+                          : context.tr('quality regressed'),
+                    })
+                  : context.tr('Quality stable · {pct}%{baseline}', {
+                      'pct': '${(score * 100).round()}',
+                      'baseline': baseline != null
+                          ? context.tr(' vs {pct}% baseline', {
+                              'pct': '${(baseline * 100).round()}',
+                            })
+                          : '',
+                    }),
               style: Sa.body(size: 11.5, color: Sa.text),
             ),
           ),
-          Text('checked ${_agoIso(d['at'])}',
-              style: Sa.mono(size: 9.5, color: Sa.muted)),
+          Text(
+            context.tr('checked {time}', {
+              'time': _agoIso(context, d['at']),
+            }),
+            style: Sa.mono(size: 9.5, color: Sa.muted),
+          ),
         ],
       ),
     );
@@ -4730,11 +5417,15 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
 
   void _toast(String msg, {bool err = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: Sa.panelSolid,
-      content:
-          Text(msg, style: Sa.body(size: 12.5, color: err ? Sa.red : Sa.text)),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Sa.panelSolid,
+        content: Text(
+          msg,
+          style: Sa.body(size: 12.5, color: err ? Sa.red : Sa.text),
+        ),
+      ),
+    );
   }
 
   @override
@@ -4753,12 +5444,15 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
         children: [
           SaSectionHeader(
             icon: Icons.hub_outlined,
-            title: 'MODEL ENGINE',
-            subtitle:
-                'Choose which AI model writes this agent’s output. Llama runs free on the edge; any other provider uses your own API key — stored in a SuperAdmin-only node and used edge-side only.',
+            title: context.tr('MODEL ENGINE'),
+            subtitle: context.tr(
+              'Choose which AI model writes this agent’s output. Llama runs free on the edge; any other provider uses your own API key — stored in a SuperAdmin-only node and used edge-side only.',
+            ),
             accent: widget.accent,
             trailing: GlowChip(
-              label: selected.needsKey ? 'BRING-YOUR-OWN-KEY' : 'BUILT-IN',
+              label: selected.needsKey
+                  ? context.tr('BRING-YOUR-OWN-KEY')
+                  : context.tr('BUILT-IN'),
               color: selected.needsKey ? Sa.amber : Sa.green,
               icon: selected.needsKey ? Icons.vpn_key_outlined : Icons.bolt,
             ),
@@ -4770,7 +5464,9 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
               child: Padding(
                 padding: const EdgeInsets.all(18),
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, color: widget.accent),
+                  strokeWidth: 2,
+                  color: widget.accent,
+                ),
               ),
             )
           else ...[
@@ -4791,8 +5487,10 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
             ),
             const SizedBox(height: 14),
             if (selected.needsKey) ...[
-              Text('${selected.label} — API key',
-                  style: Sa.body(size: 12, color: Sa.muted)),
+              Text(
+                context.tr('{label} — API key', {'label': selected.label}),
+                style: Sa.body(size: 12, color: Sa.muted),
+              ),
               const SizedBox(height: 6),
               Container(
                 decoration: BoxDecoration(
@@ -4808,31 +5506,42 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
                   decoration: InputDecoration(
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 14),
-                    hintText: 'Paste your ${selected.provider} API key',
+                      horizontal: 12,
+                      vertical: 14,
+                    ),
+                    hintText: context.tr('Paste your {provider} API key', {
+                      'provider': selected.provider,
+                    }),
                     hintStyle: Sa.mono(size: 11.5, color: Sa.muted),
                     suffixIcon: IconButton(
-                      tooltip: _obscure ? 'Show' : 'Hide',
+                      tooltip: _obscure
+                          ? context.tr('Show')
+                          : context.tr('Hide'),
                       icon: Icon(
-                          _obscure ? Icons.visibility_off : Icons.visibility,
-                          size: 16,
-                          color: Sa.muted),
+                        _obscure ? Icons.visibility_off : Icons.visibility,
+                        size: 16,
+                        color: Sa.muted,
+                      ),
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 6),
-              Row(children: [
-                Icon(Icons.lock_outline, size: 12, color: Sa.muted),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'The key is read only by the edge worker and SuperAdmin. It never reaches supervisor or PM devices. If a call fails, the agent falls back to built-in Llama automatically.',
-                    style: Sa.body(size: 11, color: Sa.muted),
+              Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 12, color: Sa.muted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      context.tr(
+                        'The key is read only by the edge worker and SuperAdmin. It never reaches supervisor or PM devices. If a call fails, the agent falls back to built-in Llama automatically.',
+                      ),
+                      style: Sa.body(size: 11, color: Sa.muted),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
               const SizedBox(height: 12),
             ] else ...[
               Container(
@@ -4842,16 +5551,20 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Sa.green.withValues(alpha: 0.3)),
                 ),
-                child: Row(children: [
-                  Icon(Icons.bolt, size: 16, color: Sa.green),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Built-in Llama 3.2 runs on Cloudflare Workers AI — no API key, no extra cost. Pick another provider above to use a stronger model.',
-                      style: Sa.body(size: 12, color: Sa.text),
+                child: Row(
+                  children: [
+                    Icon(Icons.bolt, size: 16, color: Sa.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        context.tr(
+                          'Built-in Llama 3.2 runs on Cloudflare Workers AI — no API key, no extra cost. Pick another provider above to use a stronger model.',
+                        ),
+                        style: Sa.body(size: 12, color: Sa.text),
+                      ),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
             ],
@@ -4860,7 +5573,7 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
               runSpacing: 10,
               children: [
                 SaButton(
-                  label: 'TEST THIS MODEL',
+                  label: context.tr('TEST THIS MODEL'),
                   icon: Icons.science_outlined,
                   color: widget.accent,
                   outlined: true,
@@ -4868,7 +5581,7 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
                   onPressed: widget.enabled ? _test : null,
                 ),
                 SaButton(
-                  label: 'SAVE MODEL',
+                  label: context.tr('SAVE MODEL'),
                   icon: Icons.save_outlined,
                   color: widget.accent,
                   busy: _saving,
@@ -4880,7 +5593,9 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                  'Running both models on golden tasks and scoring them…',
+                  context.tr(
+                    'Running both models on golden tasks and scoring them…',
+                  ),
                   style: Sa.body(size: 11, color: Sa.muted),
                 ),
               ),
@@ -4899,7 +5614,8 @@ class _EvalResultCard extends StatelessWidget {
   final Color accent;
   const _EvalResultCard({required this.eval, required this.accent});
 
-  static String _short(String id) => id.isEmpty ? 'built-in' : id;
+  static String _short(BuildContext context, String id) =>
+      id.isEmpty ? context.tr('built-in') : id;
 
   Widget _scoreRow(String label, double score, Color color, bool strong) {
     final pct = score.clamp(0.0, 1.0);
@@ -4907,10 +5623,12 @@ class _EvalResultCard extends StatelessWidget {
       children: [
         SizedBox(
           width: 132,
-          child: Text(label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Sa.body(size: 11.5, color: strong ? Sa.text : Sa.textDim)),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Sa.body(size: 11.5, color: strong ? Sa.text : Sa.textDim),
+          ),
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -4920,12 +5638,16 @@ class _EvalResultCard extends StatelessWidget {
               width: double.infinity,
               alignment: Alignment.centerLeft,
               decoration: BoxDecoration(
-                  color: Sa.panelSolid, borderRadius: BorderRadius.circular(6)),
+                color: Sa.panelSolid,
+                borderRadius: BorderRadius.circular(6),
+              ),
               child: Container(
                 height: 10,
                 width: cons.maxWidth * pct,
                 decoration: BoxDecoration(
-                    color: color, borderRadius: BorderRadius.circular(6)),
+                  color: color,
+                  borderRadius: BorderRadius.circular(6),
+                ),
               ),
             ),
           ),
@@ -4933,9 +5655,11 @@ class _EvalResultCard extends StatelessWidget {
         const SizedBox(width: 10),
         SizedBox(
           width: 42,
-          child: Text('${(pct * 100).round()}%',
-              textAlign: TextAlign.right,
-              style: Sa.mono(size: 11.5, color: strong ? Sa.text : Sa.muted)),
+          child: Text(
+            '${(pct * 100).round()}%',
+            textAlign: TextAlign.right,
+            style: Sa.mono(size: 11.5, color: strong ? Sa.text : Sa.muted),
+          ),
         ),
       ],
     );
@@ -4944,17 +5668,19 @@ class _EvalResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final v = eval.verdict;
-    final vColor = v == 'better' ? Sa.green : (v == 'worse' ? Sa.red : Sa.amber);
+    final vColor = v == 'better'
+        ? Sa.green
+        : (v == 'worse' ? Sa.red : Sa.amber);
     final vLabel = v == 'better'
-        ? 'BETTER — safe to deploy'
+        ? context.tr('BETTER — safe to deploy')
         : v == 'worse'
-            ? 'WORSE — keep current'
-            : 'SIMILAR — no real gain';
+        ? context.tr('WORSE — keep current')
+        : context.tr('SIMILAR — no real gain');
     final vIcon = v == 'better'
         ? Icons.trending_up
         : v == 'worse'
-            ? Icons.trending_down
-            : Icons.drag_handle;
+        ? Icons.trending_down
+        : Icons.drag_handle;
     return Container(
       margin: const EdgeInsets.only(top: 14),
       padding: const EdgeInsets.all(14),
@@ -4971,19 +5697,30 @@ class _EvalResultCard extends StatelessWidget {
               Icon(vIcon, size: 18, color: vColor),
               const SizedBox(width: 8),
               Expanded(
-                  child: Text(vLabel, style: Sa.heading(size: 13, color: vColor))),
-              Text('${eval.delta >= 0 ? '+' : ''}${(eval.delta * 100).round()} pts',
-                  style: Sa.mono(size: 12, color: vColor)),
+                child: Text(vLabel, style: Sa.heading(size: 13, color: vColor)),
+              ),
+              Text(
+                '${eval.delta >= 0 ? '+' : ''}${(eval.delta * 100).round()} pts',
+                style: Sa.mono(size: 12, color: vColor),
+              ),
             ],
           ),
           const SizedBox(height: 12),
-          _scoreRow('This model', eval.candidate.score, accent, true),
+          _scoreRow(context.tr('This model'), eval.candidate.score, accent, true),
           const SizedBox(height: 8),
-          _scoreRow('Current · ${_short(eval.champion.modelId)}',
-              eval.champion.score, Sa.muted, false),
+          _scoreRow(
+            context.tr('Current · {model}', {
+              'model': _short(context, eval.champion.modelId),
+            }),
+            eval.champion.score,
+            Sa.muted,
+            false,
+          ),
           const SizedBox(height: 12),
           Text(
-            'Both models ran the same golden tasks; we score grounding, structure, on-topic accuracy and length. Higher is better.',
+            context.tr(
+              'Both models ran the same golden tasks; we score grounding, structure, on-topic accuracy and length. Higher is better.',
+            ),
             style: Sa.body(size: 10.5, color: Sa.muted),
           ),
         ],
@@ -5050,11 +5787,15 @@ class _ModelOptionTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Sa.body(
-                        size: 11.5, color: selected ? Sa.text : Sa.textDim),
+                      size: 11.5,
+                      color: selected ? Sa.text : Sa.textDim,
+                    ),
                   ),
                   if (!model.needsKey)
-                    Text('default · no key',
-                        style: Sa.body(size: 9.5, color: Sa.green)),
+                    Text(
+                      context.tr('default · no key'),
+                      style: Sa.body(size: 9.5, color: Sa.green),
+                    ),
                 ],
               ),
             ),
@@ -5071,8 +5812,11 @@ class _SecurityAgentPanel extends StatefulWidget {
   final _AgentSpec spec;
   final bool enabled;
   final Map<String, dynamic>? health;
-  const _SecurityAgentPanel(
-      {required this.spec, required this.enabled, required this.health});
+  const _SecurityAgentPanel({
+    required this.spec,
+    required this.enabled,
+    required this.health,
+  });
 
   @override
   State<_SecurityAgentPanel> createState() => _SecurityAgentPanelState();
@@ -5129,24 +5873,31 @@ class _SecurityAgentPanelState extends State<_SecurityAgentPanel> {
         .ref('security/actions')
         .limitToLast(50)
         .onValue
-        .listen((event) {
-      if (mounted) {
-        setState(
-            () => _actions = _mapToSortedList(event.snapshot.value, 'at'));
-      }
-    }, onError: (e) {
-      if (mounted) setState(() => _error = '$e');
-    });
+        .listen(
+          (event) {
+            if (mounted) {
+              setState(
+                () => _actions = _mapToSortedList(event.snapshot.value, 'at'),
+              );
+            }
+          },
+          onError: (e) {
+            if (mounted) setState(() => _error = '$e');
+          },
+        );
     _settingsSub = FirebaseDatabase.instance
         .ref('ai_agents/security/settings')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted) {
-        setState(() =>
-            _settings = v is Map ? Map<String, dynamic>.from(v) : const {});
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted) {
+            setState(
+              () => _settings = v is Map
+                  ? Map<String, dynamic>.from(v)
+                  : const {},
+            );
+          }
+        }, onError: (_) {});
   }
 
   @override
@@ -5164,21 +5915,29 @@ class _SecurityAgentPanelState extends State<_SecurityAgentPanel> {
           .ref('ai_agents/security/settings/$key')
           .set(value);
       if (!value && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text(
-            'Defense disabled. The edge worker drops this shield within 60s — re-arm it when done testing.',
-            style: Sa.body(size: 12.5, color: Sa.amber),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              context.tr(
+                'Defense disabled. The edge worker drops this shield within 60s — re-arm it when done testing.',
+              ),
+              style: Sa.body(size: 12.5, color: Sa.amber),
+            ),
           ),
-        ));
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: Sa.panelSolid,
-          content: Text('Update failed: $e',
-              style: Sa.body(size: 12.5, color: Sa.red)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Sa.panelSolid,
+            content: Text(
+              context.tr('Update failed: {error}', {'error': '$e'}),
+              style: Sa.body(size: 12.5, color: Sa.red),
+            ),
+          ),
+        );
       }
     }
   }
@@ -5207,152 +5966,168 @@ class _SecurityAgentPanelState extends State<_SecurityAgentPanel> {
     final maxKind = byKind.values.isEmpty ? 0 : byKind.values.reduce(math.max);
     final armed = _defenses.where((d) => _defenseOn(d.key)).length;
 
-    return _AgentScroll(children: [
-      if (!widget.enabled) _OfflineBanner(spec: spec),
-      GlassPanel(
-        accent: spec.accent,
-        glow: widget.enabled,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: spec.icon,
-              title: 'THREAT CONSOLE',
-              subtitle:
+    return _AgentScroll(
+      children: [
+        if (!widget.enabled) _OfflineBanner(spec: spec),
+        GlassPanel(
+          accent: spec.accent,
+          glow: widget.enabled,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: spec.icon,
+                title: context.tr('THREAT CONSOLE'),
+                subtitle: context.tr(
                   'Standing guard on every worker endpoint. Blocks are logged with the exact signature that fired.',
-              accent: spec.accent,
-              trailing: GlowChip(
-                label: '$armed/${_defenses.length} DEFENSES ARMED',
-                color: armed == _defenses.length ? Sa.green : Sa.amber,
-                pulse: true,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SaStatTile(
-                  label: 'Blocks · 24h',
-                  value: '${recent.length}',
-                  icon: Icons.block_outlined,
-                  color: spec.accent,
                 ),
-                SaStatTile(
-                  label: 'Actions · last cron',
-                  value:
-                      '${(widget.health?['securityActions'] as num?)?.toInt() ?? 0}',
-                  icon: Icons.gpp_maybe_outlined,
-                  color: Sa.amber,
-                ),
-                SaStatTile(
-                  label: 'Attack signatures',
-                  value: '12',
-                  icon: Icons.fingerprint,
-                  color: Sa.violet,
-                ),
-                SaStatTile(
-                  label: 'Last block',
-                  value: _actions.isEmpty ? '—' : _agoIso(_actions.first['at']),
-                  icon: Icons.schedule,
-                  color: Sa.blue,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.tune,
-              title: 'DEFENSE GRID',
-              subtitle:
-                  'Arm or stand down individual shields. Changes reach the edge worker within 60 seconds.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 12),
-            for (final d in _defenses)
-              _SettingTile(
-                title: d.title,
-                description: d.desc,
-                icon: d.icon,
                 accent: spec.accent,
-                value: _defenseOn(d.key),
-                onChanged: (v) => _setDefense(d.key, v),
+                trailing: GlowChip(
+                  label: context.tr('{armed}/{total} DEFENSES ARMED', {
+                    'armed': '$armed',
+                    'total': '${_defenses.length}',
+                  }),
+                  color: armed == _defenses.length ? Sa.green : Sa.amber,
+                  pulse: true,
+                ),
               ),
-          ],
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SaStatTile(
+                    label: context.tr('Blocks · 24h'),
+                    value: '${recent.length}',
+                    icon: Icons.block_outlined,
+                    color: spec.accent,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Actions · last cron'),
+                    value:
+                        '${(widget.health?['securityActions'] as num?)?.toInt() ?? 0}',
+                    icon: Icons.gpp_maybe_outlined,
+                    color: Sa.amber,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Attack signatures'),
+                    value: '12',
+                    icon: Icons.fingerprint,
+                    color: Sa.violet,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Last block'),
+                    value: _actions.isEmpty
+                        ? '—'
+                        : _agoIso(context, _actions.first['at']),
+                    icon: Icons.schedule,
+                    color: Sa.blue,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.stacked_bar_chart,
-              title: 'THREAT MIX · 24H',
-              subtitle: 'What the sentinel has been deflecting.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 14),
-            if (byKind.isEmpty)
-              Text('Clean skies — no blocks in the last 24 hours.',
-                  style: Sa.body(size: 12, color: Sa.textDim))
-            else
-              ...byKind.entries.map((e) => _KindBar(
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.tune,
+                title: context.tr('DEFENSE GRID'),
+                subtitle: context.tr(
+                  'Arm or stand down individual shields. Changes reach the edge worker within 60 seconds.',
+                ),
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 12),
+              for (final d in _defenses)
+                _SettingTile(
+                  title: context.tr(d.title),
+                  description: context.tr(d.desc),
+                  icon: d.icon,
+                  accent: spec.accent,
+                  value: _defenseOn(d.key),
+                  onChanged: (v) => _setDefense(d.key, v),
+                ),
+            ],
+          ),
+        ),
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.stacked_bar_chart,
+                title: context.tr('THREAT MIX · 24H'),
+                subtitle: context.tr('What the sentinel has been deflecting.'),
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 14),
+              if (byKind.isEmpty)
+                Text(
+                  context.tr('Clean skies — no blocks in the last 24 hours.'),
+                  style: Sa.body(size: 12, color: Sa.textDim),
+                )
+              else
+                ...byKind.entries.map(
+                  (e) => _KindBar(
                     label: e.key,
                     count: e.value,
                     max: maxKind,
                     color: _kindColor(e.key),
-                  )),
-          ],
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.receipt_long_outlined,
-              title: 'ENFORCEMENT LOG',
-              subtitle:
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.receipt_long_outlined,
+                title: context.tr('ENFORCEMENT LOG'),
+                subtitle: context.tr(
                   'Every block with endpoint, fingerprint and matched patterns. Tap for the full record.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 12),
-            if (_error != null)
-              SaEmptyState(
-                icon: Icons.lock_outline,
-                title: 'Cannot read security actions',
-                message: _error!,
-                accent: Sa.red,
-              )
-            else if (_actions.isEmpty)
-              SaEmptyState(
-                icon: Icons.verified_user_outlined,
-                title: 'No enforcement actions',
-                message: 'The sentinel has not needed to block anything yet.',
-                accent: Sa.green,
-              )
-            else
-              ..._actions.take(30).map((a) {
-                final kind = (a['kind'] ?? 'action').toString();
-                final fp = (a['fingerprint'] ?? '').toString();
-                return _LogTile(
-                  kind: kind,
-                  color: _kindColor(kind),
-                  title:
-                      '${a['endpoint'] ?? '—'} · ${fp.length > 10 ? fp.substring(fp.length - 10) : fp}',
-                  at: (a['at'] ?? '').toString(),
-                  details: a,
-                );
-              }),
-          ],
+                ),
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 12),
+              if (_error != null)
+                SaEmptyState(
+                  icon: Icons.lock_outline,
+                  title: context.tr('Cannot read security actions'),
+                  message: _error!,
+                  accent: Sa.red,
+                )
+              else if (_actions.isEmpty)
+                SaEmptyState(
+                  icon: Icons.verified_user_outlined,
+                  title: context.tr('No enforcement actions'),
+                  message: context.tr(
+                    'The sentinel has not needed to block anything yet.',
+                  ),
+                  accent: Sa.green,
+                )
+              else
+                ..._actions.take(30).map((a) {
+                  final kind = (a['kind'] ?? 'action').toString();
+                  final fp = (a['fingerprint'] ?? '').toString();
+                  return _LogTile(
+                    kind: kind,
+                    color: _kindColor(kind),
+                    title:
+                        '${a['endpoint'] ?? '—'} · ${fp.length > 10 ? fp.substring(fp.length - 10) : fp}',
+                    at: (a['at'] ?? '').toString(),
+                    details: a,
+                  );
+                }),
+            ],
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
@@ -5390,32 +6165,36 @@ class _PredictiveAgentPanelState extends State<_PredictiveAgentPanel> {
         .ref('ai_forecast/accuracy/latest')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted) {
-        setState(() =>
-            _accuracy = v is Map ? Map<String, dynamic>.from(v) : null);
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted) {
+            setState(
+              () => _accuracy = v is Map ? Map<String, dynamic>.from(v) : null,
+            );
+          }
+        }, onError: (_) {});
     _histSub = FirebaseDatabase.instance
         .ref('ai_forecast/accuracy/history')
         .limitToLast(30)
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      final list = <Map<String, dynamic>>[];
-      if (v is Map) {
-        v.forEach((k, val) {
-          if (val is Map) {
-            final m = Map<String, dynamic>.from(val);
-            m['day'] = k.toString();
-            list.add(m);
+          final v = event.snapshot.value;
+          final list = <Map<String, dynamic>>[];
+          if (v is Map) {
+            v.forEach((k, val) {
+              if (val is Map) {
+                final m = Map<String, dynamic>.from(val);
+                m['day'] = k.toString();
+                list.add(m);
+              }
+            });
+            list.sort(
+              (a, b) => (a['day'] ?? '').toString().compareTo(
+                (b['day'] ?? '').toString(),
+              ),
+            );
           }
-        });
-        list.sort(
-            (a, b) => (a['day'] ?? '').toString().compareTo((b['day'] ?? '').toString()));
-      }
-      if (mounted) setState(() => _gradeHistory = list);
-    }, onError: (_) {});
+          if (mounted) setState(() => _gradeHistory = list);
+        }, onError: (_) {});
     // Watch the version only; re-fetch the light metadata children when it
     // bumps (the weights blob never enters this screen).
     _versionSub = FirebaseDatabase.instance
@@ -5426,22 +6205,28 @@ class _PredictiveAgentPanelState extends State<_PredictiveAgentPanel> {
         .ref('ai_predictions/forecast')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted) {
-        setState(() =>
-            _liveForecast = v is Map ? Map<String, dynamic>.from(v) : null);
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted) {
+            setState(
+              () => _liveForecast = v is Map
+                  ? Map<String, dynamic>.from(v)
+                  : null,
+            );
+          }
+        }, onError: (_) {});
     _settingsSub = FirebaseDatabase.instance
         .ref('ai_agents/predictive/settings')
         .onValue
         .listen((event) {
-      final v = event.snapshot.value;
-      if (mounted) {
-        setState(() =>
-            _settings = v is Map ? Map<String, dynamic>.from(v) : const {});
-      }
-    }, onError: (_) {});
+          final v = event.snapshot.value;
+          if (mounted) {
+            setState(
+              () => _settings = v is Map
+                  ? Map<String, dynamic>.from(v)
+                  : const {},
+            );
+          }
+        }, onError: (_) {});
   }
 
   Future<void> _loadModelMeta() async {
@@ -5506,289 +6291,354 @@ class _PredictiveAgentPanelState extends State<_PredictiveAgentPanel> {
         : ((_accuracy?['brierSum'] as num?)?.toDouble() ?? 0) / pairs;
     final machines = (_liveForecast?['machineCount'] as num?)?.toInt() ?? 0;
 
-    return _AgentScroll(children: [
-      if (!widget.enabled) _OfflineBanner(spec: spec),
-      _SegTabs(
-        tabs: const ['MODEL CORE', 'BRAIN'],
-        icons: const [Icons.dashboard_customize_outlined, Icons.psychology],
-        index: _view,
-        accent: spec.accent,
-        onChanged: (i) => setState(() => _view = i),
-      ),
-      if (_view == 1)
-        _PredictiveBrainView(
-          modelMeta: _modelMeta,
-          accuracy: _accuracy,
-          gradeHistory: _gradeHistory,
-          liveForecast: _liveForecast,
+    return _AgentScroll(
+      children: [
+        if (!widget.enabled) _OfflineBanner(spec: spec),
+        _SegTabs(
+          tabs: [context.tr('MODEL CORE'), context.tr('BRAIN')],
+          icons: const [Icons.dashboard_customize_outlined, Icons.psychology],
+          index: _view,
           accent: spec.accent,
-          enabled: widget.enabled,
+          onChanged: (i) => setState(() => _view = i),
         ),
-      if (_view == 0)
-        GlassPanel(
-        accent: spec.accent,
-        glow: widget.enabled,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: spec.icon,
-              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
-              title: 'MODEL CORE',
-              subtitle: deployed
-                  ? 'On-device gradient-boosted forecaster, live on every Production Manager dashboard.'
-                  : 'No model deployed yet — train one in the AI Training tab.',
-              accent: spec.accent,
-              trailing: Wrap(
-                spacing: 6,
-                children: [
-                  GlowChip(
-                    label: 'SIA-GBDT v$version',
-                    color: spec.accent,
-                    icon: Icons.account_tree_outlined,
-                  ),
-                  if (_modelMeta['learning'] == true)
-                    GlowChip(label: 'LEARNING ✓', color: Sa.green),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SaStatTile(
-                  label: 'Dataset',
-                  value: (_modelMeta['datasetName'] ?? '—').toString(),
-                  icon: Icons.dataset_outlined,
-                  color: spec.accent,
-                ),
-                SaStatTile(
-                  label: 'Training samples',
-                  value: '${(_modelMeta['sampleCount'] as num?)?.toInt() ?? 0}',
-                  icon: Icons.grain,
-                  color: Sa.blue,
-                ),
-                SaStatTile(
-                  label: 'Boosted rounds',
-                  value:
-                      '${(_modelMeta['rounds'] as num?)?.toInt() ?? 0} + $adapted adapted',
-                  icon: Icons.forest_outlined,
-                  color: Sa.green,
-                ),
-                SaStatTile(
-                  label: 'Val accuracy',
-                  value:
-                      '${(((_modelMeta['valAccuracy'] as num?)?.toDouble() ?? 0) * 100).toStringAsFixed(1)}%',
-                  icon: Icons.verified_outlined,
-                  color: Sa.violet,
-                ),
-                SaStatTile(
-                  label: 'Machines forecast',
-                  value: '$machines',
-                  icon: Icons.precision_manufacturing_outlined,
-                  color: Sa.amber,
-                ),
-                SaStatTile(
-                  label: 'Trained',
-                  value: _agoIso(_modelMeta['trainedAt']),
-                  icon: Icons.schedule,
-                  color: Sa.muted,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      if (_view == 0)
-        GlassPanel(
-        accent: spec.accent,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.psychology_outlined,
-              title: 'CONTINUOUS LEARNING',
-              subtitle:
-                  'The core snapshots tomorrow’s forecast daily, grades itself against the alerts that really happened, and boosts adaptation trees on fresh data.',
-              accent: spec.accent,
-              trailing: GlowChip(
-                label: _accuracy == null
-                    ? 'AWAITING FIRST GRADE'
-                    : '${(_accuracy?['gradedDays'] as num?)?.toInt() ?? 0} DAYS GRADED',
-                color: _accuracy == null ? Sa.muted : Sa.green,
-                pulse: _accuracy != null,
-              ),
-            ),
-            const SizedBox(height: 16),
-            LayoutBuilder(builder: (ctx, c) {
-              final wide = c.maxWidth >= 760;
-              final gauges = Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _RingGauge(
-                      label: 'PRECISION',
-                      value: precision,
-                      color: spec.accent),
-                  _RingGauge(label: 'RECALL', value: recall, color: Sa.cyan),
-                  _RingGauge(
-                    label: 'BRIER',
-                    value: (1 - brier).clamp(0.0, 1.0),
-                    display: brier.toStringAsFixed(3),
-                    color: Sa.green,
-                  ),
-                ],
-              );
-              final chart = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('FORECAST QUALITY TREND · BRIER PER GRADED DAY',
-                      style: Sa.mono(size: 8.5, color: Sa.muted)),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 110,
-                    child: _gradeHistory.isEmpty
-                        ? Center(
-                            child: Text(
-                              'Trend appears after the first graded day.',
-                              style: Sa.body(size: 11, color: Sa.muted),
-                            ),
-                          )
-                        : CustomPaint(
-                            size: Size.infinite,
-                            painter: _BrierTrendPainter(
-                              history: _gradeHistory,
-                              color: spec.accent,
-                              gridColor: Sa.border,
-                              textColor: Sa.muted,
-                            ),
-                          ),
-                  ),
-                ],
-              );
-              if (wide) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(width: 330, child: gauges),
-                    const SizedBox(width: 20),
-                    Expanded(child: chart),
-                  ],
-                );
-              }
-              return Column(children: [gauges, const SizedBox(height: 16), chart]);
-            }),
-            const SizedBox(height: 16),
-            Column(
+        if (_view == 1)
+          _PredictiveBrainView(
+            modelMeta: _modelMeta,
+            accuracy: _accuracy,
+            gradeHistory: _gradeHistory,
+            liveForecast: _liveForecast,
+            accent: spec.accent,
+            enabled: widget.enabled,
+          ),
+        if (_view == 0)
+          GlassPanel(
+            accent: spec.accent,
+            glow: widget.enabled,
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text('DATA ABSORPTION · ADAPTATION BUDGET',
-                        style: Sa.mono(size: 8.5, color: Sa.muted)),
-                    const Spacer(),
-                    Text('$adapted / 60 extra trees per type',
-                        style: Sa.mono(size: 9.5, color: spec.accent)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: SizedBox(
-                    height: 8,
-                    child: Stack(children: [
-                      Container(color: Sa.border.withValues(alpha: 0.5)),
-                      FractionallySizedBox(
-                        widthFactor: (adapted / 60).clamp(0.0, 1.0),
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                                colors: [spec.accent, Sa.cyan]),
-                          ),
+                SaSectionHeader(
+                  icon: spec.icon,
+                  leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
+                  title: context.tr('MODEL CORE'),
+                  subtitle: deployed
+                      ? context.tr(
+                          'On-device gradient-boosted forecaster, live on every Production Manager dashboard.',
+                        )
+                      : context.tr(
+                          'No model deployed yet — train one in the AI Training tab.',
                         ),
+                  accent: spec.accent,
+                  trailing: Wrap(
+                    spacing: 6,
+                    children: [
+                      GlowChip(
+                        label: 'SIA-GBDT v$version',
+                        color: spec.accent,
+                        icon: Icons.account_tree_outlined,
                       ),
-                    ]),
+                      if (_modelMeta['learning'] == true)
+                        GlowChip(
+                          label: context.tr('LEARNING ✓'),
+                          color: Sa.green,
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Graded $pairs machine-type pairs · $tp confirmed hits · last adapted ${_agoIso(_modelMeta['lastAdaptedAt'])} · a full retrain resets the budget.',
-                  style: Sa.body(size: 10.5, color: Sa.textDim),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    SaStatTile(
+                      label: context.tr('Dataset'),
+                      value: (_modelMeta['datasetName'] ?? '—').toString(),
+                      icon: Icons.dataset_outlined,
+                      color: spec.accent,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Training samples'),
+                      value:
+                          '${(_modelMeta['sampleCount'] as num?)?.toInt() ?? 0}',
+                      icon: Icons.grain,
+                      color: Sa.blue,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Boosted rounds'),
+                      value: context.tr('{rounds} + {adapted} adapted', {
+                        'rounds':
+                            '${(_modelMeta['rounds'] as num?)?.toInt() ?? 0}',
+                        'adapted': '$adapted',
+                      }),
+                      icon: Icons.forest_outlined,
+                      color: Sa.green,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Val accuracy'),
+                      value:
+                          '${(((_modelMeta['valAccuracy'] as num?)?.toDouble() ?? 0) * 100).toStringAsFixed(1)}%',
+                      icon: Icons.verified_outlined,
+                      color: Sa.violet,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Machines forecast'),
+                      value: '$machines',
+                      icon: Icons.precision_manufacturing_outlined,
+                      color: Sa.amber,
+                    ),
+                    SaStatTile(
+                      label: context.tr('Trained'),
+                      value: _agoIso(context, _modelMeta['trainedAt']),
+                      icon: Icons.schedule,
+                      color: Sa.muted,
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-      if (_view == 0)
-        GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.tune,
-              title: 'LEARNING CONTROLS',
-              subtitle:
-                  'Pause parts of the learning loop without undeploying the model.',
-              accent: spec.accent,
+          ),
+        if (_view == 0)
+          GlassPanel(
+            accent: spec.accent,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SaSectionHeader(
+                  icon: Icons.psychology_outlined,
+                  title: context.tr('CONTINUOUS LEARNING'),
+                  subtitle: context.tr(
+                    'The core snapshots tomorrow’s forecast daily, grades itself against the alerts that really happened, and boosts adaptation trees on fresh data.',
+                  ),
+                  accent: spec.accent,
+                  trailing: GlowChip(
+                    label: _accuracy == null
+                        ? context.tr('AWAITING FIRST GRADE')
+                        : context.tr('{count} DAYS GRADED', {
+                            'count':
+                                '${(_accuracy?['gradedDays'] as num?)?.toInt() ?? 0}',
+                          }),
+                    color: _accuracy == null ? Sa.muted : Sa.green,
+                    pulse: _accuracy != null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (ctx, c) {
+                    final wide = c.maxWidth >= 760;
+                    final gauges = Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _RingGauge(
+                          label: context.tr('PRECISION'),
+                          value: precision,
+                          color: spec.accent,
+                        ),
+                        _RingGauge(
+                          label: context.tr('RECALL'),
+                          value: recall,
+                          color: Sa.cyan,
+                        ),
+                        _RingGauge(
+                          label: context.tr('BRIER'),
+                          value: (1 - brier).clamp(0.0, 1.0),
+                          display: brier.toStringAsFixed(3),
+                          color: Sa.green,
+                        ),
+                      ],
+                    );
+                    final chart = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          context.tr(
+                            'FORECAST QUALITY TREND · BRIER PER GRADED DAY',
+                          ),
+                          style: Sa.mono(size: 8.5, color: Sa.muted),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 110,
+                          child: _gradeHistory.isEmpty
+                              ? Center(
+                                  child: Text(
+                                    context.tr(
+                                      'Trend appears after the first graded day.',
+                                    ),
+                                    style: Sa.body(size: 11, color: Sa.muted),
+                                  ),
+                                )
+                              : CustomPaint(
+                                  size: Size.infinite,
+                                  painter: _BrierTrendPainter(
+                                    history: _gradeHistory,
+                                    color: spec.accent,
+                                    gridColor: Sa.border,
+                                    textColor: Sa.muted,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    );
+                    if (wide) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(width: 330, child: gauges),
+                          const SizedBox(width: 20),
+                          Expanded(child: chart),
+                        ],
+                      );
+                    }
+                    return Column(
+                      children: [gauges, const SizedBox(height: 16), chart],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          context.tr('DATA ABSORPTION · ADAPTATION BUDGET'),
+                          style: Sa.mono(size: 8.5, color: Sa.muted),
+                        ),
+                        const Spacer(),
+                        Text(
+                          context.tr('{adapted} / 60 extra trees per type', {
+                            'adapted': '$adapted',
+                          }),
+                          style: Sa.mono(size: 9.5, color: spec.accent),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: SizedBox(
+                        height: 8,
+                        child: Stack(
+                          children: [
+                            Container(color: Sa.border.withValues(alpha: 0.5)),
+                            FractionallySizedBox(
+                              widthFactor: (adapted / 60).clamp(0.0, 1.0),
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [spec.accent, Sa.cyan],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      context.tr(
+                        'Graded {pairs} machine-type pairs · {hits} confirmed hits · last adapted {time} · a full retrain resets the budget.',
+                        {
+                          'pairs': '$pairs',
+                          'hits': '$tp',
+                          'time': _agoIso(context, _modelMeta['lastAdaptedAt']),
+                        },
+                      ),
+                      style: Sa.body(size: 10.5, color: Sa.textDim),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            _SettingTile(
-              title: 'Continuous adaptation',
-              description:
-                  'Boost a few stiffly-regularized trees onto the live ensemble (~daily) from recent production alerts.',
-              icon: Icons.auto_mode,
-              accent: spec.accent,
-              value: _settings['adaptationEnabled'] != false,
-              onChanged: (v) => _setSetting('adaptationEnabled', v),
+          ),
+        if (_view == 0)
+          GlassPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SaSectionHeader(
+                  icon: Icons.tune,
+                  title: context.tr('LEARNING CONTROLS'),
+                  subtitle: context.tr(
+                    'Pause parts of the learning loop without undeploying the model.',
+                  ),
+                  accent: spec.accent,
+                ),
+                const SizedBox(height: 12),
+                _SettingTile(
+                  title: context.tr('Continuous adaptation'),
+                  description: context.tr(
+                    'Boost a few stiffly-regularized trees onto the live ensemble (~daily) from recent production alerts.',
+                  ),
+                  icon: Icons.auto_mode,
+                  accent: spec.accent,
+                  value: _settings['adaptationEnabled'] != false,
+                  onChanged: (v) => _setSetting('adaptationEnabled', v),
+                ),
+                _SettingTile(
+                  title: context.tr('Outcome grading'),
+                  description: context.tr(
+                    'Snapshot tomorrow’s forecast each day and grade it against reality (precision/recall/Brier above).',
+                  ),
+                  icon: Icons.fact_check_outlined,
+                  accent: spec.accent,
+                  value: _settings['outcomeGrading'] != false,
+                  onChanged: (v) => _setSetting('outcomeGrading', v),
+                ),
+              ],
             ),
-            _SettingTile(
-              title: 'Outcome grading',
-              description:
-                  'Snapshot tomorrow’s forecast each day and grade it against reality (precision/recall/Brier above).',
-              icon: Icons.fact_check_outlined,
-              accent: spec.accent,
-              value: _settings['outcomeGrading'] != false,
-              onChanged: (v) => _setSetting('outcomeGrading', v),
+          ),
+        if (_view == 0)
+          GlassPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SaSectionHeader(
+                  icon: Icons.receipt_long_outlined,
+                  title: context.tr('GRADED DAYS'),
+                  subtitle: context.tr(
+                    'Each elapsed forecast day, scored against the alerts that materialized.',
+                  ),
+                  accent: spec.accent,
+                ),
+                const SizedBox(height: 12),
+                if (_gradeHistory.isEmpty)
+                  SaEmptyState(
+                    icon: Icons.pending_actions_outlined,
+                    title: context.tr('No graded days yet'),
+                    message: context.tr(
+                      'The first grade lands the day after a forecast snapshot — fully automatic, server-side.',
+                    ),
+                    accent: spec.accent,
+                  )
+                else
+                  ..._gradeHistory.reversed
+                      .take(20)
+                      .map(
+                        (g) => _LogTile(
+                          kind: 'graded',
+                          color: spec.accent,
+                          title: context.tr(
+                            '{day} · {pairs} pairs · {hits} hits · Brier {brier}',
+                            {
+                              'day': '${g['day']}',
+                              'pairs': '${g['pairs'] ?? 0}',
+                              'hits': '${g['tp'] ?? 0}',
+                              'brier': ((g['brier'] as num?)?.toDouble() ?? 0)
+                                  .toStringAsFixed(3),
+                            },
+                          ),
+                          at: (g['gradedAt'] ?? '').toString(),
+                          details: g,
+                        ),
+                      ),
+              ],
             ),
-          ],
-        ),
-      ),
-      if (_view == 0)
-        GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.receipt_long_outlined,
-              title: 'GRADED DAYS',
-              subtitle:
-                  'Each elapsed forecast day, scored against the alerts that materialized.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 12),
-            if (_gradeHistory.isEmpty)
-              SaEmptyState(
-                icon: Icons.pending_actions_outlined,
-                title: 'No graded days yet',
-                message:
-                    'The first grade lands the day after a forecast snapshot — fully automatic, server-side.',
-                accent: spec.accent,
-              )
-            else
-              ..._gradeHistory.reversed.take(20).map((g) => _LogTile(
-                    kind: 'graded',
-                    color: spec.accent,
-                    title:
-                        '${g['day']} · ${g['pairs'] ?? 0} pairs · ${g['tp'] ?? 0} hits · Brier ${((g['brier'] as num?)?.toDouble() ?? 0).toStringAsFixed(3)}',
-                    at: (g['gradedAt'] ?? '').toString(),
-                    details: g,
-                  )),
-          ],
-        ),
-      ),
-    ]);
+          ),
+      ],
+    );
   }
 }
 
@@ -5806,22 +6656,54 @@ class _Signal {
 }
 
 const List<_Signal> _kForecastSignals = [
-  _Signal('Recent alert rate', 'Yesterday & the day before (lags t-1, t-2).',
-      0.92, Color(0xFF378ADD)),
-  _Signal('7-day rolling counts', 'Per-type frequency over the last week.', 0.85,
-      Color(0xFF7F77DD)),
-  _Signal('7 / 14-day totals', 'Short vs medium-term load.', 0.70,
-      Color(0xFF1D9E75)),
-  _Signal('Week-over-week trend', 'Is this machine heating up or cooling down?',
-      0.78, Color(0xFFBA7517)),
-  _Signal('Per-type recency', 'Days since each type last fired (capped 30).',
-      0.66, Color(0xFFD4537E)),
-  _Signal('Critical pressure', 'Weight of recent critical alerts.', 0.60,
-      Color(0xFFE24B4A)),
-  _Signal('Calendar context', 'Day-of-week / tomorrow seasonality.', 0.42,
-      Color(0xFF534AB7)),
-  _Signal("Today's snapshot", 'The machine state the forecast starts from.',
-      0.55, Color(0xFF2AA7A0)),
+  _Signal(
+    'Recent alert rate',
+    'Yesterday & the day before (lags t-1, t-2).',
+    0.92,
+    Color(0xFF378ADD),
+  ),
+  _Signal(
+    '7-day rolling counts',
+    'Per-type frequency over the last week.',
+    0.85,
+    Color(0xFF7F77DD),
+  ),
+  _Signal(
+    '7 / 14-day totals',
+    'Short vs medium-term load.',
+    0.70,
+    Color(0xFF1D9E75),
+  ),
+  _Signal(
+    'Week-over-week trend',
+    'Is this machine heating up or cooling down?',
+    0.78,
+    Color(0xFFBA7517),
+  ),
+  _Signal(
+    'Per-type recency',
+    'Days since each type last fired (capped 30).',
+    0.66,
+    Color(0xFFD4537E),
+  ),
+  _Signal(
+    'Critical pressure',
+    'Weight of recent critical alerts.',
+    0.60,
+    Color(0xFFE24B4A),
+  ),
+  _Signal(
+    'Calendar context',
+    'Day-of-week / tomorrow seasonality.',
+    0.42,
+    Color(0xFF534AB7),
+  ),
+  _Signal(
+    "Today's snapshot",
+    'The machine state the forecast starts from.',
+    0.55,
+    Color(0xFF2AA7A0),
+  ),
 ];
 
 /// The Predictive Core BRAIN sub-view: 3D mesh, anatomy, signals, self-grading.
@@ -5855,8 +6737,9 @@ class _PredictiveBrainView extends StatelessWidget {
     final fn = (accuracy?['fn'] as num?)?.toInt() ?? 0;
     final precision = (tp + fp) == 0 ? 0.0 : tp / (tp + fp);
     final recall = (tp + fn) == 0 ? 0.0 : tp / (tp + fn);
-    final brier =
-        pairs == 0 ? 0.0 : ((accuracy?['brierSum'] as num?)?.toDouble() ?? 0) / pairs;
+    final brier = pairs == 0
+        ? 0.0
+        : ((accuracy?['brierSum'] as num?)?.toDouble() ?? 0) / pairs;
     final gradedDays = (accuracy?['gradedDays'] as num?)?.toInt() ?? 0;
     final machines = (liveForecast?['machineCount'] as num?)?.toInt() ?? 0;
 
@@ -5871,10 +6754,14 @@ class _PredictiveBrainView extends StatelessWidget {
             children: [
               SaSectionHeader(
                 icon: Icons.psychology,
-                title: 'INSIDE THE FORECASTER’S MIND',
+                title: context.tr('INSIDE THE FORECASTER’S MIND'),
                 subtitle: deployed
-                    ? 'A gradient-boosted ensemble — hundreds of decision trees, rendered as one rotating neural mesh.'
-                    : 'No model deployed yet — train one in the AI Training tab to wake the mind.',
+                    ? context.tr(
+                        'A gradient-boosted ensemble — hundreds of decision trees, rendered as one rotating neural mesh.',
+                      )
+                    : context.tr(
+                        'No model deployed yet — train one in the AI Training tab to wake the mind.',
+                      ),
                 accent: accent,
                 trailing: GlowChip(
                   label: 'SIA-GBDT v$version',
@@ -5889,8 +6776,12 @@ class _PredictiveBrainView extends StatelessWidget {
                 animate: enabled && deployed,
                 inputs: [
                   for (final s in _kForecastSignals)
-                    _CortexInput(s.label, s.color, s.weight,
-                        deployed ? s.weight : 0.15),
+                    _CortexInput(
+                      s.label,
+                      s.color,
+                      s.weight,
+                      deployed ? s.weight : 0.15,
+                    ),
                 ],
                 inHeader: 'SIGNALS IT READS',
                 coreTop: 'GBDT',
@@ -5903,8 +6794,13 @@ class _PredictiveBrainView extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 deployed
-                    ? 'It studies the last weeks of alerts, learns which machines tend to fail and when, then forecasts each machine’s risk for the next 24 hours — a weather forecast for the factory ($machines machines covered).'
-                    : 'Once a model is trained, it forecasts each machine’s risk for the next 24 hours — like a weather forecast for the factory.',
+                    ? context.tr(
+                        'It studies the last weeks of alerts, learns which machines tend to fail and when, then forecasts each machine’s risk for the next 24 hours — a weather forecast for the factory ({machines} machines covered).',
+                        {'machines': '$machines'},
+                      )
+                    : context.tr(
+                        'Once a model is trained, it forecasts each machine’s risk for the next 24 hours — like a weather forecast for the factory.',
+                      ),
                 style: Sa.body(size: 11.5, color: Sa.textDim),
               ),
             ],
@@ -5917,9 +6813,10 @@ class _PredictiveBrainView extends StatelessWidget {
             children: [
               SaSectionHeader(
                 icon: Icons.account_tree,
-                title: 'MODEL ANATOMY',
-                subtitle:
-                    'Four boosted ensembles — one prediction head per alert type.',
+                title: context.tr('MODEL ANATOMY'),
+                subtitle: context.tr(
+                  'Four boosted ensembles — one prediction head per alert type.',
+                ),
                 accent: accent,
               ),
               const SizedBox(height: 14),
@@ -5928,36 +6825,40 @@ class _PredictiveBrainView extends StatelessWidget {
                 runSpacing: 10,
                 children: [
                   SaStatTile(
-                      label: 'Boosted rounds',
-                      value: '$rounds',
-                      icon: Icons.forest_outlined,
-                      color: accent),
+                    label: context.tr('Boosted rounds'),
+                    value: '$rounds',
+                    icon: Icons.forest_outlined,
+                    color: accent,
+                  ),
                   SaStatTile(
-                      label: 'Adapted trees',
-                      value: '$adapted',
-                      icon: Icons.auto_mode,
-                      color: Sa.green),
+                    label: context.tr('Adapted trees'),
+                    value: '$adapted',
+                    icon: Icons.auto_mode,
+                    color: Sa.green,
+                  ),
                   SaStatTile(
-                      label: 'Training samples',
-                      value: '$samples',
-                      icon: Icons.grain,
-                      color: Sa.blue),
+                    label: context.tr('Training samples'),
+                    value: '$samples',
+                    icon: Icons.grain,
+                    color: Sa.blue,
+                  ),
                   SaStatTile(
-                      label: 'Val accuracy',
-                      value: '${valAcc.toStringAsFixed(1)}%',
-                      icon: Icons.verified_outlined,
-                      color: Sa.violet),
+                    label: context.tr('Val accuracy'),
+                    value: '${valAcc.toStringAsFixed(1)}%',
+                    icon: Icons.verified_outlined,
+                    color: Sa.violet,
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: const [
-                  _TypeHeadChip(label: 'Quality'),
-                  _TypeHeadChip(label: 'Maintenance'),
-                  _TypeHeadChip(label: 'Damaged Product'),
-                  _TypeHeadChip(label: 'Resource Deficiency'),
+                children: [
+                  _TypeHeadChip(label: context.tr('Quality')),
+                  _TypeHeadChip(label: context.tr('Maintenance')),
+                  _TypeHeadChip(label: context.tr('Damaged Product')),
+                  _TypeHeadChip(label: context.tr('Resource Deficiency')),
                 ],
               ),
             ],
@@ -5970,8 +6871,10 @@ class _PredictiveBrainView extends StatelessWidget {
             children: [
               SaSectionHeader(
                 icon: Icons.sensors,
-                title: 'SIGNALS IT READS',
-                subtitle: 'The engineered features each machine-day is scored on.',
+                title: context.tr('SIGNALS IT READS'),
+                subtitle: context.tr(
+                  'The engineered features each machine-day is scored on.',
+                ),
                 accent: accent,
               ),
               const SizedBox(height: 12),
@@ -5986,18 +6889,20 @@ class _PredictiveBrainView extends StatelessWidget {
             children: [
               SaSectionHeader(
                 icon: Icons.fact_check_outlined,
-                title: 'SELF-ASSESSMENT',
-                subtitle:
-                    'How the model grades its own forecasts against reality.',
+                title: context.tr('SELF-ASSESSMENT'),
+                subtitle: context.tr(
+                  'How the model grades its own forecasts against reality.',
+                ),
                 accent: accent,
               ),
               const SizedBox(height: 14),
               if (accuracy == null)
                 SaEmptyState(
                   icon: Icons.pending_actions_outlined,
-                  title: 'No grades yet',
-                  message:
-                      'The first self-grade lands the day after a forecast snapshot — fully automatic.',
+                  title: context.tr('No grades yet'),
+                  message: context.tr(
+                    'The first self-grade lands the day after a forecast snapshot — fully automatic.',
+                  ),
                   accent: accent,
                 )
               else
@@ -6006,25 +6911,29 @@ class _PredictiveBrainView extends StatelessWidget {
                   runSpacing: 10,
                   children: [
                     SaStatTile(
-                        label: 'Precision',
-                        value: '${(precision * 100).round()}%',
-                        icon: Icons.center_focus_strong,
-                        color: accent),
+                      label: context.tr('Precision'),
+                      value: '${(precision * 100).round()}%',
+                      icon: Icons.center_focus_strong,
+                      color: accent,
+                    ),
                     SaStatTile(
-                        label: 'Recall',
-                        value: '${(recall * 100).round()}%',
-                        icon: Icons.radar,
-                        color: Sa.cyan),
+                      label: context.tr('Recall'),
+                      value: '${(recall * 100).round()}%',
+                      icon: Icons.radar,
+                      color: Sa.cyan,
+                    ),
                     SaStatTile(
-                        label: 'Brier score',
-                        value: brier.toStringAsFixed(3),
-                        icon: Icons.show_chart,
-                        color: Sa.green),
+                      label: context.tr('Brier score'),
+                      value: brier.toStringAsFixed(3),
+                      icon: Icons.show_chart,
+                      color: Sa.green,
+                    ),
                     SaStatTile(
-                        label: 'Days graded',
-                        value: '$gradedDays',
-                        icon: Icons.event_available,
-                        color: Sa.amber),
+                      label: context.tr('Days graded'),
+                      value: '$gradedDays',
+                      icon: Icons.event_available,
+                      color: Sa.amber,
+                    ),
                   ],
                 ),
             ],
@@ -6056,7 +6965,7 @@ class _TypeHeadChip extends StatelessWidget {
           const SizedBox(width: 8),
           Text(label, style: Sa.body(size: 12, color: Sa.text)),
           const SizedBox(width: 8),
-          Text('ensemble', style: Sa.mono(size: 8.5, color: Sa.muted)),
+          Text(context.tr('ensemble'), style: Sa.mono(size: 8.5, color: Sa.muted)),
         ],
       ),
     );
@@ -6082,19 +6991,30 @@ class _SignalBar extends StatelessWidget {
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(
-                    color: s.color, borderRadius: BorderRadius.circular(3)),
+                  color: s.color,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                  child: Text(s.label, style: Sa.body(size: 13, color: Sa.text))),
-              Text('${(influence * 100).round()}%',
-                  style: Sa.mono(size: 10.5, color: Sa.muted)),
+                child: Text(
+                  context.tr(s.label),
+                  style: Sa.body(size: 13, color: Sa.text),
+                ),
+              ),
+              Text(
+                '${(influence * 100).round()}%',
+                style: Sa.mono(size: 10.5, color: Sa.muted),
+              ),
             ],
           ),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(left: 18),
-            child: Text(s.desc, style: Sa.body(size: 11, color: Sa.textDim)),
+            child: Text(
+              context.tr(s.desc),
+              style: Sa.body(size: 11, color: Sa.textDim),
+            ),
           ),
           const SizedBox(height: 6),
           Padding(
@@ -6105,13 +7025,16 @@ class _SignalBar extends StatelessWidget {
                 width: double.infinity,
                 alignment: Alignment.centerLeft,
                 decoration: BoxDecoration(
-                    color: Sa.panelSolid,
-                    borderRadius: BorderRadius.circular(6)),
+                  color: Sa.panelSolid,
+                  borderRadius: BorderRadius.circular(6),
+                ),
                 child: Container(
                   height: 7,
                   width: cons.maxWidth * influence,
                   decoration: BoxDecoration(
-                      color: s.color, borderRadius: BorderRadius.circular(6)),
+                    color: s.color,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
               ),
             ),
@@ -6121,7 +7044,6 @@ class _SignalBar extends StatelessWidget {
     );
   }
 }
-
 
 /// Circular gauge with a sweeping arc — precision/recall/Brier display.
 class _RingGauge extends StatelessWidget {
@@ -6150,8 +7072,7 @@ class _RingGauge extends StatelessWidget {
             duration: const Duration(milliseconds: 900),
             curve: Curves.easeOutCubic,
             builder: (_, v, __) => CustomPaint(
-              painter: _RingPainter(
-                  value: v, color: color, track: Sa.border),
+              painter: _RingPainter(value: v, color: color, track: Sa.border),
               child: Center(
                 child: Text(
                   display ?? '${(v * 100).round()}%',
@@ -6193,10 +7114,18 @@ class _RingPainter extends CustomPainter {
         endAngle: math.pi * 1.5,
         colors: [color.withValues(alpha: 0.5), color],
       ).createShader(Rect.fromCircle(center: c, radius: r));
-    canvas.drawArc(Rect.fromCircle(center: c, radius: r), -math.pi / 2,
-        math.pi * 2 * value, false, arc);
+    canvas.drawArc(
+      Rect.fromCircle(center: c, radius: r),
+      -math.pi / 2,
+      math.pi * 2 * value,
+      false,
+      arc,
+    );
     canvas.drawCircle(
-        c, r + 4, Paint()..color = color.withValues(alpha: 0.06 * value));
+      c,
+      r + 4,
+      Paint()..color = color.withValues(alpha: 0.06 * value),
+    );
   }
 
   @override
@@ -6222,7 +7151,7 @@ class _BrierTrendPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (history.isEmpty) return;
     final briers = [
-      for (final h in history) ((h['brier'] as num?)?.toDouble() ?? 0)
+      for (final h in history) ((h['brier'] as num?)?.toDouble() ?? 0),
     ];
     var maxB = briers.reduce(math.max);
     if (maxB <= 0) maxB = 0.1;
@@ -6310,12 +7239,14 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   Map<dynamic, dynamic> _secrets = {};
   Offset _simOffset = const Offset(10, 96);
   bool _deployAuto = false;
-  int _subtab = 0; // 0 = Control · 1 = Actions · 2 = Pull requests
   Timer? _simTimer;
+  int _subtab = 0; // 0 = Control · 1 = Actions · 2 = Pull requests
 
   // Live GitHub engine: drives the 3D pipeline + terminal + connection badge.
-  late final GuardianLiveTracker _tracker =
-      GuardianLiveTracker(baseUrl: _ghUrl, secret: _wSecret);
+  late final GuardianLiveTracker _tracker = GuardianLiveTracker(
+    baseUrl: _ghUrl,
+    secret: _wSecret,
+  );
 
   // One-shot "verify connection" affordance state.
   bool _verifying = false;
@@ -6327,7 +7258,8 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     super.initState();
     _tracker.start();
     _sec.get().then((s) {
-      if (mounted && s.value is Map) setState(() => _secrets = s.value as Map<dynamic, dynamic>);
+      if (mounted && s.value is Map)
+        setState(() => _secrets = s.value as Map<dynamic, dynamic>);
     });
   }
 
@@ -6341,6 +7273,15 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   bool _hasSecret(String k) => (_secrets[k]?.toString() ?? '').isNotEmpty;
   String _ts() => DateTime.now().toIso8601String().substring(11, 19);
 
+  bool _githubLatched(Map cfg) {
+    if (cfg['githubConnected'] != true) return false;
+    final repo = GithubService.normalizeRepo((cfg['repo'] ?? '').toString());
+    final verifiedRepo = GithubService.normalizeRepo(
+      (cfg['githubVerifiedRepo'] ?? '').toString(),
+    );
+    return repo.isNotEmpty && (verifiedRepo.isEmpty || verifiedRepo == repo);
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DatabaseEvent>(
@@ -6348,10 +7289,15 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       builder: (context, snap) {
         final raw = snap.data?.snapshot.value;
         final cfg = (raw is Map) ? raw : const {};
-        final settings = (cfg['settings'] is Map) ? cfg['settings'] as Map : const {};
+        final settings = (cfg['settings'] is Map)
+            ? cfg['settings'] as Map
+            : const {};
         final enabled = cfg['enabled'] != false;
-        final active = (cfg['activeRun'] is Map) ? cfg['activeRun'] as Map : null;
-        final repo = (cfg['repo'] ?? '').toString();
+        final repo = GithubService.normalizeRepo(
+          (cfg['repo'] ?? '').toString(),
+        );
+        final githubLatched = _githubLatched(cfg);
+        if (raw is Map) _tracker.setRepo(repo);
         _deployAuto = (settings['deployMode'] ?? 'human') == 'auto';
         _tracker.mode = _deployAuto ? 'auto' : 'human';
         return LayoutBuilder(
@@ -6364,15 +7310,24 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
                   _subtabBar(),
                   const SizedBox(height: 12),
                   Expanded(
-                    // Only the active subtab is built, so the GitHub views' live
-                    // polling stops the moment you leave Actions / Pull requests.
-                    child: switch (_subtab) {
-                      1 => GuardianActionsView(
-                          baseUrl: _ghUrl, sharedSecret: _wSecret, repo: repo),
-                      2 => GuardianPullsView(
-                          baseUrl: _ghUrl, sharedSecret: _wSecret, repo: repo),
-                      _ => _controlBody(cfg, settings, enabled, active),
-                    },
+                    child: IndexedStack(
+                      index: _subtab,
+                      children: [
+                        _controlBody(cfg, settings, enabled),
+                        GuardianActionsView(
+                          baseUrl: _ghUrl,
+                          sharedSecret: _wSecret,
+                          repo: repo,
+                          connectionLatched: githubLatched,
+                        ),
+                        GuardianPullsView(
+                          baseUrl: _ghUrl,
+                          sharedSecret: _wSecret,
+                          repo: repo,
+                          connectionLatched: githubLatched,
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -6423,17 +7378,24 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(it.icon,
-                          size: 15,
-                          color: _subtab == it.i ? widget.spec.accent : Sa.muted),
+                      Icon(
+                        it.icon,
+                        size: 15,
+                        color: _subtab == it.i ? widget.spec.accent : Sa.muted,
+                      ),
                       const SizedBox(width: 7),
                       Flexible(
-                        child: Text(it.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Sa.body(
-                                size: 11.5,
-                                color: _subtab == it.i ? widget.spec.accent : Sa.muted)),
+                        child: Text(
+                          context.tr(it.label),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Sa.body(
+                            size: 11.5,
+                            color: _subtab == it.i
+                                ? widget.spec.accent
+                                : Sa.muted,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -6445,62 +7407,81 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     );
   }
 
-  /// The Control subtab: header + live pipeline + terminal + AI/GitHub config +
-  /// knowledge, with the draggable simulate toolbar overlaid.
-  Widget _controlBody(Map cfg, Map settings, bool enabled, Map? active) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final h = c.maxHeight.isFinite ? c.maxHeight : 1600.0;
-        return Stack(
+  /// The Control subtab: header + live pipeline + terminal + AI/GitHub config.
+  Widget _controlBody(Map cfg, Map settings, bool enabled) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(4),
+      // Rebuild on every live-tracker tick so the pipeline, terminal and the
+      // GitHub connection badge stay in lock-step with the real workflow run.
+      child: ListenableBuilder(
+        listenable: _tracker,
+        builder: (context, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Positioned.fill(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(4),
-                // Rebuild on every live-tracker tick so the pipeline, terminal
-                // and the GitHub connection badge stay in lock-step with the
-                // real workflow run.
-                child: ListenableBuilder(
-                  listenable: _tracker,
-                  builder: (context, _) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _header(enabled, settings),
-                      const SizedBox(height: 14),
-                      _livePipeline(),
-                      const SizedBox(height: 14),
-                      _liveTerminal(active),
-                      const SizedBox(height: 14),
-                      _aiConfig(settings),
-                      const SizedBox(height: 14),
-                      _github(cfg),
-                      const SizedBox(height: 14),
-                      _knowledge(cfg),
-                      const SizedBox(height: 60),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: _simOffset.dx.clamp(0.0, (c.maxWidth - 176).clamp(0.0, double.infinity)),
-              top: _simOffset.dy.clamp(0.0, (h - 120).clamp(0.0, double.infinity)),
-              child: _simToolbar(),
-            ),
+            _header(enabled, settings),
+            const SizedBox(height: 14),
+            _livePipeline(settings, cfg),
+            const SizedBox(height: 14),
+            _liveTerminal(),
+            const SizedBox(height: 14),
+            _aiConfig(settings),
+            const SizedBox(height: 14),
+            _github(cfg),
+            const SizedBox(height: 14),
+            _knowledge(cfg),
+            const SizedBox(height: 60),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
-  // ── movable simulate toolbar ──
+  // Legacy drill helper, kept private and unreachable from the UI.
+  // ignore: unused_element
   Widget _simToolbar() {
     final sims = <List<dynamic>>[
-      ['Login error', Icons.login, 'high', 'login screen error — users cannot sign in', 'claude-opus-4-8'],
-      ['Notifications', Icons.notifications_off, 'high', 'alerts not reaching supervisors', 'claude-opus-4-8'],
-      ['Worker fail', Icons.dns, 'high', 'cloudflare worker endpoint failing', 'claude-opus-4-8'],
-      ['Version', Icons.sync_problem, 'medium', 'dependency version mismatch breaks build', 'claude-sonnet-4-6'],
-      ['Tab broken', Icons.tab_unselected, 'medium', 'supervisor tab blank / not loading', 'claude-sonnet-4-6'],
-      ['Test fail', Icons.science, 'low', 'flutter test failing on a widget test', 'claude-haiku-4-5'],
+      [
+        'Login error',
+        Icons.login,
+        'high',
+        'login screen error — users cannot sign in',
+        'claude-opus-4-8',
+      ],
+      [
+        'Notifications',
+        Icons.notifications_off,
+        'high',
+        'alerts not reaching supervisors',
+        'claude-opus-4-8',
+      ],
+      [
+        'Worker fail',
+        Icons.dns,
+        'high',
+        'cloudflare worker endpoint failing',
+        'claude-opus-4-8',
+      ],
+      [
+        'Version',
+        Icons.sync_problem,
+        'medium',
+        'dependency version mismatch breaks build',
+        'claude-sonnet-4-6',
+      ],
+      [
+        'Tab broken',
+        Icons.tab_unselected,
+        'medium',
+        'supervisor tab blank / not loading',
+        'claude-sonnet-4-6',
+      ],
+      [
+        'Test fail',
+        Icons.science,
+        'low',
+        'flutter test failing on a widget test',
+        'claude-haiku-4-5',
+      ],
     ];
     return Container(
       width: 166,
@@ -6508,7 +7489,13 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
         color: Sa.panelSolid,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Sa.borderBright),
-        boxShadow: [BoxShadow(color: Sa.shadow, blurRadius: 20, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+            color: Sa.shadow,
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -6520,26 +7507,48 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
               decoration: BoxDecoration(
                 color: widget.spec.accent.withValues(alpha: 0.12),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(11),
+                ),
               ),
-              child: Row(children: [
-                Icon(Icons.drag_indicator, size: 15, color: Sa.muted),
-                const SizedBox(width: 5),
-                Text('SIMULATE', style: Sa.body(size: 10.5, color: Sa.textDim)),
-              ]),
+              child: Row(
+                children: [
+                  Icon(Icons.drag_indicator, size: 15, color: Sa.muted),
+                  const SizedBox(width: 5),
+                  Text('', style: Sa.body(size: 10.5, color: Sa.textDim)),
+                ],
+              ),
             ),
           ),
           for (final s in sims)
             InkWell(
-              onTap: () => _simulateIncident(s[0] as String, s[2] as String, s[3] as String, s[4] as String),
+              onTap: () => _simulateIncident(
+                s[0] as String,
+                s[2] as String,
+                s[3] as String,
+                s[4] as String,
+              ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Row(children: [
-                  Icon(s[1] as IconData, size: 14,
-                      color: s[2] == 'high' ? _gRed : (s[2] == 'medium' ? _gAmber : Sa.muted)),
-                  const SizedBox(width: 8),
-                  Text(s[0] as String, style: Sa.body(size: 12, color: Sa.text)),
-                ]),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      s[1] as IconData,
+                      size: 14,
+                      color: s[2] == 'high'
+                          ? _gRed
+                          : (s[2] == 'medium' ? _gAmber : Sa.muted),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      s[0] as String,
+                      style: Sa.body(size: 12, color: Sa.text),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -6553,22 +7562,41 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       accent: widget.spec.accent,
       child: Row(
         children: [
-          SizedBox(width: 40, height: 40, child: _AgentGlyph(spec: widget.spec, size: 40, radius: 11)),
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: _AgentGlyph(spec: widget.spec, size: 40, radius: 11),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('GUARDIAN', style: Sa.display(size: 17)),
-                Text('autonomous fix pipeline', style: Sa.body(size: 12, color: Sa.muted)),
+                Text(context.tr('GUARDIAN'), style: Sa.display(size: 17)),
+                Text(
+                  context.tr('autonomous fix pipeline'),
+                  style: Sa.body(size: 12, color: Sa.muted),
+                ),
               ],
             ),
           ),
-          _deployToggle('Automatic', _deployAuto, _confirmAutomaticMode),
+          _deployToggle(
+            context.tr('Automatic'),
+            _deployAuto,
+            _confirmAutomaticMode,
+          ),
           const SizedBox(width: 6),
-          _deployToggle('Human review', !_deployAuto, () => _saveSetting('deployMode', 'human')),
+          _deployToggle(
+            context.tr('Human review'),
+            !_deployAuto,
+            () => _saveSetting('deployMode', 'human'),
+          ),
           const SizedBox(width: 12),
-          GlowChip(label: enabled ? 'ARMED' : 'OFF', color: enabled ? _gGreen : Sa.muted, pulse: enabled),
+          GlowChip(
+            label: enabled ? context.tr('ARMED') : context.tr('OFF'),
+            color: enabled ? _gGreen : Sa.muted,
+            pulse: enabled,
+          ),
           Switch(value: enabled, onChanged: (v) => _cfg.update({'enabled': v})),
         ],
       ),
@@ -6582,89 +7610,160 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: active ? widget.spec.accent.withValues(alpha: 0.16) : Colors.transparent,
+          color: active
+              ? widget.spec.accent.withValues(alpha: 0.16)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: active ? widget.spec.accent.withValues(alpha: 0.5) : Sa.border),
+          border: Border.all(
+            color: active
+                ? widget.spec.accent.withValues(alpha: 0.5)
+                : Sa.border,
+          ),
         ),
-        child: Text(label, style: Sa.body(size: 11.5, color: active ? widget.spec.accent : Sa.textDim)),
+        child: Text(
+          label,
+          style: Sa.body(
+            size: 11.5,
+            color: active ? widget.spec.accent : Sa.textDim,
+          ),
+        ),
       ),
     );
   }
 
   // ── live 3D pipeline (driven by the real GitHub run) ──
-  Widget _livePipeline() {
-    final connected = _tracker.connected;
-    final nodes = connected
+  Widget _livePipeline(Map settings, Map cfg) {
+    final liveConnected = _tracker.connected;
+    final connected = liveConnected || _githubLatched(cfg);
+    final nodes = liveConnected
         ? _tracker.nodes
         : computePipelineNodes(
-            connected: false,
+            connected: connected,
             frontier: 0,
             failPhase: -1,
             done: false,
             running: false,
-            idleArmed: false,
+            idleArmed: connected,
             mode: 'human',
           );
     return GuardianPipeline(
       nodes: nodes,
       connected: connected,
-      statusLabel: _tracker.stageLabel,
-      failed: connected && _tracker.failed,
-      running: connected && _tracker.running,
+      statusLabel: liveConnected
+          ? _tracker.stageLabel
+          : connected
+          ? context.tr('Connected - waiting for live sync')
+          : _tracker.stageLabel,
+      failed: liveConnected && _tracker.failed,
+      running: liveConnected && _tracker.running,
+      fixAiLabel: _aiSchemaLabel(settings, 'fix'),
+      reviewAiLabel: _aiSchemaLabel(settings, 'review'),
     );
   }
 
   // ── live terminal (real job/step + raw stdout, or offline preview) ──
-  Widget _liveTerminal(Map? active) {
-    final preview = (active != null && active['log'] is List)
-        ? (active['log'] as List).map((e) => e.toString()).toList()
-        : const <String>[];
-    return GuardianTerminal(
-      tracker: _tracker,
-      previewLog: _tracker.connected ? const [] : preview,
+  Widget _liveTerminal() {
+    return GuardianTerminal(tracker: _tracker);
+  }
+
+  String _aiSchemaLabel(Map settings, String role) {
+    final provId =
+        (settings['${role}Provider'] ??
+                (role == 'fix' ? 'anthropic' : 'openai'))
+            .toString();
+    final prov = _Providers.list.firstWhere(
+      (p) => p.id == provId,
+      orElse: () => _Providers.list.first,
     );
+    final model = (settings['${role}Model'] ?? prov.defaultModel).toString();
+    return model.isEmpty ? prov.name : '${prov.name} - $model';
   }
 
   // ── AI config ──
   Widget _aiConfig(Map settings) {
     final auto = settings['autoModelSelect'] != false;
-    return _panel('AI CONFIGURATION', Icons.memory, Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          Expanded(child: _aiCard('Fix AI', 'fix', settings, Sa.blue)),
-          const SizedBox(width: 10),
-          Expanded(child: _aiCard('Review AI', 'review', settings, _gPurple)),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          Text('Auto-select model by severity', style: Sa.body(size: 12, color: Sa.textDim)),
-          const Spacer(),
-          Switch(value: auto, onChanged: (v) => _saveSetting('autoModelSelect', v)),
-        ]),
-      ],
-    ));
+    return _panel(
+      context.tr('AI CONFIGURATION'),
+      Icons.memory,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _aiCard(context.tr('Fix AI'), 'fix', settings, Sa.blue),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _aiCard(
+                  context.tr('Review AI'),
+                  'review',
+                  settings,
+                  _gPurple,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text(
+                context.tr('Auto-select model by severity'),
+                style: Sa.body(size: 12, color: Sa.textDim),
+              ),
+              const Spacer(),
+              Switch(
+                value: auto,
+                onChanged: (v) => _saveSetting('autoModelSelect', v),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _aiCard(String title, String role, Map settings, Color accent) {
-    final provId = (settings['${role}Provider'] ?? (role == 'fix' ? 'anthropic' : 'openai')).toString();
-    final prov = _Providers.list.firstWhere((p) => p.id == provId, orElse: () => _Providers.list.first);
+    final provId =
+        (settings['${role}Provider'] ??
+                (role == 'fix' ? 'anthropic' : 'openai'))
+            .toString();
+    final prov = _Providers.list.firstWhere(
+      (p) => p.id == provId,
+      orElse: () => _Providers.list.first,
+    );
     final model = (settings['${role}Model'] ?? prov.defaultModel).toString();
     final keySet = _hasSecret('${role}ApiKey');
     return Container(
       padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(color: Sa.bgRaised, borderRadius: BorderRadius.circular(10), border: Border.all(color: Sa.border)),
+      decoration: BoxDecoration(
+        color: Sa.bgRaised,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Sa.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: Sa.body(size: 12.5, color: accent)),
           const SizedBox(height: 8),
-          InkWell(onTap: () => _pickProvider(role, settings), child: _fieldRow(Icons.expand_more, '${prov.name} · $model')),
+          InkWell(
+            onTap: () => _pickProvider(role, settings),
+            child: _fieldRow(Icons.expand_more, '${prov.name} · $model'),
+          ),
           const SizedBox(height: 6),
           InkWell(
-            onTap: () => _setSecret('${role}ApiKey', '$title API key', prov.tokenHint),
-            child: _fieldRow(Icons.key, keySet ? '•••••••• set' : 'set API key',
-                trailing: keySet ? Icon(Icons.check, size: 14, color: _gGreen) : null),
+            onTap: () => _setSecret(
+              '${role}ApiKey',
+              context.tr('{title} API key', {'title': title}),
+              prov.tokenHint,
+            ),
+            child: _fieldRow(
+              Icons.key,
+              keySet ? context.tr('•••••••• set') : context.tr('set API key'),
+              trailing: keySet
+                  ? Icon(Icons.check, size: 14, color: _gGreen)
+                  : null,
+            ),
           ),
         ],
       ),
@@ -6674,43 +7773,85 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   Widget _fieldRow(IconData ic, String text, {Widget? trailing}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(color: Sa.bg, borderRadius: BorderRadius.circular(7), border: Border.all(color: Sa.border)),
-      child: Row(children: [
-        Icon(ic, size: 14, color: Sa.muted),
-        const SizedBox(width: 7),
-        Expanded(child: Text(text, overflow: TextOverflow.ellipsis, style: Sa.body(size: 12, color: Sa.text))),
-        if (trailing != null) trailing,
-      ]),
+      decoration: BoxDecoration(
+        color: Sa.bg,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: Sa.border),
+      ),
+      child: Row(
+        children: [
+          Icon(ic, size: 14, color: Sa.muted),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              style: Sa.body(size: 12, color: Sa.text),
+            ),
+          ),
+          if (trailing != null) trailing,
+        ],
+      ),
     );
   }
 
   // ── github connection ──
   Widget _github(Map cfg) {
-    final repo = (cfg['repo'] ?? '').toString();
+    final repo = GithubService.normalizeRepo((cfg['repo'] ?? '').toString());
     return GlassPanel(
       accent: widget.spec.accent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(Icons.hub_outlined, size: 14, color: Sa.muted),
-            const SizedBox(width: 7),
-            Text('GITHUB CONNECTION', style: Sa.body(size: 11, color: Sa.muted)),
-            const Spacer(),
-            _connBadge(),
-          ]),
+          Row(
+            children: [
+              Icon(Icons.hub_outlined, size: 14, color: Sa.muted),
+              const SizedBox(width: 7),
+              Text(
+                context.tr('GITHUB CONNECTION'),
+                style: Sa.body(size: 11, color: Sa.muted),
+              ),
+              const Spacer(),
+              _connBadge(cfg),
+            ],
+          ),
           const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: InkWell(onTap: _setRepo, child: _fieldRow(Icons.account_tree, repo.isEmpty ? 'link repository (owner/name)' : repo))),
-            const SizedBox(width: 10),
-            Expanded(child: InkWell(
-              onTap: () => _setSecret('githubToken', 'GitHub token', 'github_pat_…'),
-              child: _fieldRow(Icons.vpn_key, _hasSecret('githubToken') ? '•••••••• set' : 'set token',
-                  trailing: _hasSecret('githubToken') ? Icon(Icons.check, size: 14, color: _gGreen) : null),
-            )),
-          ]),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _setRepo(repo),
+                  child: _fieldRow(
+                    Icons.account_tree,
+                    repo.isEmpty
+                        ? context.tr('link repository (owner/name)')
+                        : repo,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: InkWell(
+                  onTap: () => _setSecret(
+                    'githubToken',
+                    context.tr('GitHub token'),
+                    'github_pat_…',
+                  ),
+                  child: _fieldRow(
+                    Icons.vpn_key,
+                    _hasSecret('githubToken')
+                        ? context.tr('•••••••• set')
+                        : context.tr('set token'),
+                    trailing: _hasSecret('githubToken')
+                        ? Icon(Icons.check, size: 14, color: _gGreen)
+                        : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
-          _verifyRow(),
+          _verifyRow(repo),
         ],
       ),
     );
@@ -6718,8 +7859,8 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
 
   /// Live "Connected / Not connected" badge — fed by the same tracker that polls
   /// the proxy worker's /config, so it flips the moment the worker can reach the repo.
-  Widget _connBadge() {
-    final ok = _tracker.connected;
+  Widget _connBadge(Map cfg) {
+    final ok = _tracker.connected || _githubLatched(cfg);
     final c = ok ? _gGreen : _gRed;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -6728,71 +7869,142 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: c.withValues(alpha: 0.5)),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 7, height: 7, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-        const SizedBox(width: 6),
-        Text(ok ? 'Connected' : 'Not connected', style: Sa.body(size: 11, color: c)),
-      ]),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            ok ? context.tr('Connected') : context.tr('Not connected'),
+            style: Sa.body(size: 11, color: c),
+          ),
+        ],
+      ),
     );
   }
 
   /// Verify button + animated result line: spinner → green check / red cross.
-  Widget _verifyRow() {
-    return Row(children: [
-      SaButton(
-        label: _verifying ? 'Verifying…' : 'Verify connection',
-        icon: Icons.wifi_tethering,
-        outlined: true,
-        onPressed: () {
-          if (!_verifying) _verifyConnection();
-        },
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 280),
-          transitionBuilder: (child, anim) =>
-              FadeTransition(opacity: anim, child: SizeTransition(sizeFactor: anim, axis: Axis.horizontal, child: child)),
-          child: _verifyStatus(),
+  Widget _verifyRow(String repo) {
+    return Row(
+      children: [
+        SaButton(
+          label: _verifying
+              ? context.tr('Verifying…')
+              : context.tr('Verify connection'),
+          icon: Icons.wifi_tethering,
+          outlined: true,
+          onPressed: () {
+            if (!_verifying) _verifyConnection(repo);
+          },
         ),
-      ),
-    ]);
+        const SizedBox(width: 12),
+        Expanded(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 280),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SizeTransition(
+                sizeFactor: anim,
+                axis: Axis.horizontal,
+                child: child,
+              ),
+            ),
+            child: _verifyStatus(),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _verifyStatus() {
     if (_verifying) {
-      return Row(key: const ValueKey('verifying'), mainAxisSize: MainAxisSize.min, children: [
-        SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: _gAmber)),
-        const SizedBox(width: 8),
-        Flexible(child: Text('contacting GitHub…', overflow: TextOverflow.ellipsis, style: Sa.body(size: 11.5, color: Sa.textDim))),
-      ]);
+      return Row(
+        key: const ValueKey('verifying'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 13,
+            height: 13,
+            child: CircularProgressIndicator(strokeWidth: 2, color: _gAmber),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              context.tr('contacting GitHub…'),
+              overflow: TextOverflow.ellipsis,
+              style: Sa.body(size: 11.5, color: Sa.textDim),
+            ),
+          ),
+        ],
+      );
     }
     if (_verifyOk == null) return const SizedBox.shrink();
     final ok = _verifyOk!;
     final c = ok ? _gGreen : _gRed;
-    return Row(key: ValueKey('result_$ok'), mainAxisSize: MainAxisSize.min, children: [
-      Icon(ok ? Icons.check_circle : Icons.error, size: 15, color: c),
-      const SizedBox(width: 8),
-      Flexible(child: Text(_verifyMsg, overflow: TextOverflow.ellipsis, maxLines: 2, style: Sa.body(size: 11.5, color: c))),
-    ]);
+    return Row(
+      key: ValueKey('result_$ok'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(ok ? Icons.check_circle : Icons.error, size: 15, color: c),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            _verifyMsg,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            style: Sa.body(size: 11.5, color: c),
+          ),
+        ),
+      ],
+    );
   }
 
-  Future<void> _verifyConnection() async {
+  Future<void> _verifyConnection(String repo) async {
     setState(() {
       _verifying = true;
       _verifyOk = null;
       _verifyMsg = '';
     });
-    final svc = GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret);
+    final svc = GithubService(
+      baseUrl: _ghUrl,
+      sharedSecret: _wSecret,
+      repo: repo,
+    );
     ({bool ok, String repo, int runs, String message}) r;
     try {
       r = await svc.verify();
-    } catch (_) {
-      r = (ok: false, repo: '', runs: 0, message: 'Proxy worker unreachable.');
+    } catch (error) {
+      r = (
+        ok: false,
+        repo: '',
+        runs: 0,
+        message: context.tr(
+          'Guardian proxy check failed before credentials were verified: {error}',
+          {'error': '$error'},
+        ),
+      );
     } finally {
       svc.close();
     }
     if (!mounted) return;
+    final verifiedRepo = GithubService.normalizeRepo(
+      r.repo.isNotEmpty ? r.repo : repo,
+    );
+    if (r.ok) {
+      final now = DateTime.now().toUtc().toIso8601String();
+      await _cfg.update({
+        if (verifiedRepo.isNotEmpty) 'repo': verifiedRepo,
+        'githubConnected': true,
+        'githubVerifiedAt': now,
+        'githubVerifiedRepo': verifiedRepo,
+        'githubConnectionMessage': r.message,
+      });
+      _tracker.rememberConnected(verifiedRepo);
+    }
     setState(() {
       _verifying = false;
       _verifyOk = r.ok;
@@ -6819,44 +8031,95 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   Widget _knowledge(Map cfg) {
     List<String> listOf(String k) {
       final v = cfg[k];
-      if (v is List) return v.map((e) => e is Map ? (e['name'] ?? 'file').toString() : e.toString()).toList();
+      if (v is List)
+        return v
+            .map(
+              (e) => e is Map ? (e['name'] ?? 'file').toString() : e.toString(),
+            )
+            .toList();
       return const [];
     }
-    return _panel('KNOWLEDGE · upload .md', Icons.menu_book_outlined, Row(children: [
-      Expanded(child: _mdColumn('Instructions', 'instructions', listOf('instructions'), Sa.blue)),
-      const SizedBox(width: 10),
-      Expanded(child: _mdColumn('Skills', 'skills', listOf('skills'), _gGreen)),
-    ]));
+
+    return _panel(
+      context.tr('KNOWLEDGE · upload .md'),
+      Icons.menu_book_outlined,
+      Row(
+        children: [
+          Expanded(
+            child: _mdColumn(
+              context.tr('Instructions'),
+              'instructions',
+              listOf('instructions'),
+              Sa.blue,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _mdColumn(
+              context.tr('Skills'),
+              'skills',
+              listOf('skills'),
+              _gGreen,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _mdColumn(String title, String key, List<String> files, Color accent) {
     return Container(
       padding: const EdgeInsets.all(11),
-      decoration: BoxDecoration(color: Sa.bgRaised, borderRadius: BorderRadius.circular(10), border: Border.all(color: Sa.border)),
+      decoration: BoxDecoration(
+        color: Sa.bgRaised,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Sa.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Text(title, style: Sa.body(size: 12.5, color: accent)),
-            const Spacer(),
-            Text('${files.length}', style: Sa.body(size: 11, color: Sa.muted)),
-          ]),
+          Row(
+            children: [
+              Text(title, style: Sa.body(size: 12.5, color: accent)),
+              const Spacer(),
+              Text(
+                '${files.length}',
+                style: Sa.body(size: 11, color: Sa.muted),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           for (var i = 0; i < files.length; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 5),
-              child: Row(children: [
-                Icon(Icons.description_outlined, size: 13, color: Sa.muted),
-                const SizedBox(width: 6),
-                Expanded(child: Text(files[i], overflow: TextOverflow.ellipsis, style: Sa.body(size: 11.5, color: Sa.textDim))),
-                InkWell(
-                  onTap: () => _deleteMd(key, i),
-                  child: Padding(padding: const EdgeInsets.all(2), child: Icon(Icons.delete_outline, size: 15, color: _gRed)),
-                ),
-              ]),
+              child: Row(
+                children: [
+                  Icon(Icons.description_outlined, size: 13, color: Sa.muted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      files[i],
+                      overflow: TextOverflow.ellipsis,
+                      style: Sa.body(size: 11.5, color: Sa.textDim),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => _deleteMd(key, i),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(Icons.delete_outline, size: 15, color: _gRed),
+                    ),
+                  ),
+                ],
+              ),
             ),
           const SizedBox(height: 4),
-          SaButton(label: 'Upload .md', icon: Icons.upload_file, outlined: true, onPressed: () => _uploadMd(key)),
+          SaButton(
+            label: context.tr('Upload .md'),
+            icon: Icons.upload_file,
+            outlined: true,
+            onPressed: () => _uploadMd(key),
+          ),
         ],
       ),
     );
@@ -6869,7 +8132,13 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [Icon(ic, size: 14, color: Sa.muted), const SizedBox(width: 7), Text(label, style: Sa.body(size: 11, color: Sa.muted))]),
+          Row(
+            children: [
+              Icon(ic, size: 14, color: Sa.muted),
+              const SizedBox(width: 7),
+              Text(label, style: Sa.body(size: 11, color: Sa.muted)),
+            ],
+          ),
           const SizedBox(height: 12),
           child,
         ],
@@ -6877,10 +8146,16 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     );
   }
 
-  Future<void> _saveSetting(String k, dynamic v) =>
-      _cfg.child('settings').update({k: v, 'updatedAt': DateTime.now().toUtc().toIso8601String()});
+  Future<void> _saveSetting(String k, dynamic v) => _cfg
+      .child('settings')
+      .update({k: v, 'updatedAt': DateTime.now().toUtc().toIso8601String()});
 
-  Future<void> _simulateIncident(String title, String severity, String description, String model) async {
+  Future<void> _simulateIncident(
+    String title,
+    String severity,
+    String description,
+    String model,
+  ) async {
     _simTimer?.cancel();
     final messenger = ScaffoldMessenger.of(context);
     final mode = _deployAuto ? 'automatic' : 'human';
@@ -6888,13 +8163,20 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
 
     // Register the drill in the bug pipeline so the rest of the platform sees it.
     FirebaseDatabase.instance.ref('bugs/client').push().set({
-      'area': 'simulation', 'severity': severity, 'message': description,
-      'at': DateTime.now().toUtc().toIso8601String(), 'simulated': true,
+      'area': 'simulation',
+      'severity': severity,
+      'message': description,
+      'at': DateTime.now().toUtc().toIso8601String(),
+      'simulated': true,
     });
 
     var dispatched = false;
     if (_ghUrl.isNotEmpty) {
-      final svc = GithubService(baseUrl: _ghUrl, sharedSecret: _wSecret);
+      final svc = GithubService(
+        baseUrl: _ghUrl,
+        sharedSecret: _wSecret,
+        repo: _tracker.repo,
+      );
       try {
         dispatched = await svc.dispatchDrill(mode: mode, target: target);
       } catch (_) {
@@ -6908,11 +8190,15 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       // stage by stage, straight from GitHub. No synthetic preview needed.
       _tracker.expectDrill();
       await _cfg.child('activeRun').remove();
-      messenger.showSnackBar(SnackBar(
-        backgroundColor: Sa.panelSolid,
-        content: Text('Guardian drill dispatched on GitHub (mode=$mode) — the pipeline is now live.',
-            style: Sa.body(size: 12.5, color: Sa.text)),
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Sa.panelSolid,
+          content: Text(
+            'Guardian drill dispatched on GitHub (mode=$mode) — the pipeline is now live.',
+            style: Sa.body(size: 12.5, color: Sa.text),
+          ),
+        ),
+      );
       return;
     }
 
@@ -6932,7 +8218,9 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
         case 'gate':
           return 'gate     > tests passed, review approved';
         default:
-          return _deployAuto ? 'deploy   > merged to main, production live' : 'deploy   > opened PR, awaiting human review';
+          return _deployAuto
+              ? 'deploy   > merged to main, production live'
+              : 'deploy   > opened PR, awaiting human review';
       }
     }
 
@@ -6942,8 +8230,14 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       '[${_ts()}] ${line('detect')}',
     ];
     await _cfg.child('activeRun').set({
-      'title': title, 'severity': severity, 'description': description, 'model': model,
-      'stage': 'detect', 'status': 'running', 'log': logs, 'simulated': true,
+      'title': title,
+      'severity': severity,
+      'description': description,
+      'model': model,
+      'stage': 'detect',
+      'status': 'running',
+      'log': logs,
+      'simulated': true,
       'at': DateTime.now().toUtc().toIso8601String(),
     });
     var i = 0;
@@ -6952,12 +8246,22 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       if (i >= stages.length) {
         t.cancel();
         logs.add('[${_ts()}] ${line('deploy')}');
-        logs.add('[${_ts()}] ${_deployAuto ? '✔ resolved & deployed' : '✔ PR opened — awaiting review'}');
-        await _cfg.child('activeRun').update({'stage': 'deploy', 'status': _deployAuto ? 'deployed' : 'pr_open', 'log': logs});
+        logs.add(
+          '[${_ts()}] ${_deployAuto ? '✔ resolved & deployed' : '✔ PR opened — awaiting review'}',
+        );
+        await _cfg.child('activeRun').update({
+          'stage': 'deploy',
+          'status': _deployAuto ? 'deployed' : 'pr_open',
+          'log': logs,
+        });
         return;
       }
       logs.add('[${_ts()}] ${line(stages[i])}');
-      await _cfg.child('activeRun').update({'stage': stages[i], 'status': 'running', 'log': logs});
+      await _cfg.child('activeRun').update({
+        'stage': stages[i],
+        'status': 'running',
+        'log': logs,
+      });
     });
   }
 
@@ -6976,15 +8280,23 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       backgroundColor: Sa.panelSolid,
       builder: (ctx) => SafeArea(
         child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            for (final p in _Providers.list)
-              ListTile(
-                leading: Icon(Icons.bolt, color: p.color),
-                title: Text(p.name, style: Sa.body(size: 14, color: Sa.text)),
-                subtitle: Text(p.defaultModel.isEmpty ? 'custom endpoint' : p.defaultModel, style: Sa.body(size: 11, color: Sa.muted)),
-                onTap: () => Navigator.pop(ctx, p),
-              ),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final p in _Providers.list)
+                ListTile(
+                  leading: Icon(Icons.bolt, color: p.color),
+                  title: Text(p.name, style: Sa.body(size: 14, color: Sa.text)),
+                  subtitle: Text(
+                    p.defaultModel.isEmpty
+                        ? context.tr('custom endpoint')
+                        : p.defaultModel,
+                    style: Sa.body(size: 11, color: Sa.muted),
+                  ),
+                  onTap: () => Navigator.pop(ctx, p),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -7001,53 +8313,148 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Sa.panelSolid,
         title: Text(title, style: Sa.body(size: 15, color: Sa.text)),
-        content: TextField(controller: ctl, obscureText: true,
-            style: Sa.body(size: 13, color: Sa.text),
-            decoration: InputDecoration(hintText: hint, hintStyle: Sa.body(size: 13, color: Sa.muted), border: const OutlineInputBorder())),
+        content: TextField(
+          controller: ctl,
+          obscureText: true,
+          style: Sa.body(size: 13, color: Sa.text),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: Sa.body(size: 13, color: Sa.muted),
+            border: const OutlineInputBorder(),
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: Text('Save', style: Sa.body(size: 13, color: Sa.cyan))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(context.tr('Cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+            child: Text(
+              context.tr('Save'),
+              style: Sa.body(size: 13, color: Sa.cyan),
+            ),
+          ),
         ],
       ),
     );
     if (v != null && v.isNotEmpty) {
-      await _sec.update({field: v, 'updatedAt': DateTime.now().toUtc().toIso8601String()});
+      await _sec.update({
+        field: v,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      if (field == 'githubToken') {
+        await _markGithubCredentialsChanged();
+      }
       final s = await _sec.get();
-      if (mounted && s.value is Map) setState(() => _secrets = s.value as Map<dynamic, dynamic>);
+      if (mounted && s.value is Map)
+        setState(() => _secrets = s.value as Map<dynamic, dynamic>);
     }
   }
 
-  Future<void> _setRepo() async {
-    final ctl = TextEditingController();
+  Future<void> _setRepo(String currentRepo) async {
+    final ctl = TextEditingController(text: currentRepo);
     final v = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Sa.panelSolid,
-        title: Text('Link GitHub repository', style: Sa.body(size: 15, color: Sa.text)),
-        content: TextField(controller: ctl,
-            style: Sa.body(size: 13, color: Sa.text),
-            decoration: InputDecoration(hintText: 'owner/repository', hintStyle: Sa.body(size: 13, color: Sa.muted), border: const OutlineInputBorder())),
+        title: Text(
+          context.tr('Link GitHub repository'),
+          style: Sa.body(size: 15, color: Sa.text),
+        ),
+        content: TextField(
+          controller: ctl,
+          style: Sa.body(size: 13, color: Sa.text),
+          decoration: InputDecoration(
+            hintText: context.tr('owner/repository'),
+            hintStyle: Sa.body(size: 13, color: Sa.muted),
+            border: const OutlineInputBorder(),
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: Text('Save', style: Sa.body(size: 13, color: Sa.cyan))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(context.tr('Cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+            child: Text(
+              context.tr('Save'),
+              style: Sa.body(size: 13, color: Sa.cyan),
+            ),
+          ),
         ],
       ),
     );
-    if (v != null && v.isNotEmpty) {
-      await _cfg.update({'repo': v});
+    if (v != null) {
+      final trimmed = v.trim();
+      if (trimmed.isEmpty) {
+        await _cfg.update({'repo': null});
+        await _markGithubCredentialsChanged(repo: '');
+        _tracker.setRepo('');
+        if (mounted) {
+          setState(() {
+            _verifyOk = false;
+            _verifyMsg = context.tr('GitHub repository cleared.');
+          });
+        }
+        return;
+      }
+      final repo = GithubService.normalizeRepo(v);
+      if (repo.isNotEmpty) {
+        await _cfg.update({'repo': repo});
+        await _markGithubCredentialsChanged(repo: repo);
+        _tracker.setRepo(repo);
+        return;
+      }
+      await _cfg.update({'repo': null});
+      await _markGithubCredentialsChanged(repo: '');
+      _tracker.setRepo('');
+      if (mounted) {
+        setState(() {
+          _verifyOk = false;
+          _verifyMsg = context.tr(
+            'Invalid GitHub repository. Use owner/name or a GitHub URL.',
+          );
+        });
+      }
     }
   }
 
+  Future<void> _markGithubCredentialsChanged({String? repo}) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final currentRepo = repo ?? _tracker.repo;
+    GithubService.forgetCachedStatus(baseUrl: _ghUrl, repo: currentRepo);
+    _tracker.forgetConnection();
+    await _cfg.update({
+      'githubConnected': false,
+      'githubVerifiedAt': null,
+      'githubVerifiedRepo': null,
+      'githubConnectionMessage': null,
+      'githubCredentialsUpdatedAt': now,
+    });
+  }
+
   Future<void> _uploadMd(String key) async {
-    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['md'], withData: true);
+    final res = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['md'],
+      withData: true,
+    );
     if (res == null || res.files.isEmpty) return;
     final f = res.files.first;
     final bytes = f.bytes;
     if (bytes == null) return;
     final content = utf8.decode(bytes, allowMalformed: true);
     final snap = await _cfg.child(key).get();
-    final list = (snap.value is List) ? List<dynamic>.from(snap.value as List) : <dynamic>[];
-    list.add({'name': f.name, 'content': content, 'at': DateTime.now().toUtc().toIso8601String()});
+    final list = (snap.value is List)
+        ? List<dynamic>.from(snap.value as List)
+        : <dynamic>[];
+    list.add({
+      'name': f.name,
+      'content': content,
+      'at': DateTime.now().toUtc().toIso8601String(),
+    });
     await _cfg.child(key).set(list);
   }
 }
@@ -7073,8 +8480,16 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: _red.withValues(alpha: 0.4)),
             boxShadow: [
-              BoxShadow(color: _red.withValues(alpha: 0.18), blurRadius: 40, spreadRadius: 2),
-              BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 30, offset: const Offset(0, 16)),
+              BoxShadow(
+                color: _red.withValues(alpha: 0.18),
+                blurRadius: 40,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 30,
+                offset: const Offset(0, 16),
+              ),
             ],
           ),
           child: Column(
@@ -7085,45 +8500,83 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [_red.withValues(alpha: 0.22), _amber.withValues(alpha: 0.10)],
+                    colors: [
+                      _red.withValues(alpha: 0.22),
+                      _amber.withValues(alpha: 0.10),
+                    ],
                   ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
                 ),
-                child: Row(children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: _red.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _red.withValues(alpha: 0.5)),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _red.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _red.withValues(alpha: 0.5)),
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: _red,
+                        size: 26,
+                      ),
                     ),
-                    child: const Icon(Icons.warning_amber_rounded, color: _red, size: 26),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Enable automatic deployment?', style: Sa.display(size: 16)),
-                        const SizedBox(height: 3),
-                        Text('Guardian will ship fixes with no human in the loop',
-                            style: Sa.body(size: 12, color: Sa.muted)),
-                      ],
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.tr('Enable automatic deployment?'),
+                            style: Sa.display(size: 16),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            context.tr(
+                              'Guardian will ship fixes with no human in the loop',
+                            ),
+                            style: Sa.body(size: 12, color: Sa.muted),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _bullet(Icons.merge, 'Verified AI fixes are pushed straight to ', 'main', ' — no pull request, no review.'),
-                    _bullet(Icons.rocket_launch_outlined, 'Each healed commit ', 'auto-deploys to production', ' (web + app builds).'),
-                    _bullet(Icons.person_off_outlined, 'A person is only notified ', 'after the fact', ', or when a fix fails to verify.'),
-                    _bullet(Icons.health_and_safety_outlined, 'A safety-restore still protects ', 'main', ' if a fix can’t be validated.'),
+                    _bullet(
+                      Icons.merge,
+                      context.tr('Verified AI fixes are pushed straight to '),
+                      'main',
+                      context.tr(' — no pull request, no review.'),
+                    ),
+                    _bullet(
+                      Icons.rocket_launch_outlined,
+                      context.tr('Each healed commit '),
+                      context.tr('auto-deploys to production'),
+                      context.tr(' (web + app builds).'),
+                    ),
+                    _bullet(
+                      Icons.person_off_outlined,
+                      context.tr('A person is only notified '),
+                      context.tr('after the fact'),
+                      context.tr(', or when a fix fails to verify.'),
+                    ),
+                    _bullet(
+                      Icons.health_and_safety_outlined,
+                      context.tr('A safety-restore still protects '),
+                      'main',
+                      context.tr(' if a fix can’t be validated.'),
+                    ),
                   ],
                 ),
               ),
@@ -7135,22 +8588,46 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: _amber.withValues(alpha: 0.35)),
                 ),
-                child: Row(children: [
-                  const Icon(Icons.info_outline, size: 15, color: _amber),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text('Recommended only once you trust the Fix + Review AI pairing on your codebase.',
-                        style: Sa.body(size: 11.5, color: Sa.textDim)),
-                  ),
-                ]),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 15, color: _amber),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        context.tr(
+                          'Recommended only once you trust the Fix + Review AI pairing on your codebase.',
+                        ),
+                        style: Sa.body(size: 11.5, color: Sa.textDim),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(children: [
-                  Expanded(child: _btn(context, 'Keep human review', _green, false, filled: false)),
-                  const SizedBox(width: 10),
-                  Expanded(child: _btn(context, 'Enable automatic', _red, true, filled: true)),
-                ]),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _btn(
+                        context,
+                        context.tr('Keep human review'),
+                        _green,
+                        false,
+                        filled: false,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _btn(
+                        context,
+                        context.tr('Enable automatic'),
+                        _red,
+                        true,
+                        filled: true,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -7176,7 +8653,13 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
                 style: Sa.body(size: 12.5, color: Sa.textDim),
                 children: [
                   TextSpan(text: a),
-                  TextSpan(text: bold, style: Sa.body(size: 12.5, color: Sa.text).copyWith(fontWeight: FontWeight.w700)),
+                  TextSpan(
+                    text: bold,
+                    style: Sa.body(
+                      size: 12.5,
+                      color: Sa.text,
+                    ).copyWith(fontWeight: FontWeight.w700),
+                  ),
                   TextSpan(text: b),
                 ],
               ),
@@ -7187,7 +8670,13 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
     );
   }
 
-  Widget _btn(BuildContext ctx, String label, Color c, bool value, {required bool filled}) {
+  Widget _btn(
+    BuildContext ctx,
+    String label,
+    Color c,
+    bool value, {
+    required bool filled,
+  }) {
     return InkWell(
       onTap: () => Navigator.pop(ctx, value),
       borderRadius: BorderRadius.circular(10),
@@ -7199,8 +8688,13 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: c.withValues(alpha: filled ? 0.0 : 0.6)),
         ),
-        child: Text(label,
-            style: Sa.body(size: 12.5, color: filled ? Colors.white : c).copyWith(fontWeight: FontWeight.w600)),
+        child: Text(
+          label,
+          style: Sa.body(
+            size: 12.5,
+            color: filled ? Colors.white : c,
+          ).copyWith(fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
@@ -7292,248 +8786,279 @@ class _CustomAgentPanelState extends State<_CustomAgentPanel> {
     final provider = _Providers.of(spec.provider);
     final token = (spec.apiToken ?? '');
     final masked = token.isEmpty
-        ? 'NO CREDENTIAL ON FILE'
+        ? context.tr('NO CREDENTIAL ON FILE')
         : token.length <= 4
-            ? '••••'
-            : '${'•' * (token.length - 4).clamp(4, 24)}${token.substring(token.length - 4)}';
+        ? '••••'
+        : '${'•' * (token.length - 4).clamp(4, 24)}${token.substring(token.length - 4)}';
 
-    return _AgentScroll(children: [
-      if (!widget.enabled) _OfflineBanner(spec: spec),
-      // ── HERO ──────────────────────────────────────────────────────────
-      GlassPanel(
-        accent: spec.accent,
-        glow: widget.enabled,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: spec.icon,
-              leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
-              title: spec.name,
-              subtitle: spec.codename,
-              accent: spec.accent,
-              trailing: Wrap(
-                spacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  GlowChip(
-                    label: 'CUSTOM UNIT',
-                    color: spec.accent,
-                    icon: Icons.auto_awesome,
-                  ),
-                  GlowChip(
-                    label: widget.enabled ? 'ONLINE' : 'OFFLINE',
-                    color: widget.enabled ? Sa.green : Sa.muted,
-                    pulse: widget.enabled,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                SaStatTile(
-                  label: 'Provider',
-                  value: provider.name,
-                  icon: Icons.cloud_outlined,
-                  color: spec.accent,
-                ),
-                SaStatTile(
-                  label: 'Model',
-                  value: (spec.model ?? '').isEmpty ? '—' : spec.model!,
-                  icon: Icons.memory,
-                  color: Sa.blue,
-                ),
-                SaStatTile(
-                  label: 'Credential',
-                  value: token.isEmpty ? 'MISSING' : 'ON FILE',
-                  icon: Icons.vpn_key_outlined,
-                  color: token.isEmpty ? Sa.amber : Sa.green,
-                ),
-                SaStatTile(
-                  label: 'Deployed',
-                  value: _agoIso(spec.createdAt),
-                  icon: Icons.schedule,
-                  color: Sa.muted,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                SaButton(
-                  label: 'EDIT AGENT',
-                  icon: Icons.tune,
-                  color: spec.accent,
-                  outlined: true,
-                  onPressed: widget.onEdit,
-                ),
-                const SizedBox(width: 10),
-                SaButton(
-                  label: 'DELETE',
-                  icon: Icons.delete_forever_outlined,
-                  color: Sa.red,
-                  outlined: true,
-                  onPressed: widget.onDelete,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      // ── PROFILE ───────────────────────────────────────────────────────
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.badge_outlined,
-              title: 'PROFILE',
-              subtitle: 'Who this agent is and what it stands for.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 12),
-            if ((spec.description ?? '').trim().isEmpty)
-              Text('No description provided.',
-                  style: Sa.body(size: 12, color: Sa.textDim))
-            else
-              Text(spec.description!, style: Sa.body(size: 12.5)),
-          ],
-        ),
-      ),
-      // ── MISSION / TASKS ───────────────────────────────────────────────
-      _CustomDocPanel(
-        icon: Icons.assignment_outlined,
-        title: 'MISSION BRIEF',
-        subtitle: 'The tasks this agent is responsible for.',
-        accent: spec.accent,
-        body: spec.tasks ?? '',
-        fileName: spec.tasksFile,
-        emptyMsg: 'No tasks defined yet — edit the agent to brief it.',
-      ),
-      // ── SKILLS ────────────────────────────────────────────────────────
-      _CustomDocPanel(
-        icon: Icons.school_outlined,
-        title: 'SKILLS & CAPABILITIES',
-        subtitle: 'What this agent knows how to do.',
-        accent: spec.accent,
-        body: spec.skills ?? '',
-        fileName: spec.skillsFile,
-        emptyMsg: 'No skills listed yet.',
-      ),
-      // ── CREDENTIALS ───────────────────────────────────────────────────
-      GlassPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SaSectionHeader(
-              icon: Icons.vpn_key_outlined,
-              title: 'CREDENTIALS',
-              subtitle:
-                  'The LLM provider and API token this agent authenticates with.',
-              accent: spec.accent,
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: provider.color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: provider.color.withValues(alpha: 0.4)),
-                  ),
-                  child: Center(
-                      child: _ProviderLogo(
-                          provider: provider, size: 28, color: provider.color)),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(provider.name, style: Sa.heading(size: 14)),
-                      Text(
-                        (spec.model ?? '').isEmpty
-                            ? 'Default model'
-                            : spec.model!,
-                        style: Sa.mono(size: 10.5, color: Sa.textDim),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Sa.termBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Sa.termBorder),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.key, size: 14, color: Sa.termMuted),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: SelectableText(
-                      _reveal && token.isNotEmpty ? token : masked,
-                      style: Sa.mono(size: 11.5, color: Sa.termText),
+    return _AgentScroll(
+      children: [
+        if (!widget.enabled) _OfflineBanner(spec: spec),
+        // ── HERO ──────────────────────────────────────────────────────────
+        GlassPanel(
+          accent: spec.accent,
+          glow: widget.enabled,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: spec.icon,
+                leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
+                title: context.tr(spec.name),
+                subtitle: spec.codename,
+                accent: spec.accent,
+                trailing: Wrap(
+                  spacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    GlowChip(
+                      label: context.tr('CUSTOM UNIT'),
+                      color: spec.accent,
+                      icon: Icons.auto_awesome,
                     ),
-                  ),
-                  if (token.isNotEmpty) ...[
-                    IconButton(
-                      tooltip: _reveal ? 'Hide' : 'Reveal',
-                      onPressed: () => setState(() => _reveal = !_reveal),
-                      icon: Icon(
-                        _reveal
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        size: 16,
-                        color: Sa.termDim,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Copy',
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: token));
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          backgroundColor: Sa.panelSolid,
-                          content: Text('Token copied to clipboard.',
-                              style: Sa.body(size: 12.5)),
-                        ));
-                      },
-                      icon: const Icon(Icons.copy_all_outlined,
-                          size: 15, color: Sa.termDim),
+                    GlowChip(
+                      label: widget.enabled
+                          ? context.tr('ONLINE')
+                          : context.tr('OFFLINE'),
+                      color: widget.enabled ? Sa.green : Sa.muted,
+                      pulse: widget.enabled,
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SaStatTile(
+                    label: context.tr('Provider'),
+                    value: provider.name,
+                    icon: Icons.cloud_outlined,
+                    color: spec.accent,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Model'),
+                    value: (spec.model ?? '').isEmpty ? '—' : spec.model!,
+                    icon: Icons.memory,
+                    color: Sa.blue,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Credential'),
+                    value: token.isEmpty
+                        ? context.tr('MISSING')
+                        : context.tr('ON FILE'),
+                    icon: Icons.vpn_key_outlined,
+                    color: token.isEmpty ? Sa.amber : Sa.green,
+                  ),
+                  SaStatTile(
+                    label: context.tr('Deployed'),
+                    value: _agoIso(context, spec.createdAt),
+                    icon: Icons.schedule,
+                    color: Sa.muted,
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.info_outline, size: 12, color: Sa.muted),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Stored separately in a superadmin-only credential vault. Treat it as a secret — rotate it from EDIT AGENT if it leaks.',
-                    style: Sa.body(size: 10.5, color: Sa.muted),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  SaButton(
+                    label: context.tr('EDIT AGENT'),
+                    icon: Icons.tune,
+                    color: spec.accent,
+                    outlined: true,
+                    onPressed: widget.onEdit,
                   ),
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 10),
+                  SaButton(
+                    label: context.tr('DELETE'),
+                    icon: Icons.delete_forever_outlined,
+                    color: Sa.red,
+                    outlined: true,
+                    onPressed: widget.onDelete,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-    ]);
+        // ── PROFILE ───────────────────────────────────────────────────────
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.badge_outlined,
+                title: context.tr('PROFILE'),
+                subtitle: context.tr(
+                  'Who this agent is and what it stands for.',
+                ),
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 12),
+              if ((spec.description ?? '').trim().isEmpty)
+                Text(
+                  context.tr('No description provided.'),
+                  style: Sa.body(size: 12, color: Sa.textDim),
+                )
+              else
+                Text(spec.description!, style: Sa.body(size: 12.5)),
+            ],
+          ),
+        ),
+        // ── MISSION / TASKS ───────────────────────────────────────────────
+        _CustomDocPanel(
+          icon: Icons.assignment_outlined,
+          title: context.tr('MISSION BRIEF'),
+          subtitle: context.tr('The tasks this agent is responsible for.'),
+          accent: spec.accent,
+          body: spec.tasks ?? '',
+          fileName: spec.tasksFile,
+          emptyMsg: context.tr(
+            'No tasks defined yet — edit the agent to brief it.',
+          ),
+        ),
+        // ── SKILLS ────────────────────────────────────────────────────────
+        _CustomDocPanel(
+          icon: Icons.school_outlined,
+          title: context.tr('SKILLS & CAPABILITIES'),
+          subtitle: context.tr('What this agent knows how to do.'),
+          accent: spec.accent,
+          body: spec.skills ?? '',
+          fileName: spec.skillsFile,
+          emptyMsg: context.tr('No skills listed yet.'),
+        ),
+        // ── CREDENTIALS ───────────────────────────────────────────────────
+        GlassPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SaSectionHeader(
+                icon: Icons.vpn_key_outlined,
+                title: context.tr('CREDENTIALS'),
+                subtitle: context.tr(
+                  'The LLM provider and API token this agent authenticates with.',
+                ),
+                accent: spec.accent,
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: provider.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: provider.color.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Center(
+                      child: _ProviderLogo(
+                        provider: provider,
+                        size: 28,
+                        color: provider.color,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(provider.name, style: Sa.heading(size: 14)),
+                        Text(
+                          (spec.model ?? '').isEmpty
+                              ? context.tr('Default model')
+                              : spec.model!,
+                          style: Sa.mono(size: 10.5, color: Sa.textDim),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Sa.termBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Sa.termBorder),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.key, size: 14, color: Sa.termMuted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SelectableText(
+                        _reveal && token.isNotEmpty ? token : masked,
+                        style: Sa.mono(size: 11.5, color: Sa.termText),
+                      ),
+                    ),
+                    if (token.isNotEmpty) ...[
+                      IconButton(
+                        tooltip: _reveal
+                            ? context.tr('Hide')
+                            : context.tr('Reveal'),
+                        onPressed: () => setState(() => _reveal = !_reveal),
+                        icon: Icon(
+                          _reveal
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          size: 16,
+                          color: Sa.termDim,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: context.tr('Copy'),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: token));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: Sa.panelSolid,
+                              content: Text(
+                                context.tr('Token copied to clipboard.'),
+                                style: Sa.body(size: 12.5),
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.copy_all_outlined,
+                          size: 15,
+                          color: Sa.termDim,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.info_outline, size: 12, color: Sa.muted),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      context.tr(
+                        'Stored separately in a superadmin-only credential vault. Treat it as a secret — rotate it from EDIT AGENT if it leaks.',
+                      ),
+                      style: Sa.body(size: 10.5, color: Sa.muted),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -7590,8 +9115,10 @@ class _CustomDocPanel extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Sa.termBorder),
               ),
-              child: SelectableText(body,
-                  style: Sa.mono(size: 11.5, color: Sa.termText)),
+              child: SelectableText(
+                body,
+                style: Sa.mono(size: 11.5, color: Sa.termText),
+              ),
             ),
         ],
       ),
@@ -7637,7 +9164,8 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
     final e = widget.editing;
     _name = TextEditingController(text: e?.name ?? '');
     _codename = TextEditingController(
-        text: (e?.codename ?? '') == 'CUSTOM UNIT' ? '' : (e?.codename ?? ''));
+      text: (e?.codename ?? '') == 'CUSTOM UNIT' ? '' : (e?.codename ?? ''),
+    );
     _description = TextEditingController(text: e?.description ?? '');
     _tasks = TextEditingController(text: e?.tasks ?? '');
     _skills = TextEditingController(text: e?.skills ?? '');
@@ -7678,8 +9206,10 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
   Future<void> _attachLogo() async {
     setState(() => _logoBusy = true);
     try {
-      final res =
-          await FilePicker.pickFiles(type: FileType.image, withData: true);
+      final res = await FilePicker.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
       final files = res?.files ?? const [];
       final bytes = files.isNotEmpty ? files.first.bytes : null;
       if (bytes != null) {
@@ -7777,10 +9307,12 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
             Container(
               padding: const EdgeInsets.fromLTRB(20, 18, 14, 16),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  accent.withValues(alpha: Sa.isDark ? 0.18 : 0.10),
-                  Colors.transparent,
-                ]),
+                gradient: LinearGradient(
+                  colors: [
+                    accent.withValues(alpha: Sa.isDark ? 0.18 : 0.10),
+                    Colors.transparent,
+                  ],
+                ),
               ),
               child: Row(
                 children: [
@@ -7788,21 +9320,25 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        accent.withValues(alpha: 0.3),
-                        accent.withValues(alpha: 0.08),
-                      ]),
+                      gradient: LinearGradient(
+                        colors: [
+                          accent.withValues(alpha: 0.3),
+                          accent.withValues(alpha: 0.08),
+                        ],
+                      ),
                       borderRadius: BorderRadius.circular(12),
-                      border:
-                          Border.all(color: accent.withValues(alpha: 0.5)),
+                      border: Border.all(color: accent.withValues(alpha: 0.5)),
                     ),
                     child: logoBytes != null
                         ? Padding(
                             padding: const EdgeInsets.all(5),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: Image.memory(logoBytes,
-                                  fit: BoxFit.cover, gaplessPlayback: true),
+                              child: Image.memory(
+                                logoBytes,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                              ),
                             ),
                           )
                         : Icon(_kAgentIcons[_iconKey], color: accent, size: 22),
@@ -7812,10 +9348,16 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(editing ? 'EDIT AGENT' : 'DEPLOY NEW AGENT',
-                            style: Sa.display(size: 16)),
                         Text(
-                          'Configure a custom autonomous unit for the fleet',
+                          editing
+                              ? context.tr('EDIT AGENT')
+                              : context.tr('DEPLOY NEW AGENT'),
+                          style: Sa.display(size: 16),
+                        ),
+                        Text(
+                          context.tr(
+                            'Configure a custom autonomous unit for the fleet',
+                          ),
                           style: Sa.mono(size: 9, color: Sa.muted),
                         ),
                       ],
@@ -7836,38 +9378,53 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _label('IDENTITY', accent),
+                    _label(context.tr('IDENTITY'), accent),
                     const SizedBox(height: 10),
-                    _textField(_name,
-                        hint: 'Agent name (e.g. Quality Inspector)',
-                        icon: Icons.badge_outlined),
+                    _textField(
+                      _name,
+                      hint: context.tr('Agent name (e.g. Quality Inspector)'),
+                      icon: Icons.badge_outlined,
+                    ),
                     const SizedBox(height: 10),
-                    _textField(_codename,
-                        hint: 'Codename (optional, e.g. UNIT-07 · SENTRY)',
-                        icon: Icons.tag),
+                    _textField(
+                      _codename,
+                      hint: context.tr(
+                        'Codename (optional, e.g. UNIT-07 · SENTRY)',
+                      ),
+                      icon: Icons.tag,
+                    ),
                     const SizedBox(height: 10),
-                    _textField(_description,
-                        hint: 'Short description of what this agent is for',
-                        icon: Icons.notes_outlined,
-                        maxLines: 2),
+                    _textField(
+                      _description,
+                      hint: context.tr(
+                        'Short description of what this agent is for',
+                      ),
+                      icon: Icons.notes_outlined,
+                      maxLines: 2,
+                    ),
                     const SizedBox(height: 20),
 
-                    _label('APPEARANCE', accent),
+                    _label(context.tr('APPEARANCE'), accent),
                     const SizedBox(height: 10),
                     _appearanceRow(accent, logoBytes != null),
                     const SizedBox(height: 20),
 
-                    _label('MISSION · TASKS', accent),
+                    _label(context.tr('MISSION · TASKS'), accent),
                     const SizedBox(height: 6),
                     Text(
-                      'Describe the tasks, or attach a brief / spec file.',
+                      context.tr(
+                        'Describe the tasks, or attach a brief / spec file.',
+                      ),
                       style: Sa.body(size: 10.5, color: Sa.textDim),
                     ),
                     const SizedBox(height: 10),
-                    _textField(_tasks,
-                        hint:
-                            'e.g. Review incoming quality alerts, draft a containment checklist…',
-                        maxLines: 4),
+                    _textField(
+                      _tasks,
+                      hint: context.tr(
+                        'e.g. Review incoming quality alerts, draft a containment checklist…',
+                      ),
+                      maxLines: 4,
+                    ),
                     const SizedBox(height: 8),
                     _attachRow(
                       fileName: _tasksFile,
@@ -7877,17 +9434,22 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                     ),
                     const SizedBox(height: 20),
 
-                    _label('SKILLS · CAPABILITIES', accent),
+                    _label(context.tr('SKILLS · CAPABILITIES'), accent),
                     const SizedBox(height: 6),
                     Text(
-                      'List the skills, or attach a capability sheet.',
+                      context.tr(
+                        'List the skills, or attach a capability sheet.',
+                      ),
                       style: Sa.body(size: 10.5, color: Sa.textDim),
                     ),
                     const SizedBox(height: 10),
-                    _textField(_skills,
-                        hint:
-                            'e.g. Root-cause analysis, ISO 9001 knowledge, French + English…',
-                        maxLines: 4),
+                    _textField(
+                      _skills,
+                      hint: context.tr(
+                        'e.g. Root-cause analysis, ISO 9001 knowledge, French + English…',
+                      ),
+                      maxLines: 4,
+                    ),
                     const SizedBox(height: 8),
                     _attachRow(
                       fileName: _skillsFile,
@@ -7897,7 +9459,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                     ),
                     const SizedBox(height: 20),
 
-                    _label('MODEL PROVIDER', accent),
+                    _label(context.tr('MODEL PROVIDER'), accent),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 10,
@@ -7918,15 +9480,21 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    _textField(_model,
-                        hint: 'Model id (e.g. ${_providerHint()})',
-                        icon: Icons.memory),
+                    _textField(
+                      _model,
+                      hint: context.tr('Model id (e.g. {hint})', {
+                        'hint': _providerHint(),
+                      }),
+                      icon: Icons.memory,
+                    ),
                     const SizedBox(height: 12),
                     _textField(
                       _token,
                       hint: _provider == null
-                          ? 'API token / key'
-                          : 'API token — ${_Providers.of(_provider).tokenHint}',
+                          ? context.tr('API token / key')
+                          : context.tr('API token — {hint}', {
+                              'hint': _Providers.of(_provider).tokenHint,
+                            }),
                       icon: Icons.vpn_key_outlined,
                       obscure: !_revealToken,
                       suffix: IconButton(
@@ -7949,7 +9517,9 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'A name and a model provider are required.',
+                              context.tr(
+                                'A name and a model provider are required.',
+                              ),
                               style: Sa.body(size: 11.5, color: Sa.red),
                             ),
                           ),
@@ -7968,7 +9538,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   SaButton(
-                    label: 'CANCEL',
+                    label: context.tr('CANCEL'),
                     icon: Icons.close,
                     color: Sa.muted,
                     outlined: true,
@@ -7976,7 +9546,9 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                   ),
                   const SizedBox(width: 10),
                   SaButton(
-                    label: editing ? 'SAVE CHANGES' : 'DEPLOY AGENT',
+                    label: editing
+                        ? context.tr('SAVE CHANGES')
+                        : context.tr('DEPLOY AGENT'),
                     icon: editing ? Icons.save_outlined : Icons.rocket_launch,
                     color: accent,
                     onPressed: _save,
@@ -7994,12 +9566,12 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
       _provider == null ? 'gpt-4o' : _Providers.of(_provider).defaultModel;
 
   Widget _label(String text, Color accent) => Row(
-        children: [
-          Container(width: 3, height: 14, color: accent),
-          const SizedBox(width: 8),
-          Text(text, style: Sa.heading(size: 12.5, color: accent)),
-        ],
-      );
+    children: [
+      Container(width: 3, height: 14, color: accent),
+      const SizedBox(width: 8),
+      Text(text, style: Sa.heading(size: 12.5, color: accent)),
+    ],
+  );
 
   Widget _textField(
     TextEditingController c, {
@@ -8018,14 +9590,15 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: Sa.body(size: 12, color: Sa.muted),
-        prefixIcon:
-            icon != null ? Icon(icon, size: 17, color: Sa.muted) : null,
+        prefixIcon: icon != null ? Icon(icon, size: 17, color: Sa.muted) : null,
         suffixIcon: suffix,
         isDense: true,
         filled: true,
         fillColor: Sa.bgRaised.withValues(alpha: 0.6),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 13,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: Sa.border),
@@ -8045,7 +9618,9 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
         Row(
           children: [
             SaButton(
-              label: hasLogo ? 'REPLACE LOGO' : 'UPLOAD LOGO',
+              label: hasLogo
+                  ? context.tr('REPLACE LOGO')
+                  : context.tr('UPLOAD LOGO'),
               icon: Icons.image_outlined,
               color: accent,
               outlined: true,
@@ -8055,15 +9630,19 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
             const SizedBox(width: 10),
             if (hasLogo)
               SaButton(
-                label: 'REMOVE',
+                label: context.tr('REMOVE'),
                 icon: Icons.delete_outline,
                 color: Sa.red,
                 outlined: true,
                 onPressed: () => setState(() => _logoData = null),
               ),
             const Spacer(),
-            Text(hasLogo ? 'Custom logo set' : 'No logo · pick an icon',
-                style: Sa.mono(size: 9, color: Sa.muted)),
+            Text(
+              hasLogo
+                  ? context.tr('Custom logo set')
+                  : context.tr('No logo · pick an icon'),
+              style: Sa.mono(size: 9, color: Sa.muted),
+            ),
           ],
         ),
         if (!hasLogo) ...[
@@ -8088,9 +9667,11 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                         width: _iconKey == entry.key ? 1.4 : 1,
                       ),
                     ),
-                    child: Icon(entry.value,
-                        size: 18,
-                        color: _iconKey == entry.key ? accent : Sa.textDim),
+                    child: Icon(
+                      entry.value,
+                      size: 18,
+                      color: _iconKey == entry.key ? accent : Sa.textDim,
+                    ),
                   ),
                 ),
             ],
@@ -8099,7 +9680,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
         const SizedBox(height: 12),
         Row(
           children: [
-            Text('ACCENT', style: Sa.mono(size: 9, color: Sa.muted)),
+            Text(context.tr('ACCENT'), style: Sa.mono(size: 9, color: Sa.muted)),
             const SizedBox(width: 12),
             Expanded(
               child: Wrap(
@@ -8124,9 +9705,11 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
                           boxShadow: [
                             if (_accentHex == _hexOf(rgb))
                               BoxShadow(
-                                  color: Color(0xFF000000 | rgb)
-                                      .withValues(alpha: 0.5),
-                                  blurRadius: 8),
+                                color: Color(
+                                  0xFF000000 | rgb,
+                                ).withValues(alpha: 0.5),
+                                blurRadius: 8,
+                              ),
                           ],
                         ),
                       ),
@@ -8158,9 +9741,14 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
               children: [
                 Icon(Icons.upload_file_outlined, size: 15, color: accent),
                 const SizedBox(width: 6),
-                Text('ATTACH FILE',
-                    style: Sa.mono(
-                        size: 9.5, color: accent, weight: FontWeight.w600)),
+                Text(
+                  context.tr('ATTACH FILE'),
+                  style: Sa.mono(
+                    size: 9.5,
+                    color: accent,
+                    weight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
@@ -8169,8 +9757,7 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
           const SizedBox(width: 8),
           Flexible(
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: Sa.bgRaised.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(8),
@@ -8179,14 +9766,15 @@ class _AgentEditorDialogState extends State<_AgentEditorDialog> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.description_outlined,
-                      size: 12, color: Sa.textDim),
+                  Icon(Icons.description_outlined, size: 12, color: Sa.textDim),
                   const SizedBox(width: 5),
                   Flexible(
-                    child: Text(fileName!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Sa.mono(size: 9.5, color: Sa.textDim)),
+                    child: Text(
+                      fileName!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Sa.mono(size: 9.5, color: Sa.textDim),
+                    ),
                   ),
                   const SizedBox(width: 4),
                   GestureDetector(
@@ -8225,8 +9813,9 @@ class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
   void initState() {
     super.initState();
     _c = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1500))
-      ..repeat(reverse: true);
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
   }
 
   @override
@@ -8284,26 +9873,32 @@ class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: _blood
-                                .withValues(alpha: 0.4 + 0.3 * _c.value),
+                            color: _blood.withValues(
+                              alpha: 0.4 + 0.3 * _c.value,
+                            ),
                             blurRadius: 24 + 10 * _c.value,
                             spreadRadius: 2,
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.warning_amber_rounded,
-                          color: Colors.white, size: 38),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.white,
+                        size: 38,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    'DECOMMISSION AGENT',
+                    context.tr('DECOMMISSION AGENT'),
                     style: Sa.display(size: 18, color: Colors.white),
                   ),
                   const SizedBox(height: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 5),
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: _blood.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(99),
@@ -8312,16 +9907,19 @@ class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
                     child: Text(
                       widget.agent.name,
                       style: Sa.mono(
-                          size: 11,
-                          color: const Color(0xFFFFB4BC),
-                          weight: FontWeight.w700),
+                        size: 11,
+                        color: const Color(0xFFFFB4BC),
+                        weight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'This permanently removes the agent, its mission brief, skills and stored API credential from the fleet registry.\n\nThis action cannot be undone.',
+                  Text(
+                    context.tr(
+                      'This permanently removes the agent, its mission brief, skills and stored API credential from the fleet registry.\n\nThis action cannot be undone.',
+                    ),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12.5,
                       height: 1.5,
                       color: Color(0xFFE9C4C8),
@@ -8336,16 +9934,20 @@ class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFFE9C4C8),
                             side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.25)),
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 14),
+                              color: Colors.white.withValues(alpha: 0.25),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
-                          child: Text('CANCEL',
-                              style: Sa.heading(
-                                  size: 12.5,
-                                  color: const Color(0xFFE9C4C8))),
+                          child: Text(
+                            context.tr('CANCEL'),
+                            style: Sa.heading(
+                              size: 12.5,
+                              color: const Color(0xFFE9C4C8),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -8354,20 +9956,27 @@ class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
                           onPressed: () => Navigator.pop(context, true),
                           style: FilledButton.styleFrom(
                             backgroundColor: _blood,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.delete_forever,
-                                  size: 17, color: Colors.white),
+                              const Icon(
+                                Icons.delete_forever,
+                                size: 17,
+                                color: Colors.white,
+                              ),
                               const SizedBox(width: 8),
-                              Text('DELETE PERMANENTLY',
-                                  style: Sa.heading(
-                                      size: 12.5, color: Colors.white)),
+                              Text(
+                                context.tr('DELETE PERMANENTLY'),
+                                style: Sa.heading(
+                                  size: 12.5,
+                                  color: Colors.white,
+                                ),
+                              ),
                             ],
                           ),
                         ),

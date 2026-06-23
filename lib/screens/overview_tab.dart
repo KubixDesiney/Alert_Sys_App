@@ -9,6 +9,7 @@ import '../../services/alert_pdf_service.dart';
 import '../../services/forecast/forecast_overview_engine.dart';
 import '../../services/predictive_intel_service.dart';
 import '../../services/service_locator.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../../widgets/overview/ai_morning_briefing_hero.dart';
 import '../../widgets/overview/overview_critical_alerts_card.dart';
@@ -49,12 +50,12 @@ class _HealthScoreCard extends StatelessWidget {
     return t.red;
   }
 
-  String _verdict() {
-    if (value >= 90) return 'Outstanding';
-    if (value >= 75) return 'Healthy';
-    if (value >= 50) return 'Watchful';
-    if (value >= 25) return 'At risk';
-    return 'Critical';
+  String _verdict(BuildContext context) {
+    if (value >= 90) return context.tr('Outstanding');
+    if (value >= 75) return context.tr('Healthy');
+    if (value >= 50) return context.tr('Watchful');
+    if (value >= 25) return context.tr('At risk');
+    return context.tr('Critical');
   }
 
   @override
@@ -154,7 +155,7 @@ class _HealthScoreCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: Text(
-                      _verdict().toUpperCase(),
+                      _verdict(context).toUpperCase(),
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
@@ -167,7 +168,7 @@ class _HealthScoreCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Production Health',
+                context.tr('Production Health'),
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -176,35 +177,35 @@ class _HealthScoreCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Composite of resolution rate and critical backlog.',
+                context.tr('Composite of resolution rate and critical backlog.'),
                 style: TextStyle(fontSize: 12, color: theme.muted),
               ),
               const SizedBox(height: 14),
               _HealthMetric(
                 icon: Icons.trending_up_rounded,
                 color: theme.green,
-                label: 'Resolution',
+                label: context.tr('Resolution'),
                 value: '${resolutionRate.toStringAsFixed(0)}%',
               ),
               const SizedBox(height: 8),
               _HealthMetric(
                 icon: Icons.warning_amber_rounded,
                 color: criticalCount > 0 ? theme.red : theme.muted,
-                label: 'Critical pending',
+                label: context.tr('Critical pending'),
                 value: '$criticalCount',
               ),
               const SizedBox(height: 8),
               _HealthMetric(
                 icon: Icons.timer_outlined,
                 color: theme.blue,
-                label: 'Avg response',
+                label: context.tr('Avg response'),
                 value: avgResponseLabel,
               ),
               const SizedBox(height: 8),
               _HealthMetric(
                 icon: Icons.layers_rounded,
                 color: theme.navy,
-                label: 'Total this period',
+                label: context.tr('Total this period'),
                 value: '$totalAlerts',
               ),
             ],
@@ -735,15 +736,15 @@ class _OverviewTabState extends State<AdminOverviewTab> {
     if (alert.description.trim().isNotEmpty) return alert.description;
     switch (alert.type) {
       case 'qualite':
-        return 'Quality issue detected on production line';
+        return context.tr('Quality issue detected on production line');
       case 'maintenance':
-        return 'Maintenance required on equipment';
+        return context.tr('Maintenance required on equipment');
       case 'defaut_produit':
-        return 'Damaged product detected';
+        return context.tr('Damaged product detected');
       case 'manque_ressource':
-        return 'Resource deficiency - missing raw materials';
+        return context.tr('Resource deficiency - missing raw materials');
       default:
-        return 'Alert detected';
+        return context.tr('Alert detected');
     }
   }
 
@@ -808,8 +809,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   ) async {
     if (alertsToExport.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No alerts match the selected filters'),
+        SnackBar(
+          content: Text(context.tr('No alerts match the selected filters')),
           backgroundColor: Colors.orange,
         ),
       );
@@ -819,7 +820,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       await AlertPdfService.exportAndShare(
         alerts: alertsToExport,
         scopeLabel: widget.selectedUsine == 'all'
-            ? 'All Plants'
+            ? context.tr('All Plants')
             : widget.selectedUsine,
         timeRangeLabel: widget.timeRangeLabel,
         labelType: (t) => adminTypeLabel(context, t),
@@ -829,7 +830,8 @@ class _OverviewTabState extends State<AdminOverviewTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('PDF export failed: ${UserFriendlyError.message(e)}'),
+          content: Text(context.tr('PDF export failed: {error}',
+              {'error': UserFriendlyError.message(e)})),
           backgroundColor: Colors.red,
         ),
       );
@@ -991,7 +993,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
           onClearQuickFilter: () => setState(() => _historyFilter = null),
           factories: _factories,
           scope: widget.selectedUsine == 'all'
-              ? 'All Plants'
+              ? context.tr('All Plants')
               : widget.selectedUsine,
           onExportPdf: _exportFilteredAlertsPdf,
         );
@@ -1105,7 +1107,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   Widget _statCardReceived(AppTheme theme, List<int> spark) => EliteStatCard(
-    label: 'Pending',
+    label: context.tr('Pending'),
     value: widget.pending,
     icon: Icons.inbox_rounded,
     color: theme.orange,
@@ -1119,7 +1121,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   );
 
   Widget _statCardClaimed(AppTheme theme, List<int> spark) => EliteStatCard(
-    label: 'Claimed',
+    label: context.tr('Claimed'),
     value: widget.inProgress,
     icon: Icons.hourglass_bottom_rounded,
     color: theme.blue,
@@ -1131,7 +1133,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   );
 
   Widget _statCardFixed(AppTheme theme, List<int> spark) => EliteStatCard(
-    label: 'Fixed',
+    label: context.tr('Fixed'),
     value: widget.solved,
     icon: Icons.verified_rounded,
     color: theme.green,
@@ -1143,7 +1145,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   );
 
   Widget _statCardTotal(AppTheme theme, List<int> spark) => EliteStatCard(
-    label: 'Total',
+    label: context.tr('Total'),
     value: widget.total,
     icon: Icons.dashboard_rounded,
     color: theme.navy,
