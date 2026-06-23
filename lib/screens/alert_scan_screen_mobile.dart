@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/alert_model.dart';
 import '../services/location_alert_parser.dart';
 import '../services/location_alert_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
@@ -81,8 +82,11 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
       _permissionChecked = true;
       _cameraGranted = status.isGranted;
       _permissionError = status.isPermanentlyDenied
-          ? 'Camera permission permanently denied. Open Settings to enable it.'
-          : (status.isGranted ? null : 'Camera permission denied.');
+          ? context.tr(
+              'Camera permission permanently denied. Open Settings to enable it.')
+          : (status.isGranted
+              ? null
+              : context.tr('Camera permission denied.'));
     });
   }
 
@@ -108,7 +112,11 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Station scanned: ${loc.usine} / C${loc.convoyeur} / P${loc.poste}',
+          context.tr('Station scanned: {usine} / C{conv} / P{poste}', {
+            'usine': loc.usine,
+            'conv': '${loc.convoyeur}',
+            'poste': '${loc.poste}'
+          }),
         ),
         duration: const Duration(seconds: 1),
       ),
@@ -123,9 +131,10 @@ class _AlertScanScreenState extends State<AlertScanScreen> {
     }
     _lastInvalidQrNotice = now;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('QR code detected, but it is not a station QR.'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content:
+            Text(context.tr('QR code detected, but it is not a station QR.')),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -274,7 +283,7 @@ class _Header extends StatelessWidget {
           ),
           if (location != null)
             IconButton(
-              tooltip: 'Rescan',
+              tooltip: context.tr('Rescan'),
               onPressed: onRescan,
               icon: Icon(Icons.refresh, color: t.navy),
             ),
@@ -327,8 +336,9 @@ class _CameraCard extends StatelessWidget {
     if (!permissionChecked) {
       content = const AppLoadingIndicator();
     } else if (!isActive) {
-      content = const Center(
-        child: Text('Scanner paused', style: TextStyle(color: Colors.white70)),
+      content = Center(
+        child: Text(context.tr('Scanner paused'),
+            style: const TextStyle(color: Colors.white70)),
       );
     } else if (!cameraGranted) {
       content = _PermissionView(
@@ -579,11 +589,11 @@ class _PermissionView extends StatelessWidget {
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white70),
                   ),
-                  child: const Text('Retry'),
+                  child: Text(context.tr('Retry')),
                 ),
                 ElevatedButton(
                   onPressed: () => onOpenSettings(),
-                  child: const Text('Open Settings'),
+                  child: Text(context.tr('Open Settings')),
                 ),
               ],
             ),
@@ -615,17 +625,17 @@ class _HistorySection extends StatelessWidget {
     final t = context.appTheme;
 
     if (location == null) {
-      return const _PlaceholderState(
+      return _PlaceholderState(
         icon: Icons.qr_code_scanner,
-        title: 'No station scanned',
-        message:
-            'Point the camera at a station QR code above to load its full alert history.',
+        title: context.tr('No station scanned'),
+        message: context.tr(
+            'Point the camera at a station QR code above to load its full alert history.'),
       );
     }
     if (error != null) {
       return _PlaceholderState(
         icon: Icons.error_outline,
-        title: 'Could not load history',
+        title: context.tr('Could not load history'),
         message: error!,
       );
     }
@@ -647,7 +657,7 @@ class _HistorySection extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Workstation History',
+                  context.tr('Workstation History'),
                   style: TextStyle(
                     color: t.text,
                     fontSize: 15,
@@ -658,14 +668,14 @@ class _HistorySection extends StatelessWidget {
               if (history.isNotEmpty) ...[
                 _MiniBadge(
                   icon: Icons.bolt,
-                  label: '$activeCount active',
+                  label: context.tr('{n} active', {'n': '$activeCount'}),
                   color: t.orange,
                   bg: t.orangeLt,
                 ),
                 const SizedBox(width: 6),
                 _MiniBadge(
                   icon: Icons.verified,
-                  label: '$resolvedCount fixed',
+                  label: context.tr('{n} fixed', {'n': '$resolvedCount'}),
                   color: t.green,
                   bg: t.greenLt,
                 ),
@@ -675,11 +685,11 @@ class _HistorySection extends StatelessWidget {
         ),
         Expanded(
           child: history.isEmpty
-              ? const _PlaceholderState(
+              ? _PlaceholderState(
                   icon: Icons.inbox,
-                  title: 'No alerts yet',
-                  message:
-                      'No alerts have ever been raised at this station. Once one is created it will appear here.',
+                  title: context.tr('No alerts yet'),
+                  message: context.tr(
+                      'No alerts have ever been raised at this station. Once one is created it will appear here.'),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -849,7 +859,7 @@ class _AlertHistoryCard extends StatelessWidget {
                         ),
                       ),
                     const SizedBox(height: 10),
-                    _buildMetaWrap(t),
+                    _buildMetaWrap(context, t),
                     if (alert.resolutionReason != null &&
                         alert.resolutionReason!.trim().isNotEmpty) ...[
                       const SizedBox(height: 10),
@@ -944,7 +954,7 @@ class _AlertHistoryCard extends StatelessWidget {
     );
   }
 
-  Widget _buildMetaWrap(AppTheme t) {
+  Widget _buildMetaWrap(BuildContext context, AppTheme t) {
     final occurred = _MetaItem(
       icon: Icons.event,
       label: _formatDateTime(alert.timestamp),
@@ -962,11 +972,15 @@ class _AlertHistoryCard extends StatelessWidget {
     final taken = alert.takenAtTimestamp != null
         ? _MetaItem(
             icon: Icons.play_circle_outline,
-            label: 'Taken ${_formatTime(alert.takenAtTimestamp!)}',
+            label: context.tr('Taken {time}',
+                {'time': _formatTime(alert.takenAtTimestamp!)}),
           )
         : null;
     final escalated = alert.isEscalated
-        ? _MetaItem(icon: Icons.trending_up, label: 'Escalated', tone: t.orange)
+        ? _MetaItem(
+            icon: Icons.trending_up,
+            label: context.tr('Escalated'),
+            tone: t.orange)
         : null;
 
     final items = <_MetaItem>[

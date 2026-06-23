@@ -3,12 +3,10 @@ part of 'hw_factory_binding.dart';
 class _BindingEditor extends StatefulWidget {
   final HwDeviceBinding? existing;
   final HwFactoryCatalog catalog;
-  final List<HwCircuit> circuits;
   final HwMachineStore store;
   const _BindingEditor({
     required this.existing,
     required this.catalog,
-    required this.circuits,
     required this.store,
   });
 
@@ -26,7 +24,6 @@ class _BindingEditorState extends State<_BindingEditor> {
   String _conveyorLabel = '';
   String? _machineId;
   late String _controller;
-  late String _circuitId;
   late String _status;
   late Set<String> _peripherals;
 
@@ -37,7 +34,6 @@ class _BindingEditorState extends State<_BindingEditor> {
     final b = widget.existing;
     _custom = TextEditingController();
     _controller = b?.controllerType ?? 'esp32';
-    _circuitId = b?.circuitId ?? '';
     _status = b?.status ?? 'designed';
     _peripherals = {...?b?.peripherals};
 
@@ -146,7 +142,6 @@ class _BindingEditorState extends State<_BindingEditor> {
       ..conveyor = _conveyorLabel
       ..factoryId = _factoryName
       ..controllerType = _controller
-      ..circuitId = _circuitId
       ..status = _status
       ..peripherals = _peripherals.toList()
       ..updatedAtMs = DateTime.now().millisecondsSinceEpoch;
@@ -181,21 +176,22 @@ class _BindingEditorState extends State<_BindingEditor> {
                     const SizedBox(width: 10),
                     Text(
                       widget.existing == null
-                          ? 'Bind Device to Machine'
-                          : 'Edit Device Binding',
+                          ? context.tr('Bind Device to Machine')
+                          : context.tr('Edit Device Binding'),
                       style: Sa.heading(size: 17),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Pick the factory, line and machine from live plant inventory '
-                  '— MACH-001 (LEDs · buttons · sensors) ← its controller.',
+                  context.tr(
+                    'Pick the factory, line and machine from live plant inventory — MACH-001 (LEDs · buttons · sensors) ← its controller.',
+                  ),
                   style: Sa.body(size: 11.5, color: Sa.textDim),
                 ),
                 const SizedBox(height: 16),
 
-                _hwFieldLabel('FACTORY'),
+                _hwFieldLabel(context.tr('FACTORY')),
                 DropdownButtonFormField<String>(
                   initialValue:
                       widget.catalog.factories.any((f) => f.id == _factoryId)
@@ -204,7 +200,7 @@ class _BindingEditorState extends State<_BindingEditor> {
                   isExpanded: true,
                   dropdownColor: Sa.panelSolid,
                   style: Sa.body(size: 12.5),
-                  decoration: _hwDec('Select a factory'),
+                  decoration: _hwDec(context.tr('Select a factory')),
                   items: [
                     for (final f in widget.catalog.factories)
                       DropdownMenuItem(value: f.id, child: Text(f.name)),
@@ -235,14 +231,15 @@ class _BindingEditorState extends State<_BindingEditor> {
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      'No factories in the hierarchy yet — bind without one or '
-                      'create factories in Production Manager.',
+                      context.tr(
+                        'No factories in the hierarchy yet — bind without one or create factories in Production Manager.',
+                      ),
                       style: Sa.body(size: 10.5, color: Sa.muted),
                     ),
                   ),
                 const SizedBox(height: 14),
 
-                _hwFieldLabel('CONVEYOR LINE'),
+                _hwFieldLabel(context.tr('CONVEYOR LINE')),
                 DropdownButtonFormField<String>(
                   initialValue: conveyors.any((c) => c.id == _conveyorId)
                       ? _conveyorId
@@ -252,8 +249,8 @@ class _BindingEditorState extends State<_BindingEditor> {
                   style: Sa.body(size: 12.5),
                   decoration: _hwDec(
                     _factoryId == null
-                        ? 'Pick a factory first'
-                        : 'Select a conveyor line',
+                        ? context.tr('Pick a factory first')
+                        : context.tr('Select a conveyor line'),
                   ),
                   items: [
                     for (final c in conveyors)
@@ -294,7 +291,7 @@ class _BindingEditorState extends State<_BindingEditor> {
 
                 Row(
                   children: [
-                    _hwFieldLabel('MACHINE (MACH-XXX)'),
+                    _hwFieldLabel(context.tr('MACHINE (MACH-XXX)')),
                     const Spacer(),
                     InkWell(
                       onTap: _addMachineInline,
@@ -309,7 +306,7 @@ class _BindingEditorState extends State<_BindingEditor> {
                             Icon(Icons.add, size: 13, color: Sa.violet),
                             const SizedBox(width: 3),
                             Text(
-                              'NEW MACHINE',
+                              context.tr('NEW MACHINE'),
                               style: Sa.mono(size: 8.5, color: Sa.violet),
                             ),
                           ],
@@ -325,7 +322,7 @@ class _BindingEditorState extends State<_BindingEditor> {
                   isExpanded: true,
                   dropdownColor: Sa.panelSolid,
                   style: Sa.body(size: 12.5),
-                  decoration: _hwDec('Select a machine'),
+                  decoration: _hwDec(context.tr('Select a machine')),
                   items: [
                     for (final m in machines)
                       DropdownMenuItem(
@@ -352,19 +349,21 @@ class _BindingEditorState extends State<_BindingEditor> {
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      'No machines match — tap NEW MACHINE to add one.',
+                      context.tr(
+                        'No machines match — tap NEW MACHINE to add one.',
+                      ),
                       style: Sa.body(size: 10.5, color: Sa.muted),
                     ),
                   ),
                 const SizedBox(height: 16),
 
-                _hwFieldLabel('CONTROLLER'),
+                _hwFieldLabel(context.tr('CONTROLLER')),
                 DropdownButtonFormField<String>(
                   initialValue: _controller,
                   isExpanded: true,
                   dropdownColor: Sa.panelSolid,
                   style: Sa.body(size: 12.5),
-                  decoration: _hwDec('Controller board'),
+                  decoration: _hwDec(context.tr('Controller board')),
                   items: [
                     for (final def in hwControllers())
                       DropdownMenuItem(value: def.type, child: Text(def.name)),
@@ -373,23 +372,7 @@ class _BindingEditorState extends State<_BindingEditor> {
                 ),
                 const SizedBox(height: 14),
 
-                _hwFieldLabel('LINKED CIRCUIT'),
-                DropdownButtonFormField<String>(
-                  initialValue: _circuitId.isEmpty ? null : _circuitId,
-                  isExpanded: true,
-                  dropdownColor: Sa.panelSolid,
-                  style: Sa.body(size: 12.5),
-                  decoration: _hwDec('No circuit'),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('None')),
-                    for (final c in widget.circuits)
-                      DropdownMenuItem(value: c.id, child: Text(c.name)),
-                  ],
-                  onChanged: (v) => setState(() => _circuitId = v ?? ''),
-                ),
-                const SizedBox(height: 14),
-
-                _hwFieldLabel('PERIPHERALS'),
+                _hwFieldLabel(context.tr('PERIPHERALS')),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
@@ -407,14 +390,14 @@ class _BindingEditorState extends State<_BindingEditor> {
                         style: Sa.body(size: 13),
                         cursorColor: Sa.cyan,
                         decoration: _hwDec(
-                          'e.g. Flow meter',
-                          label: 'Add custom peripheral',
+                          context.tr('e.g. Flow meter'),
+                          label: context.tr('Add custom peripheral'),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     SaButton(
-                      label: 'ADD',
+                      label: context.tr('ADD'),
                       icon: Icons.add,
                       color: Sa.violet,
                       outlined: true,
@@ -432,7 +415,7 @@ class _BindingEditorState extends State<_BindingEditor> {
                 ),
                 const SizedBox(height: 14),
 
-                _hwFieldLabel('DEPLOY STATUS'),
+                _hwFieldLabel(context.tr('DEPLOY STATUS')),
                 Wrap(
                   spacing: 8,
                   children: kHwBindingStatus.entries
@@ -445,11 +428,11 @@ class _BindingEditorState extends State<_BindingEditor> {
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: Text('Cancel', style: Sa.body(color: Sa.textDim)),
+                      child: Text(context.tr('Cancel'), style: Sa.body(color: Sa.textDim)),
                     ),
                     const SizedBox(width: 8),
                     SaButton(
-                      label: 'SAVE BINDING',
+                      label: context.tr('SAVE BINDING'),
                       icon: Icons.check,
                       color: Sa.cyan,
                       onPressed: _save,
@@ -497,7 +480,7 @@ class _BindingEditorState extends State<_BindingEditor> {
             ),
             const SizedBox(width: 5),
             Text(
-              p,
+              context.tr(p),
               style: Sa.mono(size: 9.5, color: on ? Sa.violet : Sa.textDim),
             ),
           ],
@@ -532,7 +515,7 @@ class _BindingEditorState extends State<_BindingEditor> {
             Icon(st.icon, size: 12, color: active ? st.color : Sa.muted),
             const SizedBox(width: 5),
             Text(
-              st.label,
+              context.tr(st.label),
               style: Sa.mono(size: 9.5, color: active ? st.color : Sa.textDim),
             ),
           ],

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/enterprise_auth_service.dart';
+import '../l10n/app_strings.dart';
 
 /// A country option for the phone-number picker.
 class _Country {
@@ -263,13 +264,13 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
       canPop: !widget.mandatory,
       child: Scaffold(
       appBar: AppBar(
-        title: const Text('Two-factor authentication'),
+        title: Text(context.tr('Two-factor authentication')),
         automaticallyImplyLeading: !widget.mandatory,
         actions: widget.mandatory
             ? [
                 TextButton(
                   onPressed: () => FirebaseAuth.instance.signOut(),
-                  child: const Text('Sign out'),
+                  child: Text(context.tr('Sign out')),
                 ),
               ]
             : null,
@@ -298,22 +299,24 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          children: const [
-            Icon(Icons.mark_email_unread_outlined,
+          children: [
+            const Icon(Icons.mark_email_unread_outlined,
                 color: Colors.orange, size: 28),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Verify your email first',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                context.tr('Verify your email first'),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w600),
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
-          'Two-factor authentication can only be added after your email '
-          '($email) is verified.',
+          context.tr(
+              'Two-factor authentication can only be added after your email ({email}) is verified.',
+              {'email': email}),
           style: const TextStyle(fontSize: 13),
         ),
         const SizedBox(height: 22),
@@ -327,7 +330,9 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.mail_outline),
-            label: Text(_busy ? 'Sending…' : 'Send verification email'),
+            label: Text(_busy
+                ? context.tr('Sending…')
+                : context.tr('Send verification email')),
           ),
         ),
         const SizedBox(height: 10),
@@ -335,7 +340,7 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
           width: double.infinity,
           child: OutlinedButton(
             onPressed: _busy ? null : _recheckVerified,
-            child: const Text('I have verified — continue'),
+            child: Text(context.tr('I have verified — continue')),
           ),
         ),
         if (_info != null) ...[
@@ -357,21 +362,24 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
-          children: const [
-            Icon(Icons.verified_user, color: Colors.green, size: 28),
-            SizedBox(width: 12),
+          children: [
+            const Icon(Icons.verified_user, color: Colors.green, size: 28),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Your account is protected by SMS two-factor authentication.',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                context.tr(
+                    'Your account is protected by SMS two-factor authentication.'),
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500),
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        const Text(
-          'At each sign-in you will be asked for a code sent by text message.',
-          style: TextStyle(fontSize: 13),
+        Text(
+          context.tr(
+              'At each sign-in you will be asked for a code sent by text message.'),
+          style: const TextStyle(fontSize: 13),
         ),
         const SizedBox(height: 24),
         FilledButton(
@@ -382,7 +390,9 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
               Navigator.of(context).maybePop();
             }
           },
-          child: Text(widget.mandatory ? 'Continue to app' : 'Done'),
+          child: Text(widget.mandatory
+              ? context.tr('Continue to app')
+              : context.tr('Done')),
         ),
       ],
     );
@@ -393,14 +403,15 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Add an extra layer of security',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        Text(
+          context.tr('Add an extra layer of security'),
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'We will text a verification code to your phone each time you sign in.',
-          style: TextStyle(fontSize: 13),
+        Text(
+          context.tr(
+              'We will text a verification code to your phone each time you sign in.'),
+          style: const TextStyle(fontSize: 13),
         ),
         const SizedBox(height: 22),
         Row(
@@ -411,9 +422,9 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
               child: DropdownButtonFormField<String>(
                 value: _iso,
                 isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Country',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: context.tr('Country'),
+                  border: const OutlineInputBorder(),
                 ),
                 items: (List<_Country>.of(_countries)
                       ..sort((a, b) => a.name.compareTo(b.name)))
@@ -434,11 +445,11 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
                 controller: _phone,
                 enabled: !codeStage && !_busy,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Mobile number',
+                decoration: InputDecoration(
+                  labelText: context.tr('Mobile number'),
                   hintText: '55 123 456',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.phone_outlined),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.phone_outlined),
                 ),
               ),
             ),
@@ -456,7 +467,7 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.sms_outlined),
-              label: Text(_busy ? 'Sending…' : 'Send code'),
+              label: Text(_busy ? context.tr('Sending…') : context.tr('Send code')),
             ),
           ),
         if (codeStage) ...[
@@ -464,11 +475,11 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
             controller: _code,
             enabled: !_busy,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Verification code',
-              hintText: '6-digit code',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.lock_outline),
+            decoration: InputDecoration(
+              labelText: context.tr('Verification code'),
+              hintText: context.tr('6-digit code'),
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.lock_outline),
             ),
           ),
           const SizedBox(height: 12),
@@ -477,7 +488,9 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
               Expanded(
                 child: FilledButton(
                   onPressed: _busy ? null : _verify,
-                  child: Text(_busy ? 'Verifying…' : 'Verify & enable'),
+                  child: Text(_busy
+                      ? context.tr('Verifying…')
+                      : context.tr('Verify & enable')),
                 ),
               ),
               const SizedBox(width: 10),
@@ -489,7 +502,7 @@ class _MfaEnrollmentScreenState extends State<MfaEnrollmentScreen> {
                           _code.clear();
                           _info = null;
                         }),
-                child: const Text('Change number'),
+                child: Text(context.tr('Change number')),
               ),
             ],
           ),

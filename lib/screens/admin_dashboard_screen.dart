@@ -27,6 +27,8 @@ import '../widgets/admin/pill_tab_bar.dart';
 import '../services/ai_assignment_service.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
+import '../l10n/app_strings.dart';
+import '../widgets/common/language_toggle.dart';
 import 'alerts_tree_tab.dart';
 
 import '../utils/alert_meta.dart';
@@ -220,24 +222,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       alert.status == 'validee' || alert.status == 'cancelled';
 
   String get _timeRangeLabel => switch (_timeRange) {
-    'today' => 'Today',
-    'week' => 'Last Week',
-    'month' => 'This Month',
-    'year' => 'This Year',
+    'today' => context.tr('Today'),
+    'week' => context.tr('Last Week'),
+    'month' => context.tr('This Month'),
+    'year' => context.tr('This Year'),
     'custom' =>
       _customStartDate != null && _customEndDate != null
           ? '${_customStartDate!.day}/${_customStartDate!.month} – '
                 '${_customEndDate!.day}/${_customEndDate!.month}'
-          : 'Custom',
-    _ => 'All time',
+          : context.tr('Custom'),
+    _ => context.tr('All time'),
   };
 
   String get _timeRangeSubtitle => switch (_timeRange) {
-    'today' => 'Showing today\'s data',
-    'week' => 'Showing last 7 days',
-    'month' => 'Showing this month',
-    'year' => 'Showing this year',
-    _ => 'Filtered view',
+    'today' => context.tr('Showing today\'s data'),
+    'week' => context.tr('Showing last 7 days'),
+    'month' => context.tr('Showing this month'),
+    'year' => context.tr('Showing this year'),
+    _ => context.tr('Filtered view'),
   };
 
   Future<void> _logout() async {
@@ -266,7 +268,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Simulated ${typeMeta(type, context.appTheme).label} alert on $usine, Conv $convoyeur, Post $poste',
+              'Simulated ${typeMeta(type, context.appTheme, context).label} alert on $usine, Conv $convoyeur, Post $poste',
             ),
             backgroundColor: _green,
           ),
@@ -276,7 +278,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed: ${e.toString()}'),
+            content: Text(context.tr('Failed: {error}', {'error': e.toString()})),
             backgroundColor: _red,
           ),
         );
@@ -356,8 +358,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _exportToCsv() async {
     if (_filteredAlerts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No alerts to export'),
+        SnackBar(
+          content: Text(context.tr('No alerts to export')),
           backgroundColor: Colors.orange,
         ),
       );
@@ -426,8 +428,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _exportToExcel() async {
     if (_filteredAlerts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No alerts to export'),
+        SnackBar(
+          content: Text(context.tr('No alerts to export')),
           backgroundColor: Colors.orange,
         ),
       );
@@ -526,9 +528,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
     if (filtered.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: const Text(
-            'No active supervisors available for this factory',
+        SnackBar(
+          content: Text(
+            context.tr('No active supervisors available for this factory'),
           ),
         ),
       );
@@ -537,11 +539,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.person_add, size: 20),
-            SizedBox(width: 8),
-            Text('Assign Supervisor'),
+            const Icon(Icons.person_add, size: 20),
+            const SizedBox(width: 8),
+            Text(context.tr('Assign Supervisor')),
           ],
         ),
         content: SizedBox(
@@ -562,7 +564,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Assigned to ${filtered[i].fullName}'),
+                    content: Text(context.tr('Assigned to {name}',
+                        {'name': filtered[i].fullName})),
                     backgroundColor: _green,
                   ),
                 );
@@ -573,7 +576,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
         ],
       ),
@@ -587,9 +590,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final filtered = supervisors.where((s) => s.usine == alert.usine).toList();
     if (filtered.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: const Text(
-            'No active supervisors available for this factory',
+        SnackBar(
+          content: Text(
+            context.tr('No active supervisors available for this factory'),
           ),
         ),
       );
@@ -598,11 +601,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.group_add, size: 20),
-            SizedBox(width: 8),
-            Text('Assign Assistant'),
+            const Icon(Icons.group_add, size: 20),
+            const SizedBox(width: 8),
+            Text(context.tr('Assign Assistant')),
           ],
         ),
         content: SizedBox(
@@ -624,7 +627,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      'Assigned ${filtered[i].fullName} as assistant',
+                      context.tr('Assigned {name} as assistant',
+                          {'name': filtered[i].fullName}),
                     ),
                     backgroundColor: _green,
                   ),
@@ -636,7 +640,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
         ],
       ),
@@ -713,13 +717,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           }
 
           return AlertDialog(
-            title: const Row(
+            title: Row(
               children: [
-                Icon(Icons.notification_important, size: 20, color: Colors.red),
-                SizedBox(width: 8),
+                const Icon(Icons.notification_important,
+                    size: 20, color: Colors.red),
+                const SizedBox(width: 8),
                 Text(
-                  'Simulate Custom Alert',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  context.tr('Simulate Custom Alert'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -728,21 +733,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Alert Type',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Text(
+                    context.tr('Alert Type'),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
                     value: selectedType,
-                    items: const [
+                    items: [
                       DropdownMenuItem(
                         value: 'qualite',
                         child: Row(
                           children: [
-                            Icon(Icons.check_circle_outline, size: 16),
-                            SizedBox(width: 8),
-                            Text('Quality'),
+                            const Icon(Icons.check_circle_outline, size: 16),
+                            const SizedBox(width: 8),
+                            Text(context.tr('Quality')),
                           ],
                         ),
                       ),
@@ -750,9 +755,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         value: 'maintenance',
                         child: Row(
                           children: [
-                            Icon(Icons.handyman, size: 16),
-                            SizedBox(width: 8),
-                            Text('Maintenance'),
+                            const Icon(Icons.handyman, size: 16),
+                            const SizedBox(width: 8),
+                            Text(context.tr('Maintenance')),
                           ],
                         ),
                       ),
@@ -760,9 +765,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         value: 'defaut_produit',
                         child: Row(
                           children: [
-                            Icon(Icons.report_problem, size: 16),
-                            SizedBox(width: 8),
-                            Text('Damaged Product'),
+                            const Icon(Icons.report_problem, size: 16),
+                            const SizedBox(width: 8),
+                            Text(context.tr('Damaged Product')),
                           ],
                         ),
                       ),
@@ -770,9 +775,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         value: 'manque_ressource',
                         child: Row(
                           children: [
-                            Icon(Icons.inventory_2, size: 16),
-                            SizedBox(width: 8),
-                            Text('Resource Shortage'),
+                            const Icon(Icons.inventory_2, size: 16),
+                            const SizedBox(width: 8),
+                            Text(context.tr('Resource Shortage')),
                           ],
                         ),
                       ),
@@ -783,9 +788,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Factory (Usine)',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Text(
+                    context.tr('Factory (Usine)'),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
@@ -814,9 +819,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Conveyor',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Text(
+                    context.tr('Conveyor'),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
@@ -827,7 +832,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         .map(
                           (c) => DropdownMenuItem(
                             value: 'Conveyor ${c.number}',
-                            child: Text('Conveyor ${c.number}'),
+                            child: Text(context
+                                .tr('Conveyor {n}', {'n': '${c.number}'})),
                           ),
                         )
                         .toList(),
@@ -849,9 +855,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Workstation (Poste)',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Text(
+                    context.tr('Workstation (Poste)'),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
@@ -884,24 +890,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Description (optional)',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Text(
+                    context.tr('Description (optional)'),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   TextField(
                     onChanged: (val) => description = val,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g., Motor overheating (optional)',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText:
+                          context.tr('e.g., Motor overheating (optional)'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Text(
-                        'Mark as Critical',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                      Text(
+                        context.tr('Mark as Critical'),
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(width: 12),
                       Switch(
@@ -917,7 +924,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(context.tr('Cancel')),
               ),
               ElevatedButton(
                 onPressed: () {
@@ -925,9 +932,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       selectedConveyorId == null ||
                       selectedStationId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
+                      SnackBar(
                         content: Text(
-                          'Please select factory, conveyor, and workstation',
+                          context.tr(
+                              'Please select factory, conveyor, and workstation'),
                         ),
                         backgroundColor: Colors.red,
                       ),
@@ -945,9 +953,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   );
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: _navy),
-                child: const Text(
-                  'Create Alert',
-                  style: TextStyle(color: Colors.white),
+                child: Text(
+                  context.tr('Create Alert'),
+                  style: const TextStyle(color: Colors.white),
                 ),
               ),
             ],
@@ -1034,7 +1042,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'New Supervisor Account',
+                      context.tr('New Supervisor Account'),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -1088,7 +1096,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     child: DropdownButton<String>(
                       value: usine.isEmpty ? null : usine,
                       isExpanded: true,
-                      hint: const Text('Select a factory'),
+                      hint: Text(context.tr('Select a factory')),
                       items: factoryNames
                           .map(
                             (u) => DropdownMenuItem(value: u, child: Text(u)),
@@ -1152,7 +1160,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      error!,
+                      context.tr(error!),
                       style: const TextStyle(color: _red, fontSize: 13),
                     ),
                   ),
@@ -1171,24 +1179,27 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   confirmPass,
                                 ].any((c) => c.text.trim().isEmpty)) {
                                   setS(
-                                    () => error = 'All fields are required.',
+                                    () => error = context
+                                        .tr('All fields are required.'),
                                   );
                                   return;
                                 }
                                 if (pass.text != confirmPass.text) {
-                                  setS(() => error = 'Passwords do not match.');
+                                  setS(() => error =
+                                      context.tr('Passwords do not match.'));
                                   return;
                                 }
                                 if (pass.text.length < 6) {
                                   setS(
-                                    () => error =
-                                        'Password must be at least 6 characters.',
+                                    () => error = context.tr(
+                                        'Password must be at least 6 characters.'),
                                   );
                                   return;
                                 }
                                 if (usine.isEmpty) {
                                   setS(
-                                    () => error = 'Please select a factory.',
+                                    () => error =
+                                        context.tr('Please select a factory.'),
                                   );
                                   return;
                                 }
@@ -1216,8 +1227,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   await _loadSupervisors();
                                   if (mounted)
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Supervisor created'),
+                                      SnackBar(
+                                        content: Text(
+                                            context.tr('Supervisor created')),
                                         backgroundColor: _green,
                                       ),
                                     );
@@ -1234,7 +1246,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               )
                             : const Icon(Icons.check, size: 18),
                         label: Text(
-                          loading ? 'Creating…' : 'Create Account',
+                          loading
+                              ? context.tr('Creating…')
+                              : context.tr('Create Account'),
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -1250,9 +1264,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     const SizedBox(width: 10),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(color: _muted),
+                      child: Text(
+                        context.tr('Cancel'),
+                        style: const TextStyle(color: _muted),
                       ),
                     ),
                   ],
@@ -1280,8 +1294,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         keyboardType: keyboard,
         obscureText: obscure,
         decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
+          labelText: context.tr(label),
+          hintText: context.tr(hint),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(9)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 12,
@@ -1297,7 +1311,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 10),
       child: Text(
-        text,
+        context.tr(text),
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -1312,8 +1326,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     await _loadSupervisors();
     if (mounted)
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: const Text('Supervisor removed'),
+        SnackBar(
+          content: Text(context.tr('Supervisor removed')),
           backgroundColor: _red,
         ),
       );

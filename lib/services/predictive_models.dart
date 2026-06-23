@@ -1,6 +1,7 @@
 class MorningBriefing {
   final String date;
   final String summary;
+  final String? summaryFr;
   final String? generatedAt;
   final String? model;
   final int resolutionRate;
@@ -29,6 +30,7 @@ class MorningBriefing {
   MorningBriefing({
     required this.date,
     required this.summary,
+    this.summaryFr,
     this.generatedAt,
     this.model,
     this.resolutionRate = 0,
@@ -55,6 +57,7 @@ class MorningBriefing {
     return MorningBriefing(
       date: (m['date'] ?? '').toString(),
       summary: (m['summary'] ?? '').toString(),
+      summaryFr: m['summaryFr']?.toString(),
       generatedAt: m['generatedAt']?.toString(),
       model: m['model']?.toString(),
       resolutionRate: (m['resolutionRate'] as num?)?.toInt() ?? 0,

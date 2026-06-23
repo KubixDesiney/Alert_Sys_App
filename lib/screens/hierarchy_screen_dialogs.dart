@@ -99,7 +99,7 @@ class _StationDeleteDialog extends StatelessWidget {
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(false),
-                      tooltip: 'Close',
+                      tooltip: context.tr('Close'),
                       icon: Icon(Icons.close, color: t.muted),
                     ),
                   ],
@@ -130,7 +130,11 @@ class _StationDeleteDialog extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '$factoryName  •  Conveyor $conveyorNumber  •  Post $stationNumber',
+                            '$factoryName  •  ${context.tr('Conveyor {n}', {
+                                  'n': '$conveyorNumber'
+                                })}  •  ${context.tr('Post {n}', {
+                                  'n': '$stationNumber'
+                                })}',
                             style: TextStyle(
                               color: t.muted,
                               fontSize: 12,
@@ -139,22 +143,24 @@ class _StationDeleteDialog extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           _DeleteDetailRow(
-                              label: 'Factory',
+                              label: context.tr('Factory'),
                               value: '$factoryName ($factoryId)'),
                           _DeleteDetailRow(
-                            label: 'Conveyor',
-                            value: 'Conveyor $conveyorNumber ($conveyorId)',
+                            label: context.tr('Conveyor'),
+                            value: '${context.tr('Conveyor {n}', {
+                                  'n': '$conveyorNumber'
+                                })} ($conveyorId)',
                           ),
                           _DeleteDetailRow(
-                            label: 'Station',
+                            label: context.tr('Station'),
                             value: '$stationName ($stationId)',
                           ),
                           _DeleteDetailRow(
-                            label: 'Address',
+                            label: context.tr('Address'),
                             value: stationAddress,
                           ),
                           _DeleteDetailRow(
-                            label: 'Asset Record',
+                            label: context.tr('Asset Record'),
                             value: preservedAssetLabel,
                             emphasize: assetId.isNotEmpty,
                           ),
@@ -182,8 +188,11 @@ class _StationDeleteDialog extends StatelessWidget {
                           Expanded(
                             child: Text(
                               assetId.isEmpty
-                                  ? 'The hierarchy entry will be removed immediately.'
-                                  : 'Asset $assetId will stay under /assets with its last known location and deletion metadata.',
+                                  ? context.tr(
+                                      'The hierarchy entry will be removed immediately.')
+                                  : context.tr(
+                                      'Asset {id} will stay under /assets with its last known location and deletion metadata.',
+                                      {'id': assetId}),
                               style: TextStyle(
                                 color: t.text,
                                 fontSize: 12.5,
@@ -208,7 +217,7 @@ class _StationDeleteDialog extends StatelessWidget {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () => Navigator.of(context).pop(false),
-                        child: const Text('Cancel'),
+                        child: Text(context.tr('Cancel')),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -220,7 +229,7 @@ class _StationDeleteDialog extends StatelessWidget {
                           foregroundColor: Colors.white,
                         ),
                         icon: const Icon(Icons.delete_outline, size: 18),
-                        label: const Text('Delete Station'),
+                        label: Text(context.tr('Delete Station')),
                       ),
                     ),
                   ],
@@ -354,13 +363,15 @@ class _StationQrDialogState extends State<_StationQrDialog> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('QR saved as $name.png')),
+        SnackBar(content: Text(context.tr('QR saved as {name}.png',
+            {'name': name}))),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('Download failed: ${UserFriendlyError.message(e)}')),
+            content: Text(context.tr('Download failed: {error}',
+                {'error': UserFriendlyError.message(e)}))),
       );
     } finally {
       if (mounted) setState(() => _downloading = false);
@@ -404,7 +415,8 @@ class _StationQrDialogState extends State<_StationQrDialog> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('Print failed: ${UserFriendlyError.message(e)}')),
+            content: Text(context.tr('Print failed: {error}',
+                {'error': UserFriendlyError.message(e)}))),
       );
     } finally {
       if (mounted) setState(() => _printing = false);
@@ -447,7 +459,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Station QR Code',
+                            context.tr('Station QR Code'),
                             style: TextStyle(
                               color: t.text,
                               fontSize: 18,
@@ -465,7 +477,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Close',
+                      tooltip: context.tr('Close'),
                       icon: Icon(Icons.close, color: t.muted),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -523,10 +535,12 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                               icon: Icons.factory, label: widget.factoryName),
                           _QrMetaChip(
                               icon: Icons.linear_scale,
-                              label: 'Conveyor ${widget.conveyorNumber}'),
+                              label: context.tr('Conveyor {n}',
+                                  {'n': '${widget.conveyorNumber}'})),
                           _QrMetaChip(
                               icon: Icons.settings,
-                              label: 'Post ${widget.stationNumber}'),
+                              label: context.tr('Post {n}',
+                                  {'n': '${widget.stationNumber}'})),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -535,7 +549,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                         child: TextButton.icon(
                           onPressed: widget.onRelink,
                           icon: const Icon(Icons.link, size: 16),
-                          label: const Text('Relink Asset ID'),
+                          label: Text(context.tr('Relink Asset ID')),
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -572,7 +586,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                       child: OutlinedButton.icon(
                         onPressed: () => Navigator.of(context).pop(),
                         icon: const Icon(Icons.close, size: 16),
-                        label: const Text('Cancel'),
+                        label: Text(context.tr('Cancel')),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -587,7 +601,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(Icons.print, size: 16),
-                        label: const Text('Print QR'),
+                        label: Text(context.tr('Print QR')),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -604,7 +618,7 @@ class _StationQrDialogState extends State<_StationQrDialog> {
                                 ),
                               )
                             : const Icon(Icons.download, size: 16),
-                        label: const Text('Download PNG'),
+                        label: Text(context.tr('Download PNG')),
                       ),
                     ),
                   ],
@@ -754,7 +768,7 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
         position: point,
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         infoWindow: InfoWindow(
-          title: 'Selected location',
+          title: context.tr('Selected location'),
           snippet: _displayLocationLabel,
         ),
       ),
@@ -1050,15 +1064,15 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
     return Dialog.fullscreen(
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Factory Location'),
+          title: Text(context.tr('Factory Location')),
           actions: [
             TextButton(
               onPressed: widget.onCancel,
-              child: const Text('Cancel'),
+              child: Text(context.tr('Cancel')),
             ),
             TextButton(
               onPressed: _save,
-              child: const Text('Save'),
+              child: Text(context.tr('Save')),
             ),
           ],
         ),
@@ -1075,10 +1089,10 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
                       textInputAction: TextInputAction.search,
                       onChanged: _onSearchChanged,
                       onSubmitted: (_) => _searchAddress(),
-                      decoration: const InputDecoration(
-                        labelText: 'Search address',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.search),
+                      decoration: InputDecoration(
+                        labelText: context.tr('Search address'),
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.search),
                       ),
                     ),
                   ),
@@ -1092,14 +1106,14 @@ class _FactoryLocationPickerState extends State<FactoryLocationPicker> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.search),
-                    tooltip: 'Search',
+                    tooltip: context.tr('Search'),
                   ),
                   if (point != null) ...[
                     const SizedBox(width: 8),
                     IconButton(
                       onPressed: _clearPin,
                       icon: const Icon(Icons.close),
-                      tooltip: 'Clear location',
+                      tooltip: context.tr('Clear location'),
                     ),
                   ],
                 ],

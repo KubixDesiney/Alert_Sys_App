@@ -193,7 +193,7 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
                     ),
                   ),
                   Tooltip(
-                    message: 'Modify Supervisor',
+                    message: context.tr('Modify Supervisor'),
                     child: InkWell(
                       onTap: widget.onEdit,
                       borderRadius: BorderRadius.circular(8),
@@ -204,7 +204,7 @@ class _SupervisorRailTileState extends State<_SupervisorRailTile> {
                     ),
                   ),
                   Tooltip(
-                    message: 'Delete Supervisor',
+                    message: context.tr('Delete Supervisor'),
                     child: InkWell(
                       onTap: widget.onDelete,
                       borderRadius: BorderRadius.circular(8),
@@ -569,7 +569,7 @@ class _AnimatedRankPill extends StatelessWidget {
               opacity: value.clamp(0.0, 1.0),
               child: _StatusPill(
                 color: color,
-                label: 'Rank #$rank',
+                label: context.tr('Rank #{rank}', {'rank': '$rank'}),
                 icon: Icons.leaderboard_outlined,
               ),
             ),

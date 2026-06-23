@@ -11,6 +11,7 @@ import '../../models/shift_model.dart';
 import '../../models/supervisor_presence.dart';
 import '../../services/presence_service.dart';
 import '../../services/service_locator.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 
 class ShiftPresenceGrid extends StatefulWidget {
@@ -70,7 +71,7 @@ class _ShiftPresenceGridState extends State<ShiftPresenceGrid> {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     if (widget.shift.supervisors.isEmpty) {
-      return Text('No supervisors assigned to this shift',
+      return Text(context.tr('No supervisors assigned to this shift'),
           style: TextStyle(color: t.muted, fontSize: 12));
     }
 
@@ -119,7 +120,7 @@ class _ShiftPresenceGridState extends State<ShiftPresenceGrid> {
             children: [
               _HeaderPill(
                 icon: Icons.radar,
-                label: 'Shift Commander · Live Presence',
+                label: context.tr('Shift Commander · Live Presence'),
                 color: t.navy,
               ),
               const Spacer(),
@@ -127,7 +128,7 @@ class _ShiftPresenceGridState extends State<ShiftPresenceGrid> {
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: _CountBadge(
-                    label: 'Awaiting',
+                    label: context.tr('Awaiting'),
                     count: pendingCount,
                     color: t.orange,
                   ),
@@ -139,7 +140,7 @@ class _ShiftPresenceGridState extends State<ShiftPresenceGrid> {
             children: [
               Expanded(
                   child: _PresenceCountCard(
-                label: 'Active',
+                label: context.tr('Active'),
                 count: activeCount,
                 icon: Icons.bolt,
                 color: t.green,
@@ -147,7 +148,7 @@ class _ShiftPresenceGridState extends State<ShiftPresenceGrid> {
               const SizedBox(width: 8),
               Expanded(
                   child: _PresenceCountCard(
-                label: 'Inactive',
+                label: context.tr('Inactive'),
                 count: inactiveCount,
                 icon: Icons.do_not_disturb_on,
                 color: t.orange,
@@ -155,7 +156,7 @@ class _ShiftPresenceGridState extends State<ShiftPresenceGrid> {
               const SizedBox(width: 8),
               Expanded(
                   child: _PresenceCountCard(
-                label: 'Absent',
+                label: context.tr('Absent'),
                 count: absentCount,
                 icon: Icons.person_off,
                 color: t.red,

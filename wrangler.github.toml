@@ -1,5 +1,5 @@
 name = "alertsys-github"
-main = "cloudflare_github_worker.js"
+main = "cloudflare_github_worker_rpc.js"
 compatibility_date = "2024-11-01"
 
 # Secrets (wrangler secret put --config wrangler.github.toml):

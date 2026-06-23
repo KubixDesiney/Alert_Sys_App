@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/predictive_intel_service.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
@@ -50,30 +51,40 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
     super.dispose();
   }
 
-  String _fallbackGreeting() {
+  String _fallbackGreeting(BuildContext context) {
     final h = DateTime.now().hour;
-    if (h < 5) return 'Working late';
-    if (h < 12) return 'Good morning';
-    if (h < 18) return 'Good afternoon';
-    return 'Good evening';
+    if (h < 5) return context.tr('Working late');
+    if (h < 12) return context.tr('Good morning');
+    if (h < 18) return context.tr('Good afternoon');
+    return context.tr('Good evening');
   }
 
-  String _displaySummary() {
+  String _displaySummary(BuildContext context) {
     final b = widget.briefing;
+    if (b != null && context.isFrench && (b.summaryFr ?? '').trim().isNotEmpty) {
+      return b.summaryFr!.trim();
+    }
     if (b != null && b.summary.trim().isNotEmpty) return b.summary.trim();
-    return '${_fallbackGreeting()}, supervisor. Your AI briefing is warming up — historical patterns are being analysed in the background. Hard data and a personalised summary will land here within the next minute.';
+    return context.tr(
+      '{greeting}, supervisor. Your AI briefing is warming up — historical patterns are being analysed in the background. Hard data and a personalised summary will land here within the next minute.',
+      {'greeting': _fallbackGreeting(context)},
+    );
   }
 
-  String _generatedLabel() {
+  String _generatedLabel(BuildContext context) {
     final ts = widget.briefing?.generatedAt;
-    if (ts == null) return 'just now';
+    if (ts == null) return context.tr('just now');
     final dt = DateTime.tryParse(ts);
-    if (dt == null) return 'just now';
+    if (dt == null) return context.tr('just now');
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'moments ago';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
+    if (diff.inMinutes < 1) return context.tr('moments ago');
+    if (diff.inMinutes < 60) {
+      return context.tr('{n}m ago', {'n': '${diff.inMinutes}'});
+    }
+    if (diff.inHours < 24) {
+      return context.tr('{n}h ago', {'n': '${diff.inHours}'});
+    }
+    return context.tr('{n}d ago', {'n': '${diff.inDays}'});
   }
 
   Future<void> _doRefresh() async {
@@ -86,7 +97,7 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
   @override
   Widget build(BuildContext context) {
     final isDark = context.isDark;
-    final summary = _displaySummary();
+    final summary = _displaySummary(context);
     final b = widget.briefing;
     final compact = widget.compact;
 
@@ -189,7 +200,7 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                     colors: [Colors.white, Color(0xFFE0E7FF)],
                   ).createShader(rect),
                   child: Text(
-                    'Operations Briefing',
+                    context.tr('Operations Briefing'),
                     style: TextStyle(
                       fontSize: titleSize,
                       fontWeight: FontWeight.w800,
@@ -229,19 +240,28 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                     if (b?.topFactory != null && !compact && b?.factoryScope == null)
                       _briefChip(
                         Icons.factory_rounded,
-                        '${b!.topFactory} most active',
+                        context.tr('{factory} most active',
+                            {'factory': b!.topFactory!}),
                       ),
                     if (b?.predictiveType != null && b!.predictiveConfidence != null)
                       _briefChip(
                         Icons.warning_amber_rounded,
-                        'Expected: ${typeMeta(b.predictiveType!, context.appTheme).label}'
-                        '${b.predictiveConvoyeur != null ? ' · Line ${b.predictiveConvoyeur}' : ''}'
-                        ' (${b.predictiveConfidence}%)',
+                        context.tr('Expected: {type}{line} ({pct}%)', {
+                          'type': typeMeta(
+                                  b.predictiveType!, context.appTheme, context)
+                              .label,
+                          'line': b.predictiveConvoyeur != null
+                              ? context.tr(' · Line {line}',
+                                  {'line': '${b.predictiveConvoyeur}'})
+                              : '',
+                          'pct': '${b.predictiveConfidence}',
+                        }),
                         color: const Color(0xFFFBBF24),
                       ),
                     _briefChip(
                       Icons.schedule_rounded,
-                      'Updated ${_generatedLabel()}',
+                      context.tr(
+                          'Updated {time}', {'time': _generatedLabel(context)}),
                     ),
                   ],
                 ),
@@ -300,7 +320,9 @@ class _AIMorningBriefingHeroState extends State<AIMorningBriefingHero>
                                     size: 13, color: Colors.white),
                               const SizedBox(width: 5),
                               Text(
-                                _refreshing ? 'Generating…' : 'Regenerate',
+                                _refreshing
+                                    ? context.tr('Generating…')
+                                    : context.tr('Regenerate'),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,

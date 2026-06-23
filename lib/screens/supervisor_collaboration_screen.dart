@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../models/collaboration_model.dart';
 import '../services/service_locator.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
@@ -192,11 +193,11 @@ class CollaborationProgressScreen extends StatelessWidget {
             child: const Icon(Icons.groups, size: 48, color: _purple),
           ),
           const SizedBox(height: 16),
-          Text('No Collaboration Requests',
+          Text(context.tr('No Collaboration Requests'),
               style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.bold, color: t.text)),
           const SizedBox(height: 4),
-          Text('Your collaboration requests will appear here',
+          Text(context.tr('Your collaboration requests will appear here'),
               style: TextStyle(fontSize: 13, color: t.muted)),
         ],
       ),
@@ -224,26 +225,26 @@ class _SentCardState extends State<_SentCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Row(children: [
-          Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
-          SizedBox(width: 8),
-          Text('Cancel Collaboration?'),
+        title: Row(children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+          const SizedBox(width: 8),
+          Text(context.tr('Cancel Collaboration?')),
         ]),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('This will permanently cancel the request.',
-                style: TextStyle(fontSize: 13)),
+            Text(context.tr('This will permanently cancel the request.'),
+                style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 16),
-            _InfoRow('Request ID', 'collab-${r.id.substring(0, 12)}'),
+            _InfoRow(context.tr('Request ID'), 'collab-${r.id.substring(0, 12)}'),
             const SizedBox(height: 8),
-            _InfoRow('Members', r.targetSupervisorNames.join(', ')),
+            _InfoRow(context.tr('Members'), r.targetSupervisorNames.join(', ')),
             const SizedBox(height: 8),
-            _InfoRow('Alert type', r.alertType ?? '—'),
+            _InfoRow(context.tr('Alert type'), r.alertType ?? '—'),
             const SizedBox(height: 8),
             _InfoRow(
-                'Description',
+                context.tr('Description'),
                 (r.alertDescription?.isNotEmpty ?? false)
                     ? r.alertDescription!
                     : '—'),
@@ -252,12 +253,12 @@ class _SentCardState extends State<_SentCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep'),
+            child: Text(context.tr('Keep')),
           ),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             icon: const Icon(Icons.cancel, size: 16),
-            label: const Text('Cancel Request'),
+            label: Text(context.tr('Cancel Request')),
             onPressed: () => Navigator.pop(context, true),
           ),
         ],
@@ -333,7 +334,7 @@ class _SentCardState extends State<_SentCard> {
             Icon(Icons.send, color: _purple, size: 18),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('Sent Request',
+              child: Text(context.tr('Sent Request'),
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -349,7 +350,7 @@ class _SentCardState extends State<_SentCard> {
             ),
           ],
           const SizedBox(height: 4),
-          Text('ID: collab-${r.id.substring(0, 12)}',
+          Text(context.tr('ID: collab-{id}', {'id': r.id.substring(0, 12)}),
               style: TextStyle(
                   fontSize: 10, color: t.muted, fontFamily: 'monospace')),
           const SizedBox(height: 14),
@@ -358,8 +359,9 @@ class _SentCardState extends State<_SentCard> {
           _ProgressStep(
             t,
             icon: Icons.check_circle,
-            title: 'Request Sent',
-            subtitle: 'Sent to ${r.targetSupervisorNames.join(", ")}',
+            title: context.tr('Request Sent'),
+            subtitle: context.tr('Sent to {names}',
+                {'names': r.targetSupervisorNames.join(", ")}),
             state: _StepState.done,
           ),
           // Assistant responses – one line per supervisor
@@ -381,28 +383,28 @@ class _SentCardState extends State<_SentCard> {
                       : Icons.pending,
               title: name,
               subtitle: decision == 'accepted'
-                  ? 'Accepted'
+                  ? context.tr('Accepted')
                   : decision == 'refused'
-                      ? 'Declined'
-                      : 'Waiting',
+                      ? context.tr('Declined')
+                      : context.tr('Waiting'),
               state: state,
             );
           }),
           _ProgressStep(
             t,
             icon: Icons.admin_panel_settings,
-            title: 'PM Approval',
+            title: context.tr('PM Approval'),
             subtitle: r.pmApproved
-                ? 'Approved by Production Manager'
+                ? context.tr('Approved by Production Manager')
                 : r.status == 'rejected'
                     ? (r.assistantDecision == 'refused'
-                        ? 'All assistants declined'
-                        : 'Declined by Production Manager')
+                        ? context.tr('All assistants declined')
+                        : context.tr('Declined by Production Manager'))
                     : r.assistantDecision == 'accepted'
                         ? (allAccepted
-                            ? 'All assistants accepted — awaiting PM'
-                            : 'Some assistants declined — awaiting PM')
-                        : 'Waiting for assistants to respond',
+                            ? context.tr('All assistants accepted — awaiting PM')
+                            : context.tr('Some assistants declined — awaiting PM'))
+                        : context.tr('Waiting for assistants to respond'),
             state: r.pmApproved
                 ? _StepState.done
                 : r.status == 'rejected'
@@ -572,20 +574,20 @@ class _ReceivedCardState extends State<_ReceivedCard> {
             Icon(Icons.inbox, color: _purple, size: 18),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('Collaboration Request',
+              child: Text(context.tr('Collaboration Request'),
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                       color: t.navy)),
             ),
             if (isAccepted)
-              _chip('Accepted', _green, _greenLt)
+              _chip(context.tr('Accepted'), _green, _greenLt)
             else if (isRefused)
-              _chip('Declined', _red, _red.withOpacity(0.1))
+              _chip(context.tr('Declined'), _red, _red.withOpacity(0.1))
             else if (r.pmApproved)
-              _chip('PM Approved', _green, _greenLt)
+              _chip(context.tr('PM Approved'), _green, _greenLt)
             else
-              _chip('Awaiting you', _purple, _purpleLt),
+              _chip(context.tr('Awaiting you'), _purple, _purpleLt),
           ]),
           const SizedBox(height: 12),
 
@@ -628,7 +630,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
           Row(children: [
             Icon(Icons.person_outline, size: 14, color: t.muted),
             const SizedBox(width: 6),
-            Text('From: ', style: TextStyle(fontSize: 12, color: t.muted)),
+            Text(context.tr('From: '), style: TextStyle(fontSize: 12, color: t.muted)),
             Text(r.requesterName,
                 style: TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w600, color: t.navy)),
@@ -663,7 +665,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
               child: Row(children: [
                 const Icon(Icons.check_circle, size: 16, color: _green),
                 const SizedBox(width: 8),
-                Text('Collaboration fully approved by Production Manager',
+                Text(context.tr('Collaboration fully approved by Production Manager'),
                     style: const TextStyle(
                         fontSize: 12,
                         color: _green,
@@ -681,7 +683,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
                 const Icon(Icons.check_circle, size: 16, color: _green),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('You accepted. Waiting for all assistants.',
+                  child: Text(context.tr('You accepted. Waiting for all assistants.'),
                       style: const TextStyle(
                           fontSize: 12,
                           color: _green,
@@ -700,7 +702,7 @@ class _ReceivedCardState extends State<_ReceivedCard> {
               child: Row(children: [
                 const Icon(Icons.cancel, size: 16, color: _red),
                 const SizedBox(width: 8),
-                Text('You declined this request.',
+                Text(context.tr('You declined this request.'),
                     style: const TextStyle(
                         fontSize: 12,
                         color: _red,
@@ -714,8 +716,8 @@ class _ReceivedCardState extends State<_ReceivedCard> {
                 child: OutlinedButton.icon(
                   onPressed: _loading ? null : () => _respond(false),
                   icon: const Icon(Icons.close, size: 16, color: _red),
-                  label: const Text('Decline',
-                      style: TextStyle(
+                  label: Text(context.tr('Decline'),
+                      style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: _red)),
@@ -740,9 +742,9 @@ class _ReceivedCardState extends State<_ReceivedCard> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.check_circle, size: 16),
-                  label: const Text('Accept',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  label: Text(context.tr('Accept'),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _green,
                     foregroundColor: Colors.white,
@@ -933,7 +935,10 @@ class _InteractionSummaryLine extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Last interaction: ${interaction.label} - ${_formatRelativeTime(interaction.at)}',
+              context.tr('Last interaction: {label} - {time}', {
+                'label': context.tr(interaction.label),
+                'time': _formatRelativeTime(interaction.at)
+              }),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -1216,7 +1221,7 @@ class _RequestCollaborationDialogState
               child: Row(children: [
                 const Icon(Icons.people, color: _purple, size: 22),
                 const SizedBox(width: 8),
-                Text('Request Collaboration',
+                Text(context.tr('Request Collaboration'),
                     style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -1291,7 +1296,7 @@ class _RequestCollaborationDialogState
                       const SizedBox(height: 16),
 
                       // Supervisor Selection
-                      Text('SELECT SUPERVISOR(S)',
+                      Text(context.tr('SELECT SUPERVISOR(S)'),
                           style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -1304,7 +1309,7 @@ class _RequestCollaborationDialogState
 
                       if (_selectedSupervisors.isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        Text('TAGGED',
+                        Text(context.tr('TAGGED'),
                             style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -1346,7 +1351,7 @@ class _RequestCollaborationDialogState
                       const SizedBox(height: 16),
 
                       // Message
-                      Text('MESSAGE',
+                      Text(context.tr('MESSAGE'),
                           style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -1358,7 +1363,7 @@ class _RequestCollaborationDialogState
                         maxLines: 5,
                         style: TextStyle(fontSize: 13, color: t.text),
                         decoration: InputDecoration(
-                          hintText: 'Enter your message...',
+                          hintText: context.tr('Enter your message...'),
                           hintStyle: TextStyle(color: t.muted),
                           filled: true,
                           fillColor: t.scaffold,
@@ -1393,7 +1398,7 @@ class _RequestCollaborationDialogState
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
                   ),
-                  child: Text('Cancel',
+                  child: Text(context.tr('Cancel'),
                       style: TextStyle(fontSize: 13, color: t.muted)),
                 ),
                 const SizedBox(width: 12),
@@ -1410,9 +1415,9 @@ class _RequestCollaborationDialogState
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.send, size: 16),
-                  label: const Text('Send Request',
-                      style:
-                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  label: Text(context.tr('Send Request'),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _purple,
                     foregroundColor: Colors.white,
@@ -1497,8 +1502,8 @@ class _RequestCollaborationDialogState
       );
       if (!context.mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Collaboration request sent!'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(context.tr('Collaboration request sent!')),
         backgroundColor: _green,
       ));
     } catch (e) {

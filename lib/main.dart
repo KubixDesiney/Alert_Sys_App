@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'config/company_config.dart';
 import 'providers/alert_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/locale_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/mfa_enrollment_screen.dart';
@@ -29,6 +30,7 @@ import 'services/bug_report_service.dart';
 import 'services/telemetry_service.dart';
 import 'theme.dart';
 import 'l10n/generated/app_localizations.dart';
+import 'l10n/app_strings.dart';
 import 'services/connectivity_service.dart';
 import 'widgets/common/app_loading_indicator.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -153,6 +155,7 @@ class SmartIndustrialAlertApp extends StatelessWidget {
           return p;
         }),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()),
         ChangeNotifierProvider(create: (_) {
           final c = ConnectivityService();
           // Fire-and-forget; the service swallows its own errors.
@@ -160,13 +163,14 @@ class SmartIndustrialAlertApp extends StatelessWidget {
           return c;
         }),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) => MaterialApp(
+      child: Consumer2<ThemeProvider, LocaleProvider>(
+        builder: (context, themeProvider, localeProvider, _) => MaterialApp(
           title: 'Smart Industrial Alert - SIA',
           debugShowCheckedModeBanner: false,
           themeMode: themeProvider.mode,
           theme: buildLightTheme(),
           darkTheme: buildDarkTheme(),
+          locale: localeProvider.locale,
           navigatorKey: FcmService.navigatorKey,
           localizationsDelegates: const [
             AppLocalizations.delegate,
@@ -196,7 +200,8 @@ class AuthGate extends StatelessWidget {
         if (snapshot.hasError) {
           return Scaffold(
             body: Center(
-              child: Text('Firebase auth error:\n${snapshot.error}',
+              child: Text(
+                  '${context.tr('Authentication error')}\n${snapshot.error}',
                   textAlign: TextAlign.center),
             ),
           );
@@ -459,14 +464,15 @@ class _RoleRouterState extends State<RoleRouter> {
                 children: [
                   const Icon(Icons.wifi_off, size: 44),
                   const SizedBox(height: 12),
-                  const Text(
-                    'Offline account data is not cached yet.',
+                  Text(
+                    context.tr('Offline account data is not cached yet.'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Connect once so Smart Industrial Alert - SIA can save this account for offline startup.',
+                  Text(
+                    context.tr(
+                        'Connect once so Smart Industrial Alert - SIA can save this account for offline startup.'),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
@@ -478,7 +484,7 @@ class _RoleRouterState extends State<RoleRouter> {
                       });
                       _loadRole();
                     },
-                    child: const Text('Retry'),
+                    child: Text(context.tr('Retry')),
                   ),
                 ],
               ),

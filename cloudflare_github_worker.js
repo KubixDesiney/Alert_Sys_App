@@ -2,15 +2,16 @@
  * GitHub proxy worker for the SuperAdmin / Guardian console.
  *
  * Holds the GitHub token SERVER-SIDE; the app authenticates with WORKER_SHARED_SECRET.
- * Per-company repo + token can come from EITHER env vars OR the RTDB vault that the
- * IT team fills in via the Guardian console (so they self-serve, no redeploy):
+ * Per-company repo + token come from the RTDB vault once the IT team fills them
+ * in via the Guardian console (so they self-serve, no redeploy). Env vars are
+ * only bootstrap fallbacks before the vault is populated:
  *   ai_agents/guardian/repo            (owner/name)
  *   ai_agent_secrets/guardian/githubToken
  *
  * Deploy:  npx wrangler deploy --config wrangler.github.toml
- * Secrets: WORKER_SHARED_SECRET (required); GITHUB_TOKEN (optional if set via vault);
- *          FIREBASE_SERVICE_ACCOUNT + FB_DB_URL (optional, enable the vault fallback).
- * Vars:    GITHUB_REPO (optional default); GITHUB_RATE_LIMIT (req/min/ip, default 120).
+ * Secrets: WORKER_SHARED_SECRET (required); GITHUB_TOKEN (optional bootstrap fallback);
+ *          FIREBASE_SERVICE_ACCOUNT + FB_DB_URL (optional, enable the UI-managed vault).
+ * Vars:    GITHUB_REPO (optional bootstrap fallback); GITHUB_RATE_LIMIT (req/min/ip, default 120).
  */
 const GH = 'https://api.github.com';
 const UA = 'alertsys-guardian';
@@ -36,7 +37,7 @@ export function rateLimit(buckets, key, limit, windowMs, now = Date.now()) {
   return arr.length <= limit;
 }
 
-// ── Firebase service-account auth (for the RTDB vault fallback) ─────────────
+// ── Firebase service-account auth (for the UI-managed RTDB vault) ───────────
 function b64url(s) { return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function b64urlBytes(b) { let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function pemToBuf(pem) {
@@ -73,25 +74,81 @@ async function rtdbGet(env, token, path) {
   return r.json();
 }
 
+export function normalizeRepo(value) {
+  let raw = String(value == null ? '' : value).trim();
+  if (!raw) return '';
+  if (raw.startsWith('git@github.com:')) {
+    raw = raw.slice('git@github.com:'.length);
+  } else {
+    try {
+      const url = new URL(raw);
+      raw = url.pathname;
+    } catch (_) {
+      // Keep non-URL owner/name input as-is.
+    }
+  }
+  let parts = raw.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+  if (parts[0] && parts[0].toLowerCase().replace(/^www\./, '').endsWith('github.com')) {
+    parts = parts.slice(1);
+  }
+  if (parts[0] && parts[0].toLowerCase() === 'repos') parts = parts.slice(1);
+  if (parts.length < 2) return '';
+  const owner = String(parts[0] || '').trim();
+  const repo = String(parts[1] || '').trim().replace(/\.git$/, '');
+  if (!owner || !repo || /\s/.test(owner) || /\s/.test(repo)) return '';
+  return `${owner}/${repo}`;
+}
+
+const CRED_CACHE_TTL_MS = 60000;
 let _credCache = { at: 0, repo: '', token: '' };
-async function resolveCreds(env) {
-  const envRepo = env.GITHUB_REPO || '';
+
+function hasText(value) {
+  return String(value == null ? '' : value).trim().length > 0;
+}
+
+export function chooseGithubCreds({
+  envRepo = '',
+  envToken = '',
+  vaultRepo = '',
+  vaultToken = '',
+} = {}) {
+  const vaultTouched = hasText(vaultRepo) || hasText(vaultToken);
+  if (vaultTouched) {
+    return {
+      repo: normalizeRepo(vaultRepo),
+      token: String(vaultToken == null ? '' : vaultToken).trim(),
+    };
+  }
+  return {
+    repo: normalizeRepo(envRepo),
+    token: String(envToken == null ? '' : envToken).trim(),
+  };
+}
+
+export function resetGithubCredCache() {
+  _credCache = { at: 0, repo: '', token: '' };
+}
+
+async function resolveCreds(env, options = {}) {
+  const envRepo = normalizeRepo(env.GITHUB_REPO || '');
   const envTok = env.GITHUB_TOKEN || '';
-  if (envRepo && envTok) return { repo: envRepo, token: envTok };
   const now = Date.now();
-  if (now - _credCache.at < 60000) {
-    return { repo: envRepo || _credCache.repo, token: envTok || _credCache.token };
+  if (!options.bypassCache && now - _credCache.at < CRED_CACHE_TTL_MS) {
+    return { repo: _credCache.repo, token: _credCache.token };
   }
   if (env.FIREBASE_SERVICE_ACCOUNT && env.FB_DB_URL) {
     try {
       const t = await getAccessToken(env);
-      const repo = envRepo || (await rtdbGet(env, t, 'ai_agents/guardian/repo')) || '';
-      const token = envTok || (await rtdbGet(env, t, 'ai_agent_secrets/guardian/githubToken')) || '';
-      _credCache = { at: now, repo: String(repo || ''), token: String(token || '') };
+      const vaultRepo = await rtdbGet(env, t, 'ai_agents/guardian/repo');
+      const vaultToken = await rtdbGet(env, t, 'ai_agent_secrets/guardian/githubToken');
+      const creds = chooseGithubCreds({ envRepo, envToken: envTok, vaultRepo, vaultToken });
+      _credCache = { at: now, repo: creds.repo, token: creds.token };
       return { repo: _credCache.repo, token: _credCache.token };
     } catch (_) { /* fall through to env */ }
   }
-  return { repo: envRepo, token: envTok };
+  const creds = chooseGithubCreds({ envRepo, envToken: envTok });
+  _credCache = { at: now, repo: creds.repo, token: creds.token };
+  return { repo: _credCache.repo, token: _credCache.token };
 }
 
 // ── pure mappers (trim GitHub payloads to what the console renders) ─────────
@@ -195,55 +252,80 @@ async function ghPost(token, repo, path, body) {
   return res.status;
 }
 
-export default {
-  async fetch(req, env) {
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-    const url = new URL(req.url);
-    const ip = req.headers.get('cf-connecting-ip') || 'unknown';
-    if (!rateLimit(RL, ip, Number(env.GITHUB_RATE_LIMIT || 120), 60000)) {
-      return json({ error: 'rate_limited' }, 429, { 'Retry-After': '60' });
-    }
+export async function handleGithubProxyRequest(req, env, options = {}) {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+  const url = new URL(req.url);
+  const ip = req.headers.get('cf-connecting-ip') || 'unknown';
+  if (!rateLimit(RL, ip, Number(env.GITHUB_RATE_LIMIT || 120), 60000)) {
+    return json({ error: 'rate_limited' }, 429, { 'Retry-After': '60' });
+  }
+  if (!options.skipAuth) {
     const auth = req.headers.get('authorization') || '';
     const presented = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     if (!env.WORKER_SHARED_SECRET || !timingSafeEqual(presented, env.WORKER_SHARED_SECRET)) {
       return json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });
     }
-    const creds = await resolveCreds(env);
-    const repo = url.searchParams.get('repo') || creds.repo || '';
-    const token = creds.token || '';
-    const path = url.pathname.replace(/\/+$/, '');
-    try {
-      if (path === '/config') return json({ ok: true, repo, connected: !!token, canDispatch: !!token });
-      if (!token || !repo) return json({ error: 'not_configured', repo, connected: !!token }, 503);
-      if (req.method === 'POST' && path === '/dispatch') {
-        // Trigger a repository_dispatch (e.g. the Guardian drill). Token stays server-side.
-        let body = {};
-        try { body = await req.json(); } catch (_) { /* empty body ok */ }
-        const eventType = (body && body.event_type) || 'guardian_drill';
-        const clientPayload = (body && typeof body.client_payload === 'object' && body.client_payload) || {};
-        await ghPost(token, repo, '/dispatches', { event_type: eventType, client_payload: clientPayload });
-        return json({ ok: true, dispatched: eventType });
-      }
-      if (path === '/runs') return json({ runs: ((await ghGet(token, repo, '/actions/runs?per_page=20')).workflow_runs || []).map(mapRun) });
-      if (path === '/pulls') return json({ pulls: ((await ghGet(token, repo, '/pulls?state=all&per_page=20&sort=updated&direction=desc')) || []).map(mapPull) });
-      if (path === '/deployments') return json({ deployments: ((await ghGet(token, repo, '/deployments?per_page=20')) || []).map(mapDeployment) });
-      if (path === '/run-jobs') {
-        const id = url.searchParams.get('id');
-        if (!id) return json({ error: 'missing id' }, 400);
-        return json({ jobs: ((await ghGet(token, repo, `/actions/runs/${encodeURIComponent(id)}/jobs`)).jobs || []).map(mapJob) });
-      }
-      if (path === '/job-logs') {
-        // Raw stdout of one job (the real `$ npm test` / build output) for the
-        // live Guardian terminal. Best-effort: empty while the job is warming up.
-        const id = url.searchParams.get('id');
-        if (!id) return json({ error: 'missing id' }, 400);
-        let text = '';
-        try { text = await ghGetText(token, repo, `/actions/jobs/${encodeURIComponent(id)}/logs`); } catch (_) { text = ''; }
-        return json({ id, logs: tailText(stripLogTimestamps(text)) });
-      }
-      return json({ error: 'not_found' }, 404);
-    } catch (e) {
-      return json({ error: String((e && e.message) || e) }, 502);
+  }
+  const cacheControl = req.headers.get('cache-control') || '';
+  const bypassCache =
+    url.searchParams.get('fresh') === '1' ||
+    cacheControl.toLowerCase().includes('no-cache');
+  const creds = await resolveCreds(env, { bypassCache });
+  const repo = normalizeRepo(url.searchParams.get('repo')) || creds.repo || '';
+  const token = creds.token || '';
+  const path = url.pathname.replace(/\/+$/, '');
+  try {
+    if (path === '/config') {
+      return json({
+        ok: true,
+        repo,
+        connected: !!token && !!repo,
+        hasToken: !!token,
+        canDispatch: !!token && !!repo,
+      });
     }
+    if (!token || !repo) {
+      return json({
+        error: 'not_configured',
+        repo,
+        connected: !!token && !!repo,
+        hasToken: !!token,
+      }, 503);
+    }
+    if (req.method === 'POST' && path === '/dispatch') {
+      // Trigger a repository_dispatch (e.g. the Guardian drill). Token stays server-side.
+      let body = {};
+      try { body = await req.json(); } catch (_) { /* empty body ok */ }
+      const eventType = (body && body.event_type) || 'guardian_drill';
+      const clientPayload = (body && typeof body.client_payload === 'object' && body.client_payload) || {};
+      await ghPost(token, repo, '/dispatches', { event_type: eventType, client_payload: clientPayload });
+      return json({ ok: true, dispatched: eventType });
+    }
+    if (path === '/runs') return json({ runs: ((await ghGet(token, repo, '/actions/runs?per_page=20')).workflow_runs || []).map(mapRun) });
+    if (path === '/pulls') return json({ pulls: ((await ghGet(token, repo, '/pulls?state=all&per_page=20&sort=updated&direction=desc')) || []).map(mapPull) });
+    if (path === '/deployments') return json({ deployments: ((await ghGet(token, repo, '/deployments?per_page=20')) || []).map(mapDeployment) });
+    if (path === '/run-jobs') {
+      const id = url.searchParams.get('id');
+      if (!id) return json({ error: 'missing id' }, 400);
+      return json({ jobs: ((await ghGet(token, repo, `/actions/runs/${encodeURIComponent(id)}/jobs`)).jobs || []).map(mapJob) });
+    }
+    if (path === '/job-logs') {
+      // Raw stdout of one job (the real `$ npm test` / build output) for the
+      // live Guardian terminal. Best-effort: empty while the job is warming up.
+      const id = url.searchParams.get('id');
+      if (!id) return json({ error: 'missing id' }, 400);
+      let text = '';
+      try { text = await ghGetText(token, repo, `/actions/jobs/${encodeURIComponent(id)}/logs`); } catch (_) { text = ''; }
+      return json({ id, logs: tailText(stripLogTimestamps(text)) });
+    }
+    return json({ error: 'not_found' }, 404);
+  } catch (e) {
+    return json({ error: String((e && e.message) || e) }, 502);
+  }
+}
+
+export default {
+  async fetch(req, env) {
+    return handleGithubProxyRequest(req, env);
   },
 };

@@ -24,6 +24,7 @@ import '../models/hierarchy_model.dart';
 import '../services/ai_assignment_service.dart';
 import '../services/hierarchy_service.dart';
 import '../services/location_alert_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../widgets/ai_logs_panel.dart';
@@ -339,7 +340,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           ),
           if (_selectedUsineId != null || _selectedConveyorId != null)
             IconButton(
-              tooltip: 'Reset view',
+              tooltip: context.tr('Reset view'),
               icon: Icon(Icons.close, size: 18, color: t.muted),
               onPressed: () => setState(() {
                 _selectedUsineId = null;
@@ -353,15 +354,15 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
   }
 
   String _scopeTitle() {
-    if (_selectedUsineId == null) return 'All Plants';
+    if (_selectedUsineId == null) return context.tr('All Plants');
     final f = _factoryById(_selectedUsineId!);
-    if (f == null) return 'All Plants';
+    if (f == null) return context.tr('All Plants');
     if (_selectedConveyorId == null) return f.name;
     final c = f.conveyors.values.firstWhere(
       (c) => '${f.id}|${c.id}' == _selectedConveyorId,
       orElse: () => f.conveyors.values.first,
     );
-    return '${f.name} · Conveyor ${c.number}';
+    return '${f.name} · ${context.tr('Conveyor {n}', {'n': '${c.number}'})}';
   }
 
   Widget _filterSummaryBar(AppTheme t, _TreeData tree) {
@@ -374,7 +375,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              '${tree.matchingNodeCount} of ${tree.totalNodeCount} nodes match filters',
+              context.tr('{matching} of {total} nodes match filters', {
+                'matching': '${tree.matchingNodeCount}',
+                'total': '${tree.totalNodeCount}'
+              }),
               style: TextStyle(
                 color: t.navy,
                 fontSize: 12,
@@ -384,7 +388,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           ),
           TextButton(
             onPressed: () => setState(() => _filter = const TreeFilterState()),
-            child: Text('Clear', style: TextStyle(color: t.navy, fontSize: 12)),
+            child: Text(context.tr('Clear'),
+                style: TextStyle(color: t.navy, fontSize: 12)),
           ),
         ],
       ),
@@ -610,7 +615,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         if (current != null)
                           OutlinedButton.icon(
                             icon: const Icon(Icons.open_in_new, size: 16),
-                            label: const Text('Open Alert'),
+                            label: Text(context.tr('Open Alert')),
                             onPressed: () {
                               Navigator.pop(sheetContext);
                               showTreeAlertSheet(context, current);
@@ -619,7 +624,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         if (current != null && widget.onAssignAssistant != null)
                           FilledButton.icon(
                             icon: const Icon(Icons.group_add, size: 16),
-                            label: const Text('Assign Assistant'),
+                            label: Text(context.tr('Assign Assistant')),
                             onPressed: () async {
                               Navigator.pop(sheetContext);
                               await widget.onAssignAssistant!(current);
@@ -634,8 +639,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         const SizedBox(width: 8),
                         Text(
                           assetId != null && assetId.trim().isNotEmpty
-                              ? 'Asset History'
-                              : 'Workstation History',
+                              ? context.tr('Asset History')
+                              : context.tr('Workstation History'),
                           style: TextStyle(
                             color: t.text,
                             fontSize: 14,
@@ -695,7 +700,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             ),
             const SizedBox(height: 14),
             Text(
-              'No factories configured',
+              context.tr('No factories configured'),
               style: TextStyle(
                 color: t.text,
                 fontSize: 15,
@@ -704,7 +709,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             ),
             const SizedBox(height: 4),
             Text(
-              'Add a factory in the Hierarchy tab to start tracking alerts.',
+              context.tr(
+                  'Add a factory in the Hierarchy tab to start tracking alerts.'),
               textAlign: TextAlign.center,
               style: TextStyle(color: t.muted, fontSize: 12.5, height: 1.4),
             ),
@@ -732,19 +738,19 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              tooltip: 'Zoom in',
+              tooltip: context.tr('Zoom in'),
               onPressed: () => _animateZoom(1.2),
               icon: Icon(Icons.add, color: t.navy),
             ),
             Container(width: 24, height: 1, color: t.border),
             IconButton(
-              tooltip: 'Reset',
+              tooltip: context.tr('Reset'),
               onPressed: _resetZoom,
               icon: Icon(Icons.center_focus_strong, color: t.navy, size: 18),
             ),
             Container(width: 24, height: 1, color: t.border),
             IconButton(
-              tooltip: 'Zoom out',
+              tooltip: context.tr('Zoom out'),
               onPressed: () => _animateZoom(0.8),
               icon: Icon(Icons.remove, color: t.navy),
             ),
@@ -805,7 +811,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                       Row(
                         children: [
                           Text(
-                            'AI Assignment',
+                            context.tr('AI Assignment'),
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w800,
@@ -820,8 +826,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                       ),
                       Text(
                         isOn
-                            ? 'Auto-assigning new alerts'
-                            : 'Manual assignment only',
+                            ? context.tr('Auto-assigning new alerts')
+                            : context.tr('Manual assignment only'),
                         style: TextStyle(
                           fontSize: 10.5,
                           color: isOn ? t.green : t.muted,
@@ -832,7 +838,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                   ),
                 ),
                 IconButton(
-                  tooltip: _aiPanelExpanded ? 'Collapse' : 'Expand',
+                  tooltip: _aiPanelExpanded
+                      ? context.tr('Collapse')
+                      : context.tr('Expand'),
                   icon: Icon(
                     _aiPanelExpanded ? Icons.expand_more : Icons.expand_less,
                     color: t.navy,
@@ -853,7 +861,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         children: [
                           _aiSegment(
                             icon: Icons.power_settings_new,
-                            label: 'ON',
+                            label: context.tr('ON'),
                             active: isOn,
                             activeColor: _green,
                             onTap: isOn ? null : () => _toggleAI(true),
@@ -861,7 +869,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           const SizedBox(width: 6),
                           _aiSegment(
                             icon: Icons.stop_circle_outlined,
-                            label: 'OFF',
+                            label: context.tr('OFF'),
                             active: !isOn,
                             activeColor: t.muted,
                             onTap: !isOn ? null : () => _toggleAI(false),
@@ -869,7 +877,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                           const SizedBox(width: 6),
                           _aiSegment(
                             icon: Icons.receipt_long,
-                            label: 'AI-LOGS',
+                            label: context.tr('AI-LOGS'),
                             active: _showAILogsPanel,
                             activeColor: t.navy,
                             badge: logCount > 0 ? '$logCount' : null,
@@ -902,7 +910,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
           Icon(Icons.warning_amber_rounded, size: 9, color: t.orange),
           const SizedBox(width: 3),
           Text(
-            'LOCAL FALLBACK',
+            context.tr('LOCAL FALLBACK'),
             style: TextStyle(
               fontSize: 8,
               fontWeight: FontWeight.w800,
@@ -995,8 +1003,8 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
       SnackBar(
         content: Text(
           on
-              ? 'Global AI ON — auto-assignment enabled'
-              : 'Global AI OFF — manual assignment only',
+              ? context.tr('Global AI ON — auto-assignment enabled')
+              : context.tr('Global AI OFF — manual assignment only'),
         ),
         backgroundColor: on ? _t.green : _t.muted,
         duration: const Duration(seconds: 2),
@@ -1154,7 +1162,7 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
         conveyorNodes.add(
           _LayoutNode(
             id: '${f.id}|${c.id}',
-            label: 'Conveyor ${c.number}',
+            label: context.tr('Conveyor {n}', {'n': '${c.number}'}),
             type: 'conveyor',
             activeCount: conveyorActive,
             inProgressCount: conveyorInProgress,
@@ -1247,8 +1255,9 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
             child: TreeNodeCard(
               icon: Icons.factory,
               title: f.label,
-              subtitle:
-                  '${f.children.length} conveyor${f.children.length == 1 ? '' : 's'}',
+              subtitle: f.children.length == 1
+                  ? context.tr('{n} conveyor', {'n': '${f.children.length}'})
+                  : context.tr('{n} conveyors', {'n': '${f.children.length}'}),
               activeCount: f.activeCount,
               inProgressCount: f.inProgressCount,
               resolvedCount: f.resolvedCount,
@@ -1331,8 +1340,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                 child: TreeNodeCard(
                   icon: Icons.linear_scale,
                   title: c.label,
-                  subtitle:
-                      '${c.children.length} station${c.children.length == 1 ? '' : 's'}',
+                  subtitle: c.children.length == 1
+                      ? context.tr('{n} station', {'n': '${c.children.length}'})
+                      : context.tr('{n} stations',
+                          {'n': '${c.children.length}'}),
                   activeCount: c.activeCount,
                   inProgressCount: c.inProgressCount,
                   resolvedCount: c.resolvedCount,
@@ -1432,8 +1443,12 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
                         icon: Icons.settings,
                         title: s.label,
                         subtitle: hasError
-                            ? '${s.activeCount} active alert${s.activeCount == 1 ? '' : 's'}'
-                            : 'Healthy',
+                            ? (s.activeCount == 1
+                                ? context.tr('{n} active alert',
+                                    {'n': '${s.activeCount}'})
+                                : context.tr('{n} active alerts',
+                                    {'n': '${s.activeCount}'}))
+                            : context.tr('Healthy'),
                         activeCount: s.activeCount,
                         inProgressCount: s.inProgressCount,
                         resolvedCount: s.resolvedCount,
@@ -1486,10 +1501,10 @@ class _AlertTreeVisualizationState extends State<AlertTreeVisualization>
 
   String _relative(DateTime dt) {
     final d = DateTime.now().difference(dt);
-    if (d.inSeconds < 60) return 'just now';
-    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-    if (d.inHours < 24) return '${d.inHours}h ago';
-    return '${d.inDays}d ago';
+    if (d.inSeconds < 60) return context.tr('just now');
+    if (d.inMinutes < 60) return context.tr('{n}m ago', {'n': '${d.inMinutes}'});
+    if (d.inHours < 24) return context.tr('{n}h ago', {'n': '${d.inHours}'});
+    return context.tr('{n}d ago', {'n': '${d.inDays}'});
   }
 }
 

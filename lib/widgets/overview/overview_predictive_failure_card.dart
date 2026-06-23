@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/predictive_intel_stream_service.dart';
 import '../../services/predictive_models.dart';
 import '../../theme.dart';
@@ -124,7 +125,7 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Predictive Failure Alerts',
+                        context.tr('Predictive Failure Alerts'),
                         style: TextStyle(
                           fontSize: 15.5,
                           fontWeight: FontWeight.w800,
@@ -133,10 +134,13 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                       ),
                       Text(
                         widget.model == null
-                            ? 'Edge model warming up — first inference within 60s.'
+                            ? context.tr(
+                                'Edge model warming up — first inference within 60s.')
                             : widget.forecastLive
-                                ? 'Top probable next failures · on-device AI forecaster · next 24h'
-                                : 'Top probable next failures · trained on last 30d',
+                                ? context.tr(
+                                    'Top probable next failures · on-device AI forecaster · next 24h')
+                                : context.tr(
+                                    'Top probable next failures · trained on last 30d'),
                         style: TextStyle(
                           fontSize: 11.5,
                           color: theme.muted,
@@ -155,8 +159,9 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: Tooltip(
-                      message:
-                          'Based on the last ${widget.accuracy!.totalSnapshots} validated predictions.',
+                      message: context.tr(
+                          'Based on the last {n} validated predictions.',
+                          {'n': '${widget.accuracy!.totalSnapshots}'}),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
@@ -167,7 +172,10 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                               color: theme.purple.withValues(alpha: 0.36)),
                         ),
                         child: Text(
-                          'Accuracy: ${(widget.accuracy!.averageAccuracy * 100).round()}%',
+                          context.tr('Accuracy: {pct}%', {
+                            'pct':
+                                '${(widget.accuracy!.averageAccuracy * 100).round()}'
+                          }),
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w800,
@@ -210,7 +218,9 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          widget.forecastLive ? 'AI · LIVE' : 'LIVE',
+                          widget.forecastLive
+                              ? context.tr('AI · LIVE')
+                              : context.tr('LIVE'),
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -235,7 +245,7 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                     Icon(Icons.science_outlined, size: 32, color: theme.purple),
                     const SizedBox(height: 8),
                     Text(
-                      'Not enough history yet',
+                      context.tr('Not enough history yet'),
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
@@ -244,7 +254,8 @@ class _PredictiveFailureCardState extends State<PredictiveFailureCard>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'The model needs a few days of alerts to learn patterns.',
+                      context.tr(
+                          'The model needs a few days of alerts to learn patterns.'),
                       style: TextStyle(fontSize: 11, color: theme.muted),
                     ),
                   ],
@@ -273,29 +284,37 @@ class _PredictedFailureRow extends StatelessWidget {
     required this.describeType,
   });
 
-  String _eta() {
+  String _eta(BuildContext context) {
     final h = failure.etaHours;
-    if (h == null) return 'No ETA yet';
-    if (h <= 0) return 'Overdue · expected';
-    if (h < 1) return 'Within ${(h * 60).round()} min';
-    if (h < 24) return 'In ~${h.toStringAsFixed(1)}h';
+    if (h == null) return context.tr('No ETA yet');
+    if (h <= 0) return context.tr('Overdue · expected');
+    if (h < 1) {
+      return context.tr('Within {n} min', {'n': '${(h * 60).round()}'});
+    }
+    if (h < 24) {
+      return context.tr('In ~{n}h', {'n': h.toStringAsFixed(1)});
+    }
     final d = (h / 24).round();
-    return 'In ~${d}d';
+    return context.tr('In ~{n}d', {'n': '$d'});
   }
 
-  String _lastSeen() {
+  String _lastSeen(BuildContext context) {
     final t = failure.lastTs;
-    if (t == null) return 'never';
+    if (t == null) return context.tr('never');
     final diff = DateTime.now().difference(t);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
+    if (diff.inMinutes < 60) {
+      return context.tr('{n}m ago', {'n': '${diff.inMinutes}'});
+    }
+    if (diff.inHours < 24) {
+      return context.tr('{n}h ago', {'n': '${diff.inHours}'});
+    }
+    return context.tr('{n}d ago', {'n': '${diff.inDays}'});
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
-    final meta = typeMeta(failure.type, context.appTheme);
+    final meta = typeMeta(failure.type, context.appTheme, context);
     final tColor = meta.color;
     final conf = failure.confidence.clamp(0, 100).toDouble();
     return Container(
@@ -365,7 +384,7 @@ class _PredictedFailureRow extends StatelessWidget {
               ),
               const SizedBox(width: 2),
               Text(
-                'conf.',
+                context.tr('conf.'),
                 style: TextStyle(
                   fontSize: 9,
                   color: theme.muted,
@@ -376,7 +395,13 @@ class _PredictedFailureRow extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${failure.usine.isNotEmpty ? failure.usine : failure.factoryId} · Line ${failure.convoyeur} · WS ${failure.poste}',
+            context.tr('{factory} · Line {line} · WS {station}', {
+              'factory': failure.usine.isNotEmpty
+                  ? failure.usine
+                  : failure.factoryId,
+              'line': '${failure.convoyeur}',
+              'station': '${failure.poste}',
+            }),
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w700,
@@ -417,14 +442,14 @@ class _PredictedFailureRow extends StatelessWidget {
                   size: 11, color: theme.muted),
               const SizedBox(width: 3),
               Text(
-                'Last ${_lastSeen()}',
+                context.tr('Last {time}', {'time': _lastSeen(context)}),
                 style: TextStyle(fontSize: 10.5, color: theme.muted),
               ),
               const SizedBox(width: 10),
               Icon(Icons.timer_outlined, size: 11, color: theme.orange),
               const SizedBox(width: 3),
               Text(
-                _eta(),
+                _eta(context),
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
@@ -441,7 +466,8 @@ class _PredictedFailureRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(99),
                   ),
                   child: Text(
-                    '${failure.criticalCount} critical',
+                    context.tr(
+                        '{n} critical', {'n': '${failure.criticalCount}'}),
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../config/company_config.dart';
+import '../../l10n/app_strings.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/branding_config_service.dart';
 import '../../widgets/branded_logo.dart';
@@ -175,18 +176,18 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('BRANDING & THEME', style: Sa.display(size: 18)),
+              Text(context.tr('BRANDING & THEME'), style: Sa.display(size: 18)),
               const SizedBox(height: 3),
               Text(
-                'Logo and color identity, applied across login, supervisor, '
-                'Production Manager, and SuperAdmin surfaces.',
+                context.tr(
+                    'Logo and color identity, applied across login, supervisor, Production Manager, and SuperAdmin surfaces.'),
                 style: Sa.body(size: 12, color: Sa.textDim),
               ),
             ],
           ),
         ),
         if (_savedAt.isNotEmpty)
-          GlowChip(label: 'LIVE', color: Sa.green, icon: Icons.check, pulse: true),
+          GlowChip(label: context.tr('LIVE'), color: Sa.green, icon: Icons.check, pulse: true),
       ]);
 
   // ── controls ───────────────────────────────────────────────────────────────
@@ -194,8 +195,8 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
         _logoCard(),
         const SizedBox(height: 16),
         _ColorField(
-          title: 'PRIMARY · BRAND',
-          subtitle: 'App bars, buttons, nav, accents.',
+          title: context.tr('PRIMARY · BRAND'),
+          subtitle: context.tr('App bars, buttons, nav, accents.'),
           color: _primary,
           onChanged: (c) => setState(() {
             _primary = c;
@@ -204,8 +205,8 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
         ),
         const SizedBox(height: 16),
         _ColorField(
-          title: 'ACCENT',
-          subtitle: 'Secondary highlights and gradients.',
+          title: context.tr('ACCENT'),
+          subtitle: context.tr('Secondary highlights and gradients.'),
           color: _accent,
           onChanged: (c) => setState(() {
             _accent = c;
@@ -221,7 +222,7 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _header(Icons.image_outlined, 'LOGO'),
+            _header(Icons.image_outlined, context.tr('LOGO')),
             const SizedBox(height: 14),
             Row(children: [
               BrandedLogo(
@@ -233,15 +234,15 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
               Expanded(
                 child: Text(
                   _logoValue.startsWith('data:')
-                      ? 'Uploaded image.'
+                      ? context.tr('Uploaded image.')
                       : _logoValue.isEmpty
-                          ? 'Default Smart Industrial Alert mark.'
-                          : 'Logo from URL.',
+                          ? context.tr('Default Smart Industrial Alert mark.')
+                          : context.tr('Logo from URL.'),
                   style: Sa.body(size: 11.5, color: Sa.textDim),
                 ),
               ),
               SaButton(
-                label: 'Upload',
+                label: context.tr('Upload'),
                 icon: Icons.upload_outlined,
                 outlined: true,
                 onPressed: _pickLogo,
@@ -255,7 +256,8 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
                 _markDirty();
               }),
               style: Sa.body(size: 12.5, color: Sa.text),
-              decoration: _dec('…or paste an image URL (https://…/logo.png)'),
+              decoration:
+                  _dec(context.tr('…or paste an image URL (https://…/logo.png)')),
             ),
             SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
@@ -266,9 +268,10 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
                 _backgroundless = v;
                 _markDirty();
               }),
-              title: Text('Backgroundless logo',
+              title: Text(context.tr('Backgroundless logo'),
                   style: Sa.body(size: 13, color: Sa.text, weight: FontWeight.w600)),
-              subtitle: Text('Drop the plate so the logo sits transparently.',
+              subtitle: Text(
+                  context.tr('Drop the plate so the logo sits transparently.'),
                   style: Sa.body(size: 11, color: Sa.muted)),
             ),
           ],
@@ -278,14 +281,17 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
   Widget _saveBar() => GlassPanel(
         child: Row(children: [
           SaButton(
-            label: 'Reset',
+            label: context.tr('Reset'),
             icon: Icons.restart_alt,
             outlined: true,
             onPressed: _saving ? null : _resetDefaults,
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(_dirty ? 'Unsaved changes' : 'All changes applied',
+            child: Text(
+                _dirty
+                    ? context.tr('Unsaved changes')
+                    : context.tr('All changes applied'),
                 textAlign: TextAlign.right,
                 style: Sa.body(
                     size: 12,
@@ -294,7 +300,8 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
           ),
           const SizedBox(width: 12),
           SaButton(
-            label: _saving ? 'Applying…' : 'Apply & Deploy',
+            label:
+                _saving ? context.tr('Applying…') : context.tr('Apply & Deploy'),
             icon: Icons.rocket_launch_outlined,
             busy: _saving,
             color: _primary,
@@ -524,7 +531,7 @@ class _ColorFieldState extends State<_ColorField> {
                 .toColor()),
           ),
           const SizedBox(height: 14),
-          Text('PALETTE', style: Sa.mono(size: 9.5, color: Sa.muted, weight: FontWeight.w700)),
+          Text(context.tr('PALETTE'), style: Sa.mono(size: 9.5, color: Sa.muted, weight: FontWeight.w700)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 7,

@@ -5,7 +5,7 @@
 > Art. 28 (and analogous laws, e.g. UK GDPR, CCPA service-provider terms). Have it
 > reviewed by counsel before execution. Bracketed `[…]` fields are filled per deal.
 
-**Parties:** `[Customer legal entity]` ("Controller") and `[SIA operator entity]` ("Processor").
+**Parties:** `[Customer legal entity]` ("Controller") and KubixDesiney ("Processor").
 **Effective date:** `[date]`. **Term:** coterminous with the Service Agreement.
 
 ## 1. Subject matter & duration

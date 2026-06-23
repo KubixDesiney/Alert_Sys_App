@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../services/forecast/forecast_model_store.dart';
 import '../../services/forecast/forecast_training_controller.dart';
 import '../../services/forecast/forecast_types.dart';
+import '../../l10n/app_strings.dart';
 import 'superadmin_theme.dart';
 
 /// SuperAdmin tab 1: upload historical alert data in any common format,
@@ -170,15 +171,15 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         children: [
           SaSectionHeader(
             icon: Icons.hub_outlined,
-            title: 'DEPLOYED FORECAST MODEL',
+            title: context.tr('DEPLOYED FORECAST MODEL'),
             subtitle: m == null
-                ? 'No model deployed yet — every dashboard is waiting for its first model.'
-                : 'Gradient-boosted trees serving live next-24h forecasts on all Production Manager dashboards.',
+                ? context.tr('No model deployed yet — every dashboard is waiting for its first model.')
+                : context.tr('Gradient-boosted trees serving live next-24h forecasts on all Production Manager dashboards.'),
             accent: m == null ? Sa.amber : Sa.green,
             trailing: m == null
-                ? GlowChip(label: 'OFFLINE', color: Sa.amber, icon: Icons.cloud_off)
+                ? GlowChip(label: context.tr('OFFLINE'), color: Sa.amber, icon: Icons.cloud_off)
                 : GlowChip(
-                    label: m.learning ? 'LEARNING VERIFIED' : 'DEPLOYED',
+                    label: m.learning ? context.tr('LEARNING VERIFIED') : context.tr('DEPLOYED'),
                     color: m.learning ? Sa.green : Sa.cyan,
                     pulse: true,
                   ),
@@ -190,38 +191,38 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               runSpacing: 10,
               children: [
                 SaStatTile(
-                  label: 'val loss',
+                  label: context.tr('val loss'),
                   value: m.valLoss.toStringAsFixed(4),
                   icon: Icons.trending_down,
                   color: Sa.cyan,
                 ),
                 SaStatTile(
-                  label: 'val accuracy',
+                  label: context.tr('val accuracy'),
                   value: '${(m.valAccuracy * 100).toStringAsFixed(1)}%',
                   icon: Icons.verified_outlined,
                   color: Sa.green,
                 ),
                 SaStatTile(
-                  label: 'trees',
+                  label: context.tr('trees'),
                   value: '${m.model.treeCount}',
                   icon: Icons.park_outlined,
                   color: Sa.violet,
                 ),
                 SaStatTile(
-                  label: 'samples trained',
+                  label: context.tr('samples trained'),
                   value: '${m.sampleCount}',
                   icon: Icons.view_timeline_outlined,
                   color: Sa.blue,
                 ),
                 SaStatTile(
-                  label: 'trained',
-                  value: _ago(m.trainedAt),
+                  label: context.tr('trained'),
+                  value: _ago(context, m.trainedAt),
                   icon: Icons.history,
                   color: Sa.textDim,
                 ),
                 if (m.datasetName != null)
                   SaStatTile(
-                    label: 'dataset',
+                    label: context.tr('dataset'),
                     value: m.datasetName!,
                     icon: Icons.dataset_outlined,
                     color: Sa.pink,
@@ -257,13 +258,15 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             children: [
               Icon(Icons.all_inclusive, size: 16, color: Sa.cyan),
               const SizedBox(width: 8),
-              Text('CONTINUOUS LEARNING',
+              Text(context.tr('CONTINUOUS LEARNING'),
                   style: Sa.heading(size: 12.5, color: Sa.cyan)),
               const Spacer(),
               GlowChip(
                 label: m.model.adaptedRounds > 0
-                    ? 'ADAPTED +${m.model.adaptedRounds} ROUNDS'
-                    : 'ARMED',
+                    ? context.tr('ADAPTED +{rounds} ROUNDS', {
+                        'rounds': '${m.model.adaptedRounds}',
+                      })
+                    : context.tr('ARMED'),
                 color: m.model.adaptedRounds > 0 ? Sa.green : Sa.cyan,
                 icon: Icons.autorenew,
               ),
@@ -275,34 +278,36 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             runSpacing: 10,
             children: [
               SaStatTile(
-                label: 'forecasts graded',
+                label: context.tr('forecasts graded'),
                 value: graded ? '${acc.gradedPairs}' : '—',
                 icon: Icons.fact_check_outlined,
                 color: Sa.blue,
               ),
               SaStatTile(
-                label: 'live precision',
+                label: context.tr('live precision'),
                 value:
                     graded ? '${(acc.precision * 100).toStringAsFixed(0)}%' : '—',
                 icon: Icons.gps_fixed,
                 color: Sa.green,
               ),
               SaStatTile(
-                label: 'live recall',
+                label: context.tr('live recall'),
                 value:
                     graded ? '${(acc.recall * 100).toStringAsFixed(0)}%' : '—',
                 icon: Icons.radar,
                 color: Sa.violet,
               ),
               SaStatTile(
-                label: 'brier score',
+                label: context.tr('brier score'),
                 value: graded ? acc.brierMean.toStringAsFixed(3) : '—',
                 icon: Icons.straighten,
                 color: Sa.amber,
               ),
               SaStatTile(
-                label: 'last adapted',
-                value: m.lastAdaptedAt == null ? 'not yet' : _ago(m.lastAdaptedAt),
+                label: context.tr('last adapted'),
+                value: m.lastAdaptedAt == null
+                    ? context.tr('not yet')
+                    : _ago(context, m.lastAdaptedAt),
                 icon: Icons.autorenew,
                 color: Sa.textDim,
               ),
@@ -310,10 +315,9 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Every deployed forecast is graded against the alerts that actually '
-            'happened (hit rate + Brier calibration), and the ensemble boosts a '
-            'few extra trees per day on fresh production data — no manual '
-            'retraining needed until you want a full reset.',
+            context.tr(
+              'Every deployed forecast is graded against the alerts that actually happened (hit rate + Brier calibration), and the ensemble boosts a few extra trees per day on fresh production data — no manual retraining needed until you want a full reset.',
+            ),
             style: Sa.body(size: 11, color: Sa.textDim),
           ),
         ],
@@ -321,12 +325,16 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
     );
   }
 
-  static String _ago(DateTime? t) {
+  static String _ago(BuildContext context, DateTime? t) {
     if (t == null) return '—';
     final d = DateTime.now().toUtc().difference(t.toUtc());
-    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-    if (d.inHours < 48) return '${d.inHours}h ago';
-    return '${d.inDays}d ago';
+    if (d.inMinutes < 60) {
+      return context.tr('{n}m ago', {'n': '${d.inMinutes}'});
+    }
+    if (d.inHours < 48) {
+      return context.tr('{n}h ago', {'n': '${d.inHours}'});
+    }
+    return context.tr('{n}d ago', {'n': '${d.inDays}'});
   }
 
   // ── Upload ───────────────────────────────────────────────────────────────
@@ -340,14 +348,17 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         children: [
           SaSectionHeader(
             icon: Icons.upload_file_outlined,
-            title: 'TRAINING DATA INTAKE',
-            subtitle:
-                'Dump your company\'s alert history in any structured export — the model handles the rest.',
+            title: context.tr('TRAINING DATA INTAKE'),
+            subtitle: context.tr(
+              'Dump your company\'s alert history in any structured export — the model handles the rest.',
+            ),
             accent: Sa.violet,
             trailing: c.dataset == null
                 ? null
                 : GlowChip(
-                    label: '${summary!.parsedRows} ROWS LOADED',
+                    label: context.tr('{count} ROWS LOADED', {
+                      'count': '${summary!.parsedRows}',
+                    }),
                     color: Sa.green,
                     icon: Icons.check_circle_outline,
                   ),
@@ -384,8 +395,8 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
                     const SizedBox(height: 12),
                     Text(
                         c.restoring
-                            ? 'Restoring previous session…'
-                            : 'Parsing and engineering features…',
+                            ? context.tr('Restoring previous session…')
+                            : context.tr('Parsing and engineering features…'),
                         style: Sa.body(color: Sa.textDim)),
                   ] else ...[
                     Icon(Icons.cloud_upload_outlined,
@@ -393,8 +404,8 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
                     const SizedBox(height: 10),
                     Text(
                       c.dataset == null
-                          ? 'SELECT A DATA FILE'
-                          : 'REPLACE DATASET',
+                          ? context.tr('SELECT A DATA FILE')
+                          : context.tr('REPLACE DATASET'),
                       style: Sa.heading(size: 14, color: Sa.text),
                     ),
                     const SizedBox(height: 6),
@@ -418,31 +429,33 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               runSpacing: 10,
               children: [
                 SaStatTile(
-                  label: 'rows parsed',
+                  label: context.tr('rows parsed'),
                   value: '${summary!.parsedRows}',
                   icon: Icons.table_rows_outlined,
                   color: Sa.cyan,
                 ),
                 SaStatTile(
-                  label: 'machines',
+                  label: context.tr('machines'),
                   value: '${summary.machineCount}',
                   icon: Icons.precision_manufacturing_outlined,
                   color: Sa.violet,
                 ),
                 SaStatTile(
-                  label: 'history span',
-                  value: '${summary.daySpan} days',
+                  label: context.tr('history span'),
+                  value: context.tr('{days} days', {
+                    'days': '${summary.daySpan}',
+                  }),
                   icon: Icons.date_range_outlined,
                   color: Sa.blue,
                 ),
                 SaStatTile(
-                  label: 'training samples',
+                  label: context.tr('training samples'),
                   value: '${c.samples.length}',
                   icon: Icons.view_timeline_outlined,
                   color: Sa.green,
                 ),
                 SaStatTile(
-                  label: 'skipped rows',
+                  label: context.tr('skipped rows'),
                   value: '${summary.skippedRows}',
                   icon: Icons.filter_alt_off_outlined,
                   color: summary.skippedRows > 0 ? Sa.amber : Sa.muted,
@@ -473,9 +486,11 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         children: [
           SaSectionHeader(
             icon: Icons.tune,
-            title: 'HYPERPARAMETERS',
-            subtitle:
-                'Auto-tuned from the dataset shape (${c.samples.length} samples). Adjust if you know what you\'re doing.',
+            title: context.tr('HYPERPARAMETERS'),
+            subtitle: context.tr(
+              'Auto-tuned from the dataset shape ({count} samples). Adjust if you know what you\'re doing.',
+              {'count': '${c.samples.length}'},
+            ),
             accent: Sa.cyan,
             trailing: TextButton.icon(
               onPressed: c.training
@@ -486,26 +501,27 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
                     },
               icon: Icon(Icons.auto_fix_high, size: 15, color: Sa.violet),
               label:
-                  Text('AUTO-TUNE', style: Sa.mono(size: 10.5, color: Sa.violet)),
+                  Text(context.tr('AUTO-TUNE'), style: Sa.mono(size: 10.5, color: Sa.violet)),
             ),
           ),
           const SizedBox(height: 16),
           LayoutBuilder(builder: (context, constraints) {
             final narrow = constraints.maxWidth < 760;
             final fields = [
-              _paramField('BOOSTING ROUNDS', _roundsCtrl,
-                  'Trees grown per alert type'),
-              _paramField('LEARNING RATE', _lrCtrl, 'Shrinkage per tree'),
-              _paramField('MAX TREE DEPTH', _depthCtrl,
-                  'Interaction depth per tree'),
-              _paramField('MIN LEAF SAMPLES', _leafCtrl,
-                  'Smallest allowed leaf'),
-              _paramField('SUBSAMPLE', _subsampleCtrl,
-                  'Row fraction per tree (0.3–1)'),
-              _paramField('L2 REGULARIZATION', _l2Ctrl,
-                  'Leaf-weight damping (λ)'),
-              _paramField('POS-CLASS WEIGHT CAP', _posWeightCapCtrl,
-                  'Max miss-vs-false-alarm penalty ratio (1–200)'),
+              _paramField(context.tr('BOOSTING ROUNDS'), _roundsCtrl,
+                  context.tr('Trees grown per alert type')),
+              _paramField(context.tr('LEARNING RATE'), _lrCtrl,
+                  context.tr('Shrinkage per tree')),
+              _paramField(context.tr('MAX TREE DEPTH'), _depthCtrl,
+                  context.tr('Interaction depth per tree')),
+              _paramField(context.tr('MIN LEAF SAMPLES'), _leafCtrl,
+                  context.tr('Smallest allowed leaf')),
+              _paramField(context.tr('SUBSAMPLE'), _subsampleCtrl,
+                  context.tr('Row fraction per tree (0.3–1)')),
+              _paramField(context.tr('L2 REGULARIZATION'), _l2Ctrl,
+                  context.tr('Leaf-weight damping (λ)')),
+              _paramField(context.tr('POS-CLASS WEIGHT CAP'), _posWeightCapCtrl,
+                  context.tr('Max miss-vs-false-alarm penalty ratio (1–200)')),
             ];
             return Wrap(
               spacing: 12,
@@ -518,19 +534,22 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           }),
           const SizedBox(height: 8),
           Text(
-            'Engine: XGBoost-class gradient-boosted decision trees · '
-            '${kForecastFeatureCols.length} engineered features (lags, rolling '
-            'counts, recency, calendar) · 4 ensembles (one per alert type) · '
-            'second-order logistic boosting · histogram splits · '
-            'class-imbalance weighting · early stopping (patience '
-            '${c.config.patience}).',
+            context.tr(
+              'Engine: XGBoost-class gradient-boosted decision trees · {features} engineered features (lags, rolling counts, recency, calendar) · 4 ensembles (one per alert type) · second-order logistic boosting · histogram splits · class-imbalance weighting · early stopping (patience {patience}).',
+              {
+                'features': '${kForecastFeatureCols.length}',
+                'patience': '${c.config.patience}',
+              },
+            ),
             style: Sa.mono(size: 10, color: Sa.muted),
           ),
           const SizedBox(height: 16),
           Row(
             children: [
               SaButton(
-                label: c.training ? 'TRAINING…' : 'START TRAINING',
+                label: c.training
+                    ? context.tr('TRAINING…')
+                    : context.tr('START TRAINING'),
                 icon: Icons.play_arrow_rounded,
                 busy: c.training,
                 onPressed: c.samples.isEmpty || c.runActive
@@ -540,7 +559,7 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               const SizedBox(width: 12),
               if (c.training)
                 SaButton(
-                  label: 'STOP',
+                  label: context.tr('STOP'),
                   icon: Icons.stop_rounded,
                   color: Sa.red,
                   outlined: true,
@@ -552,11 +571,9 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           _InlineNotice(
             color: Sa.cyan,
             icon: Icons.all_inclusive,
-            text:
-                'Training is autonomous: it keeps running if you switch tabs, '
-                'work elsewhere in the console, or sign out while the app stays '
-                'open. If this tab or browser is closed mid-run, the checkpoint '
-                'resumes automatically the next time the command center opens.',
+            text: context.tr(
+              'Training is autonomous: it keeps running if you switch tabs, work elsewhere in the console, or sign out while the app stays open. If this tab or browser is closed mid-run, the checkpoint resumes automatically the next time the command center opens.',
+            ),
           ),
         ],
       ),
@@ -619,26 +636,30 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         children: [
           SaSectionHeader(
             icon: Icons.monitor_heart_outlined,
-            title: 'TRAINING MONITOR',
-            subtitle: update?.message ?? 'Waiting for first round…',
+            title: context.tr('TRAINING MONITOR'),
+            subtitle: update?.message ?? context.tr('Waiting for first round…'),
             accent: learning ? Sa.green : Sa.cyan,
             trailing: Wrap(
               spacing: 6,
               children: [
                 if (c.remoteActive)
                   GlowChip(
-                      label: 'LIVE · ANOTHER SESSION',
+                      label: context.tr('LIVE · ANOTHER SESSION'),
                       color: Sa.blue,
                       pulse: true)
                 else if (c.resumedRun)
                   GlowChip(
-                      label: 'RESUMED FROM CHECKPOINT',
+                      label: context.tr('RESUMED FROM CHECKPOINT'),
                       color: Sa.violet,
                       icon: Icons.restore),
                 GlowChip(
                   label: running
-                      ? (learning ? 'LEARNING' : 'WARMING UP')
-                      : (learning ? 'LEARNING VERIFIED' : 'NOT LEARNING'),
+                      ? (learning
+                          ? context.tr('LEARNING')
+                          : context.tr('WARMING UP'))
+                      : (learning
+                          ? context.tr('LEARNING VERIFIED')
+                          : context.tr('NOT LEARNING')),
                   color: learning ? Sa.green : (running ? Sa.amber : Sa.red),
                   pulse: running,
                 ),
@@ -653,8 +674,11 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             children: [
               Text(
                 rounds.isEmpty
-                    ? 'ROUND 0'
-                    : 'ROUND ${rounds.last.round} / ${c.config.rounds}',
+                    ? context.tr('ROUND 0')
+                    : context.tr('ROUND {round} / {total}', {
+                        'round': '${rounds.last.round}',
+                        'total': '${c.config.rounds}',
+                      }),
                 style: Sa.mono(size: 10.5, color: Sa.textDim),
               ),
               Text('${(progress * 100).toStringAsFixed(0)}%',
@@ -666,18 +690,18 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             LayoutBuilder(builder: (context, constraints) {
               final narrow = constraints.maxWidth < 860;
               final lossChart = _ChartCard(
-                title: 'LOSS CURVES',
+                title: context.tr('LOSS CURVES'),
                 legend: [
-                  (label: 'train', color: Sa.cyan),
-                  (label: 'validation', color: Sa.violet),
+                  (label: context.tr('train'), color: Sa.cyan),
+                  (label: context.tr('validation'), color: Sa.violet),
                 ],
                 child: _lossChart(rounds),
               );
               final accChart = _ChartCard(
-                title: 'VALIDATION ACCURACY / F1',
+                title: context.tr('VALIDATION ACCURACY / F1'),
                 legend: [
-                  (label: 'accuracy', color: Sa.green),
-                  (label: 'macro-F1', color: Sa.amber),
+                  (label: context.tr('accuracy'), color: Sa.green),
+                  (label: context.tr('macro-F1'), color: Sa.amber),
                 ],
                 child: _accuracyChart(rounds),
               );
@@ -700,26 +724,26 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               runSpacing: 10,
               children: [
                 SaStatTile(
-                  label: 'train loss',
+                  label: context.tr('train loss'),
                   value: rounds.last.trainLoss.toStringAsFixed(4),
                   icon: Icons.south_east,
                   color: Sa.cyan,
                 ),
                 SaStatTile(
-                  label: 'val loss',
+                  label: context.tr('val loss'),
                   value: rounds.last.valLoss.toStringAsFixed(4),
                   icon: Icons.south_east,
                   color: Sa.violet,
                 ),
                 SaStatTile(
-                  label: 'val accuracy',
+                  label: context.tr('val accuracy'),
                   value:
                       '${(rounds.last.valAccuracy * 100).toStringAsFixed(1)}%',
                   icon: Icons.verified_outlined,
                   color: Sa.green,
                 ),
                 SaStatTile(
-                  label: 'macro F1',
+                  label: context.tr('macro F1'),
                   value: rounds.last.valF1.toStringAsFixed(3),
                   icon: Icons.balance,
                   color: Sa.amber,
@@ -865,12 +889,15 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         children: [
           SaSectionHeader(
             icon: Icons.online_prediction,
-            title: 'FORECAST PREVIEW — NEXT 24H',
-            subtitle:
-                'Inference on the uploaded history with the freshly trained ensemble.',
+            title: context.tr('FORECAST PREVIEW — NEXT 24H'),
+            subtitle: context.tr(
+              'Inference on the uploaded history with the freshly trained ensemble.',
+            ),
             accent: Sa.green,
             trailing: GlowChip(
-              label: result.isLearning ? 'READY TO DEPLOY' : 'WEAK MODEL',
+              label: result.isLearning
+                  ? context.tr('READY TO DEPLOY')
+                  : context.tr('WEAK MODEL'),
               color: result.isLearning ? Sa.green : Sa.amber,
               icon: result.isLearning
                   ? Icons.rocket_launch_outlined
@@ -879,7 +906,7 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           ),
           const SizedBox(height: 14),
           if (top.isEmpty)
-            Text('No machines with enough history to forecast.',
+            Text(context.tr('No machines with enough history to forecast.'),
                 style: Sa.body(color: Sa.textDim))
           else
             ...top.map((f) => _ForecastRow(forecast: f)),
@@ -887,7 +914,9 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           Row(
             children: [
               SaButton(
-                label: c.deploying ? 'DEPLOYING…' : 'DEPLOY TO PRODUCTION',
+                label: c.deploying
+                    ? context.tr('DEPLOYING…')
+                    : context.tr('DEPLOY TO PRODUCTION'),
                 icon: Icons.rocket_launch_outlined,
                 color: Sa.green,
                 busy: c.deploying,
@@ -939,7 +968,7 @@ class _DiagnosisPanel extends StatelessWidget {
             children: [
               Icon(Icons.troubleshoot_outlined, size: 16, color: Sa.amber),
               const SizedBox(width: 8),
-              Text("WHY THE MODEL DIDN'T LEARN",
+              Text(context.tr("WHY THE MODEL DIDN'T LEARN"),
                   style: Sa.heading(size: 13, color: Sa.amber)),
             ],
           ),
@@ -970,9 +999,9 @@ class _DiagnosisPanel extends StatelessWidget {
             ),
           const SizedBox(height: 2),
           Text(
-            'Fix the points above, replace or extend the dataset, and retrain. '
-            'A model that is not learning is not blocked from deployment, but '
-            'its forecasts will be close to guesswork.',
+            context.tr(
+              'Fix the points above, replace or extend the dataset, and retrain. A model that is not learning is not blocked from deployment, but its forecasts will be close to guesswork.',
+            ),
             style: Sa.body(size: 11, color: Sa.textDim),
           ),
         ],
@@ -1028,7 +1057,8 @@ class _TypeDistribution extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('TYPE DISTRIBUTION', style: Sa.mono(size: 10, color: Sa.textDim)),
+        Text(context.tr('TYPE DISTRIBUTION'),
+            style: Sa.mono(size: 10, color: Sa.textDim)),
         const SizedBox(height: 8),
         for (final e in entries.take(6))
           Padding(
@@ -1192,7 +1222,7 @@ class _ForecastRow extends StatelessWidget {
                 Text('${(any * 100).toStringAsFixed(0)}%',
                     style: Sa.mono(
                         size: 15, color: riskColor, weight: FontWeight.w700)),
-                Text('RISK', style: Sa.mono(size: 7.5, color: Sa.muted)),
+                Text(context.tr('RISK'), style: Sa.mono(size: 7.5, color: Sa.muted)),
               ],
             ),
           ),
@@ -1202,7 +1232,11 @@ class _ForecastRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${forecast.usine} · Conveyor ${forecast.convoyeur} · Station ${forecast.poste}',
+                  context.tr('{usine} · Conveyor {convoyeur} · Station {poste}', {
+                    'usine': forecast.usine,
+                    'convoyeur': '${forecast.convoyeur}',
+                    'poste': '${forecast.poste}',
+                  }),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Sa.body(size: 12.5, weight: FontWeight.w600),

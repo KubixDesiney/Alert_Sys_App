@@ -3,18 +3,14 @@ part of 'hw_factory_binding.dart';
 class _BindingCard extends StatelessWidget {
   final HwDeviceBinding binding;
   final HwMachine? machine;
-  final String circuitName;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback? onOpen;
 
   const _BindingCard({
     required this.binding,
     required this.machine,
-    required this.circuitName,
     required this.onEdit,
     required this.onDelete,
-    this.onOpen,
   });
 
   @override
@@ -53,7 +49,7 @@ class _BindingCard extends StatelessWidget {
                         Flexible(
                           child: Text(
                             binding.machineLabel.isEmpty
-                                ? 'Unnamed machine'
+                                ? context.tr('Unnamed machine')
                                 : binding.machineLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -139,7 +135,7 @@ class _BindingCard extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      'No peripherals listed',
+                      context.tr('No peripherals listed'),
                       style: Sa.body(size: 10.5, color: Sa.muted),
                     ),
                   ),
@@ -149,26 +145,7 @@ class _BindingCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(Icons.schema, size: 12, color: Sa.muted),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  circuitName.isEmpty ? 'No circuit linked' : circuitName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Sa.mono(
-                    size: 10,
-                    color: circuitName.isEmpty ? Sa.muted : Sa.cyan,
-                  ),
-                ),
-              ),
-              if (onOpen != null)
-                _MiniBtn(
-                  icon: Icons.open_in_new,
-                  color: Sa.cyan,
-                  onTap: onOpen!,
-                ),
-              const SizedBox(width: 4),
+              const Spacer(),
               _MiniBtn(
                 icon: Icons.edit_outlined,
                 color: Sa.amber,
@@ -207,7 +184,7 @@ class _StatusPill extends StatelessWidget {
           Icon(st.icon, size: 11, color: st.color),
           const SizedBox(width: 5),
           Text(
-            st.label.toUpperCase(),
+            context.tr(st.label).toUpperCase(),
             style: Sa.mono(size: 8.5, color: st.color, weight: FontWeight.w700),
           ),
         ],

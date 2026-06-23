@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../services/superadmin_service.dart';
 import 'superadmin_theme.dart';
 
@@ -95,12 +96,12 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                   children: [
                     SaSectionHeader(
                       icon: Icons.badge_outlined,
-                      title: 'PRODUCTION MANAGER ACCOUNTS',
-                      subtitle:
-                          'Managers run the admin dashboard: alerts, shifts, supervisors and AI oversight.',
+                      title: context.tr('PRODUCTION MANAGER ACCOUNTS'),
+                      subtitle: context.tr(
+                          'Managers run the admin dashboard: alerts, shifts, supervisors and AI oversight.'),
                       accent: Sa.blue,
                       trailing: GlowChip(
-                        label: '${_managers.length} ACTIVE',
+                        label: context.tr('{n} ACTIVE', {'n': '${_managers.length}'}),
                         color: Sa.blue,
                         icon: Icons.people_alt_outlined,
                       ),
@@ -114,7 +115,8 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                             style: Sa.body(size: 13),
                             cursorColor: Sa.cyan,
                             decoration: InputDecoration(
-                              hintText: 'Search by name, email or plant…',
+                              hintText:
+                                  context.tr('Search by name, email or plant…'),
                               hintStyle: Sa.body(size: 12.5, color: Sa.muted),
                               prefixIcon:
                                   Icon(Icons.search, size: 17, color: Sa.muted),
@@ -135,7 +137,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                         ),
                         const SizedBox(width: 12),
                         SaButton(
-                          label: 'NEW MANAGER',
+                          label: context.tr('NEW MANAGER'),
                           icon: Icons.person_add_alt_1,
                           onPressed: _showCreateDialog,
                         ),
@@ -153,7 +155,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                     else if (_streamError != null)
                       SaEmptyState(
                         icon: Icons.lock_outline,
-                        title: 'Cannot load accounts',
+                        title: context.tr('Cannot load accounts'),
                         message: _streamError!,
                         accent: Sa.red,
                       )
@@ -162,9 +164,9 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                         padding: const EdgeInsets.symmetric(vertical: 32),
                         child: SaEmptyState(
                           icon: Icons.badge_outlined,
-                          title: 'No Production Managers yet',
-                          message:
-                              'Create the first manager account — they will land on the admin dashboard at next sign-in.',
+                          title: context.tr('No Production Managers yet'),
+                          message: context.tr(
+                              'Create the first manager account — they will land on the admin dashboard at next sign-in.'),
                           accent: Sa.blue,
                         ),
                       )
@@ -208,14 +210,15 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
       await _service.sendPasswordReset(email);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Password reset email sent to $email'),
+          content: Text(context.tr('Password reset email sent to {email}',
+              {'email': email})),
           backgroundColor: Sa.panelSolid,
         ));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Reset failed: $e'),
+          content: Text(context.tr('Reset failed: {error}', {'error': '$e'})),
           backgroundColor: Colors.red.shade900,
         ));
       }
@@ -232,20 +235,21 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: Sa.border),
         ),
-        title: Text('Revoke $name?', style: Sa.heading(size: 16)),
+        title: Text(context.tr('Revoke {name}?', {'name': name}),
+            style: Sa.heading(size: 16)),
         content: Text(
-          'The account record and dashboard access are removed immediately. '
-          'The Firebase Auth login remains but has no role.',
+          context.tr(
+              'The account record and dashboard access are removed immediately. The Firebase Auth login remains but has no role.'),
           style: Sa.body(size: 12.5, color: Sa.textDim),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel', style: Sa.body(color: Sa.textDim)),
+            child: Text(context.tr('Cancel'), style: Sa.body(color: Sa.textDim)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Revoke access', style: Sa.body(color: Sa.red)),
+            child: Text(context.tr('Revoke access'), style: Sa.body(color: Sa.red)),
           ),
         ],
       ),
@@ -287,31 +291,33 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                   children: [
                     SaSectionHeader(
                       icon: Icons.person_add_alt_1,
-                      title: 'NEW PRODUCTION MANAGER',
-                      subtitle: 'Provision dashboard access',
+                      title: context.tr('NEW PRODUCTION MANAGER'),
+                      subtitle: context.tr('Provision dashboard access'),
                       accent: Sa.blue,
                     ),
                     const SizedBox(height: 18),
                     Row(children: [
                       Expanded(
                           child: SaTextField(
-                              controller: first, label: 'First name')),
+                              controller: first,
+                              label: context.tr('First name'))),
                       const SizedBox(width: 10),
                       Expanded(
-                          child:
-                              SaTextField(controller: last, label: 'Last name')),
+                          child: SaTextField(
+                              controller: last,
+                              label: context.tr('Last name'))),
                     ]),
                     const SizedBox(height: 12),
                     SaTextField(
                       controller: email,
-                      label: 'Email',
+                      label: context.tr('Email'),
                       keyboard: TextInputType.emailAddress,
                       icon: Icons.alternate_email,
                     ),
                     const SizedBox(height: 12),
                     SaTextField(
                       controller: phone,
-                      label: 'Phone',
+                      label: context.tr('Phone'),
                       keyboard: TextInputType.phone,
                       icon: Icons.phone_outlined,
                     ),
@@ -320,13 +326,13 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                       Expanded(
                           child: SaTextField(
                               controller: pass,
-                              label: 'Password',
+                              label: context.tr('Password'),
                               obscure: true)),
                       const SizedBox(width: 10),
                       Expanded(
                           child: SaTextField(
                               controller: confirm,
-                              label: 'Confirm',
+                              label: context.tr('Confirm'),
                               obscure: true)),
                     ]),
                     const SizedBox(height: 12),
@@ -335,7 +341,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                       dropdownColor: Sa.panelSolid,
                       style: Sa.body(size: 13),
                       decoration: InputDecoration(
-                        labelText: 'Plant scope (optional)',
+                        labelText: context.tr('Plant scope (optional)'),
                         labelStyle: Sa.body(size: 12.5, color: Sa.textDim),
                         filled: true,
                         fillColor: Sa.bgRaised.withValues(alpha: 0.7),
@@ -351,7 +357,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                       items: [
                         DropdownMenuItem(
                             value: null,
-                            child: Text('All plants',
+                            child: Text(context.tr('All plants'),
                                 style: Sa.body(size: 13))),
                         for (final f in _factories)
                           DropdownMenuItem(
@@ -370,7 +376,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                           border:
                               Border.all(color: Sa.red.withValues(alpha: 0.4)),
                         ),
-                        child: Text(error!,
+                        child: Text(context.tr(error!),
                             style: Sa.body(size: 12, color: Sa.red)),
                       ),
                     ],
@@ -378,7 +384,9 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                     Row(
                       children: [
                         SaButton(
-                          label: busy ? 'CREATING…' : 'CREATE ACCOUNT',
+                          label: busy
+                              ? context.tr('CREATING…')
+                              : context.tr('CREATE ACCOUNT'),
                           icon: Icons.check_rounded,
                           color: Sa.blue,
                           busy: busy,
@@ -399,6 +407,7 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                                   if (pass.text.length < 6) {
                                     setS(() => error =
                                         'Password must be at least 6 characters.');
+                                    // (translated at display via context.tr)
                                     return;
                                   }
                                   setS(() {
@@ -428,8 +437,8 @@ class _ProductionManagersTabState extends State<ProductionManagersTab> {
                         const SizedBox(width: 12),
                         TextButton(
                           onPressed: busy ? null : () => Navigator.pop(ctx),
-                          child:
-                              Text('Cancel', style: Sa.body(color: Sa.muted)),
+                          child: Text(context.tr('Cancel'),
+                              style: Sa.body(color: Sa.muted)),
                         ),
                       ],
                     ),
@@ -522,18 +531,18 @@ class _ManagerCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: Sa.mono(size: 10.5, color: Sa.textDim)),
                 if (usine.isNotEmpty)
-                  Text('Plant: $usine',
+                  Text(context.tr('Plant: {usine}', {'usine': usine}),
                       style: Sa.body(size: 11, color: Sa.muted)),
               ],
             ),
           ),
           IconButton(
-            tooltip: 'Send password reset',
+            tooltip: context.tr('Send password reset'),
             onPressed: onResetPassword,
             icon: Icon(Icons.lock_reset, size: 18, color: Sa.amber),
           ),
           IconButton(
-            tooltip: 'Revoke access',
+            tooltip: context.tr('Revoke access'),
             onPressed: onDelete,
             icon: Icon(Icons.delete_outline, size: 18, color: Sa.red),
           ),

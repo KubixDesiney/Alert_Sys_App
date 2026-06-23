@@ -86,7 +86,7 @@ class _ExportReportButtonState extends State<_ExportReportButton> {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'Export Report',
+                      context.tr('Export Report'),
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
@@ -296,23 +296,23 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
   String _isoDate(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  String _datePresetLabel() {
+  String _datePresetLabel(BuildContext context) {
     switch (_datePreset) {
       case 'today':
-        return 'Today';
+        return context.tr('Today');
       case 'week':
-        return 'Last 7 Days';
+        return context.tr('Last 7 Days');
       case 'month':
-        return 'This Month';
+        return context.tr('This Month');
       case 'year':
-        return 'This Year';
+        return context.tr('This Year');
       case 'custom':
         if (_customFrom != null && _customTo != null) {
           return '${_isoDate(_customFrom!)} - ${_isoDate(_customTo!)}';
         }
-        return 'Custom Range';
+        return context.tr('Custom Range');
       default:
-        return 'All Time';
+        return context.tr('All Time');
     }
   }
 
@@ -496,13 +496,13 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                             const SizedBox(height: 18),
                             _buildSegmentSection(
                               theme: theme,
-                              label: 'Criticality',
+                              label: context.tr('Criticality'),
                               icon: Icons.priority_high_rounded,
                               value: _critical,
-                              options: const [
-                                ('all', 'All'),
-                                ('critical', 'Critical Only'),
-                                ('normal', 'Normal Only'),
+                              options: [
+                                ('all', context.tr('All')),
+                                ('critical', context.tr('Critical Only')),
+                                ('normal', context.tr('Normal Only')),
                               ],
                               onChanged: (v) => setState(() {
                                 _critical = v;
@@ -512,14 +512,14 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                             const SizedBox(height: 18),
                             _buildSegmentSection(
                               theme: theme,
-                              label: 'Status',
+                              label: context.tr('Status'),
                               icon: Icons.flag_rounded,
                               value: _status,
-                              options: const [
-                                ('all', 'All'),
-                                ('disponible', 'Pending'),
-                                ('en_cours', 'Claimed'),
-                                ('validee', 'Resolved'),
+                              options: [
+                                ('all', context.tr('All')),
+                                ('disponible', context.tr('Pending')),
+                                ('en_cours', context.tr('Claimed')),
+                                ('validee', context.tr('Resolved')),
                               ],
                               onChanged: (v) =>
                                   setState(() => _status = v),
@@ -569,23 +569,24 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Export Report',
-                  style: TextStyle(
+                  context.tr('Export Report'),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.2,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'Generate a professional PDF tailored to your filters',
-                  style: TextStyle(
+                  context.tr(
+                      'Generate a professional PDF tailored to your filters'),
+                  style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -598,7 +599,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
             onPressed: _exporting ? null : () => Navigator.of(context).pop(),
             icon: const Icon(Icons.close_rounded),
             color: Colors.white,
-            tooltip: 'Close',
+            tooltip: context.tr('Close'),
           ),
         ],
       ),
@@ -609,7 +610,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionLabel(theme, 'Report Name', Icons.edit_note_rounded),
+        _sectionLabel(theme, context.tr('Report Name'), Icons.edit_note_rounded),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -630,17 +631,17 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                     color: theme.text,
                     fontWeight: FontWeight.w600,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     border: InputBorder.none,
                     isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 10),
-                    hintText: 'Report name',
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    hintText: context.tr('Report name'),
                   ),
                 ),
               ),
               if (_nameTouched)
                 IconButton(
-                  tooltip: 'Reset to auto-generated name',
+                  tooltip: context.tr('Reset to auto-generated name'),
                   onPressed: () {
                     setState(() {
                       _nameTouched = false;
@@ -659,8 +660,8 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
         const SizedBox(height: 6),
         Text(
           _nameTouched
-              ? 'Custom report name'
-              : 'Auto-generated from current filters',
+              ? context.tr('Custom report name')
+              : context.tr('Auto-generated from current filters'),
           style: TextStyle(
             fontSize: 11,
             color: theme.muted,
@@ -684,7 +685,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionLabel(theme, 'Location Scope', Icons.factory_rounded),
+        _sectionLabel(theme, context.tr('Location Scope'), Icons.factory_rounded),
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (ctx, c) {
@@ -692,13 +693,13 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
             final factoryField = _locationDropdown(
               theme: theme,
               icon: Icons.business_rounded,
-              label: 'Plant',
+              label: context.tr('Plant'),
               value: safeFactory,
               items: factoryOpts.map((v) {
                 return DropdownMenuItem<String>(
                   value: v,
                   child: Text(
-                    v == 'all' ? 'All Plants' : v,
+                    v == 'all' ? context.tr('All Plants') : v,
                     style: TextStyle(fontSize: 13, color: theme.text),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -714,14 +715,16 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
             final conveyorField = _locationDropdown(
               theme: theme,
               icon: Icons.linear_scale_rounded,
-              label: 'Conveyor',
+              label: context.tr('Conveyor'),
               value: safeConveyeur,
               enabled: conveyeurOpts.length > 1,
               items: conveyeurOpts.map((v) {
                 return DropdownMenuItem<String>(
                   value: v,
                   child: Text(
-                    v == 'all' ? 'All Conveyors' : 'Conv. $v',
+                    v == 'all'
+                        ? context.tr('All Conveyors')
+                        : context.tr('Conv. {n}', {'n': v}),
                     style: TextStyle(fontSize: 13, color: theme.text),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -736,14 +739,16 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
             final stationField = _locationDropdown(
               theme: theme,
               icon: Icons.location_on_rounded,
-              label: 'Workstation',
+              label: context.tr('Workstation'),
               value: safePoste,
               enabled: posteOpts.length > 1,
               items: posteOpts.map((v) {
                 return DropdownMenuItem<String>(
                   value: v,
                   child: Text(
-                    v == 'all' ? 'All Workstations' : 'WS $v',
+                    v == 'all'
+                        ? context.tr('All Workstations')
+                        : context.tr('WS {n}', {'n': v}),
                     style: TextStyle(fontSize: 13, color: theme.text),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -790,9 +795,9 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                 _refreshAutoNameIfNeeded();
               }),
               icon: const Icon(Icons.clear_rounded, size: 14),
-              label: const Text(
-                'Clear location filters',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+              label: Text(
+                context.tr('Clear location filters'),
+                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
               ),
               style: TextButton.styleFrom(
                 foregroundColor: theme.red,
@@ -865,18 +870,18 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
   }
 
   Widget _buildDateRangeSection(AppTheme theme) {
-    const presets = <(String, String)>[
-      ('all', 'All Time'),
-      ('today', 'Today'),
-      ('week', 'Last 7 Days'),
-      ('month', 'This Month'),
-      ('year', 'This Year'),
-      ('custom', 'Custom'),
+    final presets = <(String, String)>[
+      ('all', context.tr('All Time')),
+      ('today', context.tr('Today')),
+      ('week', context.tr('Last 7 Days')),
+      ('month', context.tr('This Month')),
+      ('year', context.tr('This Year')),
+      ('custom', context.tr('Custom')),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionLabel(theme, 'Date Range', Icons.event_rounded),
+        _sectionLabel(theme, context.tr('Date Range'), Icons.event_rounded),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -912,7 +917,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
               Expanded(
                 child: _datePickerField(
                   theme: theme,
-                  label: 'From',
+                  label: context.tr('From'),
                   value: _customFrom,
                   onTap: () => _pickDate(true),
                 ),
@@ -921,7 +926,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
               Expanded(
                 child: _datePickerField(
                   theme: theme,
-                  label: 'To',
+                  label: context.tr('To'),
                   value: _customTo,
                   onTap: () => _pickDate(false),
                 ),
@@ -968,7 +973,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    value == null ? 'Select date' : _isoDate(value),
+                    value == null ? context.tr('Select date') : _isoDate(value),
                     style: TextStyle(
                       fontSize: 13,
                       color: value == null ? theme.muted : theme.text,
@@ -991,7 +996,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
       children: [
         Row(
           children: [
-            _sectionLabel(theme, 'Alert Types', Icons.category_rounded),
+            _sectionLabel(theme, context.tr('Alert Types'), Icons.category_rounded),
             const Spacer(),
             TextButton.icon(
               onPressed: () {
@@ -1010,7 +1015,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                 size: 14,
               ),
               label: Text(
-                allSelected ? 'Clear all' : 'Select all',
+                allSelected ? context.tr('Clear all') : context.tr('Select all'),
                 style: const TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
@@ -1172,8 +1177,12 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                 const SizedBox(width: 6),
                 Text(
                   filtered.isEmpty
-                      ? 'No alerts match'
-                      : '${filtered.length} ${filtered.length == 1 ? "alert" : "alerts"} included',
+                      ? context.tr('No alerts match')
+                      : (filtered.length == 1
+                          ? context.tr('{n} alert included',
+                              {'n': '${filtered.length}'})
+                          : context.tr('{n} alerts included',
+                              {'n': '${filtered.length}'})),
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w800,
@@ -1186,7 +1195,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              _datePresetLabel(),
+              _datePresetLabel(context),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -1204,9 +1213,9 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            child: Text(
+              context.tr('Cancel'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(width: 8),
@@ -1223,7 +1232,9 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
                   )
                 : const Icon(Icons.download_rounded, size: 16),
             label: Text(
-              _exporting ? 'Generating...' : 'Generate PDF',
+              _exporting
+                  ? context.tr('Generating...')
+                  : context.tr('Generate PDF'),
               style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,

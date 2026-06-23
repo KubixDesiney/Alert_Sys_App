@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
 import 'tree_node_card.dart';
@@ -142,7 +143,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
                   },
                 )
               : null,
-          hintText: 'Search factory, conveyor, station…',
+          hintText: context.tr('Search factory, conveyor, station…'),
           hintStyle: TextStyle(color: t.muted, fontSize: 13),
           filled: true,
           fillColor: t.scaffold,
@@ -176,7 +177,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
           _viewOption(
             t,
             icon: Icons.account_tree,
-            tooltip: 'Tree view',
+            tooltip: context.tr('Tree view'),
             selected: !widget.state.heatmap,
             onTap: () =>
                 widget.onChanged(widget.state.copyWith(heatmap: false)),
@@ -184,7 +185,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
           _viewOption(
             t,
             icon: Icons.grid_view_rounded,
-            tooltip: 'Heatmap view',
+            tooltip: context.tr('Heatmap view'),
             selected: widget.state.heatmap,
             onTap: () =>
                 widget.onChanged(widget.state.copyWith(heatmap: true)),
@@ -269,11 +270,11 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _label(t, 'Type'),
+        _label(t, context.tr('Type')),
         const SizedBox(height: 4),
         _typeChips(t),
         const SizedBox(height: 10),
-        _label(t, 'Status'),
+        _label(t, context.tr('Status')),
         const SizedBox(height: 4),
         _statusChips(t),
         const SizedBox(height: 10),
@@ -288,7 +289,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
                 onPressed: () =>
                     widget.onChanged(const TreeFilterState()),
                 icon: Icon(Icons.clear_all, size: 14, color: t.muted),
-                label: Text('Clear',
+                label: Text(context.tr('Clear'),
                     style: TextStyle(color: t.muted, fontSize: 12)),
               ),
           ],
@@ -312,7 +313,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
       spacing: 6,
       runSpacing: 6,
       children: kAllAlertTypes.map((type) {
-        final m = typeMeta(type, t);
+        final m = typeMeta(type, t, context);
         final on = widget.state.types.contains(type);
         return _filterChip(
           icon: m.icon,
@@ -335,7 +336,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
       spacing: 6,
       runSpacing: 6,
       children: kAllAlertStatuses.map((status) {
-        final m = statusMeta(status, t);
+        final m = statusMeta(status, t, context);
         final on = widget.state.statuses.contains(status);
         return _filterChip(
           icon: m.icon,

@@ -19,6 +19,7 @@ import '../models/factory_map_model.dart';
 import '../models/hierarchy_model.dart';
 import '../providers/alert_provider.dart';
 import '../services/hierarchy_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../widgets/locator_painter.dart';
 import 'alert_detail_screen.dart';
@@ -116,8 +117,9 @@ class _LocatorScreenState extends State<LocatorScreen>
     if (factory == null) {
       return _Empty(
         icon: Icons.factory_outlined,
-        title: 'No factory',
-        message: 'No matching factory for ${widget.factoryName}.',
+        title: context.tr('No factory'),
+        message: context.tr('No matching factory for {name}.',
+            {'name': widget.factoryName}),
       );
     }
     _ensureMapStream(factory.id);
@@ -308,7 +310,7 @@ class _LocatorHeader extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Locator',
+                      Text(context.tr('Locator'),
                           style: TextStyle(
                             color: t.text,
                             fontSize: 19,
@@ -366,7 +368,7 @@ class _LocatorHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Locator',
+                Text(context.tr('Locator'),
                     style: TextStyle(
                       color: t.text,
                       fontSize: 21,
@@ -450,9 +452,9 @@ class _MapCardState extends State<_MapCard> {
         ),
         child: _Empty(
           icon: Icons.dashboard_customize_outlined,
-          title: 'Map not configured',
-          message:
-              'Ask the production manager to build this factory in Hierarchy → Factory Mapping.',
+          title: context.tr('Map not configured'),
+          message: context.tr(
+              'Ask the production manager to build this factory in Hierarchy → Factory Mapping.'),
         ),
       );
     }
@@ -536,7 +538,7 @@ class _MapCardState extends State<_MapCard> {
                     if (widget.claimedKey != null) ...[
                       _MapControlButton(
                         icon: Icons.my_location_rounded,
-                        tooltip: 'Focus route',
+                        tooltip: context.tr('Focus route'),
                         onTap: _focusRouteFromLastLayout,
                       ),
                       const SizedBox(height: 8),
@@ -544,14 +546,14 @@ class _MapCardState extends State<_MapCard> {
                     if (widget.supervisorPosition != null) ...[
                       _MapControlButton(
                         icon: Icons.home_work_outlined,
-                        tooltip: 'Use entrance',
+                        tooltip: context.tr('Use entrance'),
                         onTap: widget.onSupervisorPositionCleared,
                       ),
                       const SizedBox(height: 8),
                     ],
                     _MapControlButton(
                       icon: Icons.fit_screen_rounded,
-                      tooltip: 'Show full map',
+                      tooltip: context.tr('Show full map'),
                       onTap: _showOverviewFromLastLayout,
                     ),
                   ],
@@ -850,16 +852,16 @@ class _SidePanel extends StatelessWidget {
             _InfoBlock(
               icon: Icons.map_outlined,
               color: t.orange,
-              title: 'No active claim',
-              message: 'Claim an alert to view its blue route.',
+              title: context.tr('No active claim'),
+              message: context.tr('Claim an alert to view its blue route.'),
             )
           else if (claimedNode == null)
             _InfoBlock(
               icon: Icons.report_gmailerrorred_outlined,
               color: t.red,
-              title: 'Station not on map',
-              message:
-                  'C${claim!.convoyeur}S${claim!.poste} has not been placed yet.',
+              title: context.tr('Station not on map'),
+              message: context.tr('C{conv}S{poste} has not been placed yet.',
+                  {'conv': '${claim!.convoyeur}', 'poste': '${claim!.poste}'}),
             )
           else
             InkWell(
@@ -906,7 +908,7 @@ class _SidePanel extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 14),
-          Text('Live station status',
+          Text(context.tr('Live station status'),
               style: TextStyle(
                 color: t.text,
                 fontSize: 13,
@@ -916,7 +918,7 @@ class _SidePanel extends StatelessWidget {
           Expanded(
             child: badges.isEmpty
                 ? Center(
-                    child: Text('All mapped stations idle',
+                    child: Text(context.tr('All mapped stations idle'),
                         style: TextStyle(color: t.muted)))
                 : ListView(
                     children: badges.entries.map((e) {
@@ -995,7 +997,7 @@ class _MobileRoutePanel extends StatelessWidget {
                 ? Align(
                     alignment: Alignment.centerLeft,
                     child: _MobileStatusChip(
-                      label: 'All idle',
+                      label: context.tr('All idle'),
                       color: t.green,
                       icon: Icons.check_circle_outline_rounded,
                     ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../models/alert_model.dart';
 import '../../theme.dart';
 import '../../utils/alert_meta.dart';
@@ -34,8 +35,8 @@ class _TreeAlertSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    final type = typeMeta(alert.type, t);
-    final status = statusMeta(alert.status, t);
+    final type = typeMeta(alert.type, t, context);
+    final status = statusMeta(alert.status, t, context);
 
     return Material(
       color: t.card,
@@ -68,7 +69,7 @@ class _TreeAlertSheet extends StatelessWidget {
                   _header(t, type, status),
                   const SizedBox(height: 12),
                   if (alert.description.isNotEmpty) ...[
-                    _section(t, 'Description'),
+                    _section(t, context.tr('Description')),
                     const SizedBox(height: 4),
                     Text(
                       alert.description,
@@ -77,7 +78,7 @@ class _TreeAlertSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 14),
                   ],
-                  _section(t, 'Location & Timing'),
+                  _section(t, context.tr('Location & Timing')),
                   const SizedBox(height: 6),
                   _wrap([
                     if (alert.assetId != null && alert.assetId!.isNotEmpty)
@@ -85,48 +86,59 @@ class _TreeAlertSheet extends StatelessWidget {
                           alert.assetId!,
                           tone: t.navy),
                     _chip(t, Icons.factory, alert.usine),
-                    _chip(t, Icons.linear_scale, 'Conveyor ${alert.convoyeur}'),
-                    _chip(t, Icons.settings, 'Post ${alert.poste}'),
+                    _chip(t, Icons.linear_scale,
+                        context.tr('Conveyor {n}', {'n': '${alert.convoyeur}'})),
+                    _chip(t, Icons.settings,
+                        context.tr('Post {n}', {'n': '${alert.poste}'})),
                     _chip(t, Icons.event, _formatDateTime(alert.timestamp)),
                     _chip(t, Icons.schedule, _relativeTime(alert.timestamp)),
                     if (alert.takenAtTimestamp != null)
-                      _chip(t, Icons.play_circle_outline,
-                          'Taken ${DateFormat('h:mm a').format(alert.takenAtTimestamp!)}'),
+                      _chip(
+                          t,
+                          Icons.play_circle_outline,
+                          context.tr('Taken {time}', {
+                            'time': DateFormat('h:mm a')
+                                .format(alert.takenAtTimestamp!)
+                          })),
                     if (alert.elapsedTime != null && alert.elapsedTime! > 0)
                       _chip(t, Icons.timer_outlined,
                           _formatElapsed(alert.elapsedTime!),
                           tone: t.green),
                     if (alert.isEscalated)
-                      _chip(t, Icons.trending_up, 'Escalated', tone: t.orange),
+                      _chip(t, Icons.trending_up, context.tr('Escalated'),
+                          tone: t.orange),
                   ]),
                   const SizedBox(height: 14),
                   if (alert.superviseurName != null ||
                       alert.assistantName != null) ...[
-                    _section(t, 'People'),
+                    _section(t, context.tr('People')),
                     const SizedBox(height: 6),
                     if (alert.superviseurName != null)
-                      _personRow(t, Icons.person, 'Supervisor',
+                      _personRow(t, Icons.person, context.tr('Supervisor'),
                           alert.superviseurName!),
                     if (alert.assistantName != null)
-                      _personRow(t, Icons.handshake, 'Assistant',
+                      _personRow(t, Icons.handshake, context.tr('Assistant'),
                           alert.assistantName!),
                     const SizedBox(height: 14),
                   ],
                   if (alert.aiAssigned) ...[
-                    _section(t, 'AI Assignment'),
+                    _section(t, context.tr('AI Assignment')),
                     const SizedBox(height: 6),
-                    _aiBlock(t),
+                    _aiBlock(context, t),
                     const SizedBox(height: 14),
                   ],
                   if (alert.resolutionReason != null &&
                       alert.resolutionReason!.trim().isNotEmpty) ...[
-                    _section(t, 'Resolution'),
+                    _section(t, context.tr('Resolution')),
                     const SizedBox(height: 6),
-                    _resolutionBlock(t),
+                    _resolutionBlock(context, t),
                     const SizedBox(height: 14),
                   ],
                   if (alert.comments.isNotEmpty) ...[
-                    _section(t, 'Comments (${alert.comments.length})'),
+                    _section(
+                        t,
+                        context.tr('Comments ({n})',
+                            {'n': '${alert.comments.length}'})),
                     const SizedBox(height: 6),
                     ...alert.comments.map((c) => _commentRow(t, c)),
                     const SizedBox(height: 14),
@@ -145,7 +157,7 @@ class _TreeAlertSheet extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close, size: 16),
-                      label: const Text('Close'),
+                      label: Text(context.tr('Close')),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -161,7 +173,7 @@ class _TreeAlertSheet extends StatelessWidget {
                         );
                       },
                       icon: const Icon(Icons.open_in_new, size: 16),
-                      label: const Text('Open Full Details'),
+                      label: Text(context.tr('Open Full Details')),
                     ),
                   ),
                 ],
@@ -325,7 +337,7 @@ class _TreeAlertSheet extends StatelessWidget {
     );
   }
 
-  Widget _aiBlock(AppTheme t) {
+  Widget _aiBlock(BuildContext context, AppTheme t) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -345,7 +357,7 @@ class _TreeAlertSheet extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      'Auto-assigned',
+                      context.tr('Auto-assigned'),
                       style: TextStyle(
                         color: t.purple,
                         fontSize: 12,
@@ -356,7 +368,10 @@ class _TreeAlertSheet extends StatelessWidget {
                     if (alert.aiConfidence != null) ...[
                       const SizedBox(width: 8),
                       Text(
-                        '${(alert.aiConfidence! * 100).toStringAsFixed(0)}% confidence',
+                        context.tr('{pct}% confidence', {
+                          'pct': (alert.aiConfidence! * 100)
+                              .toStringAsFixed(0)
+                        }),
                         style: TextStyle(
                           color: t.purple,
                           fontSize: 11,
@@ -381,7 +396,7 @@ class _TreeAlertSheet extends StatelessWidget {
     );
   }
 
-  Widget _resolutionBlock(AppTheme t) {
+  Widget _resolutionBlock(BuildContext context, AppTheme t) {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -401,7 +416,7 @@ class _TreeAlertSheet extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      'Resolved',
+                      context.tr('Resolved'),
                       style: TextStyle(
                         color: t.green,
                         fontSize: 12,

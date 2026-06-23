@@ -35,7 +35,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Settings saved successfully'),
+          content: Text(context.tr('Settings saved successfully')),
           backgroundColor: context.appTheme.green,
         ),
       );
@@ -142,7 +142,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           // Threshold cards
           _ThresholdCard(
             type: 'qualite',
-            label: 'Quality Issues',
+            label: context.tr('Quality Issues'),
             color: t.red,
             bgColor: t.redLt,
             icon: Icons.warning_amber_rounded,
@@ -153,7 +153,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           const SizedBox(height: 16),
           _ThresholdCard(
             type: 'maintenance',
-            label: 'Maintenance',
+            label: context.tr('Maintenance'),
             color: t.blue,
             bgColor: t.blueLt,
             icon: Icons.build_circle,
@@ -164,7 +164,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           const SizedBox(height: 16),
           _ThresholdCard(
             type: 'defaut_produit',
-            label: 'Damaged Product',
+            label: context.tr('Damaged Product'),
             color: t.green,
             bgColor: t.greenLt,
             icon: Icons.cancel,
@@ -175,7 +175,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           const SizedBox(height: 16),
           _ThresholdCard(
             type: 'manque_ressource',
-            label: 'Resource Deficiency',
+            label: context.tr('Resource Deficiency'),
             color: t.orange,
             bgColor: t.orangeLt,
             icon: Icons.inventory_2,

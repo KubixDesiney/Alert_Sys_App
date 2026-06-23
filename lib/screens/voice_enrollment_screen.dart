@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/voice_auth_service.dart';
 import '../services/voice_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 
 class VoiceEnrollmentScreen extends StatefulWidget {
@@ -73,7 +74,7 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
       await VoiceService.instance.speak('Voice enrollment complete.');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voiceprint enrolled.')),
+        SnackBar(content: Text(context.tr('Voiceprint enrolled.'))),
       );
       Navigator.of(context).maybePop();
     } catch (e) {
@@ -93,7 +94,7 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
         backgroundColor: t.card,
         foregroundColor: t.text,
         elevation: 0,
-        title: const Text('Voice Enrollment'),
+        title: Text(context.tr('Voice Enrollment')),
       ),
       body: SafeArea(
         child: ListView(

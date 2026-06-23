@@ -5,7 +5,7 @@ SOC 2 report. Written for the dedicated-instance architecture. Review with the
 auditor and counsel before issuance. `[...]` = fill per company.
 
 ## A. Overview of services
-`[Company]` provides Smart Industrial Alert (SIA), a SaaS platform for industrial
+KubixDesiney provides Smart Industrial Alert (SIA), a SaaS platform for industrial
 alert intake, AI-assisted dispatch, supervisor coordination, on-device failure
 forecasting, and self-healing operations. SIA is delivered as a **dedicated
 instance per customer**: each customer's data resides in that customer's own
@@ -28,7 +28,7 @@ in `docs/compliance/SOC2_CONTROL_MATRIX.md`.
   FCM. All run in the customer's cloud accounts (dedicated instance).
 - **Software:** the Flutter client application; the worker source; Firebase security
   rules; CI/CD pipelines (GitHub Actions); the Guardian self-heal tooling.
-- **People:** `[Company]` engineering and operations (SuperAdmin role); customer
+- **People:** KubixDesiney engineering and operations (SuperAdmin role); customer
   Production Managers (admin) and Supervisors. Access is least-privilege by role.
 - **Procedures:** documented in `docs/policies/*` (information security, access
   control, change management, incident response, data retention/privacy) and the

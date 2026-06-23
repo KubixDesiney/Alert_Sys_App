@@ -16,7 +16,7 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - Offline-aware startup, cached account role data, queued worker triggers, and background sync.
 - Voice command and voice claim flows with Android-native lock-screen capture, Sherpa ONNX STT, TFLite speaker verification, and fallback stubs for non-Android platforms.
 - Factory hierarchy, assets, custom plant maps, station QR scanning, location tracking, and locator routing.
-- SuperAdmin command console (role `superadmin`/`SuperAdmin`) with on-device forecaster training/deployment, an AI Agent Fleet console (per-agent on/off toggles, action logs, stats decks, AI-assist prompt editing, security defense toggles, predictive learning telemetry), Production Manager account provisioning, platform-wide logs/bugs/security/cron/database observability, and a reserved hardware tab.
+- SuperAdmin command console (role `superadmin`/`SuperAdmin`) with on-device forecaster training/deployment, an AI Agent Fleet console (per-agent on/off toggles, action logs, stats decks, AI-assist prompt editing, security defense toggles, predictive learning telemetry), Production Manager account provisioning, platform-wide logs/bugs/security/cron/database observability, and a **Hardware Lab** — the factory-wide machinery binding map (binds controllers and their sensors/actuators to real factory machines picked from live plant inventory).
 - Pure-Dart gradient-boosted decision tree (GBDT) forecaster (no external inference service) that trains in seconds on uploaded company alert history (CSV/Excel/JSON/SQL dump/PDF), serves live next-24h machine risk on every Production Manager dashboard, grades its own forecasts against realized alerts, and adapts daily on fresh production data.
 
 ## Current Versions
@@ -44,7 +44,7 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - `lib/services/superadmin_service.dart`: Production Manager account provisioning via a secondary Firebase app.
 - `lib/services/bug_report_service.dart`: Deduplicated client error reporting into `bugs/client`.
 - `lib/screens/`: Admin, supervisor, alert tree, detail, scan, mapping, locator, collaboration, voice, dashboard, hierarchy, and escalation screens.
-- `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, AI Agents, Production Managers, Logs, Hardware tabs).
+- `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, AI Agents, Production Managers, Overview Monitor, Hardware tabs). The `monitor/` subfolder holds the Overview Monitor war-room (replaced the old Logs tab on 2026-06-19).
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
 - `android/app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/`: Native Android method channels and lock-screen voice capture.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
@@ -255,9 +255,9 @@ HTTP routes:
 
 Credential resolution (`resolveCreds` in `cloudflare_github_worker.js`):
 
-- Prefers Cloudflare secrets/vars `GITHUB_TOKEN` / `GITHUB_REPO` if both are set.
-- Otherwise falls back to the RTDB vault: `ai_agents/guardian/repo` (plain string, `owner/name`) and `ai_agent_secrets/guardian/githubToken` (string, PAT/App token with `actions` + `pull_requests` read scope), read via a minted Google OAuth token from `FIREBASE_SERVICE_ACCOUNT` + `FB_DB_URL` (same service-account JWT pattern as `cloudflare_ai_worker.js`'s `getAccessToken`). This fallback exists specifically because local `wrangler secret put` doesn't work on this project's dev machine (broken OAuth) — the vault lets the repo/token be set or rotated from the SuperAdmin console or via `firebase database:set` without a worker redeploy.
-- 60-second in-memory cache (`_credCache`) avoids refetching the vault on every request.
+- Prefers the RTDB vault once either Guardian credential has been set: `ai_agents/guardian/repo` (plain string, `owner/name`) and `ai_agent_secrets/guardian/githubToken` (string, PAT/App token with `actions` + `pull_requests` read scope), read via a minted Google OAuth token from `FIREBASE_SERVICE_ACCOUNT` + `FB_DB_URL` (same service-account JWT pattern as `cloudflare_ai_worker.js`'s `getAccessToken`). This makes the SuperAdmin console authoritative: changing the repo or token immediately invalidates the previous connection instead of silently falling back to deployed secrets.
+- Falls back to Cloudflare secrets/vars `GITHUB_TOKEN` / `GITHUB_REPO` only before the vault is populated. These are bootstrap defaults, not the long-term source of truth.
+- 60-second in-memory cache (`_credCache`) avoids refetching the vault on every request. Requests with `fresh=1` or `Cache-Control: no-cache` bypass the cache; `GithubService.status()` and `verify()` use this so edited credentials are tested immediately.
 
 Flutter side: `lib/services/github_service.dart` (`GithubService`) wraps every route — `runs()`, `pulls()`, `deployments()`, `runJobs(id)`, `jobLogs(id)` (raw tail), `dispatchDrill()`, `status()` and `verify()` (deep check: token actually reaches the repo, with a human-readable message for the Verify affordance). `AppConfig.githubWorkerBase` (default `https://alertsys-github.aziz-nagati01.workers.dev`, override via `--dart-define=ALERTSYS_GITHUB_WORKER_URL=...`) is the single source of the base URL.
 
@@ -299,7 +299,7 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 - `WORKER_SHARED_SECRET` / `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET` when protected worker requests are enabled.
 - Optional `NOTIFY_WORKER_URL` / `ALERTSYS_NOTIFY_WORKER_URL` for AI-worker-to-notification-worker fast triggers; defaults to `https://alertsys.aziz-nagati01.workers.dev/notify`.
 
-`alertsys-github` (`wrangler.github.toml`) secrets: `WORKER_SHARED_SECRET` (required — same value the app sends), `FB_DB_URL` + `FIREBASE_SERVICE_ACCOUNT` (enable the RTDB vault fallback for the GitHub repo/token), `GITHUB_TOKEN`/`GITHUB_REPO` (optional direct-secret alternative to the vault). As of 2026-06-18 these three secrets are pushed automatically by `.github/workflows/ci.yml`'s "Set github worker secrets" step on every protected push to `main`, reusing the repo's existing `WORKER_SHARED_SECRET`/`FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` Actions secrets and `FB_DB_URL` Actions variable — no new secret material needed. The actual GitHub PAT is never put in a workflow file; it lives only in the RTDB vault (`ai_agent_secrets/guardian/githubToken`, set via `firebase database:set` or the SuperAdmin GitHub Connection panel).
+`alertsys-github` (`wrangler.github.toml`) secrets: `WORKER_SHARED_SECRET` (required — same value the app sends), `FB_DB_URL` + `FIREBASE_SERVICE_ACCOUNT` (enable the RTDB vault for the GitHub repo/token), `GITHUB_TOKEN`/`GITHUB_REPO` (optional bootstrap fallback before the vault is populated). As of 2026-06-18 these three secrets are pushed automatically by `.github/workflows/ci.yml`'s "Set github worker secrets" step on every protected push to `main`, reusing the repo's existing `WORKER_SHARED_SECRET`/`FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` Actions secrets and `FB_DB_URL` Actions variable — no new secret material needed. The actual GitHub PAT is never put in a workflow file; it lives only in the RTDB vault (`ai_agent_secrets/guardian/githubToken`, set via `firebase database:set` or the SuperAdmin GitHub Connection panel).
 
 `FIREBASE_SERVICE_ACCOUNT` is parsed by the workers to mint Firebase custom auth JWTs and FCM OAuth tokens at the edge.
 
@@ -324,6 +324,70 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 - Short timeout: 5 seconds.
 
 Use `AppConfig` instead of hard-coded worker URLs.
+
+## Localization / Bilingual EN-FR (2026-06-20)
+
+The whole app is bilingual (English default, full French) with **instant runtime
+switching** and a persisted choice. The active language drives every visible
+string the moment it flips.
+
+- **Language state:** `lib/providers/locale_provider.dart` (`LocaleProvider`,
+  mirrors `ThemeProvider`) — persists `appLanguageCode` to `SharedPreferences`,
+  exposes `locale`/`languageCode`/`isFrench`/`toggle()`/`setFrench()`. Provided in
+  `main.dart`'s `MultiProvider`; `MaterialApp.locale` is bound to it via
+  `Consumer2<ThemeProvider, LocaleProvider>`, so a toggle re-renders the tree.
+- **Translation backend (runtime dictionary, keyed by English source):**
+  `lib/l10n/app_strings.dart` exposes `context.tr('English text', {params})` (a
+  `BuildContext` extension) and `context.isFrench`. It reads the active language
+  via `Localizations.maybeLocaleOf` (null-safe → defaults to English, so it never
+  crashes in provider-less widget tests). `lib/l10n/strings_fr.dart`
+  (`kStringsFr`) holds the French map — **the key is the English string itself**,
+  so any un-wrapped/un-translated string still renders correctly in English.
+  Placeholders use `{name}` tokens filled from the `params` map (keep the same
+  tokens in the French value). Const-map keys must be unique — duplicates are a
+  compile error.
+- **To localize a string:** wrap the literal as `context.tr('...')` (drop any
+  `const` on that `Text`/`Row`), and add one `'English': 'Français'` entry to
+  `kStringsFr`. For helpers without a `BuildContext`, thread `context` in (or
+  translate at the call site / inside a `State` method via `this.context`).
+- **Language toggle widget:** `lib/widgets/common/language_toggle.dart` —
+  `LanguageToggle` (translate icon + EN/FR badge, flips on tap) and
+  `LanguageSegmented` (EN/FR segmented control, used on login). Both `watch` a
+  **nullable** `LocaleProvider?` so they degrade gracefully when no provider is
+  in the tree. A `LanguageToggle` sits in every role's header: login top bar,
+  supervisor dashboard header, Production Manager header
+  (`admin_dashboard_screen_header.dart`), and the SuperAdmin console header.
+- **Already-localized via gen-l10n ARB:** `lib/l10n/app_en.arb`/`app_fr.arb` +
+  generated `AppLocalizations` still exist (login title, admin tab labels in
+  `widgets/admin/pill_tab_bar.dart`, offline banner) and switch with the same
+  `MaterialApp.locale`. New work uses the `context.tr` dictionary; both coexist.
+- **Coverage status (2026-06-21):** fully translated end to end — infra + all
+  four role shells/nav chrome + login; the **entire supervisor experience**
+  (dashboard, alert cards/actions, collaboration, locator, QR scan web+mobile);
+  the **entire Production Manager experience** (Overview + history/export,
+  Supervisors + charts/assignments, Shifts + creation/live/timeline/presence,
+  Escalations + collaborations/settings, Hierarchy + dialogs/QR, Alerts tree +
+  viz/filters); auth (MFA, voice enrollment, factory mapping); shared
+  `alert_detail_screen` and `ai_logs_panel`; and the **entire SuperAdmin
+  console** — shell + Production Managers, Access & Identity, Reliability,
+  Branding/Theme, Infrastructure tabs, the full AI Training tab (including
+  chart legends and metric micro-labels), the full AI Agents fleet (all six
+  per-agent control/telemetry bodies — Shift Commander brain, Briefing
+  Officer, AI Assist prompt lab, Security Sentinel defense grid, Predictive
+  Core model/brain views, Guardian pipeline/GitHub config, plus the custom
+  agent editor/detail panels), the Overview Monitor war-room (`monitor/*`:
+  command strip, fleet constellation, edge workers grid, database hologram,
+  security feed, sessions panel), and the Hardware Lab (`hardware/*`: the
+  factory machinery binding map + machine editor/roster/dialogs).
+  AI provider/model brand names (Anthropic, OpenAI, Llama, …), agent
+  codenames, board/component product names (e.g. "ESP32 DevKit V1"), RTDB
+  path/technical identifiers are intentionally left untranslated. A few deep
+  service-layer dynamic messages (forecast trainer `diagnose()` reasons)
+  remain English-only — they're pure-Dart/non-widget layers without a
+  `BuildContext`, a deliberate narrow exception to the one-line
+  `context.tr(...)` pattern used everywhere else.
+- **Gotcha:** `widgets/admin/header.dart` (`AdminDashboardHeader`/`AdminPillTabBar`)
+  is orphan/unused — the live PM header is `admin_dashboard_screen_header.dart`.
 
 ## Flutter Startup Flow
 
@@ -392,6 +456,7 @@ Important RTDB roots from `database.rules.json` and code:
 - `cron_lock`
 - `ai_forecast` (GBDT model trees/metadata, training telemetry, resumable run checkpoint and persisted training dataset under `ai_forecast/training/*`, run history, self-evaluation ledger under `ai_forecast/accuracy/*`, adaptation lock under `ai_forecast/learning/lock`)
 - `bugs/client` (deduplicated app error reports) and `bugs/agent` (autonomous agent run outcomes)
+- `hardware_lab` (SuperAdmin Hardware Lab: `bindings/{id}` machine↔device bindings, `machines/{id}` lab-added machine catalog entries)
 
 Alert fields used across app and workers:
 
@@ -763,8 +828,24 @@ Futuristic "Command Center" design with an animated neural-mesh vector backgroun
 1. **AI Training** (`ai_training_tab.dart`): upload company alert history, watch deployed-model status plus the live continuous-learning ledger (forecasts graded, precision/recall, Brier score, last adaptation), auto-tuned but always-visible/editable hyperparameters (boosting rounds, learning rate, max depth, min leaf samples, subsample, L2 — AUTO-TUNE recomputes them from the dataset shape), live training monitor (gradient progress bar, train/val loss curves, accuracy/F1 curves, LEARNING/NOT-LEARNING verdict), next-24h forecast preview, one-click deploy.
 2. **AI Agents** (`ai_agents_tab.dart`, added 2026-06-12): the AI Agent Fleet console — see "AI Agent Fleet" section below.
 3. **Production Managers** (`production_managers_tab.dart`): provision/revoke Production Manager (`role: admin`) accounts and send password resets. Account creation runs through a secondary Firebase app (`superadmin_service.dart`) so the SuperAdmin session is never replaced.
-4. **Logs** (`logs_tab.dart`): five live sections — Bugs (client errors only since 2026-06-12; the autonomous-agent run feed moved out of this tab — `bugs/agent` is still written by the bugfix workflow but no longer rendered), Console (AppLogBuffer live viewer with level filters), Security (enforcement actions + anomaly observations from `security/*`), Cron Health (both workers' pulses with freshness/staleness states and raw pulse view), Database (animated live topology map of RTDB roots with shallow-count probing via the REST API and per-node health).
-5. **Hardware** (`hardware_tab.dart`): reserved placeholder with radar-sweep animation.
+4. **Overview Monitor** (`monitor/overview_monitor_tab.dart`, added 2026-06-19, replaced the old `logs_tab.dart`): a holographic "war-room" that lays the whole platform bare for the IT team in one scroll. All live state flows through a single `MonitorController` (`monitor/monitor_data.dart`) — worker health pulses, `ai_agents/*`, the `users` node (→ live sessions), `telemetry/daily/{today}`, `security/actions`, `bugs/client`, the `HwMachineStore` factory catalog, a REST shallow DB probe, and the `alertsys-github` proxy reachability. Sections (all theme-aware, capped-fps painters behind RepaintBoundaries): a KPI **command strip** + system-posture banner, **Operational Insight** ring gauges (fleet/hardware/workers/database), the **Factory Digital Twin** (`monitor/factory_hologram.dart` — live isometric 3D plant floor: conveyors as belts, every `MACH-XXX` an extruded status-lit pillar with energy pulses, per-factory selector), the **AI Agent Fleet constellation** (`monitor/fleet_workers.dart`) + **Cloudflare Edge Workers** heartbeat grid (ECG strips, 5 workers incl. GitHub proxy), the **Database Conception** topology (`monitor/database_hologram.dart` — same REST shallow probe + RESCAN as before), a **Security & Integrity** threat feed (`monitor/security_feed.dart` — edge Sentinel enforcements + client-bug budget), and **Active Sessions** (`monitor/sessions_panel.dart` — presence from each user's `lastSeen`, online ring + crash-free %). Shared holographic widgets/painters live in `monitor/monitor_kit.dart` (`HoloPanel`, `HoloHeader`, `KpiReadout`, `RingGauge`, `Heartbeat`, `StatePip`). The old Logs sub-sections (raw AppLogBuffer console, standalone bugs list) were dropped; `AppLogBuffer` itself stays (it still feeds `bugs/client`). Note: never wrap a `monitor/` panel in `IntrinsicHeight` — they contain `LayoutBuilder`s; use `Row`+`Expanded`+`CrossAxisAlignment.start` like the orchestrator does.
+5. **Hardware** (`hardware_tab.dart` → `hardware/hardware_lab.dart`): the **Hardware Lab** — see the "SuperAdmin Hardware Lab" section below.
+
+### SuperAdmin Hardware Lab (2026-06-18, reduced to the factory machinery map only on 2026-06-22)
+
+`lib/screens/superadmin/hardware/` is now just the **factory-wide machinery binding map** for the hardware/IoT engineering team — it binds controllers (ESP32, Arduino, …) and their sensors/actuators to real factory machines picked from live plant inventory. It is pure-Dart (no native deps) and self-contained. There is a single view; the Hardware tab no longer has DESIGN/CONNECT/FACTORY MAP sub-tabs — the binding map *is* the whole tab.
+
+> **Removed on 2026-06-22:** the drag-and-drop circuit designer (canvas, component catalog, wire routing), the Arduino IDE + AI code generation, the circuit simulator/interpreter, and the live ESP32→Firebase connectivity tester were deleted entirely, along with the `/hardware-codegen` worker endpoint and the `hardware_lab/circuits` + `hardware_lab/telemetry` RTDB nodes. `HwDeviceBinding` no longer carries a `circuitId` — bindings only reference a controller type + peripheral list now, not a designed schematic. If you're looking for that code in history: `hw_canvas.dart`, `hw_code_panel.dart`, `hw_ai_codegen.dart`, `hw_connectivity.dart`, `hw_painters.dart`, `hw_runtime*.dart`, and their `test/screens/superadmin/hardware/` counterparts.
+
+Files:
+
+- `hw_models.dart`: pure data layer. `HwControllerDef` + `kHwControllers` (ESP32 DevKit, ESP32-C3, ESP8266 NodeMCU, Arduino UNO/Nano/Mega 2560, Raspberry Pi Pico) and `hwControllers()`/`hwControllerLabel()` for the binding picker, plus `HwDeviceBinding` (machine ↔ controller/peripherals) and the `hwNewId()` id helper.
+- `hw_machines.dart`: the **machine catalog** (`HwMachine`, `HwFactoryCatalog`, `HwMachineStore`). Reads real `MACH-XXX` machines from `/assets` (read-only, **including archived/deleted** ones) plus lab-added machines under `hardware_lab/machines` (SuperAdmin-writable — `/assets` is admin-only), and the factory→conveyor tree from `hierarchy/factories`. Each machine/conveyor carries an `HwMachineStatus` (ACTIVE / OUT OF SERVICE / DELETED); conveyor status is derived from its machines.
+- `hw_factory_binding.dart` (+ `hw_factory_binding_*.dart` parts: cards, fields, binding editor, machine dialog/editor/roster): the **factory machinery map** — a Plant-Machines roster (status-badged chips, incl. deleted) + an "Add machine" dialog (`_MachineEditor`: id/name/description/factory/conveyor/status), and `HwDeviceBinding`s grouped by factory. The binding editor picks factory (by name), conveyor line and machine (MACH-XXX) from **dropdowns with status badges** — no free-typing — and the controller from the full `hwControllers()` list; e.g. MACH-001 ← ESP32 + heat sensor + 4 colored buttons + LED bank. Deploy status lifecycle: designed/wired/verified/live.
+- `hw_store.dart`: RTDB persistence — bindings at `hardware_lab/bindings/{id}`; lab machines at `hardware_lab/machines/{id}` via `HwMachineStore`.
+- `hardware_lab.dart`: the orchestrator — loads/saves bindings through `HwLabStore` and renders `HwFactoryBindingView` directly (no sub-tab navigation).
+
+RTDB: `hardware_lab/{bindings,machines}` is SuperAdmin-only r/w (`database.rules.json`, the whole `hardware_lab` subtree); real machines are also read from `/assets` (`.read: auth != null`).
 
 ### AI Agent Fleet (2026-06-12)
 
@@ -832,3 +913,42 @@ The deployed forecaster feeds the two existing predictive cards on the admin Ove
 5. Deploy to Production writes the ensemble to `ai_forecast/model`, an immediate live snapshot to `ai_predictions/forecast` computed from production alerts, clears the run checkpoint, and resets the self-evaluation ledger.
 6. Every Production Manager dashboard picks the model up via stream (`ForecastOverviewEngine`): the Predictive Failure Alerts card and the Predictive Risk · Next 24h heatmap switch from the statistical edge model to live on-device forecasts (badged "AI · LIVE"), refreshing as alerts arrive.
 7. From then on the model learns continuously: open dashboards snapshot tomorrow's forecast daily, grade elapsed snapshots against realized alerts (precision/recall/Brier in the console's CONTINUOUS LEARNING strip), and boost a few adaptation trees per ~day on recent production data behind a cross-dashboard lock — until the SuperAdmin runs a full retrain.
+
+
+## Hybrid Industrial Connectors (SuperAdmin → Infrastructure, 2026-06-21)
+
+Alerts can now arrive from an existing automation estate — SCADA / PLC / Historian /
+MQTT / REST — configured self-service by the IT team, alongside the classic
+microcontroller→Firebase path. SIA sits *on top of* the estate (no control loops).
+
+- **Two ingestion modes**, both through `cloudflare_ingest_worker.js` (a thin router
+  that bundles `cloudflare_ingest_connectors.js`, where all logic + pure helpers live):
+  - **Cloud-pull** (`rest`, `historian_pi`, `historian_ignition`): the per-minute cron
+    polls each connector's HTTPS endpoint with the stored credential, extracts the
+    value via a JSON path, applies thresholds, and creates alerts.
+  - **Edge-push** (`opcua`, `modbus`, `microcontroller`, `custom`): a gateway POSTs to
+    `POST /ingest/{connectorId}` with that connector's ingest key. The app generates a
+    ready-to-run gateway snippet (node-opcua / modbus-serial / ESP32 / curl).
+  - **MQTT** (`mqtt`): broker rule pushes in; `Verify` opens a real MQTT-over-WebSocket
+    CONNECT and checks the CONNACK.
+- **Endpoints** on the ingest worker: `POST /verify` (Bearer `WORKER_SHARED_SECRET`) is
+  the "Verify link test" — live HTTP/MQTT handshake for pull/MQTT, first-packet check
+  for push; `POST /control {action:'poll'}` forces a poll; `POST /ingest/{id}` is the
+  per-connector push; legacy `POST /` global push is unchanged. Cron is `* * * * *`.
+- **RTDB**: `connectors/{id}` (non-secret config + worker-written `runtime` status),
+  `connector_secrets/{id}` (token/username/password/ingestKey — SuperAdmin + worker
+  only). Both nodes are in `database.rules.json` (SuperAdmin r/w). The worker reads the
+  vault + writes `runtime` via a service-account JWT (ported from the GitHub worker).
+- **Flutter**: `lib/services/connector_service.dart` (`IndustrialConnector`,
+  `ConnectorKind`, `ConnectorTag`, `ConnectorService.verify/pollNow/save/saveSecret`),
+  UI in `lib/screens/superadmin/connectors_section.dart` (`ConnectorsSection` — catalog
+  grid, live status cards, add/edit wizard with the Verify banner), embedded as the
+  headline section of `infrastructure_tab.dart`. `AppConfig.ingestWorkerBase`
+  (override `--dart-define=ALERTSYS_INGEST_WORKER_URL=...`) is the base URL.
+- **Secrets** for `wrangler.ingest.toml`: `FIREBASE_SERVICE_ACCOUNT` + `WORKER_SHARED_SECRET`
+  (new, required for verify/pull/vault), plus optional `INGEST_SHARED_SECRET`. Deploy:
+  `npx wrangler deploy --config wrangler.ingest.toml` then `firebase deploy --only database`.
+- **Tests**: `worker_test/connectors.test.js` (29 — JSON-path extraction, poll
+  scheduling, per-connector auth, push-link status, MQTT CONNECT/CONNACK bytes) and
+  `test/services/connector_service_test.dart` (model round-trips). See
+  `docs/integrations/SCADA_INTEGRATION.md` for the full contract.

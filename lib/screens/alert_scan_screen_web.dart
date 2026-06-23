@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/alert_model.dart';
 import '../services/location_alert_parser.dart';
 import '../services/location_alert_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/user_friendly_error.dart';
@@ -196,7 +197,7 @@ class _Header extends StatelessWidget {
                 ),
                 Text(
                   location == null
-                      ? 'Web mode: paste QR text or enter the station'
+                      ? context.tr('Web mode: paste QR text or enter the station')
                       : location.toString(),
                   style: TextStyle(color: t.muted, fontSize: 12),
                   overflow: TextOverflow.ellipsis,
@@ -206,7 +207,7 @@ class _Header extends StatelessWidget {
           ),
           if (location != null)
             IconButton(
-              tooltip: 'Reset',
+              tooltip: context.tr('Reset'),
               onPressed: onRescan,
               icon: Icon(Icons.refresh, color: t.navy),
             ),
@@ -256,7 +257,7 @@ class _WebScanCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Web Station Lookup',
+                  context.tr('Web Station Lookup'),
                   style: TextStyle(
                     color: t.text,
                     fontWeight: FontWeight.w800,
@@ -268,7 +269,7 @@ class _WebScanCard extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onReset,
                   icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Reset'),
+                  label: Text(context.tr('Reset')),
                 ),
             ],
           ),
@@ -277,10 +278,10 @@ class _WebScanCard extends StatelessWidget {
             controller: qrController,
             minLines: 1,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'QR payload or station link',
-              prefixIcon: Icon(Icons.qr_code_2),
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: context.tr('QR payload or station link'),
+              prefixIcon: const Icon(Icons.qr_code_2),
+              border: const OutlineInputBorder(),
             ),
             onSubmitted: (_) => onUseQr(),
           ),
@@ -290,7 +291,7 @@ class _WebScanCard extends StatelessWidget {
             child: FilledButton.icon(
               onPressed: onUseQr,
               icon: const Icon(Icons.search, size: 18),
-              label: const Text('Load QR'),
+              label: Text(context.tr('Load QR')),
             ),
           ),
           const Divider(height: 24),
@@ -302,9 +303,9 @@ class _WebScanCard extends StatelessWidget {
                   flex: compact ? 0 : 2,
                   child: TextField(
                     controller: factoryController,
-                    decoration: const InputDecoration(
-                      labelText: 'Factory',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Factory'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
@@ -312,9 +313,9 @@ class _WebScanCard extends StatelessWidget {
                   child: TextField(
                     controller: conveyorController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Conveyor',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Conveyor'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
@@ -322,9 +323,9 @@ class _WebScanCard extends StatelessWidget {
                   child: TextField(
                     controller: stationController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Station',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Station'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
@@ -340,7 +341,7 @@ class _WebScanCard extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: onUseManual,
                       icon: const Icon(Icons.history, size: 18),
-                      label: const Text('Load History'),
+                      label: Text(context.tr('Load History')),
                     ),
                   ],
                 );
@@ -385,16 +386,17 @@ class _HistorySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     if (location == null) {
-      return const _PlaceholderState(
+      return _PlaceholderState(
         icon: Icons.qr_code_scanner,
-        title: 'No station loaded',
-        message: 'Paste a station QR payload or enter a station manually.',
+        title: context.tr('No station loaded'),
+        message: context.tr(
+            'Paste a station QR payload or enter a station manually.'),
       );
     }
     if (error != null) {
       return _PlaceholderState(
         icon: Icons.error_outline,
-        title: 'Could not load history',
+        title: context.tr('Could not load history'),
         message: error!,
       );
     }
@@ -413,7 +415,7 @@ class _HistorySection extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Workstation History',
+                  context.tr('Workstation History'),
                   style: TextStyle(
                     color: t.text,
                     fontSize: 15,
@@ -424,14 +426,14 @@ class _HistorySection extends StatelessWidget {
               if (history.isNotEmpty) ...[
                 _MiniBadge(
                   icon: Icons.bolt,
-                  label: '$activeCount active',
+                  label: context.tr('{n} active', {'n': '$activeCount'}),
                   color: t.orange,
                   bg: t.orangeLt,
                 ),
                 const SizedBox(width: 6),
                 _MiniBadge(
                   icon: Icons.verified,
-                  label: '$resolvedCount fixed',
+                  label: context.tr('{n} fixed', {'n': '$resolvedCount'}),
                   color: t.green,
                   bg: t.greenLt,
                 ),
@@ -441,10 +443,11 @@ class _HistorySection extends StatelessWidget {
         ),
         Expanded(
           child: history.isEmpty
-              ? const _PlaceholderState(
+              ? _PlaceholderState(
                   icon: Icons.inbox,
-                  title: 'No alerts yet',
-                  message: 'No alerts have been recorded at this station.',
+                  title: context.tr('No alerts yet'),
+                  message: context.tr(
+                      'No alerts have been recorded at this station.'),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),

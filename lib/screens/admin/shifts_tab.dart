@@ -7,6 +7,7 @@ import '../../models/shift_model.dart';
 import '../../services/service_locator.dart';
 import '../../services/shift_pdf_service.dart';
 import '../../services/shift_service.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../../utils/user_friendly_error.dart';
 import '../../widgets/common/app_loading_indicator.dart';
@@ -77,9 +78,9 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
     final created = await ShiftCreationDialog.show(context, existing: existing);
     if (created == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Shift saved'),
-          backgroundColor: Color(0xFF16A34A),
+        SnackBar(
+          content: Text(context.tr('Shift saved')),
+          backgroundColor: const Color(0xFF16A34A),
         ),
       );
     }
@@ -250,20 +251,23 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete shift?'),
+        title: Text(context.tr('Delete shift?')),
         content: Text(
-          'This will permanently remove "${s.name}". Active assignments will not be affected.',
+          context.tr(
+              'This will permanently remove "{name}". Active assignments will not be affected.',
+              {'name': s.name}),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: t.red),
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(Icons.delete, size: 16, color: Colors.white),
-            label: const Text('Delete', style: TextStyle(color: Colors.white)),
+            label: Text(context.tr('Delete'),
+                style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -273,7 +277,7 @@ class _AdminShiftsTabState extends State<AdminShiftsTab> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Shift deleted')));
+      ).showSnackBar(SnackBar(content: Text(context.tr('Shift deleted'))));
     }
   }
 }
@@ -311,11 +315,11 @@ class _UnifiedShiftsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (totalShiftCount == 0) {
-      return const _EmptyState(
+      return _EmptyState(
         icon: Icons.schedule,
-        title: 'No shifts yet',
-        message:
-            'Tap the glowing + button to define your first shift. Pick a name, time range, supervisors, and AI behavior.',
+        title: context.tr('No shifts yet'),
+        message: context.tr(
+            'Tap the glowing + button to define your first shift. Pick a name, time range, supervisors, and AI behavior.'),
       );
     }
     final selected = selectedShift ?? (shifts.isNotEmpty ? shifts.first : null);
@@ -327,8 +331,9 @@ class _UnifiedShiftsView extends StatelessWidget {
         const SizedBox(height: 16),
         _SectionHeader(
           icon: Icons.calendar_view_week,
-          title: 'Shift roster',
-          subtitle: 'Tap a card to bring its live controls into focus.',
+          title: context.tr('Shift roster'),
+          subtitle:
+              context.tr('Tap a card to bring its live controls into focus.'),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -364,11 +369,11 @@ class _UnifiedShiftsView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionHeader(
+                _SectionHeader(
                   icon: Icons.podcasts,
-                  title: 'Live shift detail',
-                  subtitle:
-                      'Presence, AI logs, handover, and PDF export in one place.',
+                  title: context.tr('Live shift detail'),
+                  subtitle: context.tr(
+                      'Presence, AI logs, handover, and PDF export in one place.'),
                 ),
                 const SizedBox(height: 10),
                 _LiveShiftPanel(
@@ -442,9 +447,9 @@ class _ShiftFiltersButton extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: onPressed,
           icon: const Icon(Icons.tune_rounded, size: 14),
-          label: const Text(
-            'Filters',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          label: Text(
+            context.tr('Filters'),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           ),
           style: OutlinedButton.styleFrom(
             foregroundColor: t.navy,
@@ -503,7 +508,7 @@ class _NoMatchingShifts extends StatelessWidget {
           Icon(Icons.filter_alt_off_rounded, size: 36, color: t.muted),
           const SizedBox(height: 8),
           Text(
-            'No shifts match your filters',
+            context.tr('No shifts match your filters'),
             style: TextStyle(
               color: t.text,
               fontSize: 14,
@@ -514,7 +519,7 @@ class _NoMatchingShifts extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onClearFilters,
             icon: const Icon(Icons.refresh, size: 14),
-            label: const Text('Clear filters'),
+            label: Text(context.tr('Clear filters')),
           ),
         ],
       ),
@@ -571,7 +576,7 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Shift Filters',
+                          context.tr('Shift Filters'),
                           style: TextStyle(
                             color: t.text,
                             fontSize: 16,
@@ -579,7 +584,8 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                           ),
                         ),
                         Text(
-                          'Refine the shift roster the same way you filter alerts.',
+                          context.tr(
+                              'Refine the shift roster the same way you filter alerts.'),
                           style: TextStyle(color: t.muted, fontSize: 11),
                         ),
                       ],
@@ -600,27 +606,27 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _FilterSegment(
-                      label: 'Shift kind',
+                      label: context.tr('Shift kind'),
                       icon: Icons.brightness_5_outlined,
                       value: _draft.kind,
-                      options: const [
-                        ('all', 'All'),
-                        ('morning', 'Morning'),
-                        ('afternoon', 'Evening'),
-                        ('night', 'Night'),
+                      options: [
+                        ('all', context.tr('All')),
+                        ('morning', context.tr('Morning')),
+                        ('afternoon', context.tr('Evening')),
+                        ('night', context.tr('Night')),
                       ],
                       onChanged: (v) =>
                           setState(() => _draft = _draft.copyWith(kind: v)),
                     ),
                     const SizedBox(height: 14),
                     _FilterSegment(
-                      label: 'AI Commander',
+                      label: context.tr('AI Commander'),
                       icon: Icons.auto_awesome,
                       value: _draft.commander,
-                      options: const [
-                        ('all', 'All'),
-                        ('on', 'Enabled'),
-                        ('off', 'Disabled'),
+                      options: [
+                        ('all', context.tr('All')),
+                        ('on', context.tr('Enabled')),
+                        ('off', context.tr('Disabled')),
                       ],
                       onChanged: (v) => setState(
                         () => _draft = _draft.copyWith(commander: v),
@@ -628,14 +634,14 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                     ),
                     const SizedBox(height: 14),
                     _FilterSegment(
-                      label: 'Time window',
+                      label: context.tr('Time window'),
                       icon: Icons.schedule,
                       value: _draft.window,
-                      options: const [
-                        ('all', 'Anytime'),
-                        ('live', 'Live now'),
-                        ('today', 'Today'),
-                        ('week', 'This week'),
+                      options: [
+                        ('all', context.tr('Anytime')),
+                        ('live', context.tr('Live now')),
+                        ('today', context.tr('Today')),
+                        ('week', context.tr('This week')),
                       ],
                       onChanged: (v) =>
                           setState(() => _draft = _draft.copyWith(window: v)),
@@ -643,7 +649,7 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                     if (widget.factories.isNotEmpty) ...[
                       const SizedBox(height: 14),
                       Text(
-                        'Factory',
+                        context.tr('Factory'),
                         style: TextStyle(
                           color: t.muted,
                           fontSize: 11,
@@ -655,9 +661,9 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                       DropdownButtonFormField<String>(
                         initialValue: _draft.factory,
                         items: [
-                          const DropdownMenuItem(
+                          DropdownMenuItem(
                             value: 'all',
-                            child: Text('All factories'),
+                            child: Text(context.tr('All factories')),
                           ),
                           for (final f in widget.factories)
                             DropdownMenuItem(value: f, child: Text(f)),
@@ -690,13 +696,13 @@ class _ShiftFilterSheetState extends State<_ShiftFilterSheet> {
                     onPressed: () =>
                         setState(() => _draft = const _ShiftFilters()),
                     icon: const Icon(Icons.refresh, size: 14),
-                    label: const Text('Reset'),
+                    label: Text(context.tr('Reset')),
                   ),
                   const Spacer(),
                   ElevatedButton.icon(
                     onPressed: () => Navigator.pop(context, _draft),
                     icon: const Icon(Icons.check, size: 16),
-                    label: const Text('Apply'),
+                    label: Text(context.tr('Apply')),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: t.navy,
                       foregroundColor: Colors.white,
@@ -952,7 +958,7 @@ class _CompactShiftGrid extends StatelessWidget {
                         left: settingsLeft,
                         child: _ShiftPictureIconButton(
                           icon: Icons.settings,
-                          tooltip: 'Edit shift settings',
+                          tooltip: context.tr('Edit shift settings'),
                           onPressed: () => onEdit(s),
                         ),
                       ),
@@ -961,7 +967,7 @@ class _CompactShiftGrid extends StatelessWidget {
                         left: deleteLeft,
                         child: _ShiftPictureIconButton(
                           icon: Icons.delete_outline,
-                          tooltip: 'Delete shift',
+                          tooltip: context.tr('Delete shift'),
                           onPressed: () => onDelete(s),
                         ),
                       ),

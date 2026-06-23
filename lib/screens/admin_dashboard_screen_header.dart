@@ -94,7 +94,7 @@ class _HeaderState extends State<_Header> {
               child: Column(
                 children: [
                   Text(
-                    'Notifications',
+                    context.tr('Notifications'),
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -106,7 +106,7 @@ class _HeaderState extends State<_Header> {
                     child: _notifications.isEmpty
                         ? Center(
                             child: Text(
-                              'No notifications',
+                              context.tr('No notifications'),
                               style: TextStyle(color: textColor),
                             ),
                           )
@@ -169,9 +169,12 @@ class _HeaderState extends State<_Header> {
                                         content: Text(
                                           ok
                                               ? (approve
-                                                    ? 'Recommendation approved'
-                                                    : 'Recommendation declined')
-                                              : 'Recommendation was already processed',
+                                                    ? context.tr(
+                                                        'Recommendation approved')
+                                                    : context.tr(
+                                                        'Recommendation declined'))
+                                              : context.tr(
+                                                  'Recommendation was already processed'),
                                         ),
                                         backgroundColor: ok
                                             ? (approve
@@ -186,7 +189,8 @@ class _HeaderState extends State<_Header> {
                                 return ListTile(
                                   title: Text(
                                     n['message'] ??
-                                        'AI cross-factory recommendation',
+                                        context
+                                            .tr('AI cross-factory recommendation'),
                                     style: TextStyle(
                                       color: theme.brightness == Brightness.dark
                                           ? Colors.white
@@ -199,7 +203,8 @@ class _HeaderState extends State<_Header> {
                                     children: [
                                       if (recName.isNotEmpty)
                                         Text(
-                                          'Recommended: $recName',
+                                          context.tr('Recommended: {name}',
+                                              {'name': recName}),
                                           style: TextStyle(
                                             color:
                                                 theme.brightness ==
@@ -237,9 +242,10 @@ class _HeaderState extends State<_Header> {
                                               size: 14,
                                               color: Colors.white,
                                             ),
-                                            label: const Text(
-                                              'Decline',
-                                              style: TextStyle(fontSize: 11),
+                                            label: Text(
+                                              context.tr('Decline'),
+                                              style:
+                                                  const TextStyle(fontSize: 11),
                                             ),
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor: const Color(
@@ -264,9 +270,10 @@ class _HeaderState extends State<_Header> {
                                               size: 14,
                                               color: Colors.white,
                                             ),
-                                            label: const Text(
-                                              'Approve',
-                                              style: TextStyle(fontSize: 11),
+                                            label: Text(
+                                              context.tr('Approve'),
+                                              style:
+                                                  const TextStyle(fontSize: 11),
                                             ),
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor: Colors.green,
@@ -304,7 +311,7 @@ class _HeaderState extends State<_Header> {
                               } else if (n['type'] == 'help_request') {
                                 return ListTile(
                                   title: Text(
-                                    n['message'] ?? 'Help request',
+                                    n['message'] ?? context.tr('Help request'),
                                     style: TextStyle(
                                       color: theme.brightness == Brightness.dark
                                           ? Colors.white
@@ -312,7 +319,7 @@ class _HeaderState extends State<_Header> {
                                     ),
                                   ),
                                   subtitle: Text(
-                                    'Tap to accept or refuse',
+                                    context.tr('Tap to accept or refuse'),
                                     style: TextStyle(
                                       color: theme.brightness == Brightness.dark
                                           ? Colors.white70
@@ -359,9 +366,10 @@ class _HeaderState extends State<_Header> {
                                             ScaffoldMessenger.of(
                                               context,
                                             ).showSnackBar(
-                                              const SnackBar(
+                                              SnackBar(
                                                 content: Text(
-                                                  'Help request accepted',
+                                                  context
+                                                      .tr('Help request accepted'),
                                                 ),
                                                 backgroundColor: Colors.green,
                                               ),
@@ -406,9 +414,10 @@ class _HeaderState extends State<_Header> {
                                             ScaffoldMessenger.of(
                                               context,
                                             ).showSnackBar(
-                                              const SnackBar(
+                                              SnackBar(
                                                 content: Text(
-                                                  'Help request refused',
+                                                  context
+                                                      .tr('Help request refused'),
                                                 ),
                                                 backgroundColor: Colors.orange,
                                               ),
@@ -422,7 +431,8 @@ class _HeaderState extends State<_Header> {
                               } else if (n['type'] == 'assistance_request') {
                                 return ListTile(
                                   title: Text(
-                                    n['message'] ?? 'Assistance request',
+                                    n['message'] ??
+                                        context.tr('Assistance request'),
                                     style: TextStyle(
                                       color: theme.brightness == Brightness.dark
                                           ? Colors.white
@@ -445,9 +455,10 @@ class _HeaderState extends State<_Header> {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
-                                          const SnackBar(
+                                          SnackBar(
                                             content: Text(
-                                              'No active supervisors available',
+                                              context.tr(
+                                                  'No active supervisors available'),
                                             ),
                                           ),
                                         );
@@ -456,7 +467,8 @@ class _HeaderState extends State<_Header> {
                                       showDialog(
                                         context: context,
                                         builder: (dialogContext) => AlertDialog(
-                                          title: const Text('Assign Assistant'),
+                                          title:
+                                              Text(context.tr('Assign Assistant')),
                                           content: SizedBox(
                                             width: 300,
                                             child: ListView.builder(
@@ -509,7 +521,13 @@ class _HeaderState extends State<_Header> {
                                                   ).showSnackBar(
                                                     SnackBar(
                                                       content: Text(
-                                                        'Assigned ${supervisors[i].fullName} as assistant',
+                                                        context.tr(
+                                                            'Assigned {name} as assistant',
+                                                            {
+                                                              'name':
+                                                                  supervisors[i]
+                                                                      .fullName
+                                                            }),
                                                       ),
                                                       backgroundColor:
                                                           Colors.green,
@@ -523,21 +541,22 @@ class _HeaderState extends State<_Header> {
                                             TextButton(
                                               onPressed: () =>
                                                   Navigator.pop(dialogContext),
-                                              child: const Text('Cancel'),
+                                              child: Text(context.tr('Cancel')),
                                             ),
                                           ],
                                         ),
                                       );
                                     },
-                                    child: const Text(
-                                      'Assign Assistant',
-                                      style: TextStyle(fontSize: 12),
+                                    child: Text(
+                                      context.tr('Assign Assistant'),
+                                      style: const TextStyle(fontSize: 12),
                                     ),
                                   ),
                                 );
                               } else {
                                 return ListTile(
-                                  title: Text(n['message'] ?? 'Notification'),
+                                  title: Text(
+                                      n['message'] ?? context.tr('Notification')),
                                   subtitle: Text(n['alertDescription'] ?? ''),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -657,30 +676,36 @@ class _HeaderState extends State<_Header> {
             child: Center(child: Icon(Icons.factory, size: 22, color: t.navy)),
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Production Manager',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: t.navy,
-                  letterSpacing: .2,
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.tr('Production Manager'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: t.navy,
+                    letterSpacing: .2,
+                  ),
                 ),
-              ),
-              Text(
-                'Production Manager - Dashboard',
-                style: TextStyle(fontSize: 11, color: t.muted),
-              ),
-            ],
+                Text(
+                  context.tr('Production Manager - Dashboard'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: t.muted),
+                ),
+              ],
+            ),
           ),
           const Spacer(),
           // ── Simulate Alert ──
           IconButton(
             onPressed: widget.onSimulateAlert,
             icon: Icon(Icons.add_alert, size: 20, color: t.navy),
-            tooltip: 'Simulate Alert',
+            tooltip: context.tr('Simulate Alert'),
             style: IconButton.styleFrom(
               side: BorderSide(color: t.border),
               padding: const EdgeInsets.all(10),
@@ -690,6 +715,9 @@ class _HeaderState extends State<_Header> {
             ),
           ),
           const SizedBox(width: 8),
+          // ── Language toggle ──
+          LanguageToggle(color: t.muted),
+          const SizedBox(width: 4),
           // ── Theme toggle ──
           IconButton(
             icon: Icon(
@@ -697,7 +725,7 @@ class _HeaderState extends State<_Header> {
               color: t.muted,
               size: 22,
             ),
-            tooltip: isDark ? 'Light mode' : 'Dark mode',
+            tooltip: isDark ? context.tr('Light mode') : context.tr('Dark mode'),
             onPressed: () => context.read<ThemeProvider>().toggle(),
           ),
           // ── Notifications ──
@@ -739,7 +767,7 @@ class _HeaderState extends State<_Header> {
             onPressed: widget.onLogout,
             icon: Icon(Icons.logout, size: 15, color: t.red),
             label: Text(
-              'Sign Out',
+              context.tr('Sign Out'),
               style: TextStyle(
                 color: t.red,
                 fontSize: 13,

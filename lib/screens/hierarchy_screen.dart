@@ -14,6 +14,7 @@ import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
+import '../l10n/app_strings.dart';
 import '../theme.dart';
 import '../utils/google_maps_web_support.dart';
 import '../utils/user_friendly_error.dart';
@@ -114,8 +115,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final stationNumber = _stationNumber(station);
     if (factory == null || conveyor == null || stationNumber == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Select a valid station before generating a QR code.'),
+        SnackBar(
+          content: Text(context
+              .tr('Select a valid station before generating a QR code.')),
           backgroundColor: _red,
         ),
       );
@@ -135,8 +137,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(
-                'Could not create Asset ID: ${UserFriendlyError.message(e)}')),
+            content: Text(context.tr('Could not create Asset ID: {error}',
+                {'error': UserFriendlyError.message(e)}))),
       );
       return;
     }
@@ -183,7 +185,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
               children: [
                 Icon(Icons.precision_manufacturing_outlined, color: t.navy),
                 const SizedBox(width: 8),
-                const Text('Relink Asset ID'),
+                Text(context.tr('Relink Asset ID')),
               ],
             ),
             content: Column(
@@ -193,10 +195,10 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                 TextField(
                   controller: controller,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
-                    labelText: 'Asset ID',
+                  decoration: InputDecoration(
+                    labelText: context.tr('Asset ID'),
                     hintText: 'MACH-001',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 if (error != null) ...[
@@ -208,18 +210,19 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(context.tr('Cancel')),
               ),
               FilledButton(
                 onPressed: () {
                   final normalized = _service.normalizeAssetId(controller.text);
                   if (normalized.isEmpty) {
-                    setStateDialog(() => error = 'Asset ID is required');
+                    setStateDialog(
+                        () => error = context.tr('Asset ID is required'));
                     return;
                   }
                   Navigator.pop(context, normalized);
                 },
-                child: const Text('Relink'),
+                child: Text(context.tr('Relink')),
               ),
             ],
           );
@@ -332,8 +335,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text('Could not delete station: ${UserFriendlyError.message(e)}'),
+          content: Text(context.tr('Could not delete station: {error}',
+              {'error': UserFriendlyError.message(e)})),
           backgroundColor: _red,
         ),
       );
@@ -385,7 +388,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
               children: [
                 Icon(Icons.drive_file_move_outline, color: t.navy),
                 const SizedBox(width: 8),
-                const Text('Move Station'),
+                Text(context.tr('Move Station')),
               ],
             ),
             content: SizedBox(
@@ -395,7 +398,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Current location',
+                    context.tr('Current location'),
                     style: TextStyle(
                       color: t.text,
                       fontWeight: FontWeight.w700,
@@ -403,12 +406,14 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${currentFactory.name} > Conveyor ${currentConveyor.number} > ${station.name}',
+                    '${currentFactory.name} > ${context.tr('Conveyor {n}', {
+                          'n': '${currentConveyor.number}'
+                        })} > ${station.name}',
                     style: TextStyle(color: t.muted),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Asset ID: $assetId',
+                    context.tr('Asset ID: {id}', {'id': assetId}),
                     style: TextStyle(
                       color: t.navy,
                       fontWeight: FontWeight.w700,
@@ -417,9 +422,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: destinationFactoryId,
-                    decoration: const InputDecoration(
-                      labelText: 'Destination Factory',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Destination Factory'),
+                      border: const OutlineInputBorder(),
                     ),
                     items: _factories
                         .map(
@@ -444,15 +449,16 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     value: destinationConveyorId.isEmpty
                         ? null
                         : destinationConveyorId,
-                    decoration: const InputDecoration(
-                      labelText: 'Destination Conveyor',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Destination Conveyor'),
+                      border: const OutlineInputBorder(),
                     ),
                     items: destinationConveyors
                         .map(
                           (conveyor) => DropdownMenuItem<String>(
                             value: conveyor.id,
-                            child: Text('Conveyor ${conveyor.number}'),
+                            child: Text(context.tr('Conveyor {n}',
+                                {'n': '${conveyor.number}'})),
                           ),
                         )
                         .toList(),
@@ -469,8 +475,10 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   const SizedBox(height: 12),
                   Text(
                     nextStationNumber == null
-                        ? 'Selected conveyor is full.'
-                        : 'The station will be placed in slot $nextStationNumber and its address will be updated automatically.',
+                        ? context.tr('Selected conveyor is full.')
+                        : context.tr(
+                            'The station will be placed in slot {n} and its address will be updated automatically.',
+                            {'n': '$nextStationNumber'}),
                     style: TextStyle(color: t.muted, fontSize: 12),
                   ),
                   if (error != null) ...[
@@ -486,7 +494,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             actions: [
               TextButton(
                 onPressed: moving ? null : () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: Text(context.tr('Cancel')),
               ),
               FilledButton(
                 onPressed: moving
@@ -495,20 +503,22 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                         if (destinationFactoryId == currentFactory.id &&
                             destinationConveyorId == currentConveyor.id) {
                           setStateDialog(() {
-                            error = 'Select a different destination.';
+                            error =
+                                context.tr('Select a different destination.');
                           });
                           return;
                         }
                         if (destinationConveyor == null) {
                           setStateDialog(() {
-                            error = 'Select a destination conveyor.';
+                            error =
+                                context.tr('Select a destination conveyor.');
                           });
                           return;
                         }
                         if (nextStationNumber == null) {
                           setStateDialog(() {
-                            error =
-                                'The selected conveyor has no free station slots.';
+                            error = context.tr(
+                                'The selected conveyor has no free station slots.');
                           });
                           return;
                         }
@@ -544,7 +554,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Text('Move'),
+                    : Text(context.tr('Move')),
               ),
             ],
           );
@@ -605,28 +615,28 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       builder: (_) => StatefulBuilder(
         builder: (context, setStateDialog) {
           return AlertDialog(
-            title: const Text('Add Factory'),
+            title: Text(context.tr('Add Factory')),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Add a new factory'),
+                  Text(context.tr('Add a new factory')),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Factory Name',
-                      hintText: 'Ex: Factory C',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Factory Name'),
+                      hintText: context.tr('Ex: Factory C'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: locationController,
-                    decoration: const InputDecoration(
-                      labelText: 'Address',
-                      hintText: 'Ex: Casablanca',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Address'),
+                      hintText: context.tr('Ex: Casablanca'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -648,18 +658,21 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     icon: const Icon(Icons.map_outlined),
                     label: Text(
                       selectedLocation.hasCoordinates
-                          ? 'Map pin: ${selectedLocation.lat!.toStringAsFixed(5)}, ${selectedLocation.lng!.toStringAsFixed(5)}'
-                          : 'Pick on map',
+                          ? context.tr('Map pin: {lat}, {lng}', {
+                              'lat': selectedLocation.lat!.toStringAsFixed(5),
+                              'lng': selectedLocation.lng!.toStringAsFixed(5)
+                            })
+                          : context.tr('Pick on map'),
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: conveyorsController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Number of Conveyors',
-                      hintText: 'Ex: 3',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Number of Conveyors'),
+                      hintText: context.tr('Ex: 3'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   if (error != null)
@@ -674,7 +687,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel')),
+                  child: Text(context.tr('Cancel'))),
               ElevatedButton(
                 onPressed: () async {
                   final name = nameController.text.trim();
@@ -682,12 +695,13 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   final numConveyors =
                       int.tryParse(conveyorsController.text.trim());
                   if (name.isEmpty) {
-                    setStateDialog(() => error = 'Factory name is required');
+                    setStateDialog(
+                        () => error = context.tr('Factory name is required'));
                     return;
                   }
                   if (numConveyors == null || numConveyors < 1) {
-                    setStateDialog(
-                        () => error = 'Enter a valid number of conveyors (≥1)');
+                    setStateDialog(() => error =
+                        context.tr('Enter a valid number of conveyors (≥1)'));
                     return;
                   }
                   final id = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
@@ -705,15 +719,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     Navigator.pop(context);
                     _loadFactories(); // force refresh
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Factory added'),
+                      SnackBar(
+                          content: Text(context.tr('Factory added')),
                           backgroundColor: _green),
                     );
                   } catch (e) {
                     setStateDialog(() => error = e.toString());
                   }
                 },
-                child: const Text('Add Factory'),
+                child: Text(context.tr('Add Factory')),
               ),
             ],
           );
@@ -737,24 +751,24 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       builder: (_) => StatefulBuilder(
         builder: (context, setStateDialog) {
           return AlertDialog(
-            title: const Text('Edit Factory'),
+            title: Text(context.tr('Edit Factory')),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
                     controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Factory Name',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Factory Name'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: locationController,
-                    decoration: const InputDecoration(
-                      labelText: 'Address',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Address'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -776,8 +790,11 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     icon: const Icon(Icons.map_outlined),
                     label: Text(
                       selectedLocation.hasCoordinates
-                          ? 'Map pin: ${selectedLocation.lat!.toStringAsFixed(5)}, ${selectedLocation.lng!.toStringAsFixed(5)}'
-                          : 'Pick on map',
+                          ? context.tr('Map pin: {lat}, {lng}', {
+                              'lat': selectedLocation.lat!.toStringAsFixed(5),
+                              'lng': selectedLocation.lng!.toStringAsFixed(5)
+                            })
+                          : context.tr('Pick on map'),
                     ),
                   ),
                   if (error != null)
@@ -792,13 +809,14 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel')),
+                  child: Text(context.tr('Cancel'))),
               ElevatedButton(
                 onPressed: () async {
                   final name = nameController.text.trim();
                   final address = locationController.text.trim();
                   if (name.isEmpty) {
-                    setStateDialog(() => error = 'Factory name is required');
+                    setStateDialog(
+                        () => error = context.tr('Factory name is required'));
                     return;
                   }
                   try {
@@ -813,15 +831,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                     Navigator.pop(context);
                     _loadFactories();
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Factory updated'),
+                      SnackBar(
+                          content: Text(context.tr('Factory updated')),
                           backgroundColor: _green),
                     );
                   } catch (e) {
                     setStateDialog(() => error = e.toString());
                   }
                 },
-                child: const Text('Save'),
+                child: Text(context.tr('Save')),
               ),
             ],
           );
@@ -837,27 +855,28 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final newNumber = await showDialog<int>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Add Conveyor'),
+        title: Text(context.tr('Add Conveyor')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Enter conveyor number'),
+            Text(context.tr('Enter conveyor number')),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Conveyor Number'),
+              decoration:
+                  InputDecoration(labelText: context.tr('Conveyor Number')),
             ),
           ],
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
             onPressed: () =>
                 Navigator.pop(dialogContext, int.tryParse(controller.text)),
-            child: const Text('Add'),
+            child: Text(context.tr('Add')),
           ),
         ],
       ),
@@ -869,7 +888,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('Conveyor $newNumber added'),
+                content: Text(context.tr('Conveyor {n} added',
+                    {'n': '$newNumber'})),
                 backgroundColor: _green),
           );
         }
@@ -893,27 +913,28 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final newNumber = await showDialog<int>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit Conveyor'),
+        title: Text(context.tr('Edit Conveyor')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Update the conveyor number'),
+            Text(context.tr('Update the conveyor number')),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Conveyor Number'),
+              decoration:
+                  InputDecoration(labelText: context.tr('Conveyor Number')),
             ),
           ],
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
             onPressed: () =>
                 Navigator.pop(dialogContext, int.tryParse(controller.text)),
-            child: const Text('Save'),
+            child: Text(context.tr('Save')),
           ),
         ],
       ),
@@ -924,8 +945,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Conveyor updated'), backgroundColor: _green),
+          SnackBar(
+              content: Text(context.tr('Conveyor updated')),
+              backgroundColor: _green),
         );
       }
     }
@@ -940,30 +962,33 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final toAdd = await showDialog<int>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Add Station'),
+        title: Text(context.tr('Add Station')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Add stations to Conveyor ${_selectedConveyor!.number}'),
+            Text(context.tr('Add stations to Conveyor {n}',
+                {'n': '${_selectedConveyor!.number}'})),
             const SizedBox(height: 8),
-            Text('Current stations: $currentCount/${_service.maxStations}'),
-            Text('Remaining: $remaining'),
+            Text(context.tr('Current stations: {count}/{max}',
+                {'count': '$currentCount', 'max': '${_service.maxStations}'})),
+            Text(context.tr('Remaining: {n}', {'n': '$remaining'})),
             const SizedBox(height: 12),
-            const Text('Number of Stations to Add'),
+            Text(context.tr('Number of Stations to Add')),
             const SizedBox(height: 4),
             TextField(
               controller: controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(hintText: 'Ex: 2'),
+              decoration: InputDecoration(hintText: context.tr('Ex: 2')),
             ),
-            Text('Maximum: $remaining station(s)',
+            Text(
+                context.tr('Maximum: {n} station(s)', {'n': '$remaining'}),
                 style: const TextStyle(fontSize: 12, color: _muted)),
           ],
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
             onPressed: () {
               final int? count = int.tryParse(controller.text);
@@ -971,12 +996,13 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                 Navigator.pop(dialogContext, count);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Invalid number'), backgroundColor: _red),
+                  SnackBar(
+                      content: Text(context.tr('Invalid number')),
+                      backgroundColor: _red),
                 );
               }
             },
-            child: const Text('Add'),
+            child: Text(context.tr('Add')),
           ),
         ],
       ),
@@ -992,7 +1018,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Added $toAdd station(s)'),
+              content: Text(context.tr('Added {n} station(s)',
+                  {'n': '$toAdd'})),
               backgroundColor: _green),
         );
       }
@@ -1004,17 +1031,18 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Factory'),
-        content:
-            Text('Delete "${factory.name}" and all its conveyors/stations?'),
+        title: Text(context.tr('Delete Factory')),
+        content: Text(context.tr(
+            'Delete "{name}" and all its conveyors/stations?',
+            {'name': factory.name})),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               style: ElevatedButton.styleFrom(backgroundColor: _red),
-              child: const Text('Delete')),
+              child: Text(context.tr('Delete'))),
         ],
       ),
     );
@@ -1023,8 +1051,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Factory deleted'), backgroundColor: _red),
+          SnackBar(
+              content: Text(context.tr('Factory deleted')),
+              backgroundColor: _red),
         );
       }
     }
@@ -1044,7 +1073,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Cannot delete Conveyor ${conveyor.number}: $activeAlerts active alert(s) are still disponible/en_cours.',
+            context.tr(
+                'Cannot delete Conveyor {n}: {count} active alert(s) are still disponible/en_cours.',
+                {'n': '${conveyor.number}', 'count': '$activeAlerts'}),
           ),
           backgroundColor: _red,
         ),
@@ -1055,17 +1086,18 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Conveyor'),
-        content:
-            Text('Delete Conveyor ${conveyor.number} and all its stations?'),
+        title: Text(context.tr('Delete Conveyor')),
+        content: Text(context.tr(
+            'Delete Conveyor {n} and all its stations?',
+            {'n': '${conveyor.number}'})),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel')),
+              child: Text(context.tr('Cancel'))),
           ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               style: ElevatedButton.styleFrom(backgroundColor: _red),
-              child: const Text('Delete')),
+              child: Text(context.tr('Delete'))),
         ],
       ),
     );
@@ -1074,8 +1106,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
       _loadFactories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Conveyor deleted'), backgroundColor: _red),
+          SnackBar(
+              content: Text(context.tr('Conveyor deleted')),
+              backgroundColor: _red),
         );
       }
     }
@@ -1100,12 +1133,12 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Hierarchy',
+                  Text(context.tr('Hierarchy'),
                       style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: t.navy)),
-                  Text('Structure & factory floor map',
+                  Text(context.tr('Structure & factory floor map'),
                       style: TextStyle(fontSize: 13, color: t.muted)),
                 ],
               ),
@@ -1130,13 +1163,13 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                   dividerColor: Colors.transparent,
                   labelStyle: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w900),
-                  tabs: const [
+                  tabs: [
                     Tab(
-                        icon: Icon(Icons.account_tree_outlined, size: 18),
-                        text: 'Structure'),
+                        icon: const Icon(Icons.account_tree_outlined, size: 18),
+                        text: context.tr('Structure')),
                     Tab(
-                        icon: Icon(Icons.map_rounded, size: 18),
-                        text: 'Factory Mapping'),
+                        icon: const Icon(Icons.map_rounded, size: 18),
+                        text: context.tr('Factory Mapping')),
                   ],
                 ),
               ),
@@ -1186,7 +1219,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  'Factories (${_factories.length})',
+                                  context.tr('Factories ({n})',
+                                      {'n': '${_factories.length}'}),
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                       fontSize: 14,
@@ -1198,7 +1232,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                 icon: const Icon(Icons.add,
                                     size: 18, color: _green),
                                 onPressed: _showAddFactoryDialog,
-                                tooltip: 'Add Factory',
+                                tooltip: context.tr('Add Factory'),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
@@ -1208,9 +1242,9 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                         const Divider(height: 1),
                         Expanded(
                             child: _factories.isEmpty
-                                ? const Center(
-                                    child: Text('No factories',
-                                        style: TextStyle(color: _muted)))
+                                ? Center(
+                                    child: Text(context.tr('No factories'),
+                                        style: const TextStyle(color: _muted)))
                                 : ListView.builder(
                                     itemCount: _factories.length,
                                     itemBuilder: (context, index) {
@@ -1287,7 +1321,8 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Conveyors (${conveyors.length})',
+                                context.tr('Conveyors ({n})',
+                                    {'n': '${conveyors.length}'}),
                                 style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
@@ -1298,7 +1333,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                   icon: const Icon(Icons.add,
                                       size: 18, color: _green),
                                   onPressed: _showAddConveyorDialog,
-                                  tooltip: 'Add Conveyor',
+                                  tooltip: context.tr('Add Conveyor'),
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                 ),
@@ -1308,13 +1343,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                         const Divider(height: 1),
                         Expanded(
                             child: _selectedFactory == null
-                                ? const Center(
-                                    child: Text('Select a factory first',
-                                        style: TextStyle(color: _muted)))
+                                ? Center(
+                                    child: Text(
+                                        context.tr('Select a factory first'),
+                                        style: const TextStyle(color: _muted)))
                                 : conveyors.isEmpty
-                                    ? const Center(
-                                        child: Text('No conveyors',
-                                            style: TextStyle(color: _muted)))
+                                    ? Center(
+                                        child: Text(context.tr('No conveyors'),
+                                            style:
+                                                const TextStyle(color: _muted)))
                                     : ListView.builder(
                                         itemCount: conveyors.length,
                                         itemBuilder: (context, index) {
@@ -1392,7 +1429,10 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Stations (${stations.length}/${_service.maxStations})',
+                                context.tr('Stations ({count}/{max})', {
+                                  'count': '${stations.length}',
+                                  'max': '${_service.maxStations}'
+                                }),
                                 style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
@@ -1404,7 +1444,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                   icon: const Icon(Icons.add,
                                       size: 18, color: _green),
                                   onPressed: _showAddStationsDialog,
-                                  tooltip: 'Add Stations',
+                                  tooltip: context.tr('Add Stations'),
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                 ),
@@ -1414,13 +1454,15 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                         const Divider(height: 1),
                         Expanded(
                           child: _selectedConveyor == null
-                              ? const Center(
-                                  child: Text('Select a conveyor first',
-                                      style: TextStyle(color: _muted)))
+                              ? Center(
+                                  child: Text(
+                                      context.tr('Select a conveyor first'),
+                                      style: const TextStyle(color: _muted)))
                               : stations.isEmpty
-                                  ? const Center(
-                                      child: Text('No stations',
-                                          style: TextStyle(color: _muted)))
+                                  ? Center(
+                                      child: Text(context.tr('No stations'),
+                                          style:
+                                              const TextStyle(color: _muted)))
                                   : ListView.builder(
                                       itemCount: stations.length,
                                       itemBuilder: (context, index) {
@@ -1453,7 +1495,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                                         .drive_file_move_outline,
                                                     size: 16,
                                                   ),
-                                                  label: const Text('Move'),
+                                                  label: Text(context.tr('Move')),
                                                   style: TextButton.styleFrom(
                                                     foregroundColor: _navy,
                                                     visualDensity:
@@ -1478,7 +1520,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                                   icon: Icons.qr_code_2,
                                                   color: _navy,
                                                   tooltip:
-                                                      'Generate station QR',
+                                                      context.tr('Generate station QR'),
                                                   onTap: () =>
                                                       _showStationQrDialog(
                                                           station),
@@ -1487,7 +1529,7 @@ class _HierarchyScreenState extends State<HierarchyScreen> {
                                                 _StationActionIcon(
                                                   icon: Icons.delete_outline,
                                                   color: _red,
-                                                  tooltip: 'Delete station',
+                                                  tooltip: context.tr('Delete station'),
                                                   onTap: () =>
                                                       _deleteStation(station),
                                                 ),

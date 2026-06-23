@@ -471,13 +471,13 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
                               ),
                               const SizedBox(height: 10),
                               _PerfStatRow(
-                                label: 'Validated',
+                                label: context.tr('Validated'),
                                 value: ts.validated,
                                 color: _green,
                               ),
                               const SizedBox(height: 3),
                               _PerfStatRow(
-                                label: 'Not validated',
+                                label: context.tr('Not validated'),
                                 value: ts.notValidated,
                                 color: _orange,
                               ),

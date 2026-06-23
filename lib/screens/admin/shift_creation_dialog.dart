@@ -5,6 +5,7 @@ import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/service_locator.dart';
 import '../../services/shift_service.dart';
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 import '../../widgets/common/app_loading_indicator.dart';
 
@@ -43,6 +44,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
   bool _handleCollaborations = false;
   bool _handleCrossFactoryTransfer = false;
   bool _fullControl = false;
+  bool _presenceChecks = true;
   final _crossFactoryMaxDistanceCtrl = TextEditingController();
 
   String _searchQuery = '';
@@ -78,6 +80,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
       _handleCollaborations = s.handleCollaborations;
       _handleCrossFactoryTransfer = s.handleCrossFactoryTransfer;
       _fullControl = s.fullControl;
+      _presenceChecks = s.presenceChecks;
       if (s.crossFactoryMaxDistanceKm != null &&
           s.crossFactoryMaxDistanceKm! > 0) {
         _crossFactoryMaxDistanceCtrl.text =
@@ -129,7 +132,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Failed to load supervisors';
+        _error = context.tr('Failed to load supervisors');
       });
     }
   }
@@ -199,7 +202,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
 
   Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Please enter a shift name');
+      setState(() => _error = context.tr('Please enter a shift name'));
       return;
     }
     final picked = _all
@@ -231,6 +234,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
         handleCollaborations: _handleCollaborations,
         handleCrossFactoryTransfer: _handleCrossFactoryTransfer,
         fullControl: _fullControl,
+        presenceChecks: _presenceChecks,
         randomize: _randomize,
         crossFactoryMaxDistanceKm:
             (_handleCrossFactoryTransfer || _fullControl)
@@ -340,13 +344,13 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _label('Shift name'),
+                        _label(context.tr('Shift name')),
                         TextField(
                           controller: _nameCtrl,
                           style: TextStyle(color: t.text),
-                          decoration: const InputDecoration(
-                            hintText: 'e.g. Morning Shift',
-                            prefixIcon: Icon(Icons.badge),
+                          decoration: InputDecoration(
+                            hintText: context.tr('e.g. Morning Shift'),
+                            prefixIcon: const Icon(Icons.badge),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -354,7 +358,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                           children: [
                             Expanded(
                               child: _TimeChip(
-                                label: 'Starts',
+                                label: context.tr('Starts'),
                                 time: _start,
                                 onTap: _pickStart,
                               ),
@@ -362,7 +366,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                             const SizedBox(width: 12),
                             Expanded(
                               child: _TimeChip(
-                                label: 'Ends',
+                                label: context.tr('Ends'),
                                 time: _end,
                                 onTap: _pickEnd,
                               ),
@@ -371,7 +375,7 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                         ),
                         const SizedBox(height: 16),
                         _NumericStepper(
-                          label: 'Maximum supervisors per shift',
+                          label: context.tr('Maximum supervisors per shift'),
                           value: _maxSupervisors,
                           min: 1,
                           max: 12,
@@ -392,6 +396,9 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                               _setHandleCrossFactoryTransfer,
                           fullControl: _fullControl,
                           onFullControlChanged: _setFullControl,
+                          presenceChecks: _presenceChecks,
+                          onPresenceChecksChanged: (v) =>
+                              setState(() => _presenceChecks = v),
                           crossFactoryMaxDistanceCtrl:
                               _crossFactoryMaxDistanceCtrl,
                           onCrossFactoryDistanceChanged: (_) =>
@@ -407,13 +414,14 @@ class _ShiftCreationDialogState extends State<ShiftCreationDialog>
                           onReroll: _randomize ? _doRandomize : null,
                         ),
                         const SizedBox(height: 18),
-                        _label('Search supervisors'),
+                        _label(context.tr('Search supervisors')),
                         TextField(
                           onChanged: (v) =>
                               setState(() => _searchQuery = v.toLowerCase()),
-                          decoration: const InputDecoration(
-                            hintText: 'Filter by name, factory, or email…',
-                            prefixIcon: Icon(Icons.search),
+                          decoration: InputDecoration(
+                            hintText:
+                                context.tr('Filter by name, factory, or email…'),
+                            prefixIcon: const Icon(Icons.search),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -526,7 +534,7 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isEdit ? 'Edit Shift' : 'New Shift',
+                  isEdit ? context.tr('Edit Shift') : context.tr('New Shift'),
                   style: TextStyle(
                     color: t.text,
                     fontSize: 20,
@@ -534,7 +542,8 @@ class _Header extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Configure schedule, supervisors, and AI commander',
+                  context.tr(
+                      'Configure schedule, supervisors, and AI commander'),
                   style: TextStyle(color: t.muted, fontSize: 12),
                 ),
               ],
@@ -629,7 +638,7 @@ class _NumericStepper extends StatelessWidget {
                         fontSize: 13,
                         fontWeight: FontWeight.w700)),
                 Text(
-                  'Hard cap on supervisors assigned at once',
+                  context.tr('Hard cap on supervisors assigned at once'),
                   style: TextStyle(color: t.muted, fontSize: 11),
                 ),
               ],
@@ -672,6 +681,8 @@ class _AiToggleCard extends StatelessWidget {
   final ValueChanged<bool> onHandleCrossFactoryTransferChanged;
   final bool fullControl;
   final ValueChanged<bool> onFullControlChanged;
+  final bool presenceChecks;
+  final ValueChanged<bool> onPresenceChecksChanged;
   final TextEditingController crossFactoryMaxDistanceCtrl;
   final ValueChanged<String> onCrossFactoryDistanceChanged;
 
@@ -686,6 +697,8 @@ class _AiToggleCard extends StatelessWidget {
     required this.onHandleCrossFactoryTransferChanged,
     required this.fullControl,
     required this.onFullControlChanged,
+    required this.presenceChecks,
+    required this.onPresenceChecksChanged,
     required this.crossFactoryMaxDistanceCtrl,
     required this.onCrossFactoryDistanceChanged,
   });
@@ -736,16 +749,17 @@ class _AiToggleCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI Shift Commander',
+                      context.tr('AI Shift Commander'),
                       style: TextStyle(
                           color: t.text,
                           fontSize: 14,
                           fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      'Let AI manage this shift: accept collaborations, '
-                      'assign supervisors to alerts, handle cross-factory '
-                      'transfers automatically.',
+                      context.tr(
+                          'Let AI manage this shift: accept collaborations, '
+                          'assign supervisors to alerts, handle cross-factory '
+                          'transfers automatically.'),
                       style:
                           TextStyle(color: t.muted, fontSize: 11, height: 1.35),
                     ),
@@ -766,7 +780,7 @@ class _AiToggleCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('AI Commander Settings',
+                  Text(context.tr('AI Commander Settings'),
                       style: TextStyle(
                           color: t.muted,
                           fontSize: 11,
@@ -774,33 +788,33 @@ class _AiToggleCard extends StatelessWidget {
                           letterSpacing: 0.4)),
                   const SizedBox(height: 6),
                   Text(
-                    'Choose exactly what the commander is allowed to handle '
-                    'during this shift.',
+                    context.tr(
+                        'Choose exactly what the commander is allowed to handle during this shift.'),
                     style:
                         TextStyle(color: t.muted, fontSize: 11, height: 1.35),
                   ),
                   const SizedBox(height: 10),
                   _CommanderTaskTile(
-                    label: 'Handle Assignments',
-                    subtitle: 'Auto-assign supervisors to alerts.',
+                    label: context.tr('Handle Assignments'),
+                    subtitle: context.tr('Auto-assign supervisors to alerts.'),
                     value: handleAssignments || fullControl,
                     enabled: !fullControl,
                     onChanged: onHandleAssignmentsChanged,
                   ),
                   const SizedBox(height: 8),
                   _CommanderTaskTile(
-                    label: 'Handle Collaborations',
-                    subtitle:
-                        'Approve collaboration requests after assistant approvals.',
+                    label: context.tr('Handle Collaborations'),
+                    subtitle: context.tr(
+                        'Approve collaboration requests after assistant approvals.'),
                     value: handleCollaborations || fullControl,
                     enabled: !fullControl,
                     onChanged: onHandleCollaborationsChanged,
                   ),
                   const SizedBox(height: 8),
                   _CommanderTaskTile(
-                    label: 'Handle Cross-factory Transfer',
-                    subtitle:
-                        'Allow rostered supervisors to cover alerts across factories.',
+                    label: context.tr('Handle Cross-factory Transfer'),
+                    subtitle: context.tr(
+                        'Allow rostered supervisors to cover alerts across factories.'),
                     value: handleCrossFactoryTransfer || fullControl,
                     enabled: !fullControl,
                     onChanged: onHandleCrossFactoryTransferChanged,
@@ -822,9 +836,18 @@ class _AiToggleCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   _CommanderTaskTile(
-                    label: 'Full control',
-                    subtitle:
-                        'Commander manages assignments, collaborations, and transfers.',
+                    label: context.tr('Presence checks'),
+                    subtitle: context.tr(
+                        'Monitor supervisor activity and prompt confirm-presence pushes when idle.'),
+                    value: presenceChecks,
+                    enabled: true,
+                    onChanged: onPresenceChecksChanged,
+                  ),
+                  const SizedBox(height: 8),
+                  _CommanderTaskTile(
+                    label: context.tr('Full control'),
+                    subtitle: context.tr(
+                        'Commander manages assignments, collaborations, and transfers.'),
                     value: fullControl,
                     enabled: true,
                     forceActiveStyle: fullControl,
@@ -949,7 +972,7 @@ class _CrossFactoryDistanceField extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Max cross-factory distance',
+                  context.tr('Max cross-factory distance'),
                   style: TextStyle(
                     color: t.text,
                     fontSize: 12,
@@ -958,8 +981,8 @@ class _CrossFactoryDistanceField extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Skip rostered supervisors whose home factory is farther '
-                  'than this from the alert factory. Leave empty for no limit.',
+                  context.tr(
+                      'Skip rostered supervisors whose home factory is farther than this from the alert factory. Leave empty for no limit.'),
                   style: TextStyle(
                     color: t.muted,
                     fontSize: 10.5,
@@ -987,7 +1010,7 @@ class _CrossFactoryDistanceField extends StatelessWidget {
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 8),
-                hintText: 'e.g. 50',
+                hintText: context.tr('e.g. 50'),
                 hintStyle: TextStyle(color: t.muted, fontSize: 12),
                 suffixText: 'km',
                 suffixStyle: TextStyle(
@@ -1045,14 +1068,14 @@ class _RandomizeToggleCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Randomize shift assignment',
+                Text(context.tr('Randomize shift assignment'),
                     style: TextStyle(
                         color: t.text,
                         fontSize: 13,
                         fontWeight: FontWeight.w700)),
                 Text(
-                  'AI picks supervisors at random from the active pool, '
-                  'spread across factories.',
+                  context.tr(
+                      'AI picks supervisors at random from the active pool, spread across factories.'),
                   style: TextStyle(color: t.muted, fontSize: 11, height: 1.35),
                 ),
               ],
@@ -1061,7 +1084,7 @@ class _RandomizeToggleCard extends StatelessWidget {
           if (enabled && onReroll != null)
             IconButton(
               icon: const Icon(Icons.refresh),
-              tooltip: 'Re-randomize',
+              tooltip: context.tr('Re-randomize'),
               onPressed: onReroll,
             ),
           Switch.adaptive(
@@ -1109,7 +1132,7 @@ class _SupervisorList extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 18),
         child: Center(
-          child: Text('No supervisors match this search',
+          child: Text(context.tr('No supervisors match this search'),
               style: TextStyle(color: t.muted)),
         ),
       );
@@ -1244,12 +1267,14 @@ class _Footer extends StatelessWidget {
               color: t.navyLt,
               borderRadius: BorderRadius.circular(99),
             ),
-            child: Text('$count / $max selected',
+            child: Text(
+                context.tr('{count} / {max} selected',
+                    {'count': '$count', 'max': '$max'}),
                 style: TextStyle(
                     color: t.navy, fontSize: 11, fontWeight: FontWeight.w800)),
           ),
           const Spacer(),
-          TextButton(onPressed: onCancel, child: const Text('Cancel')),
+          TextButton(onPressed: onCancel, child: Text(context.tr('Cancel'))),
           const SizedBox(width: 8),
           ElevatedButton.icon(
             onPressed: saving ? null : onSave,
@@ -1260,7 +1285,7 @@ class _Footer extends StatelessWidget {
                     child: CircularProgressIndicator(
                         color: Colors.white, strokeWidth: 2))
                 : const Icon(Icons.save, size: 16),
-            label: Text(saving ? 'Saving…' : 'Save Shift'),
+            label: Text(saving ? context.tr('Saving…') : context.tr('Save Shift')),
             style: ElevatedButton.styleFrom(
               backgroundColor: t.navy,
               foregroundColor: Colors.white,
@@ -1310,7 +1335,7 @@ class _DoubleAssignmentDialog extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Double Assignment Blocked',
+                  context.tr('Double Assignment Blocked'),
                   style: TextStyle(
                     color: t.text,
                     fontSize: 18,
@@ -1319,7 +1344,8 @@ class _DoubleAssignmentDialog extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${user.fullName} is already assigned',
+                  context.tr('{name} is already assigned',
+                      {'name': user.fullName}),
                   style: TextStyle(
                     color: t.muted,
                     fontSize: 12,
@@ -1338,7 +1364,9 @@ class _DoubleAssignmentDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'A supervisor cannot work two shifts at the same time. ${user.fullName} is already assigned to:',
+              context.tr(
+                  'A supervisor cannot work two shifts at the same time. {name} is already assigned to:',
+                  {'name': user.fullName}),
               style: TextStyle(
                 color: t.text,
                 fontSize: 13,
@@ -1394,7 +1422,13 @@ class _DoubleAssignmentDialog extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'If you need to move ${user.firstName} to "$attemptedShiftName", first remove them from "${existingShift.name}".',
+              context.tr(
+                  'If you need to move {name} to "{target}", first remove them from "{current}".',
+                  {
+                    'name': user.firstName,
+                    'target': attemptedShiftName,
+                    'current': existingShift.name
+                  }),
               style: TextStyle(
                 color: t.muted,
                 fontSize: 12,
@@ -1409,7 +1443,7 @@ class _DoubleAssignmentDialog extends StatelessWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(
-            'Understood',
+            context.tr('Understood'),
             style: TextStyle(
               color: t.navy,
               fontWeight: FontWeight.w700,

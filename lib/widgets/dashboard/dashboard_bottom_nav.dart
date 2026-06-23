@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_strings.dart';
 import '../../theme.dart';
 
 /// Bottom navigation bar for the supervisor dashboard. Routes between the
@@ -95,7 +96,7 @@ class _NavBtn extends StatelessWidget {
               Icon(icon, size: 22, color: selected ? Colors.white : t.muted),
               const SizedBox(height: 4),
               Text(
-                label,
+                context.tr(label),
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.normal,

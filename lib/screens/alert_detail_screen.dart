@@ -9,6 +9,7 @@ import '../services/collaboration_service.dart';
 import '../services/ai_assignment_service.dart';
 import '../services/ai_service.dart';
 import '../theme.dart';
+import '../l10n/app_strings.dart';
 import '../utils/alert_claim_error.dart';
 import '../utils/user_friendly_error.dart';
 import '../widgets/common/app_loading_indicator.dart';
@@ -95,20 +96,21 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
     final reason = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Resolve Alert'),
+        title: Text(context.tr('Resolve Alert')),
         content: TextField(
           controller: reasonController,
-          decoration: const InputDecoration(hintText: 'Resolution reason'),
+          decoration:
+              InputDecoration(hintText: context.tr('Resolution reason')),
           maxLines: 3,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel'),
+            child: Text(context.tr('Cancel')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, reasonController.text),
-            child: const Text('Resolve'),
+            child: Text(context.tr('Resolve')),
           ),
         ],
       ),
@@ -229,10 +231,10 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
       note = await showDialog<String>(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('Mark as Critical'),
+          title: Text(context.tr('Mark as Critical')),
           content: TextField(
-            decoration: const InputDecoration(
-              hintText: 'Optional note (reason, impact, etc.)',
+            decoration: InputDecoration(
+              hintText: context.tr('Optional note (reason, impact, etc.)'),
             ),
             maxLines: 3,
             onChanged: (value) => note = value,
@@ -240,11 +242,11 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, null),
-              child: const Text('Cancel'),
+              child: Text(context.tr('Cancel')),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, note ?? ''),
-              child: const Text('Mark Critical'),
+              child: Text(context.tr('Mark Critical')),
             ),
           ],
         ),
@@ -274,7 +276,9 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
           future: _alertFuture,
           builder: (context, snap) {
                 final alert = snap.data;
-                return Text(alert == null ? 'Alert Details' : 'Alert ${alert.alertLabel}');
+                return Text(alert == null
+                    ? context.tr('Alert Details')
+                    : context.tr('Alert {label}', {'label': alert.alertLabel}));
           },
         ),
       ),
@@ -309,7 +313,8 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                       .withValues(alpha: 0.3)),
                             ),
                             child: Text(
-                              'Alert ${alert.alertLabel}',
+                              context.tr('Alert {label}',
+                                  {'label': alert.alertLabel}),
                               style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
@@ -317,26 +322,39 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                             ),
                           ),
                         ),
-                        Text('Type: ${alert.type}',
+                        Text(context.tr('Type: {type}', {'type': alert.type}),
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
-                        Text(
-                            'Location: ${alert.usine} - Line ${alert.convoyeur} - Post ${alert.poste}'),
-                        Text('Address: ${alert.adresse}'),
-                        Text('Description: ${alert.description}'),
-                        Text('Timestamp: ${alert.timestamp}'),
+                        Text(context.tr(
+                            'Location: {usine} - Line {conv} - Post {poste}', {
+                          'usine': alert.usine,
+                          'conv': '${alert.convoyeur}',
+                          'poste': '${alert.poste}'
+                        })),
+                        Text(context.tr('Address: {address}',
+                            {'address': alert.adresse})),
+                        Text(context.tr('Description: {description}',
+                            {'description': alert.description})),
+                        Text(context.tr('Timestamp: {time}',
+                            {'time': '${alert.timestamp}'})),
                         if (alert.status == 'en_cours' &&
                             alert.takenAtTimestamp != null)
-                          Text('Elapsed: ${provider.getElapsedTime(alert)}',
+                          Text(
+                              context.tr('Elapsed: {time}',
+                                  {'time': provider.getElapsedTime(alert)}),
                               style: const TextStyle(color: Colors.blue)),
                         if (alert.status == 'validee' &&
                             alert.elapsedTime != null)
                           Text(
-                              'Resolution time: ${provider.formatElapsedTime(alert.elapsedTime)}',
+                              context.tr('Resolution time: {time}', {
+                                'time': provider
+                                    .formatElapsedTime(alert.elapsedTime)
+                              }),
                               style: const TextStyle(color: Colors.green)),
                         if (alert.resolutionReason != null)
-                          Text('Reason: ${alert.resolutionReason}'),
+                          Text(context.tr('Reason: {reason}',
+                              {'reason': '${alert.resolutionReason}'})),
                       ]),
                 )),
                 const SizedBox(height: 16),
@@ -350,34 +368,43 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'AI Assignment Insight',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                          Text(
+                            context.tr('AI Assignment Insight'),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 8),
                           if (alert.aiAssigned)
-                            const Text('Decision: Auto-assigned')
+                            Text(context.tr('Decision: Auto-assigned'))
                           else if (alert.aiRecommendationPending)
-                            const Text(
-                              'Decision: Recommendation pending PM confirmation',
+                            Text(
+                              context.tr(
+                                  'Decision: Recommendation pending PM confirmation'),
                             )
                           else
-                            const Text('Decision: AI evaluation available'),
+                            Text(context.tr('Decision: AI evaluation available')),
                           if (alert.aiRecommendedSupervisorName != null &&
                               alert.aiRecommendedSupervisorName!.isNotEmpty)
-                            Text(
-                                'Recommended supervisor: ${alert.aiRecommendedSupervisorName}'),
+                            Text(context.tr('Recommended supervisor: {name}', {
+                              'name': alert.aiRecommendedSupervisorName!
+                            })),
                           if (alert.aiRecommendationReason != null &&
                               alert.aiRecommendationReason!.isNotEmpty)
-                            Text(
-                                'Recommendation reason: ${alert.aiRecommendationReason}'),
+                            Text(context.tr('Recommendation reason: {reason}', {
+                              'reason': alert.aiRecommendationReason!
+                            })),
                           if (alert.aiAssignmentReason != null &&
                               alert.aiAssignmentReason!.isNotEmpty)
-                            Text('Reason: ${alert.aiAssignmentReason}'),
+                            Text(context.tr('Reason: {reason}',
+                                {'reason': alert.aiAssignmentReason!})),
                           if (alert.aiConfidence != null) ...[
                             const SizedBox(height: 8),
                             Text(
-                              'Confidence: ${(alert.aiConfidence! * 100).round()}% • ${AIAssignmentService.confidenceLabel(alert.aiConfidence!)}',
+                              context.tr('Confidence: {pct}% • {label}', {
+                                'pct':
+                                    '${(alert.aiConfidence! * 100).round()}',
+                                'label': AIAssignmentService.confidenceLabel(
+                                    alert.aiConfidence!)
+                              }),
                               style:
                                   const TextStyle(fontWeight: FontWeight.w600),
                             ),
@@ -477,19 +504,22 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                'Collaboration Request',
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              Text(
+                                context.tr('Collaboration Request'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 8),
-                              Text('From: ${req.requesterName}'),
+                              Text(context.tr('From: {name}',
+                                  {'name': req.requesterName})),
                               const SizedBox(height: 4),
                               Text(req.message),
                               const SizedBox(height: 12),
                               if (!isTarget)
-                                const Text(
-                                  'You are not a target for this collaboration request.',
-                                  style: TextStyle(color: Colors.grey),
+                                Text(
+                                  context.tr(
+                                      'You are not a target for this collaboration request.'),
+                                  style: const TextStyle(color: Colors.grey),
                                 )
                               else if (req.assistantDecision == 'pending')
                                 Row(
@@ -502,7 +532,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                         ),
                                         icon: const Icon(Icons.close,
                                             color: Colors.white),
-                                        label: const Text('Decline'),
+                                        label: Text(context.tr('Decline')),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: const Color(
                                               0xFFFFB3BA), // Light red
@@ -519,7 +549,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                         ),
                                         icon: const Icon(Icons.check,
                                             color: Colors.white),
-                                        label: const Text('Approve'),
+                                        label: Text(context.tr('Approve')),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: Colors.green,
                                           foregroundColor: Colors.white,
@@ -530,7 +560,8 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                 )
                               else
                                 Text(
-                                  'Decision: ${req.assistantDecision}',
+                                  context.tr('Decision: {decision}',
+                                      {'decision': req.assistantDecision}),
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600),
                                 ),
@@ -548,7 +579,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                   ElevatedButton.icon(
                     onPressed: _isAiLoading ? null : () => _getAiAssist(alert),
                     icon: const Icon(Icons.auto_awesome),
-                    label: const Text('AI Assist'),
+                    label: Text(context.tr('AI Assist')),
                     style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.purple),
                   ),
@@ -569,12 +600,13 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Row(children: [
-                            Icon(Icons.auto_awesome,
+                          Row(children: [
+                            const Icon(Icons.auto_awesome,
                                 size: 16, color: Color(0xFF7C3AED)),
-                            SizedBox(width: 6),
-                            Text('AI Suggestion',
-                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(width: 6),
+                            Text(context.tr('AI Suggestion'),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
                           ]),
                           const SizedBox(height: 4),
                           Text(_aiSuggestion!),
@@ -585,16 +617,16 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                 ],
 
                 // Comments section
-                const Text('Comments',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text(context.tr('Comments'),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 ...alert.comments.map((c) => ListTile(title: Text(c))),
                 Row(children: [
                   Expanded(
                       child: TextField(
                           controller: _commentController,
-                          decoration: const InputDecoration(
-                              hintText: 'Add comment...'))),
+                          decoration: InputDecoration(
+                              hintText: context.tr('Add comment...')))),
                   IconButton(
                       onPressed: () => _addComment(provider, alert),
                       icon: const Icon(Icons.send)),
@@ -608,7 +640,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                           alert.id,
                           provider.currentSuperviseurId,
                           provider.currentSuperviseurName),
-                      child: const Text('Claim')),
+                      child: Text(context.tr('Claim'))),
                 if (alert.status == 'en_cours' &&
                     alert.superviseurId == provider.currentSuperviseurId) ...[
                   Wrap(
@@ -621,17 +653,18 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                           await showDialog<String>(
                             context: context,
                             builder: (_) => AlertDialog(
-                              title: const Text('Suspend Alert'),
+                              title: Text(context.tr('Suspend Alert')),
                               content: TextField(
-                                decoration: const InputDecoration(
-                                  hintText: 'Optional reason for suspension',
+                                decoration: InputDecoration(
+                                  hintText: context
+                                      .tr('Optional reason for suspension'),
                                 ),
                                 onChanged: (value) => reason = value,
                               ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(context),
-                                  child: const Text('Cancel'),
+                                  child: Text(context.tr('Cancel')),
                                 ),
                                 ElevatedButton(
                                   onPressed: () async {
@@ -643,7 +676,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                                           : reason?.trim(),
                                     );
                                   },
-                                  child: const Text('Suspend'),
+                                  child: Text(context.tr('Suspend')),
                                 ),
                               ],
                             ),
@@ -655,7 +688,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                           }
                         },
                         icon: const Icon(Icons.rotate_left, size: 16),
-                        label: const Text('Suspend'),
+                        label: Text(context.tr('Suspend')),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.orange,
                           side: const BorderSide(color: Colors.orange),
@@ -670,7 +703,9 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                           size: 16,
                         ),
                         label: Text(
-                          alert.isCritical ? 'Unflag Critical' : 'Mark Critical',
+                          alert.isCritical
+                              ? context.tr('Unflag Critical')
+                              : context.tr('Mark Critical'),
                         ),
                         style: OutlinedButton.styleFrom(
                           foregroundColor:
@@ -683,7 +718,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       ElevatedButton.icon(
                         onPressed: () => _resolveWithReason(provider, alert),
                         icon: const Icon(Icons.check_circle_outline, size: 16),
-                        label: const Text('Fixed'),
+                        label: Text(context.tr('Fixed')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                         ),
@@ -691,7 +726,7 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                       OutlinedButton.icon(
                         onPressed: _isAiLoading ? null : () => _getAiAssist(alert),
                         icon: const Icon(Icons.auto_awesome, size: 16),
-                        label: const Text('AI Assist'),
+                        label: Text(context.tr('AI Assist')),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.purple,
                           side: const BorderSide(color: Colors.purple),

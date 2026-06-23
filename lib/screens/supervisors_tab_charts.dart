@@ -208,7 +208,7 @@ class _AlertTypeDonut extends StatelessWidget {
     final t = context.appTheme;
     final entries = distribution.entries.where((e) => e.value > 0).toList();
     if (entries.isEmpty) {
-      return _EmptyChartState(label: 'No alert type activity');
+      return _EmptyChartState(label: context.tr('No alert type activity'));
     }
     final total = entries.fold<int>(0, (sum, e) => sum + e.value);
 
@@ -233,7 +233,7 @@ class _AlertTypeDonut extends StatelessWidget {
                       1.0,
                     );
                     final entry = entries[i];
-                    final color = typeMeta(entry.key, t).color;
+                    final color = typeMeta(entry.key, t, context).color;
                     return PieChartSectionData(
                       value: entry.value * visible,
                       title: visible > 0.85
@@ -257,7 +257,7 @@ class _AlertTypeDonut extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: entries.map((entry) {
-                  final color = typeMeta(entry.key, t).color;
+                  final color = typeMeta(entry.key, t, context).color;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
@@ -279,7 +279,7 @@ class _AlertTypeDonut extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            typeMeta(entry.key, t).label,
+                            typeMeta(entry.key, t, context).label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -318,7 +318,7 @@ class _SupervisorLeaderboardChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.appTheme;
     if (entries.isEmpty) {
-      return _EmptyChartState(label: 'No supervisor scores yet');
+      return _EmptyChartState(label: context.tr('No supervisor scores yet'));
     }
     final maxScore = math.max(1, entries.map((e) => e.score).reduce(math.max));
     return Column(
@@ -435,7 +435,7 @@ class _FactoryWorkloadChart extends StatelessWidget {
         .take(5)
         .toList();
     if (entries.isEmpty) {
-      return _EmptyChartState(label: 'No factory workload yet');
+      return _EmptyChartState(label: context.tr('No factory workload yet'));
     }
     final maxTotal = entries
         .map((e) => e.value.fold<int>(0, (sum, segment) => sum + segment.count))
@@ -565,7 +565,7 @@ class _SupervisorTypeDonutChartState extends State<_SupervisorTypeDonutChart> {
       (sum, item) => sum + item.validated,
     );
     if (data.isEmpty || totalValidated == 0) {
-      return const _EmptyChartState(label: 'No validated alerts yet');
+      return _EmptyChartState(label: context.tr('No validated alerts yet'));
     }
 
     final selected = (_activeIndex >= 0 && _activeIndex < data.length)

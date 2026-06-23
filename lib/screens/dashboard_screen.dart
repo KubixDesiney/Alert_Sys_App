@@ -20,6 +20,8 @@ import 'locator_tab.dart';
 import '../widgets/voice_command_button.dart';
 import '../utils/user_friendly_error.dart';
 import '../widgets/common/app_loading_indicator.dart';
+import '../widgets/common/language_toggle.dart';
+import '../l10n/app_strings.dart';
 import '../widgets/dashboard/dashboard_badges.dart';
 import '../widgets/dashboard/dashboard_bottom_nav.dart';
 import '../widgets/dashboard/elapsed_timer.dart';
@@ -236,7 +238,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
 
                   // Summary Cards (as in original)
                   _SummaryCard(
-                    label: 'Fixed Alerts',
+                    label: context.tr('Fixed Alerts'),
                     count: validated.length + assisted.length,
                     color: const Color(0xFF22C55E),
                     bgColor: const Color(0xFFDCFCE7),
@@ -246,7 +248,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                   ),
                   const SizedBox(height: 12),
                   _SummaryCard(
-                    label: 'Claimed Alerts',
+                    label: context.tr('Claimed Alerts'),
                     count: myInProgress.length,
                     color: const Color(0xFF3B82F6),
                     bgColor: const Color(0xFFDBEAFE),
@@ -256,7 +258,7 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
                   ),
                   const SizedBox(height: 12),
                   _SummaryCard(
-                    label: 'Manage Pending Alerts',
+                    label: context.tr('Manage Pending Alerts'),
                     count: available.length,
                     color: const Color(0xFFF97316),
                     bgColor: const Color(0xFFFFEDD5),
@@ -586,7 +588,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
         }
       },
       icon: Icon(Icons.vibration, size: 16, color: t.red),
-      label: Text('Stop Buzzing', style: TextStyle(color: t.red)),
+      label: Text(context.tr('Stop Buzzing'), style: TextStyle(color: t.red)),
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: t.red),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -653,13 +655,15 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('All Notifications',
+                              Text(context.tr('All Notifications'),
                                   style: TextStyle(
                                       fontSize: 22,
                                       fontWeight: FontWeight.bold,
                                       color: t.text)),
                               const SizedBox(height: 4),
-                              Text('View and manage your alerts and PM actions',
+                              Text(
+                                  context.tr(
+                                      'View and manage your alerts and PM actions'),
                                   style:
                                       TextStyle(fontSize: 14, color: t.muted)),
                             ],
@@ -673,7 +677,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                               decoration: BoxDecoration(
                                   color: t.red,
                                   borderRadius: BorderRadius.circular(12)),
-                              child: Text('$_notificationCount unread',
+                              child: Text(
+                                  context.tr('{n} unread',
+                                      {'n': '$_notificationCount'}),
                                   style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
@@ -717,7 +723,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text('Alerts'),
+                              Text(context.tr('Alerts')),
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.all(4),
@@ -736,7 +742,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Text('PM Actions'),
+                              Text(context.tr('PM Actions')),
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.all(4),
@@ -762,7 +768,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         // Alerts tab
                         _notifications.isEmpty
                             ? Center(
-                                child: Text('No alerts',
+                                child: Text(context.tr('No alerts'),
                                     style: TextStyle(color: t.muted)))
                             : ListView.builder(
                                 padding:
@@ -799,7 +805,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                         // PM Actions tab
                         _pmActions.isEmpty
                             ? Center(
-                                child: Text('No PM actions',
+                                child: Text(context.tr('No PM actions'),
                                     style: TextStyle(color: t.muted)))
                             : ListView.builder(
                                 padding:
@@ -916,7 +922,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                             fontSize: 15,
                             color: t.text)),
                     const SizedBox(height: 4),
-                    Text(n['alertDescription'] ?? 'Action required',
+                    Text(n['alertDescription'] ?? context.tr('Action required'),
                         style: TextStyle(color: t.muted, fontSize: 13)),
                     const SizedBox(height: 8),
                     Row(
@@ -931,7 +937,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           const SizedBox(width: 12),
                           Icon(Icons.vibration, size: 14, color: t.red),
                           const SizedBox(width: 4),
-                          Text('Phone is buzzing',
+                          Text(context.tr('Phone is buzzing'),
                               style: TextStyle(
                                   fontSize: 11,
                                   color: t.red,
@@ -991,13 +997,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           .length;
                     });
                     if (_buzzingNotificationId == n['id']) _stopBuzzing();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Help request accepted'),
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(context.tr('Help request accepted')),
                         backgroundColor: Colors.green));
                   }
                 },
                 icon: Icon(Icons.check, size: 16, color: t.green),
-                label: Text('Accept', style: TextStyle(color: t.green)),
+                label: Text(context.tr('Accept'), style: TextStyle(color: t.green)),
                 style: OutlinedButton.styleFrom(
                     side: BorderSide(color: t.green),
                     shape: RoundedRectangleBorder(
@@ -1021,13 +1027,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                           .length;
                     });
                     if (_buzzingNotificationId == n['id']) _stopBuzzing();
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Help request refused'),
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(context.tr('Help request refused')),
                         backgroundColor: Colors.orange));
                   }
                 },
                 icon: Icon(Icons.close, size: 16, color: t.red),
-                label: Text('Decline', style: TextStyle(color: t.red)),
+                label: Text(context.tr('Decline'), style: TextStyle(color: t.red)),
                 style: OutlinedButton.styleFrom(
                     side: BorderSide(color: t.red),
                     shape: RoundedRectangleBorder(
@@ -1102,14 +1108,15 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
             onPressed: () async {
               final supervisors = await AuthService().getActiveSupervisors();
               if (supervisors.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('No active supervisors available')));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content:
+                        Text(context.tr('No active supervisors available'))));
                 return;
               }
               showDialog(
                 context: context,
                 builder: (dialogContext) => AlertDialog(
-                  title: const Text('Assign Assistant'),
+                  title: Text(context.tr('Assign Assistant')),
                   content: SizedBox(
                     width: 300,
                     child: ListView.builder(
@@ -1139,8 +1146,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                             });
                           }
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(
-                                  'Assigned ${supervisors[i].fullName} as assistant'),
+                              content: Text(context.tr(
+                                  'Assigned {name} as assistant',
+                                  {'name': supervisors[i].fullName})),
                               backgroundColor: t.green));
                         },
                       ),
@@ -1149,7 +1157,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   actions: [
                     TextButton(
                         onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text('Cancel'))
+                        child: Text(context.tr('Cancel')))
                   ],
                 ),
               );
@@ -1159,8 +1167,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8))),
-            child:
-                const Text('Assign Assistant', style: TextStyle(fontSize: 12)),
+            child: Text(context.tr('Assign Assistant'),
+                style: const TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -1196,13 +1204,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(n['message'] ?? 'Collaboration request',
+                  Text(n['message'] ?? context.tr('Collaboration request'),
                       style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
                           color: t.text)),
                   const SizedBox(height: 4),
-                  Text('From: $requesterName',
+                  Text(context.tr('From: {name}', {'name': requesterName}),
                       style: TextStyle(color: t.muted, fontSize: 13)),
                 ],
               ),
@@ -1236,7 +1244,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                     myDecision == 'accepted' || myDecision == 'refused';
 
                 if (req == null) {
-                  return Text('Loading…',
+                  return Text(context.tr('Loading…'),
                       style: TextStyle(color: t.muted, fontSize: 12));
                 }
                 if (decided) {
@@ -1259,8 +1267,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       Expanded(
                         child: Text(
                             accepted
-                                ? 'You accepted — waiting for PM approval'
-                                : 'You declined this request',
+                                ? context.tr('You accepted — waiting for PM approval')
+                                : context.tr('You declined this request'),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -1301,8 +1309,9 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                                   .removeWhere((x) => x['id'] == n['id']);
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Collaboration declined'),
+                                SnackBar(
+                                    content: Text(
+                                        context.tr('Collaboration declined')),
                                     backgroundColor: Colors.red));
                           }
                         } catch (e) {
@@ -1314,8 +1323,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       },
                       icon:
                           const Icon(Icons.close, size: 16, color: Colors.red),
-                      label: const Text('Decline',
-                          style: TextStyle(
+                      label: Text(context.tr('Decline'),
+                          style: const TextStyle(
                               color: Colors.red, fontWeight: FontWeight.w600)),
                       style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
@@ -1352,10 +1361,10 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                                   .removeWhere((x) => x['id'] == n['id']);
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Collaboration accepted! Waiting for PM.'),
-                                    backgroundColor: Color(0xFF16A34A)));
+                                SnackBar(
+                                    content: Text(context.tr(
+                                        'Collaboration accepted! Waiting for PM.')),
+                                    backgroundColor: const Color(0xFF16A34A)));
                           }
                         } catch (e) {
                           if (context.mounted) {
@@ -1366,8 +1375,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                       },
                       icon: const Icon(Icons.check_circle,
                           size: 16, color: Colors.white),
-                      label: const Text('Accept',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      label: Text(context.tr('Accept'),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                       style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF16A34A),
                           foregroundColor: Colors.white,
@@ -1388,8 +1397,8 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content:
-                            const Text('Collaboration request marked as read'),
+                        content: Text(context
+                            .tr('Collaboration request marked as read')),
                         backgroundColor: t.green,
                       ),
                     );
@@ -1709,7 +1718,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text(n['message'] ?? 'Notification',
+            title: Text(n['message'] ?? context.tr('Notification'),
                 style: TextStyle(fontWeight: FontWeight.bold, color: t.text)),
             subtitle: Text(n['alertDescription'] ?? '',
                 style: TextStyle(color: t.muted)),
@@ -1806,7 +1815,7 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(action['title'] ?? 'PM Action',
+                    Text(action['title'] ?? context.tr('PM Action'),
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
@@ -1848,13 +1857,13 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
                 setModalState(() {
                   _pmActions.removeWhere((item) => item['id'] == action['id']);
                 });
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('PM action marked as read'),
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(context.tr('PM action marked as read')),
                     backgroundColor: Colors.green));
               }
             },
             icon: Icon(Icons.check_circle_outline, size: 16, color: t.text),
-            label: Text('Mark as read', style: TextStyle(color: t.text)),
+            label: Text(context.tr('Mark as read'), style: TextStyle(color: t.text)),
             style: OutlinedButton.styleFrom(
                 backgroundColor: Colors.transparent,
                 side: BorderSide(color: t.border),
@@ -1876,11 +1885,12 @@ class _HeaderState extends State<_Header> with SingleTickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(children: [
         DashboardUserInfo(
-          title: 'Supervisor',
+          title: context.tr('Supervisor'),
           subtitle: widget.userName,
           trailingIcon: Icons.warning,
         ),
         const Spacer(),
+        LanguageToggle(color: t.navy),
         DashboardThemeToggleButton(color: t.navy),
         DashboardNotificationBell(
           count: _notificationCount,

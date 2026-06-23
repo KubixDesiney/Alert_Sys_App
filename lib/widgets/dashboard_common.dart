@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_strings.dart';
 import '../providers/theme_provider.dart';
 import '../theme.dart';
 
@@ -234,7 +235,7 @@ class _NotificationCenterState extends State<NotificationCenter> {
               Expanded(
                 child: _notifications.isEmpty
                     ? Center(
-                        child: Text('No notifications',
+                        child: Text(context.tr('No notifications'),
                             style: TextStyle(color: textColor)),
                       )
                     : ListView.builder(
