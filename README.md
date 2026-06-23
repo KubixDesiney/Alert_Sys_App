@@ -1,45 +1,74 @@
 <div align="center">
 
-<!-- HERO BANNER -->
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0D4A75,50:1a6fa8,100:60A5FA&height=200&section=header&text=Smart Industrial Alert - SIA&fontSize=72&fontColor=ffffff&fontAlignY=40&desc=Industrial%20Intelligence%2C%20Redefined&descAlignY=65&descSize=22&animation=fadeIn" />
+# Smart Industrial Alert (SIA)
 
-<br/>
+**Enterprise industrial alert & operations platform**
 
-<h1>
-  <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=32&pause=1000&color=60A5FA&center=true&vCenter=true&width=600&lines=Factory+Floor+Alert+Intelligence;Voice-First+Industrial+Control;AI-Powered+Predictive+Ops;Real-Time+Supervisor+Dispatch" alt="Typing SVG" />
-</h1>
+[![CI](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/ci.yml/badge.svg)](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/ci.yml)
+[![Security](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/security.yml/badge.svg)](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/security.yml)
+[![CodeQL](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/codeql.yml/badge.svg)](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/codeql.yml)
+[![Quality](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/quality.yml/badge.svg)](https://github.com/KubixDesiney/Alert_Sys_App/actions/workflows/quality.yml)
 
-<br/>
+[![Version](https://img.shields.io/badge/version-1.2.1-1f6feb)](CHANGELOG.md)
+[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red)](LICENSE.md)
+[![Pilot Ready](https://img.shields.io/badge/status-Pilot%20Ready-2ea44f)](docs/PILOT_READINESS_CHECKLIST.md)
+[![Trust Center](https://img.shields.io/badge/Trust-Center-8957e5)](docs/TRUST_CENTER.md)
 
-<!-- BADGES ROW 1 -->
-<p>
-  <img src="https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter&logoColor=white" />
-  <img src="https://img.shields.io/badge/Dart-3.x-0175C2?style=for-the-badge&logo=dart&logoColor=white" />
-  <img src="https://img.shields.io/badge/Firebase-Realtime_DB-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" />
-  <img src="https://img.shields.io/badge/Cloudflare-Workers-F48120?style=for-the-badge&logo=cloudflare&logoColor=white" />
-  <img src="https://img.shields.io/badge/TensorFlow_Lite-ML_Models-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white" />
-</p>
+</div>
 
-<!-- BADGES ROW 2 -->
-<p>
-  <img src="https://img.shields.io/badge/Platform-Android_|_iOS_|_Windows_|_Linux_|_Web-6366F1?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/AI-Claude_+_Gemini_Powered-8B5CF6?style=for-the-badge&logo=anthropic&logoColor=white" />
-  <img src="https://img.shields.io/badge/Shorebird-Code_Push_Enabled-10B981?style=for-the-badge" />
-</p>
+Smart Industrial Alert (SIA) is an enterprise industrial alert and operations platform for factory environments. It delivers real-time mobile alerting with AI-assisted supervisor assignment, predictive-maintenance forecasting, and shift and collaboration coordination — administered from a SuperAdmin console and deployed as a dedicated, white-label instance per customer on the customer's own Firebase and Cloudflare accounts. SIA is integration-ready for existing automation estates (microcontroller/IoT, PLC, SCADA, historian, MQTT, OPC UA, Modbus, and REST/webhook) and ships with operational monitoring, release documentation, and a trust center. It runs *on top of* the plant — coordinating alerts and people — without taking over control or safety functions.
 
-<!-- BADGES ROW 3 -->
-<p>
-  <img src="https://img.shields.io/badge/Voice-Offline_Sherpa_ONNX-EF4444?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Station_Scan-QR_History_Lookup-0EA5E9?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/License-Proprietary-1E293B?style=for-the-badge" />
-</p>
+## What SIA does
 
-<br/>
+- **Real-time mobile alerting** — targeted push with full-screen lock-screen alerts and a durable one-minute fallback so the right supervisors are reached.
+- **AI-assisted assignment** — multi-factor supervisor matching with reinforcement learning; every decision carries an explicit reason and confidence.
+- **Predictive maintenance** — an on-device forecaster that grades and adapts itself, surfacing next-24h machine risk on the Production Manager dashboard.
+- **SuperAdmin configuration** — manage AI agents, branding/theme, AI models, industrial connectors, identity, and monitoring from one console.
+- **Dedicated customer instances** — white-label deployment per customer with automated provisioning; the customer owns their project, keys, and data.
+- **Shifts, presence, collaboration & escalation** — coordinate who responds, when, and how alerts escalate.
+- **Bilingual** — full English/French with instant runtime switching.
 
-> **Smart Industrial Alert - SIA** is an enterprise-grade, AI-driven factory alert management platform built for real industrial environments.
-> Voice-first, offline-capable, and engineered to operate in the loudest, most demanding factory floors on earth.
+## Integration modes
 
-<br/>
+SIA sits alongside your existing automation estate and ingests events through cloud-pull and edge-push connectors:
+
+| Mode | Examples |
+|------|----------|
+| Microcontroller / IoT | ESP32, ESP8266, Arduino, Raspberry Pi Pico |
+| PLC | edge-gateway push |
+| SCADA | REST / historian bridges |
+| Historian | PI, Ignition |
+| Messaging | MQTT |
+| Industrial protocols | OPC UA, Modbus |
+| Web | REST / webhook |
+| Hybrid | any combination of the above |
+
+Connectors are configured self-service in the SuperAdmin console with a live link-verification handshake.
+
+## Safety & scope
+
+SIA is a **supervisory alert and operations layer**. It is **not** a PLC, a safety-instrumented system (SIS), or a real-time control loop, and it does not actuate equipment or perform emergency shutdown. Existing SCADA/PLC control and safety functions remain authoritative; SIA augments them with alerting, coordination, and operational intelligence.
+
+## Enterprise pilot readiness
+
+SIA is packaged for controlled enterprise pilots. Start here:
+
+- [Release notes](RELEASE_NOTES.md) — what's in this release and its scope
+- [Installation & deployment](INSTALLATION.md) — stand up a dedicated instance
+- [Changelog](CHANGELOG.md) — version history
+- [Pilot readiness checklist](docs/PILOT_READINESS_CHECKLIST.md) — go-live verification
+- [Trust center](docs/TRUST_CENTER.md) — security & operational posture
+- [Security policy](SECURITY.md) · [Privacy](PRIVACY.md) · [Terms](TERMS.md) · [License](LICENSE.md)
+
+## Trust posture
+
+SIA is built with security-by-design practices: enforced multi-factor authentication, SCIM 2.0 user provisioning, hardened Realtime Database rules, an immutable audit trail, an edge security agent (rate limiting, prompt-injection detection, anomaly scanning), automated CI / CodeQL / security scanning, a dependency audit, a published penetration-test scope, and a documented secret-rotation procedure — see the [Trust Center](docs/TRUST_CENTER.md).
+
+SIA has **not** undergone external certification. We do **not** claim ISO 27001, SOC 2, IEC 62443, or any other third-party certification or attestation. SIA is at **pilot maturity** — intended for controlled deployments alongside existing systems — and in the dedicated-instance model the customer owns their environment and data.
+
+## Current release — v1.2.1 "Enterprise Pilot Readiness"
+
+This release consolidates SIA for controlled enterprise pilots: dedicated white-label instances, self-service SuperAdmin configuration, SCADA/PLC/historian integration readiness, configurable and drift-monitored AI models, operational monitoring with alerting, and a full release-readiness and trust documentation set. See the [release notes](RELEASE_NOTES.md) and [changelog](CHANGELOG.md).
 
 ---
 
