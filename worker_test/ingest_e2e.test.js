@@ -30,6 +30,7 @@ function req(method, { secret, body, contentLength } = {}) {
   if (contentLength != null) h.set('content-length', String(contentLength));
   return {
     method,
+    url: 'https://ingest.example/',
     headers: { get: (k) => (h.has(k.toLowerCase()) ? h.get(k.toLowerCase()) : null) },
     json: async () => (typeof body === 'string' ? JSON.parse(body) : body),
   };
@@ -101,7 +102,7 @@ describe('ingest worker e2e', () => {
   });
 
   test('invalid JSON returns 400', async () => {
-    const bad = { method: 'POST', headers: { get: (k) => (k.toLowerCase() === 'x-alertsys-ingest' ? 's3cret' : null) }, json: async () => { throw new Error('bad'); } };
+    const bad = { method: 'POST', url: 'https://ingest.example/', headers: { get: (k) => (k.toLowerCase() === 'x-alertsys-ingest' ? 's3cret' : null) }, json: async () => { throw new Error('bad'); } };
     const res = await ingest.fetch(bad, ENV);
     expect(res.status).toBe(400);
   });
