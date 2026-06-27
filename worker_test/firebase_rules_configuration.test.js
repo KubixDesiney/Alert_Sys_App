@@ -159,7 +159,10 @@ describe('Firebase rules company database template behavior', () => {
   test('Credential vault and security telemetry separate read and write authority', () => {
     const steel = companies.steelco;
 
-    expect(evaluate(rules.ai_agent_secrets['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    // The credential vault is write-only from the client: a superadmin may set a
+    // secret but can never read it back (only the worker, via its admin OAuth
+    // token, bypasses rules to read it).
+    expect(evaluate(rules.ai_agent_secrets['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(false);
     expect(evaluate(rules.ai_agent_secrets['.write'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
     expect(evaluate(rules.ai_agent_secrets['.write'], { auth: steel.admin, rootData: steel.root })).toBe(false);
     expect(evaluate(rules.ai_agent_secrets['.write'], { auth: serviceAuth, rootData: steel.root })).toBe(false);
@@ -202,6 +205,50 @@ describe('Firebase rules company database template behavior', () => {
     expect(evaluate(rules.alerts.$alertId.push_sent['.validate'], { newData: 'true' })).toBe(false);
     expect(evaluate(rules.ai_agents.$agentId.promptTemplate['.validate'], { newData: 'x'.repeat(8001) })).toBe(false);
     expect(evaluate(rules.audit_log.$entryId.$other['.validate'], { newData: 'unexpected' })).toBe(false);
+  });
+
+  test('Alert writes require authentication (no anonymous create path)', () => {
+    const steel = companies.steelco;
+    const alertWrite = rules.alerts.$alertId['.write'];
+    const sample = {
+      adresse: 'A1', convoyeur: 1, poste: 2,
+      timestamp: '2026-06-27T00:00:00.000Z', type: 'mechanical', usine: 'Usine A',
+    };
+    // Anonymous create is no longer permitted, even with a well-formed payload.
+    expect(evaluate(alertWrite, { auth: null, rootData: steel.root, data: undefined, newData: sample })).toBe(false);
+    // Authenticated producers (app users, ingest worker service token) still write.
+    expect(evaluate(alertWrite, { auth: steel.supervisor, rootData: steel.root })).toBe(true);
+    expect(evaluate(alertWrite, { auth: serviceAuth, rootData: steel.root })).toBe(true);
+  });
+
+  test('LLM provider keys live in a worker-only vault the client cannot read', () => {
+    const steel = companies.steelco;
+
+    // Non-secret model selection: worker + superadmin read, superadmin write,
+    // plain app-admin denied.
+    expect(evaluate(rules.ai_model_config['.read'], { auth: serviceAuth, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.ai_model_config['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.ai_model_config['.read'], { auth: steel.admin, rootData: steel.root })).toBe(false);
+
+    // Secret vault: only the worker service token reads it; superadmin writes
+    // but cannot read; plain admin gets nothing.
+    expect(evaluate(rules.ai_model_secrets['.read'], { auth: serviceAuth, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.ai_model_secrets['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(false);
+    expect(evaluate(rules.ai_model_secrets['.read'], { auth: steel.admin, rootData: steel.root })).toBe(false);
+    expect(evaluate(rules.ai_model_secrets['.write'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.ai_model_secrets['.write'], { auth: steel.admin, rootData: steel.root })).toBe(false);
+  });
+
+  test('Connector PLC/historian credentials are worker-only; only the ingest key is retrievable', () => {
+    const steel = companies.steelco;
+    // The whole vault is unreadable by clients (worker bypasses via OAuth).
+    expect(evaluate(rules.connector_secrets['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(false);
+    // The per-connector edge-push ingest key is the one value the operator must
+    // retrieve to configure a gateway, so it stays superadmin-readable.
+    expect(evaluate(rules.connector_secrets.$connectorId.ingestKey['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
+    expect(evaluate(rules.connector_secrets.$connectorId.ingestKey['.read'], { auth: steel.admin, rootData: steel.root })).toBe(false);
+    // Superadmin can still write the credentials.
+    expect(evaluate(rules.connector_secrets['.write'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
   });
 
   test('Disabled shared provisioning and SCIM writes stay denied in the template', () => {

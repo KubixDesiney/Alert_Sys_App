@@ -421,8 +421,10 @@ class ConnectorService {
     await _secretRef.child(id).remove();
   }
 
-  /// Reads back the per-connector ingest key for display (SuperAdmin can read the
-  /// vault). The gateway needs this value, so it is shown — unlike pull tokens.
+  /// Reads back the per-connector ingest key for display. This is the only field
+  /// in `connector_secrets` a client may read — the rules expose just
+  /// `connector_secrets/{id}/ingestKey` to SuperAdmin (the gateway operator needs
+  /// it), while pull tokens/passwords stay worker-only. See `database.rules.json`.
   Future<String?> fetchIngestKey(String id) async {
     final snap = await _secretRef.child(id).child('ingestKey').get();
     final v = snap.value;

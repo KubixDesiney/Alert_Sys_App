@@ -26,9 +26,48 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
 
   int? _recordingIndex;
   bool _saving = false;
+  bool _consent = false;
+  bool _alreadyEnrolled = false;
   String? _error;
 
   bool get _complete => _embeddings.every((embedding) => embedding != null);
+
+  @override
+  void initState() {
+    super.initState();
+    VoiceAuthService.instance.enrollmentState().then((s) {
+      if (mounted) {
+        setState(() => _alreadyEnrolled = s == VoiceEnrollmentState.enrolled);
+      }
+    }).catchError((_) {});
+  }
+
+  Future<void> _deleteEnrollment() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await VoiceAuthService.instance.deleteEnrollment();
+      if (!mounted) return;
+      setState(() {
+        _alreadyEnrolled = false;
+        for (var i = 0; i < _embeddings.length; i++) {
+          _embeddings[i] = null;
+        }
+        _consent = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tr('Voiceprint deleted.'))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   Future<void> _recordSample(int index) async {
     if (_recordingIndex != null || _saving) return;
@@ -70,7 +109,8 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
     });
     try {
       final embeddings = _embeddings.whereType<List<double>>().toList();
-      await VoiceAuthService.instance.enrollCurrentUser(embeddings);
+      await VoiceAuthService.instance
+          .enrollCurrentUser(embeddings, consentGiven: _consent);
       await VoiceService.instance.speak('Voice enrollment complete.');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,6 +145,81 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
               style: TextStyle(color: t.muted, fontSize: 13),
             ),
             const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: t.navyLt,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.privacy_tip_outlined, size: 18, color: t.navy),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          context.tr('Biometric consent'),
+                          style: TextStyle(
+                            color: t.text,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    context.tr(
+                      'Voice enrolment creates a voiceprint — biometric data used only to verify it is you when you claim or resolve alerts by voice. It is stored encrypted in transit, never shared, and you can delete it at any time. Voice control is optional; you can use the app fully without it.',
+                    ),
+                    style: TextStyle(color: t.muted, fontSize: 12.5, height: 1.4),
+                  ),
+                  const SizedBox(height: 6),
+                  CheckboxListTile(
+                    value: _consent,
+                    onChanged: _saving
+                        ? null
+                        : (v) => setState(() => _consent = v ?? false),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(
+                      context.tr(
+                        'I consent to my voiceprint being collected and stored for voice verification.',
+                      ),
+                      style: TextStyle(color: t.text, fontSize: 12.5),
+                    ),
+                  ),
+                  if (_alreadyEnrolled) ...[
+                    const Divider(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            context.tr('A voiceprint is currently enrolled.'),
+                            style: TextStyle(color: t.muted, fontSize: 12),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _saving ? null : _deleteEnrollment,
+                          icon: Icon(Icons.delete_outline,
+                              size: 16, color: t.red),
+                          label: Text(
+                            context.tr('Delete my voiceprint'),
+                            style: TextStyle(color: t.red, fontSize: 12.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
             for (var i = 0; i < _phrases.length; i++) ...[
               _PhraseCard(
                 index: i,
@@ -133,7 +248,8 @@ class _VoiceEnrollmentScreenState extends State<VoiceEnrollmentScreen> {
             ],
             const SizedBox(height: 18),
             FilledButton.icon(
-              onPressed: _complete && !_saving ? _saveEnrollment : null,
+              onPressed:
+                  _complete && _consent && !_saving ? _saveEnrollment : null,
               icon: _saving
                   ? const SizedBox(
                       width: 18,

@@ -443,14 +443,26 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 - `/notify` â€” Fan-out pending notifications from RTDB queue.
 - Default (all other fetch) â€” Unified manual trigger: runs assignments, alerts, escalations, collaborations.
 
-**Deployment Status:**
+**Deployment Status (reconciled 2026-06-27 — root `CLAUDE.md` is the source of truth):**
 
-- **Active deployment:** wrangler.toml points to `cloudflare_workerV2.js` (legacy monolithic version, 118KB).
-- **Modular ready:** `/worker` directory contains fully refactored and tested 15-module version.
-- **Transition path:** Once modular version is validated in staging, update wrangler.toml `main` field to `cloudflare_worker.js` (which re-exports `worker/index.js`).
-- **Configuration:** wrangler.toml specifies cron trigger `* * * * *`, secrets management via `wrangler secret put`, and worker name "alert-notifier".
+- **The monolithic `cloudflare_workerV2.js` was DELETED on 2026-06-14**, along with the
+  bare `wrangler.toml` / `worker/wrangler.toml` that pointed at it. There is no longer a
+  monolithic-worker deploy path. The historical sections below that reference
+  `cloudflare_workerV2.js` describe where that code *originated*; the live behavior now
+  lives in the split workers.
+- **Active deployment:** the split Cloudflare workers — `wrangler.ai.toml`
+  (`cloudflare_ai_worker.js`, AI + security), `wrangler.notify.toml`
+  (`cloudflare_notify_worker.js`, push fan-out), `wrangler.github.toml`
+  (`cloudflare_github_worker.js`, Guardian proxy), and `wrangler.ingest.toml`
+  (`cloudflare_ingest_worker.js`, SCADA/PLC/MQTT ingest). Deploy with
+  `npm run deploy:workers` (or the per-worker `deploy:ai`/`deploy:notify`/`deploy:github`).
+- **Modular reference:** `/worker` contains the refactored 15-module implementation;
+  `cloudflare_worker.js` re-exports `worker/index.js` and is imported by the Jest suite
+  for helper-level coverage.
+- **Configuration:** each `wrangler.*.toml` specifies cron `* * * * *` and secrets via
+  `wrangler secret put`; worker names are `alert-notifier`, `alertsys`, `alertsys-github`,
+  `alertsys-ingest`.
 - **Testing:** worker_test/ includes Jest tests for pure functions; npm test runs all tests.
-- **Package.json:** scripts for `npm test` and `npm run deploy`.
 
 **Recent Worker updates (May 2026):**
 
@@ -1942,7 +1954,7 @@ The Production Manager can now cap how far a rostered supervisor's home factory 
 **Database and Rules:**
 - database.rules.json: Realtime Database authorization, validation, indexes.
 - firebase.json: Firebase project configuration (hosting, functions).
-- wrangler.toml: Cloudflare Worker deployment config (points to `cloudflare_workerV2.js`).
+- wrangler.ai.toml / wrangler.notify.toml / wrangler.github.toml / wrangler.ingest.toml: split Cloudflare Worker deploy configs (the bare `wrangler.toml` and the monolithic `cloudflare_workerV2.js` it pointed to were deleted 2026-06-14).
 
 **Testing:**
 - test/: Flutter tests (parsers, models, utilities, widgets).

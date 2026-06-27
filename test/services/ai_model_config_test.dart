@@ -68,14 +68,16 @@ void main() {
       const c = AiModelConfig();
       expect(c.modelId, kDefaultAiModelId);
       expect(c.apiKey, '');
+      expect(c.hasKey, isFalse);
       expect(c.model.needsKey, isFalse);
     });
 
-    test('fromMap reads modelId + apiKey', () {
-      final c =
-          AiModelConfig.fromMap({'modelId': 'claude-opus', 'apiKey': 'sk-x'});
+    test('fromMap reads modelId + hasKey but never the secret value', () {
+      final c = AiModelConfig.fromMap({'modelId': 'claude-opus', 'hasKey': true});
       expect(c.modelId, 'claude-opus');
-      expect(c.apiKey, 'sk-x');
+      expect(c.hasKey, isTrue);
+      // The provider key lives in the worker-only vault and is never returned.
+      expect(c.apiKey, '');
       expect(c.model.provider, 'anthropic');
     });
 
@@ -83,14 +85,23 @@ void main() {
       final c = AiModelConfig.fromMap(null);
       expect(c.modelId, kDefaultAiModelId);
       expect(c.apiKey, '');
+      expect(c.hasKey, isFalse);
     });
 
-    test('toMap trims the key and stamps updatedAt', () {
-      final m =
-          const AiModelConfig(modelId: 'gpt-4o', apiKey: '  sk-y  ').toMap();
+    test('toConfigMap never carries the secret key', () {
+      final m = const AiModelConfig(modelId: 'gpt-4o', apiKey: '  sk-y  ')
+          .toConfigMap();
       expect(m['modelId'], 'gpt-4o');
-      expect(m['apiKey'], 'sk-y');
+      expect(m.containsKey('apiKey'), isFalse); // secret must not land here
+      expect(m['hasKey'], isTrue); // a key was supplied, so flag it
       expect(m['updatedAt'], isA<String>());
+    });
+
+    test('toConfigMap flags hasKey when one is already on file', () {
+      final m = const AiModelConfig(modelId: 'gpt-4o', hasKey: true)
+          .toConfigMap();
+      expect(m['hasKey'], isTrue);
+      expect(m.containsKey('apiKey'), isFalse);
     });
   });
 }

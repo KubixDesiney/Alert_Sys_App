@@ -2790,8 +2790,22 @@ export function llmParse(provider, json) {
 async function _loadModelConfig(env, token, agent) {
   try {
     const r = await fetch(`${env.FB_DB_URL}ai_model_config/${agent}.json?auth=${token}`);
-    if (!r.ok) return null;
-    return (await r.json()) || null;
+    const cfg = r.ok ? ((await r.json()) || null) : null;
+    // The provider key lives in a worker-only vault the client can never read.
+    // Merge it back in here. Legacy configs that still carry an inline apiKey
+    // keep working (migration fallback).
+    let apiKey = cfg && cfg.apiKey ? String(cfg.apiKey) : '';
+    if (!apiKey) {
+      try {
+        const s = await fetch(`${env.FB_DB_URL}ai_model_secrets/${agent}.json?auth=${token}`);
+        if (s.ok) {
+          const sv = await s.json();
+          if (sv && sv.apiKey) apiKey = String(sv.apiKey);
+        }
+      } catch (_) {}
+    }
+    if (!cfg && !apiKey) return null;
+    return { ...(cfg || {}), apiKey };
   } catch (_) {
     return null;
   }
