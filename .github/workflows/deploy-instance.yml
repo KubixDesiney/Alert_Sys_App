@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Read config from whichever trigger fired, via env (never inline — avoids
       # script injection from the dispatch payload).
