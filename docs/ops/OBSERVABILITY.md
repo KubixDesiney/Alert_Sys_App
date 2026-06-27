@@ -1,7 +1,7 @@
-# Observability — SIA
+# Observability — SIAS
 
 What the platform emits, where it lands, and how to read it during an incident.
-SIA is instrumented end-to-end so an operator can answer "is it healthy, and if
+SIAS is instrumented end-to-end so an operator can answer "is it healthy, and if
 not, where is it broken?" without shell access — everything surfaces in the
 SuperAdmin console or via documented endpoints.
 

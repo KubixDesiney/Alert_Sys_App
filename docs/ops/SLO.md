@@ -1,6 +1,6 @@
-# Service Level Objectives (SLOs) — SIA
+# Service Level Objectives (SLOs) — SIAS
 
-Defines the reliability targets for a SIA production instance, the indicators
+Defines the reliability targets for a SIAS production instance, the indicators
 (SLIs) that measure them, and the error budgets that govern release pace. These
 are the numbers an enterprise buyer's reliability/procurement team will ask for.
 

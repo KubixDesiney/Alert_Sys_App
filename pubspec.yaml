@@ -1,6 +1,6 @@
 name: alertsysapp
 description: >-
-  Smart Industrial Alert (SIA): an enterprise industrial alert and operations
+  SIAS - Smart Industrial Alert System: an enterprise industrial alert and operations
   platform. Real-time mobile alerting, AI-assisted supervisor assignment,
   predictive maintenance forecasting, shift and collaboration coordination,
   and a SuperAdmin console for dedicated, SCADA/PLC/historian-ready customer

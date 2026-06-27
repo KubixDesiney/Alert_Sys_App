@@ -47,4 +47,4 @@ Last reviewed 2026-06-16. Format: **Q — A — Evidence.**
 ## G. Known limitations (stated honestly)
 - SOC 2 report and executed penetration test are **not yet complete** (artifacts/scope ready).
 - At-rest customer-managed keys are on-prem-roadmap, not yet GA.
-- SIA is an alerting/coordination layer, not a safety-rated control system. — `docs/integrations/COMPETITIVE_POSITIONING.md`.
+- SIAS is an alerting/coordination layer, not a safety-rated control system. — `docs/integrations/COMPETITIVE_POSITIONING.md`.

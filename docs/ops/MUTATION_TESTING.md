@@ -1,7 +1,7 @@
-# Mutation Testing & E2E Coverage — SIA
+# Mutation Testing & E2E Coverage — SIAS
 
 Line coverage tells you which code *ran* during tests; it does not tell you whether
-the tests would *catch a bug*. SIA closes that gap two ways: end-to-end tests that
+the tests would *catch a bug*. SIAS closes that gap two ways: end-to-end tests that
 exercise the worker request lifecycle, and a zero-dependency mutation tester that
 proves the suite actually fails when logic changes.
 

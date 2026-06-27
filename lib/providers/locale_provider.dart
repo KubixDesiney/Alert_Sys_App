@@ -11,7 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class LocaleProvider extends ChangeNotifier {
   static const _key = 'appLanguageCode';
 
-  /// The two languages SIA ships. English is the source/default; French is the
+  /// The two languages SIAS ships. English is the source/default; French is the
   /// full translation.
   static const List<Locale> supported = [Locale('en'), Locale('fr')];
 

@@ -8,7 +8,7 @@ description (`docs/external/SOC2_SYSTEM_DESCRIPTION.md`), and the policy set
 ## 1. Scope we propose
 - **Report type:** Type I first (design of controls at a point in time), then Type II (operating effectiveness over a window).
 - **Trust Services Criteria:** **Security (Common Criteria) — required**, plus **Availability** and **Confidentiality** (strongly recommended for this product). Privacy optional per customer demand.
-- **System boundary:** the SIA platform — Flutter client, Firebase (Auth + RTDB), Cloudflare Workers, CI/CD (GitHub Actions), and the dedicated-instance provisioning path. Customer-owned cloud accounts are the customer's responsibility (shared-responsibility split documented).
+- **System boundary:** the SIAS platform — Flutter client, Firebase (Auth + RTDB), Cloudflare Workers, CI/CD (GitHub Actions), and the dedicated-instance provisioning path. Customer-owned cloud accounts are the customer's responsibility (shared-responsibility split documented).
 - **Type II observation window:** `[3 or 6 months]`.
 
 ## 2. Why this should be efficient

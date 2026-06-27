@@ -1,11 +1,11 @@
 # Changelog
 
-All notable changes to Smart Industrial Alert (SIA) are documented in this file.
+All notable changes to SIAS - Smart Industrial Alert System are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-SIA is a supervisory alert and operations platform that runs *on top of* a
+SIAS is a supervisory alert and operations platform that runs *on top of* a
 plant's existing automation estate. It coordinates alerts and people; it does
 not execute control loops and is not a safety-instrumented system. See
 `RELEASE_NOTES.md` for the scope statement that accompanies each release.

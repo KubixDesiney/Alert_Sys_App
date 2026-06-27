@@ -1,4 +1,4 @@
-// SIA on-prem worker-runner.
+// SIAS on-prem worker-runner.
 // Runs assignment + escalation on a timer against the on-prem PocketBase backend
 // (cloud-parity scoring is vendored), and pushes events to LAN devices over SSE.
 import http from 'node:http';

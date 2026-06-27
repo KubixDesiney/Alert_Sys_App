@@ -339,7 +339,7 @@ class _ExportReportDialogState extends State<_ExportReportDialog> {
     if (_poste != 'all') {
       locationSuffix.write(' - WS $_poste');
     }
-    return 'Smart Industrial Alert - SIA - Operations Report - $scope$locationSuffix - $today${_criticalSuffix()}';
+    return 'SIAS - Smart Industrial Alert System - Operations Report - $scope$locationSuffix - $today${_criticalSuffix()}';
   }
 
   void _refreshAutoNameIfNeeded() {

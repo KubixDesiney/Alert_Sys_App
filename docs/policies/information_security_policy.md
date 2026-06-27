@@ -3,7 +3,7 @@
 Version 1.0 - 2026-06-15 - Owner: SuperAdmin / security lead - Review: annual
 
 ## 1. Purpose & scope
-Defines how SIA protects the confidentiality, integrity, and availability of customer
+Defines how SIAS protects the confidentiality, integrity, and availability of customer
 and operational data. Applies to all code, infrastructure (Firebase, Cloudflare),
 contributors, and connected services.
 

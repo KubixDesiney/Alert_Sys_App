@@ -2,7 +2,7 @@
   "name": "alertsys-worker",
   "version": "1.1.0",
   "private": true,
-  "description": "Smart Industrial Alert - SIA Cloudflare Worker â€” AI scoring, escalation cron, push fan-out.",
+  "description": "SIAS - Smart Industrial Alert System Cloudflare Worker — AI scoring, escalation cron, push fan-out.",
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.js",

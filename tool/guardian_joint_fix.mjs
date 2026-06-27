@@ -49,7 +49,7 @@ export function buildFixPrompt({ failure, files, priorCritique, round }) {
     .join('\n\n');
   return [
     `You are the FIX engineer in a two-AI repair team. Round ${round}.`,
-    `A failure was detected in the Smart Industrial Alert codebase. Repair it with the SMALLEST correct change.`,
+    `A failure was detected in the SIAS codebase. Repair it with the SMALLEST correct change.`,
     '',
     `FAILURE / DIAGNOSTIC:\n${failure}`,
     priorCritique ? `\nThe REVIEW engineer (or the validator) rejected your last attempt:\n${priorCritique}\nAddress this precisely.` : '',

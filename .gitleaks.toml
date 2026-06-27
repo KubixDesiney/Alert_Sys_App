@@ -1,4 +1,4 @@
-title = "Smart Industrial Alert - gitleaks config"
+title = "SIAS - Smart Industrial Alert System gitleaks config"
 
 [extend]
 useDefault = true

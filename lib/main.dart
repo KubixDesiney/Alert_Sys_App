@@ -165,7 +165,7 @@ class SmartIndustrialAlertApp extends StatelessWidget {
       ],
       child: Consumer2<ThemeProvider, LocaleProvider>(
         builder: (context, themeProvider, localeProvider, _) => MaterialApp(
-          title: 'Smart Industrial Alert - SIA',
+          title: 'SIAS - Smart Industrial Alert System',
           debugShowCheckedModeBanner: false,
           themeMode: themeProvider.mode,
           theme: buildLightTheme(),
@@ -472,7 +472,7 @@ class _RoleRouterState extends State<RoleRouter> {
                   const SizedBox(height: 8),
                   Text(
                     context.tr(
-                        'Connect once so Smart Industrial Alert - SIA can save this account for offline startup.'),
+                        'Connect once so SIAS can save this account for offline startup.'),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),

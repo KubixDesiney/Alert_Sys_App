@@ -1,10 +1,10 @@
 # Terms of Service
 
-**Smart Industrial Alert (SIA)** — provided by KubixDesiney (the "Provider")
+**SIAS - Smart Industrial Alert System** — provided by KubixDesiney (the "Provider")
 
 Last updated: 2026-06-23
 
-These Terms govern access to and use of the SIA platform (the "Service") by a
+These Terms govern access to and use of the SIAS platform (the "Service") by a
 customer organization and its authorized users ("Customer", "you"). By accessing
 or using the Service, you agree to these Terms. Where a separate signed
 agreement, pilot agreement, or order form exists between you and the Provider,
@@ -12,7 +12,7 @@ that agreement controls if it conflicts with these Terms.
 
 ## 1. The Service
 
-SIA is a business-to-business platform for industrial alert intake, AI-assisted
+SIAS is a business-to-business platform for industrial alert intake, AI-assisted
 dispatch, supervisor coordination, on-device failure forecasting, and related
 operational workflows. The Service is delivered as a **dedicated instance per
 customer**.

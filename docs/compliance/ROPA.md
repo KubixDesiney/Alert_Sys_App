@@ -1,14 +1,14 @@
 # Records of Processing Activities (ROPA) — GDPR Article 30
 
-Template + reference record for a SIA instance. Because SIA is sold as a dedicated
-instance, the **customer is the data controller** and the SIA operator is typically
+Template + reference record for a SIAS instance. Because SIAS is sold as a dedicated
+instance, the **customer is the data controller** and the SIAS operator is typically
 a **processor**. Each customer completes/owns their ROPA; this is the starting point.
 
 Last reviewed 2026-06-16. Maintainer: Data Protection point of contact.
 
 ## Roles
-- **Controller:** the customer (industrial company deploying SIA for its staff).
-- **Processor:** the SIA operator running/maintaining the dedicated instance.
+- **Controller:** the customer (industrial company deploying SIAS for its staff).
+- **Processor:** the SIAS operator running/maintaining the dedicated instance.
 - **Sub-processors:** see table at the bottom.
 
 ## Processing activities
@@ -69,5 +69,5 @@ sub-processor transfers data outside the controller's jurisdiction (controller t
 | Model provider(s) (configurable, optional) | AI assist/Guardian | operational prompt text (no secrets) | DPA; disable-able per agent |
 | GitHub (Guardian, optional) | CI/self-healing | source/CI metadata | customer-supplied token, server-side vault |
 
-Customers must execute a DPA with the SIA operator (`DPA_TEMPLATE.md`) and confirm
+Customers must execute a DPA with the SIAS operator (`DPA_TEMPLATE.md`) and confirm
 sub-processor DPAs for their region.

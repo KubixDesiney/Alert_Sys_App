@@ -1,6 +1,6 @@
 # Testing & CI/CD Guide
 
-This document explains how to run, extend, and ship the Smart Industrial Alert - SIA test
+This document explains how to run, extend, and ship the SIAS - Smart Industrial Alert System test
 suite. Two separate harnesses live in this repo:
 
 | Harness | Tooling | Scope |
@@ -57,7 +57,7 @@ For pure-Dart logic (parser, models, utils), prefer plain unit tests with
 `flutter_test`:
 
 ```dart
-import 'package:Smart Industrial Alert - SIAapp/models/alert_model.dart';
+import 'package:alertsysapp/models/alert_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -194,7 +194,7 @@ Realtime Database rule coverage lives in:
 These tests are hermetic: they do not use real Firebase projects, service
 accounts, customer data, or an emulator. The behavior test evaluates
 `database.rules.json` expressions against synthetic company database roots to
-validate the SIA deployment model:
+validate the SIAS deployment model:
 
 - each customer gets its own configured database/runtime through Superadmin;
 - role checks are evaluated inside the active company database root;

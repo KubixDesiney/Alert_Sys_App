@@ -1,4 +1,4 @@
-# Smart Industrial Alert (SIA) — One-Pager
+# SIAS - Smart Industrial Alert System — One-Pager
 
 **The mobile, AI-driven alerting and dispatch layer for the factory floor — it makes
 your existing SCADA/IIoT estate act on its own data in seconds, on the right
@@ -10,7 +10,7 @@ Plant alarms fire in the control room, but getting the *right* technician to the
 hunting for who's free. Minutes of downtime per incident add up to real money, and
 nothing predicts the next failure.
 
-## What SIA does
+## What SIAS does
 - **Instant mobile dispatch** — push + full-screen lock-screen buzz; claim by voice.
 - **AI assignment** — routes each alert to the best supervisor by skill, workload, proximity, and history.
 - **Coordination** — collaboration, help requests, shift commander, live presence.
@@ -19,7 +19,7 @@ nothing predicts the next failure.
 - **Works with your stack** — ingests OPC-UA / MQTT / Modbus / webhook / historian telemetry; it does not replace SCADA/PLC control.
 
 ## Why it wins
-| | Bundled SCADA alarms | Generic CMMS | **SIA** |
+| | Bundled SCADA alarms | Generic CMMS | **SIAS** |
 |---|---|---|---|
 | Mobile-first dispatch | weak | partial | **native + voice** |
 | Right-person AI routing | no | no | **yes** |

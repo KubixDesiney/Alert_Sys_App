@@ -42,12 +42,8 @@ class AiAgentsTab extends StatefulWidget {
   State<AiAgentsTab> createState() => _AiAgentsTabState();
 }
 
-/// Static identity of one fleet agent.
-///
-/// Built-in agents are declared in [_kAgents] with a bundled PNG [logoAsset].
-/// Operator-created agents are reconstructed from `ai_agents/registry/{id}` via
-/// [_AgentSpec.custom] — they carry an uploaded base64 [logoData] (or a chosen
-/// [iconCode] + [accentHex]) and an attached LLM provider + credential.
+/// Static identity of one fleet agent. Agents are fixed — declared in
+/// [_kAgents] with a bundled PNG [logoAsset].
 class _AgentSpec {
   final String id;
   final String name;
@@ -56,24 +52,8 @@ class _AgentSpec {
   final IconData icon;
   final bool maintenance;
 
-  /// Bundled brand logo for a built-in agent (asset path), or null.
+  /// Bundled brand logo for the agent (asset path), or null.
   final String? logoAsset;
-
-  /// True for operator-created agents (deletable, generic detail panel).
-  final bool custom;
-
-  /// Custom-agent payload (all null for built-ins).
-  final String? logoData; // base64 PNG of the uploaded logo
-  final String? accentHex; // chosen accent for custom agents
-  final String? description;
-  final String? tasks;
-  final String? tasksFile;
-  final String? skills;
-  final String? skillsFile;
-  final String? provider; // provider id (openai/anthropic/…)
-  final String? model;
-  final String? apiToken;
-  final String? createdAt;
 
   const _AgentSpec({
     required this.id,
@@ -83,89 +63,16 @@ class _AgentSpec {
     required this.icon,
     this.maintenance = false,
     this.logoAsset,
-    this.custom = false,
-    this.logoData,
-    this.accentHex,
-    this.description,
-    this.tasks,
-    this.tasksFile,
-    this.skills,
-    this.skillsFile,
-    this.provider,
-    this.model,
-    this.apiToken,
-    this.createdAt,
   });
 
-  /// Rebuilds a custom agent spec from its registry record. [apiToken] is
-  /// supplied separately from `ai_agent_secrets/{id}` — the registry record
-  /// itself never holds the credential.
-  factory _AgentSpec.fromRegistry(
-    String id,
-    Map<String, dynamic> m, {
-    String? apiToken,
-  }) {
-    return _AgentSpec(
-      id: id,
-      name: (m['name'] ?? 'AGENT').toString(),
-      codename: (m['codename'] ?? 'CUSTOM UNIT').toString(),
-      role: (m['role'] ?? m['description'] ?? 'Operator-deployed agent')
-          .toString(),
-      icon:
-          _kAgentIcons[(m['iconKey'] ?? '').toString()] ??
-          Icons.smart_toy_outlined,
-      custom: true,
-      logoData: (m['logoData'] ?? '').toString().isEmpty
-          ? null
-          : m['logoData'].toString(),
-      accentHex: (m['accentHex'] ?? '').toString().isEmpty
-          ? null
-          : m['accentHex'].toString(),
-      description: (m['description'] ?? '').toString(),
-      tasks: (m['tasks'] ?? '').toString(),
-      tasksFile: (m['tasksFile'] ?? '').toString().isEmpty
-          ? null
-          : m['tasksFile'].toString(),
-      skills: (m['skills'] ?? '').toString(),
-      skillsFile: (m['skillsFile'] ?? '').toString().isEmpty
-          ? null
-          : m['skillsFile'].toString(),
-      provider: (m['provider'] ?? '').toString(),
-      model: (m['model'] ?? '').toString(),
-      apiToken: apiToken ?? '',
-      createdAt: (m['createdAt'] ?? '').toString(),
-    );
-  }
-
-  Color get accent {
-    if (custom) {
-      final hex = accentHex;
-      if (hex != null && hex.isNotEmpty) {
-        final v = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
-        if (v != null) return Color(0xFF000000 | v);
-      }
-      return _Providers.of(provider).color;
-    }
-    return switch (id) {
-      'shift' => Sa.cyan,
-      'briefing' => Sa.blue,
-      'assist' => Sa.green,
-      'security' => Sa.red,
-      'predictive' => Sa.violet,
-      _ => Sa.amber,
-    };
-  }
-
-  /// Decoded logo bytes for a custom agent (or null).
-  Uint8List? get logoBytes {
-    final d = logoData;
-    if (d == null || d.isEmpty) return null;
-    try {
-      return base64Decode(d.contains(',') ? d.split(',').last : d);
-    } catch (_) {
-      return null;
-    }
-  }
+  Color get accent => switch (id) {
+    'shift' => Sa.cyan,
+    'briefing' => Sa.blue,
+    'assist' => Sa.green,
+    'security' => Sa.red,
+    'predictive' => Sa.violet,
+    _ => Sa.amber,
+  };
 }
 
 const List<_AgentSpec> _kAgents = [
@@ -252,9 +159,9 @@ class _AgentAvatar extends StatelessWidget {
   }
 }
 
-/// Just the brand glyph (asset logo / uploaded bytes / themed icon) with no
-/// surrounding tile — used inside [_AgentAvatar] and as the [SaSectionHeader]
-/// leading so panel hero headers carry the agent's logo.
+/// Just the brand glyph (asset logo / themed icon) with no surrounding tile —
+/// used inside [_AgentAvatar] and as the [SaSectionHeader] leading so panel
+/// hero headers carry the agent's logo.
 class _AgentGlyph extends StatelessWidget {
   final _AgentSpec spec;
   final double size;
@@ -264,7 +171,6 @@ class _AgentGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = spec.accent;
-    final bytes = spec.logoBytes;
     if (spec.logoAsset != null) {
       return Padding(
         padding: EdgeInsets.all(size * 0.12),
@@ -274,21 +180,6 @@ class _AgentGlyph extends StatelessWidget {
           filterQuality: FilterQuality.medium,
           errorBuilder: (_, __, ___) =>
               Icon(spec.icon, size: size * 0.52, color: accent),
-        ),
-      );
-    }
-    if (bytes != null) {
-      return Padding(
-        padding: EdgeInsets.all(size * 0.1),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(radius * 0.6),
-          child: Image.memory(
-            bytes,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) =>
-                Icon(spec.icon, size: size * 0.52, color: accent),
-          ),
         ),
       );
     }
@@ -763,9 +654,6 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
   String _selectedId = 'shift';
   final Map<String, bool> _enabled = {};
   final List<StreamSubscription<DatabaseEvent>> _subs = [];
-  List<_AgentSpec> _custom = const [];
-  Map<String, Map<String, dynamic>> _registryRaw = {};
-  Map<String, String> _secrets = {};
   Map<String, dynamic>? _health;
   final ScrollController _railCtrl = ScrollController();
 
@@ -786,40 +674,6 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
             }, onError: (_) {}),
       );
     }
-    // Operator-created agents live in a lightweight registry so discovery never
-    // streams the heavy worker logs/stats under the built-in agent nodes. The
-    // API token never lives in this record — it is stored separately under
-    // `ai_agent_secrets/{id}`, which only superadmin can read.
-    _subs.add(
-      FirebaseDatabase.instance.ref('ai_agents/registry').onValue.listen((
-        event,
-      ) {
-        final v = event.snapshot.value;
-        final raw = <String, Map<String, dynamic>>{};
-        if (v is Map) {
-          v.forEach((k, val) {
-            if (val is Map) raw[k.toString()] = Map<String, dynamic>.from(val);
-          });
-        }
-        _registryRaw = raw;
-        _rebuildCustom();
-      }, onError: (_) {}),
-    );
-    _subs.add(
-      FirebaseDatabase.instance.ref('ai_agent_secrets').onValue.listen((event) {
-        final v = event.snapshot.value;
-        final secrets = <String, String>{};
-        if (v is Map) {
-          v.forEach((k, val) {
-            if (val is Map && val['apiToken'] != null) {
-              secrets[k.toString()] = val['apiToken'].toString();
-            }
-          });
-        }
-        _secrets = secrets;
-        _rebuildCustom();
-      }, onError: (_) {}),
-    );
     _subs.add(
       FirebaseDatabase.instance.ref('workers/health/lastRun').onValue.listen((
         event,
@@ -832,18 +686,6 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
     );
   }
 
-  /// Recomputes [_custom] from the latest registry + secrets snapshots.
-  void _rebuildCustom() {
-    final list = <_AgentSpec>[];
-    _registryRaw.forEach((id, val) {
-      final spec = _AgentSpec.fromRegistry(id, val, apiToken: _secrets[id]);
-      list.add(spec);
-      _enabled[spec.id] = val['enabled'] != false;
-    });
-    list.sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
-    if (mounted) setState(() => _custom = list);
-  }
-
   @override
   void dispose() {
     for (final s in _subs) {
@@ -853,15 +695,11 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
     super.dispose();
   }
 
-  List<_AgentSpec> get _agents => [..._kAgents, ..._custom];
-
   bool _isEnabled(String id) => _enabled[id] ?? true;
 
   Future<void> _setEnabled(_AgentSpec agent, bool value) async {
     setState(() => _enabled[agent.id] = value);
-    final path = agent.custom
-        ? 'ai_agents/registry/${agent.id}'
-        : 'ai_agents/${agent.id}';
+    final path = 'ai_agents/${agent.id}';
     try {
       await FirebaseDatabase.instance.ref(path).update({
         'enabled': value,
@@ -902,121 +740,9 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
     }
   }
 
-  Future<void> _openEditor({_AgentSpec? editing}) async {
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (_) => _AgentEditorDialog(editing: editing),
-    );
-    if (result == null) return;
-    final id =
-        editing?.id ??
-        'custom_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
-    final apiToken = (result['apiToken'] ?? '').toString().trim();
-    final record = <String, dynamic>{
-      ...result,
-      'custom': true,
-      'enabled': editing == null ? true : _isEnabled(editing.id),
-      'createdAt':
-          editing?.createdAt ?? DateTime.now().toUtc().toIso8601String(),
-      'updatedAt': DateTime.now().toUtc().toIso8601String(),
-    };
-    // The API token is a credential — it never lands in the registry record,
-    // which is readable by any authenticated user. It lives in
-    // `ai_agent_secrets/{id}`, which only superadmin can read or write.
-    record.remove('apiToken');
-    try {
-      final secretRef = FirebaseDatabase.instance.ref('ai_agent_secrets/$id');
-      await Future.wait([
-        FirebaseDatabase.instance.ref('ai_agents/registry/$id').set(record),
-        apiToken.isEmpty
-            ? secretRef.remove()
-            : secretRef.set({
-                'apiToken': apiToken,
-                'updatedAt': DateTime.now().toUtc().toIso8601String(),
-              }),
-      ]);
-      if (mounted) {
-        setState(() => _selectedId = id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Sa.panelSolid,
-            content: Text(
-              editing == null
-                  ? context.tr('{name} deployed to the fleet.', {
-                      'name': '${record['name']}',
-                    })
-                  : context.tr('{name} updated.', {
-                      'name': '${record['name']}',
-                    }),
-              style: Sa.body(size: 12.5),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Sa.panelSolid,
-            content: Text(
-              context.tr('Could not save agent: {error}', {'error': '$e'}),
-              style: Sa.body(size: 12.5, color: Sa.red),
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteAgent(_AgentSpec agent) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.72),
-      builder: (_) => _DeleteAgentDialog(agent: agent),
-    );
-    if (confirmed != true) return;
-    try {
-      await Future.wait([
-        FirebaseDatabase.instance
-            .ref('ai_agents/registry/${agent.id}')
-            .remove(),
-        FirebaseDatabase.instance.ref('ai_agent_secrets/${agent.id}').remove(),
-      ]);
-      if (mounted) {
-        setState(() {
-          if (_selectedId == agent.id) _selectedId = 'shift';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Sa.panelSolid,
-            content: Text(
-              context.tr('{name} decommissioned and wiped.', {
-                'name': agent.name,
-              }),
-              style: Sa.body(size: 12.5, color: Sa.red),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Sa.panelSolid,
-            content: Text(
-              context.tr('Delete failed: {error}', {'error': '$e'}),
-              style: Sa.body(size: 12.5, color: Sa.red),
-            ),
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final agents = _agents;
+    final agents = _kAgents;
     final agent = agents.firstWhere(
       (a) => a.id == _selectedId,
       orElse: () => agents.first,
@@ -1054,12 +780,9 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
                   controller: _railCtrl,
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.only(bottom: 12),
-                  itemCount: agents.length + 1,
+                  itemCount: agents.length,
                   separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemBuilder: (_, i) {
-                    if (i == agents.length) {
-                      return _AddAgentCard(onTap: () => _openEditor());
-                    }
                     final a = agents[i];
                     return _AgentCard(
                       spec: a,
@@ -1067,7 +790,6 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
                       enabled: _isEnabled(a.id),
                       onTap: () => setState(() => _selectedId = a.id),
                       onToggle: a.maintenance ? null : (v) => _setEnabled(a, v),
-                      onDelete: a.custom ? () => _deleteAgent(a) : null,
                     );
                   },
                 ),
@@ -1105,12 +827,7 @@ class _AiAgentsTabState extends State<AiAgentsTab> {
                   enabled: _isEnabled('predictive'),
                 ),
                 'guardian' => _GuardianAgentPanel(spec: agent),
-                _ => _CustomAgentPanel(
-                  spec: agent,
-                  enabled: _isEnabled(agent.id),
-                  onEdit: () => _openEditor(editing: agent),
-                  onDelete: () => _deleteAgent(agent),
-                ),
+                _ => const SizedBox.shrink(),
               },
             ),
           ),
@@ -1293,7 +1010,6 @@ class _AgentCard extends StatefulWidget {
   final bool enabled;
   final VoidCallback onTap;
   final ValueChanged<bool>? onToggle;
-  final VoidCallback? onDelete;
 
   const _AgentCard({
     required this.spec,
@@ -1301,7 +1017,6 @@ class _AgentCard extends StatefulWidget {
     required this.enabled,
     required this.onTap,
     required this.onToggle,
-    this.onDelete,
   });
 
   @override
@@ -1372,18 +1087,6 @@ class _AgentCardState extends State<_AgentCard> {
                       ],
                     ),
                   ),
-                  if (widget.onDelete != null && (_hover || widget.selected))
-                    GestureDetector(
-                      onTap: widget.onDelete,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: Icon(
-                          Icons.delete_outline,
-                          size: 15,
-                          color: Sa.red.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -1399,14 +1102,6 @@ class _AgentCardState extends State<_AgentCard> {
                 children: [
                   if (spec.maintenance)
                     GlowChip(label: context.tr('MAINTENANCE'), color: Sa.amber)
-                  else if (spec.custom)
-                    GlowChip(
-                      label: live
-                          ? context.tr('ONLINE')
-                          : context.tr('OFFLINE'),
-                      color: live ? accent : Sa.muted,
-                      pulse: live,
-                    )
                   else
                     GlowChip(
                       label: live
@@ -1415,9 +1110,6 @@ class _AgentCardState extends State<_AgentCard> {
                       color: live ? Sa.green : Sa.muted,
                       pulse: live,
                     ),
-                  const SizedBox(width: 6),
-                  if (spec.custom)
-                    Icon(Icons.auto_awesome, size: 11, color: accent),
                   const Spacer(),
                   if (widget.onToggle != null)
                     _NeonToggle(
@@ -1426,79 +1118,6 @@ class _AgentCardState extends State<_AgentCard> {
                       onChanged: widget.onToggle!,
                     ),
                 ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The trailing "+ DEPLOY AGENT" tile on the fleet rail.
-class _AddAgentCard extends StatefulWidget {
-  final VoidCallback onTap;
-  const _AddAgentCard({required this.onTap});
-
-  @override
-  State<_AddAgentCard> createState() => _AddAgentCardState();
-}
-
-class _AddAgentCardState extends State<_AddAgentCard> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = Sa.cyan;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: 150,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: _hover
-                ? accent.withValues(alpha: Sa.isDark ? 0.10 : 0.06)
-                : Sa.panel.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _hover ? accent : Sa.border,
-              style: BorderStyle.solid,
-            ),
-            boxShadow: [
-              if (_hover)
-                BoxShadow(color: accent.withValues(alpha: 0.2), blurRadius: 16),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      accent.withValues(alpha: 0.22),
-                      accent.withValues(alpha: 0.02),
-                    ],
-                  ),
-                  border: Border.all(color: accent.withValues(alpha: 0.5)),
-                ),
-                child: Icon(Icons.add, color: accent, size: 22),
-              ),
-              const SizedBox(height: 10),
-              Text(context.tr('DEPLOY AGENT'), style: Sa.heading(size: 11.5)),
-              const SizedBox(height: 2),
-              Text(
-                context.tr('Add a unit to the fleet'),
-                textAlign: TextAlign.center,
-                style: Sa.mono(size: 7.5, color: Sa.muted),
               ),
             ],
           ),
@@ -6333,7 +5952,7 @@ class _PredictiveAgentPanelState extends State<_PredictiveAgentPanel> {
                     spacing: 6,
                     children: [
                       GlowChip(
-                        label: 'SIA-GBDT v$version',
+                        label: 'SIAS-GBDT v$version',
                         color: spec.accent,
                         icon: Icons.account_tree_outlined,
                       ),
@@ -6764,7 +6383,7 @@ class _PredictiveBrainView extends StatelessWidget {
                       ),
                 accent: accent,
                 trailing: GlowChip(
-                  label: 'SIA-GBDT v$version',
+                  label: 'SIAS-GBDT v$version',
                   color: accent,
                   icon: Icons.account_tree_outlined,
                   pulse: enabled && deployed,
@@ -8700,1295 +8319,4 @@ class _AutomaticModeWarningDialog extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CUSTOM AGENTS · ICON PALETTE
-// ═══════════════════════════════════════════════════════════════════════════
 
-/// Fixed icon palette for operator-created agents. Keys (not raw code points)
-/// are stored in RTDB so every [IconData] used by the app stays const — that
-/// keeps Flutter's release icon tree-shaking working.
-const Map<String, IconData> _kAgentIcons = {
-  'robot': Icons.smart_toy_outlined,
-  'bolt': Icons.bolt,
-  'shield': Icons.shield_outlined,
-  'brain': Icons.psychology_outlined,
-  'radar': Icons.radar,
-  'chat': Icons.forum_outlined,
-  'eye': Icons.visibility_outlined,
-  'gear': Icons.settings_suggest_outlined,
-  'rocket': Icons.rocket_launch_outlined,
-  'chart': Icons.insights_outlined,
-  'flask': Icons.science_outlined,
-  'hub': Icons.hub_outlined,
-  'translate': Icons.translate,
-  'inventory': Icons.inventory_2_outlined,
-  'bug': Icons.bug_report_outlined,
-  'bell': Icons.notifications_active_outlined,
-};
-
-const List<int> _kAccentSwatches = [
-  0x22D3EE,
-  0x3B82F6,
-  0xA78BFA,
-  0x34D399,
-  0xFBBF24,
-  0xF87171,
-  0xF472B6,
-  0xF6821F,
-  0x10A37F,
-  0x64748B,
-];
-
-String _hexOf(int rgb) => rgb.toRadixString(16).padLeft(6, '0');
-
-/// Decode-resize-PNG-encode an uploaded logo to a small base64 string so the
-/// registry record stays light (the screen streams it live). Falls back to the
-/// raw bytes when decoding is unavailable and the file is already small.
-Future<String?> _encodeLogoBase64(Uint8List bytes) async {
-  try {
-    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 192);
-    final frame = await codec.getNextFrame();
-    final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-    frame.image.dispose();
-    if (data != null) return base64Encode(data.buffer.asUint8List());
-  } catch (_) {}
-  if (bytes.length <= 220 * 1024) return base64Encode(bytes);
-  return null;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CUSTOM AGENT · DETAIL PANEL
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _CustomAgentPanel extends StatefulWidget {
-  final _AgentSpec spec;
-  final bool enabled;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  const _CustomAgentPanel({
-    required this.spec,
-    required this.enabled,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  @override
-  State<_CustomAgentPanel> createState() => _CustomAgentPanelState();
-}
-
-class _CustomAgentPanelState extends State<_CustomAgentPanel> {
-  bool _reveal = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final spec = widget.spec;
-    final provider = _Providers.of(spec.provider);
-    final token = (spec.apiToken ?? '');
-    final masked = token.isEmpty
-        ? context.tr('NO CREDENTIAL ON FILE')
-        : token.length <= 4
-        ? '••••'
-        : '${'•' * (token.length - 4).clamp(4, 24)}${token.substring(token.length - 4)}';
-
-    return _AgentScroll(
-      children: [
-        if (!widget.enabled) _OfflineBanner(spec: spec),
-        // ── HERO ──────────────────────────────────────────────────────────
-        GlassPanel(
-          accent: spec.accent,
-          glow: widget.enabled,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SaSectionHeader(
-                icon: spec.icon,
-                leading: _AgentGlyph(spec: spec, size: 36, radius: 10),
-                title: context.tr(spec.name),
-                subtitle: spec.codename,
-                accent: spec.accent,
-                trailing: Wrap(
-                  spacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    GlowChip(
-                      label: context.tr('CUSTOM UNIT'),
-                      color: spec.accent,
-                      icon: Icons.auto_awesome,
-                    ),
-                    GlowChip(
-                      label: widget.enabled
-                          ? context.tr('ONLINE')
-                          : context.tr('OFFLINE'),
-                      color: widget.enabled ? Sa.green : Sa.muted,
-                      pulse: widget.enabled,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SaStatTile(
-                    label: context.tr('Provider'),
-                    value: provider.name,
-                    icon: Icons.cloud_outlined,
-                    color: spec.accent,
-                  ),
-                  SaStatTile(
-                    label: context.tr('Model'),
-                    value: (spec.model ?? '').isEmpty ? '—' : spec.model!,
-                    icon: Icons.memory,
-                    color: Sa.blue,
-                  ),
-                  SaStatTile(
-                    label: context.tr('Credential'),
-                    value: token.isEmpty
-                        ? context.tr('MISSING')
-                        : context.tr('ON FILE'),
-                    icon: Icons.vpn_key_outlined,
-                    color: token.isEmpty ? Sa.amber : Sa.green,
-                  ),
-                  SaStatTile(
-                    label: context.tr('Deployed'),
-                    value: _agoIso(context, spec.createdAt),
-                    icon: Icons.schedule,
-                    color: Sa.muted,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  SaButton(
-                    label: context.tr('EDIT AGENT'),
-                    icon: Icons.tune,
-                    color: spec.accent,
-                    outlined: true,
-                    onPressed: widget.onEdit,
-                  ),
-                  const SizedBox(width: 10),
-                  SaButton(
-                    label: context.tr('DELETE'),
-                    icon: Icons.delete_forever_outlined,
-                    color: Sa.red,
-                    outlined: true,
-                    onPressed: widget.onDelete,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        // ── PROFILE ───────────────────────────────────────────────────────
-        GlassPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SaSectionHeader(
-                icon: Icons.badge_outlined,
-                title: context.tr('PROFILE'),
-                subtitle: context.tr(
-                  'Who this agent is and what it stands for.',
-                ),
-                accent: spec.accent,
-              ),
-              const SizedBox(height: 12),
-              if ((spec.description ?? '').trim().isEmpty)
-                Text(
-                  context.tr('No description provided.'),
-                  style: Sa.body(size: 12, color: Sa.textDim),
-                )
-              else
-                Text(spec.description!, style: Sa.body(size: 12.5)),
-            ],
-          ),
-        ),
-        // ── MISSION / TASKS ───────────────────────────────────────────────
-        _CustomDocPanel(
-          icon: Icons.assignment_outlined,
-          title: context.tr('MISSION BRIEF'),
-          subtitle: context.tr('The tasks this agent is responsible for.'),
-          accent: spec.accent,
-          body: spec.tasks ?? '',
-          fileName: spec.tasksFile,
-          emptyMsg: context.tr(
-            'No tasks defined yet — edit the agent to brief it.',
-          ),
-        ),
-        // ── SKILLS ────────────────────────────────────────────────────────
-        _CustomDocPanel(
-          icon: Icons.school_outlined,
-          title: context.tr('SKILLS & CAPABILITIES'),
-          subtitle: context.tr('What this agent knows how to do.'),
-          accent: spec.accent,
-          body: spec.skills ?? '',
-          fileName: spec.skillsFile,
-          emptyMsg: context.tr('No skills listed yet.'),
-        ),
-        // ── CREDENTIALS ───────────────────────────────────────────────────
-        GlassPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SaSectionHeader(
-                icon: Icons.vpn_key_outlined,
-                title: context.tr('CREDENTIALS'),
-                subtitle: context.tr(
-                  'The LLM provider and API token this agent authenticates with.',
-                ),
-                accent: spec.accent,
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: provider.color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: provider.color.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Center(
-                      child: _ProviderLogo(
-                        provider: provider,
-                        size: 28,
-                        color: provider.color,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(provider.name, style: Sa.heading(size: 14)),
-                        Text(
-                          (spec.model ?? '').isEmpty
-                              ? context.tr('Default model')
-                              : spec.model!,
-                          style: Sa.mono(size: 10.5, color: Sa.textDim),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: Sa.termBg,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Sa.termBorder),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.key, size: 14, color: Sa.termMuted),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: SelectableText(
-                        _reveal && token.isNotEmpty ? token : masked,
-                        style: Sa.mono(size: 11.5, color: Sa.termText),
-                      ),
-                    ),
-                    if (token.isNotEmpty) ...[
-                      IconButton(
-                        tooltip: _reveal
-                            ? context.tr('Hide')
-                            : context.tr('Reveal'),
-                        onPressed: () => setState(() => _reveal = !_reveal),
-                        icon: Icon(
-                          _reveal
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          size: 16,
-                          color: Sa.termDim,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: context.tr('Copy'),
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: token));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: Sa.panelSolid,
-                              content: Text(
-                                context.tr('Token copied to clipboard.'),
-                                style: Sa.body(size: 12.5),
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.copy_all_outlined,
-                          size: 15,
-                          color: Sa.termDim,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.info_outline, size: 12, color: Sa.muted),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      context.tr(
-                        'Stored separately in a superadmin-only credential vault. Treat it as a secret — rotate it from EDIT AGENT if it leaks.',
-                      ),
-                      style: Sa.body(size: 10.5, color: Sa.muted),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Reusable read-only document panel (tasks / skills) with an optional source
-/// file chip.
-class _CustomDocPanel extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color accent;
-  final String body;
-  final String? fileName;
-  final String emptyMsg;
-
-  const _CustomDocPanel({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.accent,
-    required this.body,
-    required this.fileName,
-    required this.emptyMsg,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasBody = body.trim().isNotEmpty;
-    return GlassPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SaSectionHeader(
-            icon: icon,
-            title: title,
-            subtitle: subtitle,
-            accent: accent,
-            trailing: (fileName ?? '').isEmpty
-                ? null
-                : GlowChip(
-                    label: fileName!.toUpperCase(),
-                    color: accent,
-                    icon: Icons.attach_file,
-                  ),
-          ),
-          const SizedBox(height: 12),
-          if (!hasBody)
-            Text(emptyMsg, style: Sa.body(size: 12, color: Sa.textDim))
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Sa.termBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Sa.termBorder),
-              ),
-              child: SelectableText(
-                body,
-                style: Sa.mono(size: 11.5, color: Sa.termText),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AGENT EDITOR DIALOG (add / edit a custom agent)
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _AgentEditorDialog extends StatefulWidget {
-  final _AgentSpec? editing;
-  const _AgentEditorDialog({this.editing});
-
-  @override
-  State<_AgentEditorDialog> createState() => _AgentEditorDialogState();
-}
-
-class _AgentEditorDialogState extends State<_AgentEditorDialog> {
-  late final TextEditingController _name;
-  late final TextEditingController _codename;
-  late final TextEditingController _description;
-  late final TextEditingController _tasks;
-  late final TextEditingController _skills;
-  late final TextEditingController _model;
-  late final TextEditingController _token;
-
-  String? _logoData;
-  bool _logoBusy = false;
-  String _iconKey = 'robot';
-  String _accentHex = '22D3EE';
-  String? _provider;
-  String? _tasksFile;
-  String? _skillsFile;
-  bool _revealToken = false;
-  bool _modelEdited = false;
-  bool _showError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final e = widget.editing;
-    _name = TextEditingController(text: e?.name ?? '');
-    _codename = TextEditingController(
-      text: (e?.codename ?? '') == 'CUSTOM UNIT' ? '' : (e?.codename ?? ''),
-    );
-    _description = TextEditingController(text: e?.description ?? '');
-    _tasks = TextEditingController(text: e?.tasks ?? '');
-    _skills = TextEditingController(text: e?.skills ?? '');
-    _model = TextEditingController(text: e?.model ?? '');
-    _token = TextEditingController(text: e?.apiToken ?? '');
-    _logoData = e?.logoData;
-    _tasksFile = e?.tasksFile;
-    _skillsFile = e?.skillsFile;
-    _provider = (e?.provider ?? '').isEmpty ? null : e!.provider;
-    _accentHex = (e?.accentHex ?? '').isEmpty ? '22D3EE' : e!.accentHex!;
-    _modelEdited = (e?.model ?? '').isNotEmpty;
-    // Resolve the stored icon back to its palette key.
-    if (e != null) {
-      _kAgentIcons.forEach((k, v) {
-        if (v == e.icon) _iconKey = k;
-      });
-    }
-    _model.addListener(() => _modelEdited = true);
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _codename.dispose();
-    _description.dispose();
-    _tasks.dispose();
-    _skills.dispose();
-    _model.dispose();
-    _token.dispose();
-    super.dispose();
-  }
-
-  Color get _accent {
-    final v = int.tryParse(_accentHex, radix: 16);
-    return v == null ? Sa.cyan : Color(0xFF000000 | v);
-  }
-
-  Future<void> _attachLogo() async {
-    setState(() => _logoBusy = true);
-    try {
-      final res = await FilePicker.pickFiles(
-        type: FileType.image,
-        withData: true,
-      );
-      final files = res?.files ?? const [];
-      final bytes = files.isNotEmpty ? files.first.bytes : null;
-      if (bytes != null) {
-        final encoded = await _encodeLogoBase64(bytes);
-        if (encoded != null && mounted) setState(() => _logoData = encoded);
-      }
-    } catch (_) {
-    } finally {
-      if (mounted) setState(() => _logoBusy = false);
-    }
-  }
-
-  Future<void> _attachText({required bool tasks}) async {
-    try {
-      final res = await FilePicker.pickFiles(withData: true);
-      final files = res?.files ?? const [];
-      if (files.isEmpty) return;
-      final f = files.first;
-      String? content;
-      final bytes = f.bytes;
-      if (bytes != null && bytes.length <= 200 * 1024) {
-        try {
-          content = utf8.decode(bytes, allowMalformed: true);
-        } catch (_) {}
-      }
-      setState(() {
-        if (tasks) {
-          _tasksFile = f.name;
-          if (content != null && content.trim().isNotEmpty) {
-            _tasks.text = content;
-          }
-        } else {
-          _skillsFile = f.name;
-          if (content != null && content.trim().isNotEmpty) {
-            _skills.text = content;
-          }
-        }
-      });
-    } catch (_) {}
-  }
-
-  void _save() {
-    final name = _name.text.trim();
-    if (name.isEmpty || _provider == null) {
-      setState(() => _showError = true);
-      return;
-    }
-    final map = <String, dynamic>{
-      'name': name.toUpperCase(),
-      'codename': _codename.text.trim().isEmpty
-          ? 'CUSTOM UNIT'
-          : _codename.text.trim().toUpperCase(),
-      'description': _description.text.trim(),
-      'tasks': _tasks.text.trim(),
-      'skills': _skills.text.trim(),
-      'provider': _provider,
-      'model': _model.text.trim(),
-      'apiToken': _token.text.trim(),
-      'iconKey': _iconKey,
-      'accentHex': _accentHex,
-    };
-    if ((_logoData ?? '').isNotEmpty) map['logoData'] = _logoData;
-    if ((_tasksFile ?? '').isNotEmpty) map['tasksFile'] = _tasksFile;
-    if ((_skillsFile ?? '').isNotEmpty) map['skillsFile'] = _skillsFile;
-    Navigator.pop(context, map);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = _accent;
-    final editing = widget.editing != null;
-    final logoBytes = () {
-      final d = _logoData;
-      if (d == null || d.isEmpty) return null;
-      try {
-        return base64Decode(d.contains(',') ? d.split(',').last : d);
-      } catch (_) {
-        return null;
-      }
-    }();
-
-    return Dialog(
-      backgroundColor: Sa.panelSolid,
-      insetPadding: const EdgeInsets.all(20),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: accent.withValues(alpha: 0.45)),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 18, 14, 16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    accent.withValues(alpha: Sa.isDark ? 0.18 : 0.10),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          accent.withValues(alpha: 0.3),
-                          accent.withValues(alpha: 0.08),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: accent.withValues(alpha: 0.5)),
-                    ),
-                    child: logoBytes != null
-                        ? Padding(
-                            padding: const EdgeInsets.all(5),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.memory(
-                                logoBytes,
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                              ),
-                            ),
-                          )
-                        : Icon(_kAgentIcons[_iconKey], color: accent, size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          editing
-                              ? context.tr('EDIT AGENT')
-                              : context.tr('DEPLOY NEW AGENT'),
-                          style: Sa.display(size: 16),
-                        ),
-                        Text(
-                          context.tr(
-                            'Configure a custom autonomous unit for the fleet',
-                          ),
-                          style: Sa.mono(size: 9, color: Sa.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close, size: 18, color: Sa.muted),
-                  ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: Sa.border),
-            // Body
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _label(context.tr('IDENTITY'), accent),
-                    const SizedBox(height: 10),
-                    _textField(
-                      _name,
-                      hint: context.tr('Agent name (e.g. Quality Inspector)'),
-                      icon: Icons.badge_outlined,
-                    ),
-                    const SizedBox(height: 10),
-                    _textField(
-                      _codename,
-                      hint: context.tr(
-                        'Codename (optional, e.g. UNIT-07 · SENTRY)',
-                      ),
-                      icon: Icons.tag,
-                    ),
-                    const SizedBox(height: 10),
-                    _textField(
-                      _description,
-                      hint: context.tr(
-                        'Short description of what this agent is for',
-                      ),
-                      icon: Icons.notes_outlined,
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 20),
-
-                    _label(context.tr('APPEARANCE'), accent),
-                    const SizedBox(height: 10),
-                    _appearanceRow(accent, logoBytes != null),
-                    const SizedBox(height: 20),
-
-                    _label(context.tr('MISSION · TASKS'), accent),
-                    const SizedBox(height: 6),
-                    Text(
-                      context.tr(
-                        'Describe the tasks, or attach a brief / spec file.',
-                      ),
-                      style: Sa.body(size: 10.5, color: Sa.textDim),
-                    ),
-                    const SizedBox(height: 10),
-                    _textField(
-                      _tasks,
-                      hint: context.tr(
-                        'e.g. Review incoming quality alerts, draft a containment checklist…',
-                      ),
-                      maxLines: 4,
-                    ),
-                    const SizedBox(height: 8),
-                    _attachRow(
-                      fileName: _tasksFile,
-                      onAttach: () => _attachText(tasks: true),
-                      onClear: () => setState(() => _tasksFile = null),
-                      accent: accent,
-                    ),
-                    const SizedBox(height: 20),
-
-                    _label(context.tr('SKILLS · CAPABILITIES'), accent),
-                    const SizedBox(height: 6),
-                    Text(
-                      context.tr(
-                        'List the skills, or attach a capability sheet.',
-                      ),
-                      style: Sa.body(size: 10.5, color: Sa.textDim),
-                    ),
-                    const SizedBox(height: 10),
-                    _textField(
-                      _skills,
-                      hint: context.tr(
-                        'e.g. Root-cause analysis, ISO 9001 knowledge, French + English…',
-                      ),
-                      maxLines: 4,
-                    ),
-                    const SizedBox(height: 8),
-                    _attachRow(
-                      fileName: _skillsFile,
-                      onAttach: () => _attachText(tasks: false),
-                      onClear: () => setState(() => _skillsFile = null),
-                      accent: accent,
-                    ),
-                    const SizedBox(height: 20),
-
-                    _label(context.tr('MODEL PROVIDER'), accent),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        for (final p in _Providers.list)
-                          _ProviderTile(
-                            provider: p,
-                            selected: _provider == p.id,
-                            onTap: () => setState(() {
-                              _provider = p.id;
-                              if (!_modelEdited) {
-                                _model.text = p.defaultModel;
-                                _modelEdited = false;
-                              }
-                            }),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _textField(
-                      _model,
-                      hint: context.tr('Model id (e.g. {hint})', {
-                        'hint': _providerHint(),
-                      }),
-                      icon: Icons.memory,
-                    ),
-                    const SizedBox(height: 12),
-                    _textField(
-                      _token,
-                      hint: _provider == null
-                          ? context.tr('API token / key')
-                          : context.tr('API token — {hint}', {
-                              'hint': _Providers.of(_provider).tokenHint,
-                            }),
-                      icon: Icons.vpn_key_outlined,
-                      obscure: !_revealToken,
-                      suffix: IconButton(
-                        onPressed: () =>
-                            setState(() => _revealToken = !_revealToken),
-                        icon: Icon(
-                          _revealToken
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          size: 16,
-                          color: Sa.muted,
-                        ),
-                      ),
-                    ),
-                    if (_showError) ...[
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Icon(Icons.error_outline, size: 14, color: Sa.red),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              context.tr(
-                                'A name and a model provider are required.',
-                              ),
-                              style: Sa.body(size: 11.5, color: Sa.red),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            Divider(height: 1, color: Sa.border),
-            // Footer
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  SaButton(
-                    label: context.tr('CANCEL'),
-                    icon: Icons.close,
-                    color: Sa.muted,
-                    outlined: true,
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 10),
-                  SaButton(
-                    label: editing
-                        ? context.tr('SAVE CHANGES')
-                        : context.tr('DEPLOY AGENT'),
-                    icon: editing ? Icons.save_outlined : Icons.rocket_launch,
-                    color: accent,
-                    onPressed: _save,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _providerHint() =>
-      _provider == null ? 'gpt-4o' : _Providers.of(_provider).defaultModel;
-
-  Widget _label(String text, Color accent) => Row(
-    children: [
-      Container(width: 3, height: 14, color: accent),
-      const SizedBox(width: 8),
-      Text(text, style: Sa.heading(size: 12.5, color: accent)),
-    ],
-  );
-
-  Widget _textField(
-    TextEditingController c, {
-    String? hint,
-    IconData? icon,
-    int maxLines = 1,
-    bool obscure = false,
-    Widget? suffix,
-  }) {
-    return TextField(
-      controller: c,
-      maxLines: obscure ? 1 : maxLines,
-      obscureText: obscure,
-      style: Sa.body(size: 13),
-      cursorColor: _accent,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: Sa.body(size: 12, color: Sa.muted),
-        prefixIcon: icon != null ? Icon(icon, size: 17, color: Sa.muted) : null,
-        suffixIcon: suffix,
-        isDense: true,
-        filled: true,
-        fillColor: Sa.bgRaised.withValues(alpha: 0.6),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 13,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Sa.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: _accent),
-        ),
-      ),
-    );
-  }
-
-  Widget _appearanceRow(Color accent, bool hasLogo) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            SaButton(
-              label: hasLogo
-                  ? context.tr('REPLACE LOGO')
-                  : context.tr('UPLOAD LOGO'),
-              icon: Icons.image_outlined,
-              color: accent,
-              outlined: true,
-              busy: _logoBusy,
-              onPressed: _attachLogo,
-            ),
-            const SizedBox(width: 10),
-            if (hasLogo)
-              SaButton(
-                label: context.tr('REMOVE'),
-                icon: Icons.delete_outline,
-                color: Sa.red,
-                outlined: true,
-                onPressed: () => setState(() => _logoData = null),
-              ),
-            const Spacer(),
-            Text(
-              hasLogo
-                  ? context.tr('Custom logo set')
-                  : context.tr('No logo · pick an icon'),
-              style: Sa.mono(size: 9, color: Sa.muted),
-            ),
-          ],
-        ),
-        if (!hasLogo) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final entry in _kAgentIcons.entries)
-                GestureDetector(
-                  onTap: () => setState(() => _iconKey = entry.key),
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: _iconKey == entry.key
-                          ? accent.withValues(alpha: 0.16)
-                          : Sa.bgRaised.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: _iconKey == entry.key ? accent : Sa.border,
-                        width: _iconKey == entry.key ? 1.4 : 1,
-                      ),
-                    ),
-                    child: Icon(
-                      entry.value,
-                      size: 18,
-                      color: _iconKey == entry.key ? accent : Sa.textDim,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Text(context.tr('ACCENT'), style: Sa.mono(size: 9, color: Sa.muted)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final rgb in _kAccentSwatches)
-                    GestureDetector(
-                      onTap: () => setState(() => _accentHex = _hexOf(rgb)),
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: Color(0xFF000000 | rgb),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _accentHex == _hexOf(rgb)
-                                ? Sa.text
-                                : Colors.transparent,
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            if (_accentHex == _hexOf(rgb))
-                              BoxShadow(
-                                color: Color(
-                                  0xFF000000 | rgb,
-                                ).withValues(alpha: 0.5),
-                                blurRadius: 8,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _attachRow({
-    required String? fileName,
-    required VoidCallback onAttach,
-    required VoidCallback onClear,
-    required Color accent,
-  }) {
-    return Row(
-      children: [
-        InkWell(
-          onTap: onAttach,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.upload_file_outlined, size: 15, color: accent),
-                const SizedBox(width: 6),
-                Text(
-                  context.tr('ATTACH FILE'),
-                  style: Sa.mono(
-                    size: 9.5,
-                    color: accent,
-                    weight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if ((fileName ?? '').isNotEmpty) ...[
-          const SizedBox(width: 8),
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Sa.bgRaised.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Sa.border),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.description_outlined, size: 12, color: Sa.textDim),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      fileName!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Sa.mono(size: 9.5, color: Sa.textDim),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  GestureDetector(
-                    onTap: onClear,
-                    child: Icon(Icons.close, size: 12, color: Sa.muted),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DELETE CONFIRMATION (blood red)
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _DeleteAgentDialog extends StatefulWidget {
-  final _AgentSpec agent;
-  const _DeleteAgentDialog({required this.agent});
-
-  @override
-  State<_DeleteAgentDialog> createState() => _DeleteAgentDialogState();
-}
-
-class _DeleteAgentDialogState extends State<_DeleteAgentDialog>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c;
-  static const Color _blood = Color(0xFFE11D2E);
-  static const Color _bloodDeep = Color(0xFF7F0E18);
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFF1A0608),
-      insetPadding: const EdgeInsets.all(24),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: _blood, width: 1.5),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Stack(
-          children: [
-            // Pulsing danger glow.
-            Positioned.fill(
-              child: AnimatedBuilder(
-                animation: _c,
-                builder: (_, __) => DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: RadialGradient(
-                      center: const Alignment(0, -0.7),
-                      radius: 1.2,
-                      colors: [
-                        _blood.withValues(alpha: 0.12 + 0.10 * _c.value),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedBuilder(
-                    animation: _c,
-                    builder: (_, __) => Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const RadialGradient(
-                          colors: [_blood, _bloodDeep],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _blood.withValues(
-                              alpha: 0.4 + 0.3 * _c.value,
-                            ),
-                            blurRadius: 24 + 10 * _c.value,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.white,
-                        size: 38,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    context.tr('DECOMMISSION AGENT'),
-                    style: Sa.display(size: 18, color: Colors.white),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _blood.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: _blood.withValues(alpha: 0.6)),
-                    ),
-                    child: Text(
-                      widget.agent.name,
-                      style: Sa.mono(
-                        size: 11,
-                        color: const Color(0xFFFFB4BC),
-                        weight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    context.tr(
-                      'This permanently removes the agent, its mission brief, skills and stored API credential from the fleet registry.\n\nThis action cannot be undone.',
-                    ),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      height: 1.5,
-                      color: Color(0xFFE9C4C8),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFE9C4C8),
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.25),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: Text(
-                            context.tr('CANCEL'),
-                            style: Sa.heading(
-                              size: 12.5,
-                              color: const Color(0xFFE9C4C8),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: _blood,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.delete_forever,
-                                size: 17,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                context.tr('DELETE PERMANENTLY'),
-                                style: Sa.heading(
-                                  size: 12.5,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

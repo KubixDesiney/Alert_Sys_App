@@ -1,4 +1,4 @@
-# SIA on-prem scaffold
+# SIAS on-prem scaffold
 Air-gapped infrastructure: Caddy (TLS/proxy/static) + PocketBase (data/auth/realtime) +
 worker-runner (Node cron logic). Full plan in ../../ONPREM.md.
 

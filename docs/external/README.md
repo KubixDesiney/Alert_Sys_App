@@ -1,6 +1,6 @@
 # External Validation Pack
 
-The remaining gap between SIA's 9.4 and a legitimate 10 is **external validation** —
+The remaining gap between SIAS's 9.4 and a legitimate 10 is **external validation** —
 proof from third parties that no amount of code can manufacture. These documents are
 the kickoff artifacts so each process starts in days, not months. Writing them does
 not raise the score; **completing the work they describe does.**

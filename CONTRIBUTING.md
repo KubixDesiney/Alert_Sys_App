@@ -1,4 +1,4 @@
-# Contributing to SIA
+# Contributing to SIAS
 
 This guide keeps the codebase production-grade. It applies to humans and to the
 Guardian agent (ADR-0005) alike — the automated pipeline enforces the same gates.

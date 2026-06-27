@@ -1,7 +1,7 @@
-# SOC 2 Control Matrix — SIA
+# SOC 2 Control Matrix — SIAS
 
 Maps the AICPA Trust Services Criteria (TSC, 2017 incl. 2022 points of focus) to
-SIA's implemented controls and the evidence an auditor can pull. Target: **SOC 2
+SIAS's implemented controls and the evidence an auditor can pull. Target: **SOC 2
 Type I** first (design at a point in time), then **Type II** (operating
 effectiveness over a 3–6 month window).
 

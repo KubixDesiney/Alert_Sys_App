@@ -1,11 +1,11 @@
 # On-premise / air-gapped deployment
 
 Many industrial buyers cannot use cloud services on the plant network. This is the
-architecture and migration plan to run SIA entirely on a customer's own hardware, plus a
+architecture and migration plan to run SIAS entirely on a customer's own hardware, plus a
 runnable scaffold under `deploy/onprem/`.
 
 ## Honest status
-Today SIA runs on Firebase (Auth + Realtime Database) and Cloudflare Workers. A true
+Today SIAS runs on Firebase (Auth + Realtime Database) and Cloudflare Workers. A true
 air-gapped build replaces those two cloud dependencies. This document is a **plan + a
 working scaffold of the surrounding infrastructure** — the data/auth backend port and
 the worker-logic port are scoped here as defined engineering work, not yet shipped.
@@ -34,7 +34,7 @@ the worker-logic port are scoped here as defined engineering work, not yet shipp
 ## Phased migration
 1. **Abstract the data layer** - DONE (additive): `lib/services/data/` ships a `DataStore`
    interface with a Firebase adapter (delegates to `AlertService`, zero behaviour change) and
-   a PocketBase adapter, selectable via `--dart-define=SIA_BACKEND`. Remaining: switch callers
+   a PocketBase adapter, selectable via `--dart-define=SIAS_BACKEND`. Remaining: switch callers
    (`AlertProvider`/services) from Firebase-direct to `DataStore`.
 2. **Port `database.rules.json`** authorization to PocketBase API rules - DONE
    (`deploy/onprem/pocketbase/RULES_PORT.md` + importable `pb_schema.json`).

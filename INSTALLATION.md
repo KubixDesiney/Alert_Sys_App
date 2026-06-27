@@ -1,8 +1,8 @@
-# SIA — Installation & Deployment Guide
+# SIAS — Installation & Deployment Guide
 
-This guide stands up a **dedicated Smart Industrial Alert (SIA) instance** for a
-controlled pilot. SIA is deployed per customer: the customer owns the Firebase
-project, the Cloudflare account, and any AI-provider keys. SIA does not
+This guide stands up a **dedicated SIAS - Smart Industrial Alert System instance** for a
+controlled pilot. SIAS is deployed per customer: the customer owns the Firebase
+project, the Cloudflare account, and any AI-provider keys. SIAS does not
 centralize customer data.
 
 > **Secrets policy.** This document lists the *names* of the secrets you must
@@ -13,7 +13,7 @@ centralize customer data.
 
 ## 1. Architecture at a glance
 
-A SIA instance is four cooperating parts:
+A SIAS instance is four cooperating parts:
 
 1. **Flutter client** (Android primary; web/iOS/desktop support paths) — the
    supervisor, Production Manager, and SuperAdmin apps.

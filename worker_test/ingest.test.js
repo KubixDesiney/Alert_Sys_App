@@ -41,7 +41,7 @@ describe('typeFromMetric', () => {
     expect(typeFromMetric('smoke_detector')).toBe('Safety');
     expect(typeFromMetric('unknown_signal')).toBe('Mechanical'); // safe default
   });
-  test('canonical list is exactly the four SIA types', () => {
+  test('canonical list is exactly the four SIAS types', () => {
     expect(CANONICAL_TYPES).toEqual(['Mechanical', 'Electrical', 'Quality', 'Safety']);
   });
 });

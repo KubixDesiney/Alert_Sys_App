@@ -5,9 +5,9 @@ SOC 2 report. Written for the dedicated-instance architecture. Review with the
 auditor and counsel before issuance. `[...]` = fill per company.
 
 ## A. Overview of services
-KubixDesiney provides Smart Industrial Alert (SIA), a SaaS platform for industrial
+KubixDesiney provides SIAS - Smart Industrial Alert System, a SaaS platform for industrial
 alert intake, AI-assisted dispatch, supervisor coordination, on-device failure
-forecasting, and self-healing operations. SIA is delivered as a **dedicated
+forecasting, and self-healing operations. SIAS is delivered as a **dedicated
 instance per customer**: each customer's data resides in that customer's own
 Firebase project and is served by Cloudflare Workers deployed for that customer.
 There is no shared multi-tenant data store across customers.
@@ -52,12 +52,12 @@ in `docs/compliance/SOC2_CONTROL_MATRIX.md`.
 - **Confidentiality (C1):** per-instance isolation, role scoping, retention/disposal.
 
 ## E. Boundaries
-The system boundary includes the SIA application, its workers, Firebase rules, and
+The system boundary includes the SIAS application, its workers, Firebase rules, and
 CI/CD. It excludes the customer's broader cloud environment, the customer's SCADA/OT
 network, and the internal operations of subservice organizations.
 
 ## F. Subservice organizations (carve-out method)
-SIA relies on Google Firebase and Cloudflare as subservice organizations for
+SIAS relies on Google Firebase and Cloudflare as subservice organizations for
 infrastructure. Their SOC 2 reports are relied upon for the controls they operate
 (physical security, environmental, host hardening, platform availability). See
 "Complementary Subservice Organization Controls" below.

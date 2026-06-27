@@ -502,7 +502,7 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
     });
     final format = providerById(_cfg.provider).format;
     const msg =
-        'Test alert from Smart Industrial Alert — your monitoring webhook works.';
+        'Test alert from SIAS — your monitoring webhook works.';
     Map<String, dynamic> body;
     if (format == 'discord') {
       body = {'content': msg};

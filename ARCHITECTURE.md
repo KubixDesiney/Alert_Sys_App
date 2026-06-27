@@ -1,4 +1,4 @@
-# Architecture — Smart Industrial Alert (SIA)
+# Architecture — SIAS - Smart Industrial Alert System
 
 A concise system map. For the exhaustive module-by-module reference see
 `.claude/CLAUDE.md`; for the *why* behind key choices see `docs/adr/`.

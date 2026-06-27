@@ -220,7 +220,7 @@ function notifTitle(type) {
     case 'ai_cross_factory_recommendation': return 'AI recommendation';
     case 'ai_rejection': return 'AI rejection';
     case 'alert_suspended': return 'Alert suspended';
-    default: return 'Smart Industrial Alert - SIA';
+    default: return 'SIAS - Smart Industrial Alert System';
   }
 }
 
@@ -258,7 +258,7 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
       });
       if (claimRes.status === 412 || !claimRes.ok) continue;
       const title = notifTitle(current.type);
-      const body = String(current.message || current.type || 'Smart Industrial Alert - SIA notification');
+      const body = String(current.message || current.type || 'SIAS - Smart Industrial Alert System notification');
       const result = await sendFcmDetailed(
         fcmToken,
         title,

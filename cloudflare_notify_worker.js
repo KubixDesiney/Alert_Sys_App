@@ -1,11 +1,11 @@
-// Cloudflare Worker - Smart Industrial Alert - SIA Notifications Worker
+// Cloudflare Worker - SIAS - Smart Industrial Alert System Notifications Worker
 // Cron schedule: "* * * * *" (every minute)
 // Responsibilities: new-alert push fan-out, queued notification fan-out, /notify.
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-worker-secret, X-SIA-Worker-Secret',
+  'Access-Control-Allow-Headers': 'Content-Type, x-worker-secret, X-SIAS-Worker-Secret',
 };
 
 let _fbToken = null;
@@ -664,7 +664,7 @@ function notifTitle(type) {
     case 'ai_cross_factory_recommendation': return 'AI recommendation';
     case 'ai_rejection': return 'AI rejection';
     case 'alert_suspended': return 'Alert suspended';
-    default: return 'Smart Industrial Alert - SIA';
+    default: return 'SIAS - Smart Industrial Alert System';
   }
 }
 
@@ -674,7 +674,7 @@ function notificationBody(notif) {
       notif?.alertDescription ||
       notif?.summary ||
       notif?.type ||
-      'Smart Industrial Alert - SIA notification',
+      'SIAS - Smart Industrial Alert System notification',
   );
 }
 

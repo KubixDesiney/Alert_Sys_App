@@ -84,7 +84,7 @@ void main() {
         scopeLabel: 'Toutes les usines',
         timeRangeLabel: 'Aujourd\u2019hui',
         labelType: (type) => 'Qualit\u00E9',
-        reportName: 'Rapport op\u00E9rations \u2014 SIA',
+        reportName: 'Rapport op\u00E9rations \u2014 SIAS',
       );
 
       await doc.save();

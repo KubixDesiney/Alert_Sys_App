@@ -82,7 +82,7 @@ INSERT INTO `alerts` (`id`, `created_at`, `alert_type`, `factory`, `conveyor`, `
   group('AlertRecordParser PDF text', () {
     test('parses a spaced table extracted from PDF', () {
       const text = '''
-Smart Industrial Alert — Export
+SIAS - Smart Industrial Alert System — Export
 Date          Type           Factory    Conveyor   Station
 2026-04-01    qualite        Plant E    2          5
 2026-04-02    maintenance    Plant E    2          5

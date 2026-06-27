@@ -1,6 +1,6 @@
 # Provisioning a new company (dedicated-instance model)
 
-Smart Industrial Alert is sold **one isolated instance per company**. Each customer
+SIAS - Smart Industrial Alert System is sold **one isolated instance per company**. Each customer
 gets their own Firebase project and their own Cloudflare workers. Isolation comes
 from *separate deployments*, so there is **no shared data path** and no way for one
 company's data to leak into another's — the strongest possible guarantee, and the

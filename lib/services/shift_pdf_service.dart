@@ -102,7 +102,7 @@ class ShiftPdfService {
     await file.writeAsBytes(bytes, flush: true);
     await Share.shareXFiles([
       XFile(file.path),
-    ], text: 'SIA shift report - ${shift.name}');
+    ], text: 'SIAS shift report - ${shift.name}');
   }
 
   @visibleForTesting
@@ -293,8 +293,8 @@ class ShiftPdfService {
     final doc = pw.Document(
       theme: pdfTheme,
       title: resolvedReportName,
-      author: 'Smart Industrial Alert - SIA',
-      creator: 'Smart Industrial Alert - SIA Shift Commander',
+      author: 'SIAS - Smart Industrial Alert System',
+      creator: 'SIAS - Smart Industrial Alert System Shift Commander',
     );
 
     final created = actions.where((a) => a.kind == 'created').length;
@@ -407,7 +407,7 @@ class ShiftPdfService {
                   pw.Row(
                     children: [
                       pw.Text(
-                        'SIA - SHIFT REPORT',
+                        'SIAS - SHIFT REPORT',
                         style: pw.TextStyle(
                           fontSize: 9,
                           color: PdfPalette.navy,
@@ -1247,7 +1247,7 @@ class ShiftPdfService {
       child: pw.Row(
         children: [
           pw.Text(
-            'SIA - Shift Report - ${_safe(shift.name)}',
+            'SIAS - Shift Report - ${_safe(shift.name)}',
             style: pw.TextStyle(
               fontSize: 10,
               color: PdfPalette.text,
@@ -1315,7 +1315,7 @@ class ShiftPdfService {
           ),
           pw.SizedBox(width: 8),
           pw.Text(
-            'Smart Industrial Alert - SIA Shift Commander Briefing',
+            'SIAS - Smart Industrial Alert System Shift Commander Briefing',
             style: const pw.TextStyle(fontSize: 9, color: PdfPalette.text),
           ),
         ],

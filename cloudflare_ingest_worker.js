@@ -1,4 +1,4 @@
-// SIA Industrial Telemetry Ingestion + Connector Engine (thin router)
+// SIAS Industrial Telemetry Ingestion + Connector Engine (thin router)
 // ===================================================================
 // Deployed Cloudflare worker. All logic lives in ./cloudflare_ingest_connectors.js
 // (split out so the pure helpers are independently unit-testable and this file
