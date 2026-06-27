@@ -482,7 +482,7 @@
     },
 
     "ai_model_secrets": {
-      ".read": "auth != null && auth.token.role === 'admin'",
+      ".read": false,
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       "$agent": {
         "apiKey": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 4000)" },

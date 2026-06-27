@@ -230,9 +230,10 @@ describe('Firebase rules company database template behavior', () => {
     expect(evaluate(rules.ai_model_config['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);
     expect(evaluate(rules.ai_model_config['.read'], { auth: steel.admin, rootData: steel.root })).toBe(false);
 
-    // Secret vault: only the worker service token reads it; superadmin writes
-    // but cannot read; plain admin gets nothing.
-    expect(evaluate(rules.ai_model_secrets['.read'], { auth: serviceAuth, rootData: steel.root })).toBe(true);
+    // Secret vault: unreadable by any rule-bound auth, including the worker's own
+    // admin-claim idToken; the worker reads it via OAuth, which bypasses rules.
+    // Superadmin writes but cannot read; plain admin gets nothing either way.
+    expect(evaluate(rules.ai_model_secrets['.read'], { auth: serviceAuth, rootData: steel.root })).toBe(false);
     expect(evaluate(rules.ai_model_secrets['.read'], { auth: steel.superadmin, rootData: steel.root })).toBe(false);
     expect(evaluate(rules.ai_model_secrets['.read'], { auth: steel.admin, rootData: steel.root })).toBe(false);
     expect(evaluate(rules.ai_model_secrets['.write'], { auth: steel.superadmin, rootData: steel.root })).toBe(true);

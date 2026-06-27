@@ -116,6 +116,54 @@ function base64UrlEncode(data) {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// ai_model_secrets is rules-locked (".read": false) so no Firebase Auth idToken,
+// not even the worker's own admin-claim token, can read it. This mints a Google
+// OAuth access token from the same service account (same bypass pattern as
+// cloudflare_github_worker.js's getAccessToken) to read it directly.
+let _saAccessToken = null;
+let _saAccessTokenExpMs = 0;
+async function getServiceAccountAccessToken(env) {
+  const now = Date.now();
+  if (_saAccessToken && now < _saAccessTokenExpMs) return _saAccessToken;
+  if (!env?.FIREBASE_SERVICE_ACCOUNT) return null;
+  try {
+    const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+    const nowSec = Math.floor(now / 1000);
+    const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+    const claim = base64UrlEncode(JSON.stringify({
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/firebase.database',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: nowSec,
+      exp: nowSec + 3600,
+    }));
+    const key = await importPrivateKey(sa.private_key);
+    const signature = await crypto.subtle.sign(
+      { name: 'RSASSA-PKCS1-v1_5' },
+      key,
+      new TextEncoder().encode(`${header}.${claim}`),
+    );
+    const jwt = `${header}.${claim}.${base64UrlEncode(new Uint8Array(signature))}`;
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt,
+      }),
+    });
+    if (!res.ok) throw new Error(`OAuth token ${res.status}`);
+    const data = await res.json();
+    if (!data.access_token) return null;
+    _saAccessToken = data.access_token;
+    _saAccessTokenExpMs = now + 50 * 60 * 1000;
+    return _saAccessToken;
+  } catch (e) {
+    console.error('[AUTH] Service-account OAuth token failed: ' + e.message);
+    return null;
+  }
+}
+
 // ============ Helper functions ============
 function _briefingDateKey(date) {
   const d = new Date(date);
@@ -2797,10 +2845,16 @@ async function _loadModelConfig(env, token, agent) {
     let apiKey = cfg && cfg.apiKey ? String(cfg.apiKey) : '';
     if (!apiKey) {
       try {
-        const s = await fetch(`${env.FB_DB_URL}ai_model_secrets/${agent}.json?auth=${token}`);
-        if (s.ok) {
-          const sv = await s.json();
-          if (sv && sv.apiKey) apiKey = String(sv.apiKey);
+        // ai_model_secrets is ".read": false — read it via the service account's
+        // OAuth access token, which bypasses rules entirely (the idToken used
+        // above for ai_model_config cannot reach it).
+        const saToken = await getServiceAccountAccessToken(env);
+        if (saToken) {
+          const s = await fetch(`${env.FB_DB_URL}ai_model_secrets/${agent}.json?access_token=${saToken}`);
+          if (s.ok) {
+            const sv = await s.json();
+            if (sv && sv.apiKey) apiKey = String(sv.apiKey);
+          }
         }
       } catch (_) {}
     }
