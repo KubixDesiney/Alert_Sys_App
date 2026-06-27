@@ -1,6 +1,6 @@
 import '../../models/alert_model.dart';
 
-/// Backend-agnostic data layer for SIA's core alert lifecycle (v1 surface).
+/// Backend-agnostic data layer for SIAS's core alert lifecycle (v1 surface).
 ///
 /// ADDITIVE: nothing in the app uses this yet. It exists so the app can run
 /// against an on-prem PocketBase backend (see `deploy/onprem/`) with no cloud

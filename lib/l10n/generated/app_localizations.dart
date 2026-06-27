@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
-  /// **'Smart Industrial Alert - SIA'**
+  /// **'SIAS - Smart Industrial Alert System'**
   String get appTitle;
 
   /// No description provided for @loginTitle.

@@ -578,7 +578,7 @@ function _securityEventProfile(kind, source) {
       type: ['denied'],
       outcome: 'failure',
       severity: 7,
-      message: 'SIA security guard blocked a rate-limited request.',
+      message: 'SIAS security guard blocked a rate-limited request.',
     },
     prompt_injection_block: {
       eventKind: 'alert',
@@ -586,7 +586,7 @@ function _securityEventProfile(kind, source) {
       type: ['denied'],
       outcome: 'failure',
       severity: 8,
-      message: 'SIA security guard blocked a prompt-injection attempt.',
+      message: 'SIAS security guard blocked a prompt-injection attempt.',
     },
     bad_payload: {
       eventKind: 'alert',
@@ -594,7 +594,7 @@ function _securityEventProfile(kind, source) {
       type: ['denied', 'error'],
       outcome: 'failure',
       severity: 5,
-      message: 'SIA security guard rejected an invalid request payload.',
+      message: 'SIAS security guard rejected an invalid request payload.',
     },
     alert_flood_detected: {
       eventKind: 'alert',
@@ -602,7 +602,7 @@ function _securityEventProfile(kind, source) {
       type: ['info'],
       outcome: 'unknown',
       severity: 7,
-      message: 'SIA anomaly scan detected alert flooding.',
+      message: 'SIAS anomaly scan detected alert flooding.',
     },
     notifications_backlog: {
       eventKind: 'alert',
@@ -610,7 +610,7 @@ function _securityEventProfile(kind, source) {
       type: ['info'],
       outcome: 'unknown',
       severity: 6,
-      message: 'SIA anomaly scan detected a notification backlog.',
+      message: 'SIAS anomaly scan detected a notification backlog.',
     },
     auth_failure_surge: {
       eventKind: 'alert',
@@ -618,7 +618,7 @@ function _securityEventProfile(kind, source) {
       type: ['info'],
       outcome: 'failure',
       severity: 8,
-      message: 'SIA anomaly scan detected an authentication failure surge.',
+      message: 'SIAS anomaly scan detected an authentication failure surge.',
     },
     malformed_alerts_seen: {
       eventKind: 'event',
@@ -626,7 +626,7 @@ function _securityEventProfile(kind, source) {
       type: ['info'],
       outcome: 'unknown',
       severity: 4,
-      message: 'SIA anomaly scan observed malformed alert records.',
+      message: 'SIAS anomaly scan observed malformed alert records.',
     },
     scan_heartbeat: {
       eventKind: 'event',
@@ -634,7 +634,7 @@ function _securityEventProfile(kind, source) {
       type: ['info'],
       outcome: 'success',
       severity: 1,
-      message: 'SIA security anomaly scan completed.',
+      message: 'SIAS security anomaly scan completed.',
     },
     scan_error: {
       eventKind: 'event',
@@ -642,7 +642,7 @@ function _securityEventProfile(kind, source) {
       type: ['error'],
       outcome: 'failure',
       severity: 5,
-      message: 'SIA security anomaly scan failed.',
+      message: 'SIAS security anomaly scan failed.',
     },
   };
   return profiles[kind] || {
@@ -651,7 +651,7 @@ function _securityEventProfile(kind, source) {
     type: source === 'actions' ? ['denied'] : ['info'],
     outcome: source === 'actions' ? 'failure' : 'unknown',
     severity: source === 'actions' ? 6 : 2,
-    message: 'SIA security event.',
+    message: 'SIAS security event.',
   };
 }
 

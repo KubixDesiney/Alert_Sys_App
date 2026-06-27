@@ -1,6 +1,6 @@
-# SIA Demo Script (15 minutes, jaw-drop order)
+# SIAS Demo Script (15 minutes, jaw-drop order)
 
-Goal: prove SIA is faster than their current process, smarter (AI + prediction),
+Goal: prove SIAS is faster than their current process, smarter (AI + prediction),
 and uniquely self-healing — then land the pilot. Run on a seeded demo instance.
 
 ## 0. Setup (before the call)

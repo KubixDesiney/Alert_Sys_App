@@ -3,7 +3,7 @@
 Status: Accepted — 2026-06
 
 ## Context
-SIA is sold to industrial companies that have strict data-residency, isolation,
+SIAS is sold to industrial companies that have strict data-residency, isolation,
 and procurement requirements, and that often already own Firebase/cloud accounts.
 A shared multi-tenant backend would concentrate risk (one breach exposes all
 customers), complicate data-residency promises, and make the historical leaked

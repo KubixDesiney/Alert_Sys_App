@@ -1,4 +1,4 @@
-# SIA Pricing Model
+# SIAS Pricing Model
 
 A pricing *framework* for the dedicated-instance model (each customer runs their
 own backend). Numbers are illustrative starting points — set finals per region,
@@ -21,7 +21,7 @@ fee + per-seat, with infra pass-through, so margins are clean and buyers can mod
 
 ## Infra pass-through (transparent)
 Because each customer brings their own Firebase + Cloudflare, the cloud bill is
-**theirs** — SIA's fee is software + support, not a cloud markup. This is a
+**theirs** — SIAS's fee is software + support, not a cloud markup. This is a
 procurement advantage: no opaque "compute" line item, data stays in their account.
 
 ## Commercial levers
@@ -35,6 +35,6 @@ No per-alert or per-notification fees — supervisors must never hesitate to use
 Pricing scales with people and plants, not with how hard they lean on it.
 
 ## Positioning vs alternatives
-- vs bundled SCADA alarms: SIA is the *human-response* layer; price it as downtime insurance, not another SCADA module.
-- vs generic CMMS: SIA wins the live incident loop; often sold alongside, not instead.
+- vs bundled SCADA alarms: SIAS is the *human-response* layer; price it as downtime insurance, not another SCADA module.
+- vs generic CMMS: SIAS wins the live incident loop; often sold alongside, not instead.
 See `docs/integrations/COMPETITIVE_POSITIONING.md`.

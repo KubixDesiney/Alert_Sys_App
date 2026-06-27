@@ -9,7 +9,7 @@ import 'package:flutter/services.dart' show rootBundle;
 /// Renders the company logo from any source the Branding studio produces:
 ///   - a `data:` URI (uploaded image, base64)
 ///   - an `http(s)` URL
-///   - empty → the bundled Smart Industrial Alert mark
+///   - empty → the bundled SIAS mark
 ///
 /// When [backgroundless] is true the white plate is dropped AND the image's own
 /// near-white background is knocked out (made transparent) for uploaded/bundled

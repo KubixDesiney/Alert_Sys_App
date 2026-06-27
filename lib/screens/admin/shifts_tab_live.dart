@@ -304,7 +304,7 @@ class _ShiftExportDialogState extends State<_ShiftExportDialog> {
   String _autoName() {
     final factory =
         _factory == 'all' ? context.tr('All factories') : _factory;
-    return 'SIA Shift Commander Report - ${widget.shift.name} - $factory - ${_date(_day)}';
+    return 'SIAS Shift Commander Report - ${widget.shift.name} - $factory - ${_date(_day)}';
   }
 
   void _refreshName() {

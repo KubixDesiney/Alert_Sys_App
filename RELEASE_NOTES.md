@@ -1,16 +1,16 @@
-# Smart Industrial Alert (SIA) — Release Notes
+# SIAS - Smart Industrial Alert System — Release Notes
 
 ## Version 1.2.1 · "Enterprise Pilot Readiness" · 2026-06-23
 
-### What SIA is
+### What SIAS is
 
-Smart Industrial Alert (SIA) is an enterprise industrial **alert and operations
+SIAS - Smart Industrial Alert System is an enterprise industrial **alert and operations
 platform**. It gives factory teams real-time mobile alerting, AI-assisted
 supervisor assignment, predictive-maintenance forecasting, and shift and
 collaboration coordination — administered through a SuperAdmin console and
 deployed as a dedicated instance per customer.
 
-SIA sits **on top of** a plant's existing automation estate. It coordinates
+SIAS sits **on top of** a plant's existing automation estate. It coordinates
 alerts and people and surfaces operational intelligence; it does not run control
 loops and is not a safety-instrumented system. It complements SCADA, PLCs, and
 historians rather than replacing them.
@@ -18,7 +18,7 @@ historians rather than replacing them.
 ### Who this release is for
 
 This release is intended for **controlled enterprise pilots** and day-to-day
-operational alert coordination — a sponsor running SIA alongside existing
+operational alert coordination — a sponsor running SIAS alongside existing
 operations on a defined line, plant, or shift, with a named administrator and a
 support channel. It is not yet positioned for unsupervised, safety-critical, or
 regulated-control use (see "Honest scope" below).
@@ -60,7 +60,7 @@ is required from 1.2.0.
 
 ### Honest scope and limitations
 
-- **Supervisory, not control.** SIA coordinates alerts and people. It does not
+- **Supervisory, not control.** SIAS coordinates alerts and people. It does not
   actuate equipment, close control loops, or function as an emergency-shutdown
   or safety-instrumented system. Keep existing SCADA/PLC safety functions in
   place and authoritative.
@@ -75,10 +75,10 @@ is required from 1.2.0.
   and a human remains accountable for each action.
 - **Customer-owned credentials and data.** In the dedicated-instance model the
   customer owns the Firebase project, Cloudflare account, and any AI provider
-  keys; SIA does not centralize customer data.
+  keys; SIAS does not centralize customer data.
 
 ### Support
 
-Pilot support is provided through the channel agreed with your SIA
+Pilot support is provided through the channel agreed with your SIAS
 representative. Operational runbooks, the secret-rotation procedure, and the
 trust center live under `docs/`.

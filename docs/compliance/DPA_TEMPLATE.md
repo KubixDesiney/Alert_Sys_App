@@ -1,7 +1,7 @@
 # Data Processing Agreement (DPA) — Template
 
 > **Template, not legal advice.** This is a starting point for the agreement between
-> the Customer (**Controller**) and the SIA operator (**Processor**) under GDPR
+> the Customer (**Controller**) and the SIAS operator (**Processor**) under GDPR
 > Art. 28 (and analogous laws, e.g. UK GDPR, CCPA service-provider terms). Have it
 > reviewed by counsel before execution. Bracketed `[…]` fields are filled per deal.
 
@@ -10,7 +10,7 @@
 
 ## 1. Subject matter & duration
 The Processor processes personal data solely to provide and maintain the Customer's
-dedicated SIA instance, for the duration of the Service Agreement.
+dedicated SIAS instance, for the duration of the Service Agreement.
 
 ## 2. Nature & purpose of processing
 Hosting/operation of an industrial alert-management platform: account management,

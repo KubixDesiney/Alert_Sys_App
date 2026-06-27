@@ -3,13 +3,13 @@
 Version 1.0 - 2026-06-15 - Owner: SuperAdmin / security lead - Review: annual
 
 ## 1. Purpose & scope
-How SIA collects, processes, retains, and deletes personal and operational data, and how
-data-subject rights are honored. Applies to every SIA instance.
+How SIAS collects, processes, retains, and deletes personal and operational data, and how
+data-subject rights are honored. Applies to every SIAS instance.
 
 ## 2. Controller / processor model
 In the dedicated-instance model (`PROVISIONING.md`) each customer runs its own Firebase
 project, so the **customer is the data controller** and sets final retention and consent;
-SIA provides the software and the defaults below. Sub-processors: Google (Firebase),
+SIAS provides the software and the defaults below. Sub-processors: Google (Firebase),
 Cloudflare (Workers). On-prem deployments (`ONPREM.md`) have no third-party processors.
 
 ## 3. Data we process

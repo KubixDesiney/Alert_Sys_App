@@ -3,7 +3,7 @@
 Status: Accepted — 2026-06 (supersedes an earlier external LSTM approach)
 
 ## Context
-SIA needs next-24h machine-risk forecasting per factory. An earlier design called
+SIAS needs next-24h machine-risk forecasting per factory. An earlier design called
 a hosted LSTM (HuggingFace Space) from the worker cron. That added an external
 runtime dependency, network latency, a scaler/window-fragility surface, cold-start
 failures, and a per-instance hosting cost — awkward for a dedicated-instance

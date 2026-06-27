@@ -8,7 +8,7 @@ import '../config/app_config.dart';
 
 /// Industrial connector framework (SuperAdmin → Infrastructure → Connectors).
 ///
-/// Lets the IT team wire SIA on top of an existing automation estate — SCADA,
+/// Lets the IT team wire SIAS on top of an existing automation estate — SCADA,
 /// PLC, historian, MQTT broker, or any REST source — without ripping anything
 /// out. Two honest ingestion modes, both handled by `cloudflare_ingest_worker.js`:
 ///

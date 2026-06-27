@@ -194,8 +194,8 @@ async function runChecks(env) {
   // Alert only on transition (degraded<->ok) so we never spam every 5 minutes.
   if (state !== prevState) {
     const msg = state === 'degraded'
-      ? `[ALERT] Smart Industrial Alert system DEGRADED:\n- ${problems.join('\n- ')}`
-      : '[OK] Smart Industrial Alert system RECOVERED (all checks passing).';
+      ? `[ALERT] SIAS platform DEGRADED:\n- ${problems.join('\n- ')}`
+      : '[OK] SIAS platform RECOVERED (all checks passing).';
     await sendAlert(env, cfg, msg, state, problems).catch(() => {});
   }
   return { state, problems };

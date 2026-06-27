@@ -1,6 +1,6 @@
-# OWASP ASVS L2 Conformance Checklist — SIA
+# OWASP ASVS L2 Conformance Checklist — SIAS
 
-Maps the Smart Industrial Alert platform against OWASP Application Security
+Maps the SIAS - Smart Industrial Alert System platform against OWASP Application Security
 Verification Standard (ASVS) v4.0.3, target **Level 2** (the standard bar for
 applications handling sensitive business data). Status legend: ✅ met,
 🟡 partial / compensating control, ⬜ not applicable, 🔜 planned.

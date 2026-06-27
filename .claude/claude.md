@@ -1,11 +1,11 @@
-# Smart Industrial Alert - SIA Architecture and Operating Guide (A to Z)
+# SIAS - Smart Industrial Alert System Architecture and Operating Guide (A to Z)
 
-This document is the full technical map of the Smart Industrial Alert - SIA project.
+This document is the full technical map of the SIAS - Smart Industrial Alert System project.
 It explains what exists, why it exists, and how data and control flow from the first user action to final persistence and notifications.
 
 ## A. System Purpose
 
-Smart Industrial Alert - SIA is a multi-platform industrial alert management system built for factory environments.
+SIAS - Smart Industrial Alert System is a multi-platform industrial alert management system built for factory environments.
 
 Primary goals:
 - Receive and track production alerts in real time.
@@ -89,7 +89,7 @@ App startup sequence (lib/main.dart):
 10. FcmService.init attempted with timeout guard.
 11. Shorebird code push runtime instantiated.
 12. VoiceService warmup triggered after first frame delay.
-13. runApp(Smart Industrial Alert - SIAApp).
+13. runApp(SmartIndustrialAlertApp).
 
 Auth and role routing:
 - AuthGate listens to FirebaseAuth authStateChanges.
@@ -1609,7 +1609,7 @@ Implemented a structural redesign of the Supervisors area to unify assignment op
 
 ## AG. Security Agent Architecture and Threat Mitigation (May 2026)
 
-Implemented a comprehensive security AI agent in the Cloudflare Worker to protect Smart Industrial Alert - SIA from external threats including DDoS, prompt injection, data flooding, enumeration attacks, replay/race attacks, and credential abuse.
+Implemented a comprehensive security AI agent in the Cloudflare Worker to protect SIAS - Smart Industrial Alert System from external threats including DDoS, prompt injection, data flooding, enumeration attacks, replay/race attacks, and credential abuse.
 
 **Security Policy Architecture:**
 
@@ -1949,6 +1949,6 @@ The Production Manager can now cap how far a rostered supervisor's home factory 
 - worker_test/: Jest tests for worker pure functions.
 - TESTING.md: testing strategy and CI expectations.
 
-This is the current architecture baseline for Smart Industrial Alert - SIA (May 2026).
+This is the current architecture baseline for SIAS - Smart Industrial Alert System (May 2026).
 
 

@@ -1,10 +1,10 @@
 # Privacy Notice
 
-**Smart Industrial Alert (SIA)** — operated by KubixDesiney ("we", "us")
+**SIAS - Smart Industrial Alert System** — operated by KubixDesiney ("we", "us")
 
 Last updated: 2026-06-23
 
-This notice explains what data SIA processes, why, and how it is protected. SIA is
+This notice explains what data SIAS processes, why, and how it is protected. SIAS is
 a business-to-business industrial alerting platform used by factory operators. It
 is delivered as a **dedicated instance per customer**: each customer's data lives
 in that customer's own Firebase project and is served by Cloudflare Workers
@@ -94,7 +94,7 @@ individual requests to the relevant customer and assist them in responding.
 
 ## 9. Children
 
-SIA is a workplace tool and is not directed to children. We do not knowingly
+SIAS is a workplace tool and is not directed to children. We do not knowingly
 process data of children.
 
 ## 10. Changes

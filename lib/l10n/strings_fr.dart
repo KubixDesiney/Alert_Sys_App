@@ -1,4 +1,4 @@
-// French translations for SIA.
+// French translations for SIAS.
 //
 // Keyed by the English source string used in `context.tr('...')`. A missing key
 // falls back to English automatically, so this map can grow incrementally as
@@ -303,8 +303,8 @@ const Map<String, String> kStringsFr = {
   'Back online': 'De nouveau en ligne',
   'Offline account data is not cached yet.':
       'Les données du compte hors ligne ne sont pas encore en cache.',
-  'Connect once so Smart Industrial Alert - SIA can save this account for offline startup.':
-      'Connectez-vous une fois pour que Smart Industrial Alert - SIA enregistre ce compte pour un démarrage hors ligne.',
+  'Connect once so SIAS can save this account for offline startup.':
+      'Connectez-vous une fois pour que SIAS enregistre ce compte pour un démarrage hors ligne.',
 
   // ── Empty / generic states ──
   'No data': 'Aucune donnée',
@@ -1158,8 +1158,8 @@ const Map<String, String> kStringsFr = {
       'Surlignages secondaires et dégradés.',
   'LOGO': 'LOGO',
   'Uploaded image.': 'Image téléversée.',
-  'Default Smart Industrial Alert mark.':
-      'Logo Smart Industrial Alert par défaut.',
+  'Default SIAS mark.':
+      'Logo SIAS par défaut.',
   'Logo from URL.': 'Logo depuis une URL.',
   '…or paste an image URL (https://…/logo.png)':
       '…ou collez une URL d\'image (https://…/logo.png)',
@@ -1289,12 +1289,6 @@ const Map<String, String> kStringsFr = {
       '{name} mis hors ligne — le worker s\'arrête sous 60 s.',
   'Could not update {name}: {error}':
       'Impossible de mettre à jour {name} : {error}',
-  '{name} deployed to the fleet.': '{name} déployé dans la flotte.',
-  '{name} updated.': '{name} mis à jour.',
-  'Could not save agent: {error}':
-      'Impossible d\'enregistrer l\'agent : {error}',
-  '{name} decommissioned and wiped.': '{name} retiré du service et effacé.',
-  'Delete failed: {error}': 'Échec de la suppression : {error}',
   'AI AGENT FLEET': 'FLOTTE D\'AGENTS IA',
   'Six autonomous units · toggles propagate to the edge worker within 60 seconds':
       'Six unités autonomes · les bascules se propagent au worker edge sous 60 secondes',
@@ -1305,8 +1299,6 @@ const Map<String, String> kStringsFr = {
   '{count} THREATS BLOCKED': '{count} MENACES BLOQUÉES',
   'MAINTENANCE': 'MAINTENANCE',
   'ONLINE': 'EN LIGNE',
-  'DEPLOY AGENT': 'DÉPLOYER UN AGENT',
-  'Add a unit to the fleet': 'Ajouter une unité à la flotte',
   '{n}s ago': 'il y a {n} s',
   'Assignments': 'Affectations',
   'Handovers': 'Passations',
@@ -1633,75 +1625,6 @@ const Map<String, String> kStringsFr = {
       'Recommandé uniquement une fois que vous faites confiance au tandem IA de correction + revue sur votre code.',
   'Keep human review': 'Conserver la revue humaine',
   'Enable automatic': 'Activer l\'automatique',
-
-  // ── AI Agents fleet · custom agent panel + editor ──
-  'NO CREDENTIAL ON FILE': 'AUCUN IDENTIFIANT ENREGISTRÉ',
-  'CUSTOM UNIT': 'UNITÉ PERSONNALISÉE',
-  'Provider': 'Fournisseur',
-  'Model': 'Modèle',
-  'Credential': 'Identifiant',
-  'MISSING': 'MANQUANT',
-  'ON FILE': 'ENREGISTRÉ',
-  'Deployed': 'Déployé',
-  'EDIT AGENT': 'MODIFIER L\'AGENT',
-  'DELETE': 'SUPPRIMER',
-  'PROFILE': 'PROFIL',
-  'Who this agent is and what it stands for.':
-      'Qui est cet agent et ce qu\'il représente.',
-  'No description provided.': 'Aucune description fournie.',
-  'MISSION BRIEF': 'BRIEF DE MISSION',
-  'The tasks this agent is responsible for.': 'Les tâches dont cet agent est responsable.',
-  'No tasks defined yet — edit the agent to brief it.':
-      'Aucune tâche définie pour l\'instant — modifiez l\'agent pour le briefer.',
-  'SKILLS & CAPABILITIES': 'COMPÉTENCES ET CAPACITÉS',
-  'What this agent knows how to do.': 'Ce que cet agent sait faire.',
-  'No skills listed yet.': 'Aucune compétence listée pour l\'instant.',
-  'CREDENTIALS': 'IDENTIFIANTS',
-  'The LLM provider and API token this agent authenticates with.':
-      'Le fournisseur LLM et le jeton API avec lesquels cet agent s\'authentifie.',
-  'Default model': 'Modèle par défaut',
-  'Reveal': 'Révéler',
-  'Token copied to clipboard.': 'Jeton copié dans le presse-papiers.',
-  'Stored separately in a superadmin-only credential vault. Treat it as a secret — rotate it from EDIT AGENT if it leaks.':
-      'Stocké séparément dans un coffre d\'identifiants réservé au SuperAdmin. Traitez-le comme un secret — faites-le tourner depuis MODIFIER L\'AGENT s\'il est exposé.',
-  'DEPLOY NEW AGENT': 'DÉPLOYER UN NOUVEL AGENT',
-  'Configure a custom autonomous unit for the fleet':
-      'Configurer une unité autonome personnalisée pour la flotte',
-  'IDENTITY': 'IDENTITÉ',
-  'Agent name (e.g. Quality Inspector)': 'Nom de l\'agent (ex. Inspecteur Qualité)',
-  'Codename (optional, e.g. UNIT-07 · SENTRY)':
-      'Nom de code (facultatif, ex. UNITÉ-07 · SENTRY)',
-  'Short description of what this agent is for':
-      'Brève description du rôle de cet agent',
-  'APPEARANCE': 'APPARENCE',
-  'MISSION · TASKS': 'MISSION · TÂCHES',
-  'Describe the tasks, or attach a brief / spec file.':
-      'Décrivez les tâches, ou joignez un brief / fichier de spécification.',
-  'e.g. Review incoming quality alerts, draft a containment checklist…':
-      'ex. Examiner les alertes qualité entrantes, rédiger une checklist de confinement…',
-  'SKILLS · CAPABILITIES': 'COMPÉTENCES · CAPACITÉS',
-  'List the skills, or attach a capability sheet.':
-      'Listez les compétences, ou joignez une fiche de capacités.',
-  'e.g. Root-cause analysis, ISO 9001 knowledge, French + English…':
-      'ex. Analyse des causes racines, connaissance ISO 9001, français + anglais…',
-  'MODEL PROVIDER': 'FOURNISSEUR DE MODÈLE',
-  'Model id (e.g. {hint})': 'Identifiant du modèle (ex. {hint})',
-  'API token / key': 'Jeton / clé API',
-  'API token — {hint}': 'Jeton API — {hint}',
-  'A name and a model provider are required.':
-      'Un nom et un fournisseur de modèle sont requis.',
-  'CANCEL': 'ANNULER',
-  'SAVE CHANGES': 'ENREGISTRER LES MODIFICATIONS',
-  'REPLACE LOGO': 'REMPLACER LE LOGO',
-  'UPLOAD LOGO': 'CHARGER UN LOGO',
-  'REMOVE': 'RETIRER',
-  'Custom logo set': 'Logo personnalisé défini',
-  'No logo · pick an icon': 'Pas de logo · choisissez une icône',
-  'ATTACH FILE': 'JOINDRE UN FICHIER',
-  'DECOMMISSION AGENT': 'METTRE HORS SERVICE',
-  'This permanently removes the agent, its mission brief, skills and stored API credential from the fleet registry.\n\nThis action cannot be undone.':
-      'Ceci retire définitivement l\'agent, son brief de mission, ses compétences et son identifiant API enregistré du registre de la flotte.\n\nCette action est irréversible.',
-  'DELETE PERMANENTLY': 'SUPPRIMER DÉFINITIVEMENT',
 
   // ── AI Training tab ──
   'val loss': 'perte de validation',

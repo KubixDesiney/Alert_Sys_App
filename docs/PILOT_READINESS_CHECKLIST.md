@@ -1,8 +1,8 @@
-# SIA — Pilot Readiness Checklist
+# SIAS — Pilot Readiness Checklist
 
-Use this checklist to confirm a Smart Industrial Alert (SIA) instance is ready
+Use this checklist to confirm a SIAS - Smart Industrial Alert System instance is ready
 for a **controlled enterprise pilot**. Work top to bottom; every item should be
-checked (or explicitly marked N/A with a note) before a sponsor relies on SIA
+checked (or explicitly marked N/A with a note) before a sponsor relies on SIAS
 for operational alert coordination.
 
 - **Instance:** `__________________________`
@@ -11,7 +11,7 @@ for operational alert coordination.
 - **Pilot window:** `__________ → __________`
 - **Date reviewed:** `__________`  **Reviewer:** `__________`
 
-> Scope reminder: SIA is a supervisory alert and operations layer. It does not
+> Scope reminder: SIAS is a supervisory alert and operations layer. It does not
 > run control loops and is not a safety-instrumented system. Existing SCADA/PLC
 > safety functions remain authoritative and must stay in place during the pilot.
 
@@ -82,7 +82,7 @@ for operational alert coordination.
 - [ ] **Verify link** handshake passes for each connector.
 - [ ] A known reading produces the expected alert (and a normal reading does
       not).
-- [ ] Integration confirmed to be read-only/supervisory — SIA does not write to
+- [ ] Integration confirmed to be read-only/supervisory — SIAS does not write to
       control systems.
 
 ## 7. Monitoring, reliability & data
@@ -106,10 +106,10 @@ for operational alert coordination.
 
 ## 9. Sponsor sign-off
 
-By signing, the sponsor acknowledges that SIA is being used for a **controlled
+By signing, the sponsor acknowledges that SIAS is being used for a **controlled
 pilot and operational alert coordination**, that it is a supervisory layer (not
 a control or safety-instrumented system), and that existing safety and control
 systems remain authoritative throughout the pilot.
 
 - Pilot sponsor: `__________________________`  Date: `__________`
-- SIA administrator: `__________________________`  Date: `__________`
+- SIAS administrator: `__________________________`  Date: `__________`

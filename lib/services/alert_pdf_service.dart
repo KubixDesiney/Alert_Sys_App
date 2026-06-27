@@ -30,7 +30,7 @@ class AlertPdfService {
     String? reportName,
   }) async {
     final resolvedName = (reportName ?? '').trim().isEmpty
-        ? 'Smart Industrial Alert - SIA - Operations Report'
+        ? 'SIAS - Smart Industrial Alert System - Operations Report'
         : reportName!.trim();
     final doc = await _buildDoc(
       alerts: alerts,
@@ -107,8 +107,8 @@ class AlertPdfService {
     final doc = pw.Document(
       theme: pdfTheme,
       title: reportName,
-      author: 'Smart Industrial Alert - SIA',
-      creator: 'Smart Industrial Alert - SIA Production Manager',
+      author: 'SIAS - Smart Industrial Alert System',
+      creator: 'SIAS - Smart Industrial Alert System Production Manager',
     );
 
     final solved = alerts.where((a) => a.status == 'validee').length;
@@ -858,7 +858,7 @@ class AlertPdfService {
           ),
           pw.SizedBox(height: 4),
           pw.Text(
-            'Smart Industrial Alert - SIA - Industrial Alert Intelligence Platform',
+            'SIAS - Smart Industrial Alert System - Industrial Alert Intelligence Platform',
             style: const pw.TextStyle(fontSize: 8, color: PdfColors.white),
           ),
         ],

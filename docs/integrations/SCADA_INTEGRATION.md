@@ -1,8 +1,8 @@
 # SCADA / PLC / Historian Integration
 
-SIA is an **alerting and coordination layer that sits on top of** an existing
+SIAS is an **alerting and coordination layer that sits on top of** an existing
 automation estate — it does not replace SCADA, a DCS, or PLC control loops. This
-guide shows how to feed SIA from the systems a plant already runs, so a customer
+guide shows how to feed SIAS from the systems a plant already runs, so a customer
 gets mobile dispatch, AI assignment, presence tracking, and forecasting **without
 ripping anything out**.
 
@@ -11,21 +11,21 @@ ripping anything out**.
 ```
   PLCs / sensors ──► SCADA / DCS ──► Historian (PI, Ignition, Wonderware, …)
         │                │                    │
-        │  (control loops stay exactly where they are — SIA never touches them)
+        │  (control loops stay exactly where they are — SIAS never touches them)
         │                │                    │
         └──────── edge gateway / broker rule / historian export ───────┐
                                                                         ▼
-                                                  SIA ingestion worker (HTTPS)
+                                                  SIAS ingestion worker (HTTPS)
                                                   cloudflare_ingest_worker.js
                                                                         │
                                                   normalize + threshold + dedup
                                                                         ▼
-                                                  SIA alert  →  push / AI assign
+                                                  SIAS alert  →  push / AI assign
                                                                 / forecast / PDF
 ```
 
 The gateway is the integration seam. Anything that can make an authenticated HTTPS
-POST can drive SIA; you do not run SIA logic on the OT network.
+POST can drive SIAS; you do not run SIAS logic on the OT network.
 
 Two honest ingestion modes, both handled by `cloudflare_ingest_worker.js`
 (logic in `cloudflare_ingest_connectors.js`):
@@ -58,10 +58,10 @@ back with a service-account JWT (same pattern as the AI / GitHub workers).
 
 ## Supported sources
 
-| Protocol / source | How it reaches SIA | Notes |
+| Protocol / source | How it reaches SIAS | Notes |
 |---|---|---|
 | **OPC-UA** | A small edge bridge subscribes to nodes and POSTs changes | The dominant industrial standard; any OPC-UA client (Node-OPCUA, Kepware, Ignition) can call the ingest endpoint. |
-| **MQTT / Sparkplug B** | Broker rule (e.g. HiveMQ/EMQX rule engine) or a bridge subscribes to topics and POSTs | Sparkplug metric name → SIA metric mapping. |
+| **MQTT / Sparkplug B** | Broker rule (e.g. HiveMQ/EMQX rule engine) or a bridge subscribes to topics and POSTs | Sparkplug metric name → SIAS metric mapping. |
 | **Modbus TCP/RTU** | A poller reads registers on an interval, applies thresholds, POSTs | Register→metric map lives in the gateway. |
 | **REST / webhook** | Any system POSTs JSON directly | MES, CMMS, quality systems, custom apps. |
 | **Historian export** | Scheduled query → POST batch (`readings[]`) | Backfill or near-real-time tag exports. |
@@ -104,11 +104,11 @@ Behavior:
 - **Normal readings raise nothing.** An alert is created only when `value` crosses
   a threshold, or when `type` is set / `alert: true` is sent (e.g. a digital E-stop).
 - **Severity → criticality.** `critical` threshold ⇒ `isCritical: true`. `direction: "low"` flips the comparison (e.g. low oil pressure).
-- **Type inference.** The metric name maps to a canonical SIA type
+- **Type inference.** The metric name maps to a canonical SIAS type
   (Mechanical / Electrical / Quality / Safety); an explicit canonical `type` wins.
 - **Storm control.** Identical machine/metric events inside the dedup window
   (default 60 s) collapse to one alert — a flapping sensor won't page the floor 600×.
-- On success SIA creates the alert (minimal first-write shape permitted by
+- On success SIAS creates the alert (minimal first-write shape permitted by
   `database.rules.json`) and triggers the notification worker for sub-second push.
 
 ### Example
@@ -129,8 +129,8 @@ curl -sS https://alertsys-ingest.<sub>.workers.dev \
 - The worker only ever **creates alerts** — it cannot read or modify other data.
 
 ## Where the boundary is (be explicit with buyers)
-SIA does **not** issue setpoints, close loops, or guarantee hard-real-time
-determinism — that stays in SCADA/PLC. SIA owns what those systems are weak at:
+SIAS does **not** issue setpoints, close loops, or guarantee hard-real-time
+determinism — that stays in SCADA/PLC. SIAS owns what those systems are weak at:
 getting the right human to the right machine fast, on mobile, with AI assignment,
 voice claim, presence, and predictive risk. See `COMPETITIVE_POSITIONING.md`.
 

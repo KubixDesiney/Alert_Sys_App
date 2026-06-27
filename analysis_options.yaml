@@ -1,4 +1,4 @@
-# Static analysis configuration for SIA.
+# Static analysis configuration for SIAS.
 #
 # Baseline: package:flutter_lints (Flutter's recommended set). On top of that we
 # enable a curated "premium" rule set focused on correctness, async safety, and

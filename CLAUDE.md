@@ -1,4 +1,4 @@
-# Smart Industrial Alert - SIA App Handoff Notes
+# SIAS - Smart Industrial Alert System App Handoff Notes
 
 Last verified: 2026-06-10 from the local repository.
 
@@ -7,7 +7,7 @@ app structure, worker deployment, Firebase schema, or CI behavior changes.
 
 ## Product Summary
 
-Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory alerts. It combines:
+SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for factory alerts. It combines:
 
 - Live alert intake, assignment, claiming, resolution, escalation, and validation.
 - Admin and supervisor role flows backed by Firebase Authentication and Realtime Database.
@@ -21,12 +21,12 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 
 ## Current Versions
 
-- Flutter app package: `Smart Industrial Alert - SIAapp`
+- Flutter app package: `alertsysapp`
 - Flutter app version: `1.2.1` (source of truth: pubspec.yaml)
 - Dart SDK constraint: `>=3.10.3 <4.0.0`
 - Flutter SDK constraint: `>=3.38.4`
 - CI Flutter version: `3.41.6`
-- Worker npm package: `Smart Industrial Alert - SIA-worker@1.1.0`
+- Worker npm package: `alertsys-worker@1.1.0`
 - CI Node version: `20`
 - Firebase project alias: `alertappsys`
 - Primary target platform: Android. Web, iOS, Windows, Linux, and macOS have support paths, but Android has the full voice/lock-screen stack.
@@ -46,7 +46,7 @@ Smart Industrial Alert - SIA is a Flutter industrial supervision app for factory
 - `lib/screens/`: Admin, supervisor, alert tree, detail, scan, mapping, locator, collaboration, voice, dashboard, hierarchy, and escalation screens.
 - `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, AI Agents, Production Managers, Overview Monitor, Hardware tabs). The `monitor/` subfolder holds the Overview Monitor war-room (replaced the old Logs tab on 2026-06-19).
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
-- `android/app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/`: Native Android method channels and lock-screen voice capture.
+- `android/app/src/main/kotlin/com/example/alertsysapp/`: Native Android method channels and lock-screen voice capture.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
 - `worker_test/`: Jest worker test suite. There are currently 14 worker test files.
@@ -66,8 +66,8 @@ Flutter:
 flutter pub get
 flutter analyze --no-fatal-infos --no-fatal-warnings
 flutter test --reporter expanded
-flutter build apk --debug --dart-define=Smart Industrial Alert - SIA_WORKER_SHARED_SECRET=... --dart-define=Smart Industrial Alert - SIA_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=Smart Industrial Alert - SIA_NOTIFY_WORKER_URL=https://Smart Industrial Alert - SIA.aziz-nagati01.workers.dev
-flutter build web --release --no-wasm-dry-run --dart-define=Smart Industrial Alert - SIA_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=Smart Industrial Alert - SIA_NOTIFY_WORKER_URL=https://Smart Industrial Alert - SIA.aziz-nagati01.workers.dev
+flutter build apk --debug --dart-define=ALERTSYS_WORKER_SHARED_SECRET=... --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
+flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 ```
 
 Workers:
@@ -107,7 +107,7 @@ The VM modules warning from Node is expected.
 
 ## Active Worker Split
 
-Smart Industrial Alert - SIA uses two active Cloudflare Workers so notification delivery does not compete with AI/security work inside one invocation.
+SIAS - Smart Industrial Alert System uses two active Cloudflare Workers so notification delivery does not compete with AI/security work inside one invocation.
 
 ### AI And Security Worker
 
@@ -125,7 +125,7 @@ Responsibilities:
 - Collaboration approval automation and assistant alert suspension.
 - Shift handover generation.
 - Predictive model generation and validation.
-- Optional LSTM forecast integration through `https://kubixdesiney-Smart Industrial Alert - SIA-lstm.hf.space/predict`.
+- Optional LSTM forecast integration through `https://kubixdesiney-alertsys-lstm.hf.space/predict`.
 - Security guard, request rate limits, prompt-injection detection, anomaly scan, `/security-status`.
 - AI suggestions and generic AI proxy.
 - AI auto-fix endpoints used by CI self-heal flow.
@@ -164,7 +164,7 @@ HTTP routes:
 
 ### Notifications Worker
 
-- Worker name: `Smart Industrial Alert - SIA`
+- Worker name: `SIAS - Smart Industrial Alert System`
 - URL: `https://alertsys.aziz-nagati01.workers.dev`
 - Main file: `cloudflare_notify_worker.js`
 - Config: `wrangler.notify.toml`
@@ -296,7 +296,7 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 - `FIREBASE_SERVICE_ACCOUNT`
 - `FB_DB_Secret` if still needed by operational scripts.
 - Optional AI/provider secrets used by AI endpoints.
-- `WORKER_SHARED_SECRET` / `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET` when protected worker requests are enabled.
+- `WORKER_SHARED_SECRET` / `ALERTSYS_WORKER_SHARED_SECRET` when protected worker requests are enabled.
 - Optional `NOTIFY_WORKER_URL` / `ALERTSYS_NOTIFY_WORKER_URL` for AI-worker-to-notification-worker fast triggers; defaults to `https://alertsys.aziz-nagati01.workers.dev/notify`.
 
 `alertsys-github` (`wrangler.github.toml`) secrets: `WORKER_SHARED_SECRET` (required — same value the app sends), `FB_DB_URL` + `FIREBASE_SERVICE_ACCOUNT` (enable the RTDB vault for the GitHub repo/token), `GITHUB_TOKEN`/`GITHUB_REPO` (optional bootstrap fallback before the vault is populated). As of 2026-06-18 these three secrets are pushed automatically by `.github/workflows/ci.yml`'s "Set github worker secrets" step on every protected push to `main`, reusing the repo's existing `WORKER_SHARED_SECRET`/`FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` Actions secrets and `FB_DB_URL` Actions variable — no new secret material needed. The actual GitHub PAT is never put in a workflow file; it lives only in the RTDB vault (`ai_agent_secrets/guardian/githubToken`, set via `firebase database:set` or the SuperAdmin GitHub Connection panel).
@@ -307,10 +307,10 @@ Set Cloudflare secrets per worker. Do not commit secret values.
 
 `lib/config/app_config.dart` owns cross-cutting constants:
 
-- `Smart Industrial Alert - SIA_WORKER_URL`: legacy fallback URL.
-- `Smart Industrial Alert - SIA_AI_WORKER_URL`: AI/security worker base URL.
-- `Smart Industrial Alert - SIA_NOTIFY_WORKER_URL`: notification worker base URL.
-- `Smart Industrial Alert - SIA_WORKER_SHARED_SECRET`: optional request secret.
+- `ALERTSYS_WORKER_URL`: legacy fallback URL.
+- `ALERTSYS_AI_WORKER_URL`: AI/security worker base URL.
+- `ALERTSYS_NOTIFY_WORKER_URL`: notification worker base URL.
+- `ALERTSYS_WORKER_SHARED_SECRET`: optional request secret.
 - `configEndpoint`: AI `/config`.
 - `aiSuggestEndpoint`: AI `/ai-suggest`.
 - `shiftAiActionEndpoint`: AI `/shift-ai-action`.
@@ -405,7 +405,7 @@ string the moment it flips.
 - Starts FCM initialization asynchronously with an 8 second timeout.
 - Initializes Shorebird code push object.
 - Pre-warms `VoiceService` after the first frame.
-- Runs `Smart Industrial Alert - SIAApp`.
+- Runs `SmartIndustrialAlertApp`.
 
 Providers:
 
@@ -797,6 +797,7 @@ Required GitHub Actions secrets:
 - `node_modules`, `.dart_tool`, `build`, `.wrangler`, and Firebase/Flutter generated caches should not be committed.
 - Never put the GitHub PAT used by `alertsys-github` directly in a workflow file or commit — it lives only in the RTDB vault (`ai_agent_secrets/guardian/githubToken`). Rotate it via `firebase database:set` or the SuperAdmin Guardian → Control → GitHub Connection panel.
 - On this dev machine, `npx firebase database:set "/some/path" ...` fails with "Path must begin with /" unless run as `MSYS_NO_PATHCONV=1 npx firebase database:set ...` — Git Bash on Windows mangles the leading-slash argument otherwise.
+- **Naming (2026-06-27):** the product's display/brand name is **SIAS - Smart Industrial Alert System** (short form `SIAS`) — every UI string, doc, and PDF/notification title was repointed to it on this date. This is distinct from the long-lived internal identifiers that stay as-is and must NOT be renamed to match: the Flutter package/import root `alertsysapp`, the npm worker package `alertsys-worker`, the Firebase project alias `alertappsys`, every `ALERTSYS_*` dart-define / env var, and every deployed Cloudflare worker name/hostname (`alert-notifier`, `alertsys`, `alertsys-github`, `alertsys-ingest`, plus their `*.workers.dev` URLs). Renaming those is a live-infrastructure operation (new worker, new DNS, redeploy, Firebase relink) that was explicitly out of scope for the brand rename. If you ever see the old name spelled out as `Smart Industrial Alert - SIA` or `Smart Industrial Alert (SIA)` in a file, that's stale — fix it to the new name, but never touch an `alertsys*`/`ALERTSYS_*` token while doing so.
 
 ## Recent Local Fix
 
@@ -857,6 +858,19 @@ RTDB: `hardware_lab/{bindings,machines}` is SuperAdmin-only r/w (`database.rules
 - **Security Sentinel (`security`)**: Defense Grid toggles under `ai_agents/security/settings/{promptInjection,rateLimiting,sanitization,anomalyScan,siemExport}` — `_securityGuard` checks them per-request (rate limit / injection scan / sanitize each individually gated), the cron gates the anomaly scan and SIEM flush. Threat mix bars + enforcement log from `security/actions`.
 - **Predictive Core (`predictive`)**: model identity card (reads `ai_forecast/model/*` metadata children individually — the weights blob never enters the screen; refreshes on `version` bumps), precision/recall/Brier ring gauges from `ai_forecast/accuracy/latest`, Brier-per-day trend chart from `accuracy/history`, adaptation-budget bar (adaptedRounds/60), graded-day log. Settings `ai_agents/predictive/settings/{adaptationEnabled,outcomeGrading}`: `adaptationEnabled` is honored by the Dart `ForecastContinuousLearner` (via `ForecastModelStore.predictiveAgentFlag`), `outcomeGrading` by the worker learner.
 - **Guardian (`guardian`)**: under-maintenance placeholder with radar-scan animation; toggle disabled.
+
+**Removed on 2026-06-27:** the fleet rail's trailing "+ DEPLOY AGENT" tile and the entire
+operator-created custom-agent feature it opened — `_AgentEditorDialog` (create/edit form:
+name, codename, description, tasks/skills text + file attach, icon palette, accent swatch,
+LLM provider + API token), `_CustomAgentPanel` (generic detail view for a custom agent),
+`_DeleteAgentDialog`, the `ai_agents/registry/{id}` + `ai_agent_secrets/{id}` read/write
+plumbing, and `_AgentSpec.fromRegistry`. It was pure UI: no worker ever read
+`ai_agents/registry` to actually run a custom agent's provider/model/token, so "deploying"
+one created a cosmetic fleet card with zero behavior behind it. The six built-in agents
+(`shift`, `briefing`, `assist`, `security`, `predictive`, `guardian`) and their toggle/log/
+stats plumbing under `ai_agents/{id}` are unaffected. `database.rules.json`'s `ai_agents`
+and `ai_agent_secrets` rules were left as-is (still needed by the six built-ins and by
+Guardian's `ai_agent_secrets/guardian` credential).
 
 ### Worker-Side Forecast Outcome Learner (2026-06-12)
 
@@ -919,7 +933,7 @@ The deployed forecaster feeds the two existing predictive cards on the admin Ove
 
 Alerts can now arrive from an existing automation estate — SCADA / PLC / Historian /
 MQTT / REST — configured self-service by the IT team, alongside the classic
-microcontroller→Firebase path. SIA sits *on top of* the estate (no control loops).
+microcontroller→Firebase path. SIAS sits *on top of* the estate (no control loops).
 
 - **Two ingestion modes**, both through `cloudflare_ingest_worker.js` (a thin router
   that bundles `cloudflare_ingest_connectors.js`, where all logic + pure helpers live):

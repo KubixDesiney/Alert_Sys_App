@@ -1,6 +1,6 @@
 <div align="center">
 
-# Smart Industrial Alert (SIA)
+# SIAS - Smart Industrial Alert System
 
 **Enterprise industrial alert & operations platform**
 
@@ -16,9 +16,9 @@
 
 </div>
 
-Smart Industrial Alert (SIA) is an enterprise industrial alert and operations platform for factory environments. It delivers real-time mobile alerting with AI-assisted supervisor assignment, predictive-maintenance forecasting, and shift and collaboration coordination — administered from a SuperAdmin console and deployed as a dedicated, white-label instance per customer on the customer's own Firebase and Cloudflare accounts. SIA is integration-ready for existing automation estates (microcontroller/IoT, PLC, SCADA, historian, MQTT, OPC UA, Modbus, and REST/webhook) and ships with operational monitoring, release documentation, and a trust center. It runs *on top of* the plant — coordinating alerts and people — without taking over control or safety functions.
+SIAS - Smart Industrial Alert System is an enterprise industrial alert and operations platform for factory environments. It delivers real-time mobile alerting with AI-assisted supervisor assignment, predictive-maintenance forecasting, and shift and collaboration coordination — administered from a SuperAdmin console and deployed as a dedicated, white-label instance per customer on the customer's own Firebase and Cloudflare accounts. SIAS is integration-ready for existing automation estates (microcontroller/IoT, PLC, SCADA, historian, MQTT, OPC UA, Modbus, and REST/webhook) and ships with operational monitoring, release documentation, and a trust center. It runs *on top of* the plant — coordinating alerts and people — without taking over control or safety functions.
 
-## What SIA does
+## What SIAS does
 
 - **Real-time mobile alerting** — targeted push with full-screen lock-screen alerts and a durable one-minute fallback so the right supervisors are reached.
 - **AI-assisted assignment** — multi-factor supervisor matching with reinforcement learning; every decision carries an explicit reason and confidence.
@@ -30,7 +30,7 @@ Smart Industrial Alert (SIA) is an enterprise industrial alert and operations pl
 
 ## Integration modes
 
-SIA sits alongside your existing automation estate and ingests events through cloud-pull and edge-push connectors:
+SIAS sits alongside your existing automation estate and ingests events through cloud-pull and edge-push connectors:
 
 | Mode | Examples |
 |------|----------|
@@ -47,11 +47,11 @@ Connectors are configured self-service in the SuperAdmin console with a live lin
 
 ## Safety & scope
 
-SIA is a **supervisory alert and operations layer**. It is **not** a PLC, a safety-instrumented system (SIS), or a real-time control loop, and it does not actuate equipment or perform emergency shutdown. Existing SCADA/PLC control and safety functions remain authoritative; SIA augments them with alerting, coordination, and operational intelligence.
+SIAS is a **supervisory alert and operations layer**. It is **not** a PLC, a safety-instrumented system (SIS), or a real-time control loop, and it does not actuate equipment or perform emergency shutdown. Existing SCADA/PLC control and safety functions remain authoritative; SIAS augments them with alerting, coordination, and operational intelligence.
 
 ## Enterprise pilot readiness
 
-SIA is packaged for controlled enterprise pilots. Start here:
+SIAS is packaged for controlled enterprise pilots. Start here:
 
 - [Release notes](RELEASE_NOTES.md) — what's in this release and its scope
 - [Installation & deployment](INSTALLATION.md) — stand up a dedicated instance
@@ -62,13 +62,13 @@ SIA is packaged for controlled enterprise pilots. Start here:
 
 ## Trust posture
 
-SIA is built with security-by-design practices: enforced multi-factor authentication, SCIM 2.0 user provisioning, hardened Realtime Database rules, an immutable audit trail, an edge security agent (rate limiting, prompt-injection detection, anomaly scanning), automated CI / CodeQL / security scanning, a dependency audit, a published penetration-test scope, and a documented secret-rotation procedure — see the [Trust Center](docs/TRUST_CENTER.md).
+SIAS is built with security-by-design practices: enforced multi-factor authentication, SCIM 2.0 user provisioning, hardened Realtime Database rules, an immutable audit trail, an edge security agent (rate limiting, prompt-injection detection, anomaly scanning), automated CI / CodeQL / security scanning, a dependency audit, a published penetration-test scope, and a documented secret-rotation procedure — see the [Trust Center](docs/TRUST_CENTER.md).
 
-SIA has **not** undergone external certification. We do **not** claim ISO 27001, SOC 2, IEC 62443, or any other third-party certification or attestation. SIA is at **pilot maturity** — intended for controlled deployments alongside existing systems — and in the dedicated-instance model the customer owns their environment and data.
+SIAS has **not** undergone external certification. We do **not** claim ISO 27001, SOC 2, IEC 62443, or any other third-party certification or attestation. SIAS is at **pilot maturity** — intended for controlled deployments alongside existing systems — and in the dedicated-instance model the customer owns their environment and data.
 
 ## Current release — v1.2.1 "Enterprise Pilot Readiness"
 
-This release consolidates SIA for controlled enterprise pilots: dedicated white-label instances, self-service SuperAdmin configuration, SCADA/PLC/historian integration readiness, configurable and drift-monitored AI models, operational monitoring with alerting, and a full release-readiness and trust documentation set. See the [release notes](RELEASE_NOTES.md) and [changelog](CHANGELOG.md).
+This release consolidates SIAS for controlled enterprise pilots: dedicated white-label instances, self-service SuperAdmin configuration, SCADA/PLC/historian integration readiness, configurable and drift-monitored AI models, operational monitoring with alerting, and a full release-readiness and trust documentation set. See the [release notes](RELEASE_NOTES.md) and [changelog](CHANGELOG.md).
 
 ---
 
@@ -95,7 +95,7 @@ This release consolidates SIA for controlled enterprise pilots: dedicated white-
 <tr>
 <td width="60%">
 
-Smart Industrial Alert - SIA is a **full-stack industrial supervision platform** designed from the ground up for high-noise, high-stakes manufacturing environments. It replaces fragmented radio systems and paper-based workflows with a unified, intelligent layer that routes alerts, verifies identities through voice biometrics, predicts failures before they happen, and provides hands-free control to supervisors — all running offline on the factory floor.
+SIAS - Smart Industrial Alert System is a **full-stack industrial supervision platform** designed from the ground up for high-noise, high-stakes manufacturing environments. It replaces fragmented radio systems and paper-based workflows with a unified, intelligent layer that routes alerts, verifies identities through voice biometrics, predicts failures before they happen, and provides hands-free control to supervisors — all running offline on the factory floor.
 
 **Built for factories. Engineered for scale. Designed for resilient factory operations.**
 
@@ -298,7 +298,7 @@ score = w1·(1/workload) + w2·expertise_match + w3·location_proximity + w4·re
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                            Smart Industrial Alert - SIA ARCHITECTURE                             │
+│                                 SIAS ARCHITECTURE                            │
 │                                                                              │
 │   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌────────────┐  │
 │   │   FLUTTER    │   │   FIREBASE   │   │  CLOUDFLARE  │   │  SHOREBIRD │  │
@@ -421,7 +421,7 @@ Intelligence
 
 ### Theme System
 
-Smart Industrial Alert - SIA ships with a polished **dual-mode design system**:
+SIAS - Smart Industrial Alert System ships with a polished **dual-mode design system**:
 
 | Token | Light Mode | Dark Mode |
 |---|---|---|
@@ -514,8 +514,8 @@ firebase login
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/Smart Industrial Alert - SIAapp.git
-cd Smart Industrial Alert - SIAapp
+git clone https://github.com/your-org/alertsysapp.git
+cd alertsysapp
 
 # 2. Install Flutter dependencies
 flutter pub get
@@ -590,7 +590,7 @@ const int    minSpeechMs         = 600;    // minimum speech duration (ms)
 ## Project Structure
 
 ```
-Smart Industrial Alert - SIAapp/
+alertsysapp/
 │
 ├── lib/
 │   ├── main.dart                          # App entry, Firebase init, auth gate
@@ -638,7 +638,7 @@ Smart Industrial Alert - SIAapp/
 │       └── ...
 │
 ├── android/
-│   └── app/src/main/kotlin/com/example/Smart Industrial Alert - SIAapp/
+│   └── app/src/main/kotlin/com/example/alertsysapp/
 │       ├── MainActivity.kt
 │       └── VoiceLockRecorderActivity.kt   # Native audio + keyguard bypass
 │

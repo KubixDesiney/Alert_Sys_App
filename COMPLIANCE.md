@@ -1,11 +1,11 @@
 # Compliance & security control map
 
 Buyer-facing summary of the security and reliability controls in Smart Industrial
-Alert (SIA), mapped to the SOC 2 Trust Services Criteria and common industrial
+Alert (SIAS), mapped to the SOC 2 Trust Services Criteria and common industrial
 procurement questionnaires. Honest status: **Done / Partial / Gap**.
 
 ## Deployment & tenancy
-SIA supports a **dedicated-instance per company** model (see `PROVISIONING.md`): each
+SIAS supports a **dedicated-instance per company** model (see `PROVISIONING.md`): each
 customer runs an isolated Firebase project + isolated Cloudflare workers, with its own
 data store, secrets, and SuperAdmin. There is no shared multi-tenant database, which
 removes an entire class of cross-tenant data-leak risk.
@@ -22,7 +22,7 @@ Enforced in `database.rules.json` (self-or-admin patterns; `security/*` and `wor
 restricted to superadmin + worker service token).
 
 ## Control map (SOC 2 Trust Services Criteria)
-| Criterion | SIA control | Status |
+| Criterion | SIAS control | Status |
 |-----------|-------------|--------|
 | CC6 Access control | RBAC + RTDB rules; MFA/SSO via Identity Platform (`MFA_SSO.md`) | Done (enforce MFA = recommended) |
 | CC6.7 Encryption | TLS in transit; Firebase at-rest encryption (Google-managed keys) | Done (documented) |

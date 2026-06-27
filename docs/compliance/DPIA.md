@@ -1,6 +1,6 @@
-# Data Protection Impact Assessment (DPIA) — SIA
+# Data Protection Impact Assessment (DPIA) — SIAS
 
-A DPIA is required (GDPR Art. 35) because SIA can process **biometric data**
+A DPIA is required (GDPR Art. 35) because SIAS can process **biometric data**
 (voiceprint) and **location data** of employees — both high-risk. This assessment
 covers those features; a customer adopting them should adopt/adapt this DPIA.
 

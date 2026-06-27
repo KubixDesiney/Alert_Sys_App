@@ -1,6 +1,6 @@
 # Security & operations policies
 
-Tailored to Smart Industrial Alert (SIA). These satisfy the policy evidence a SOC 2
+Tailored to SIAS - Smart Industrial Alert System. These satisfy the policy evidence a SOC 2
 auditor and most industrial procurement reviews expect. Owner and review cadence are
 listed per document; review at least annually or after any major incident.
 

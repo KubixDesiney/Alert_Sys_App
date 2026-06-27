@@ -1,10 +1,10 @@
-# SIA ROI Model
+# SIAS ROI Model
 
 A transparent way to size value for a prospect. Plug in their numbers; every input
 is something a plant manager can estimate. All figures below are **illustrative**.
 
 ## The value levers
-1. **Faster response** — SIA cuts the time from alert to a technician acting (mobile
+1. **Faster response** — SIAS cuts the time from alert to a technician acting (mobile
    dispatch + AI routing + voice claim) vs radios/on-call lists.
 2. **Fewer/shorter unplanned stoppages** — prediction + faster response shrink
    downtime minutes.

@@ -3,7 +3,7 @@
 Status: Accepted — 2026-06
 
 ## Context
-SIA is real-time first: alerts, claims, presence, and AI decisions must stream to
+SIAS is real-time first: alerts, claims, presence, and AI decisions must stream to
 many clients with low latency and survive flaky factory networks. The team needed
 a store that offers live sync, offline persistence, and a declarative authorization
 model without standing up a bespoke backend per customer.

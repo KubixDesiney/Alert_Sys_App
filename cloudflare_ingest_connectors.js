@@ -1,4 +1,4 @@
-// SIA Industrial Connector Engine (module)
+// SIAS Industrial Connector Engine (module)
 // =========================================
 // The logic behind cloudflare_ingest_worker.js, split into its own module so the
 // pure helpers are independently unit-testable (worker_test/connectors.test.js,
@@ -27,7 +27,7 @@ const DEFAULTS = Object.freeze({
   verifyTimeoutMs: 9000,
 });
 
-// Canonical SIA alert types (mirror lib/services/forecast/forecast_types.dart).
+// Canonical SIAS alert types (mirror lib/services/forecast/forecast_types.dart).
 const CANONICAL_TYPES = ['Mechanical', 'Electrical', 'Quality', 'Safety'];
 
 // Heuristic mapping from a telemetry metric/signal name to a canonical alert type.

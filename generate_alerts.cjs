@@ -1,5 +1,5 @@
 /*
- * Smart Industrial Alert - SIA â€“ Valideeâ€‘Only Generator (LSTMâ€‘ready density)
+ * SIAS - Smart Industrial Alert System â€“ Valideeâ€‘Only Generator (LSTMâ€‑ready density)
  * ======================================================
  *  - 90 days, 10 alerts per day
  *  - Every alert is status "validee" (no claimed/pending)

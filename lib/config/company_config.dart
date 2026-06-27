@@ -28,12 +28,16 @@ class CompanyConfig {
       String.fromEnvironment('COMPANY_ID', defaultValue: 'demo');
 
   /// Display name shown in the app shell, reports, briefings, and notifications.
-  static const String companyName =
-      String.fromEnvironment('COMPANY_NAME', defaultValue: 'Smart Industrial Alert');
+  static const String companyName = String.fromEnvironment(
+    'COMPANY_NAME',
+    defaultValue: 'SIAS - Smart Industrial Alert System',
+  );
 
   /// Short product/app title for the title bar and launchers.
-  static const String appTitle =
-      String.fromEnvironment('COMPANY_APP_TITLE', defaultValue: 'Smart Industrial Alert');
+  static const String appTitle = String.fromEnvironment(
+    'COMPANY_APP_TITLE',
+    defaultValue: 'SIAS - Smart Industrial Alert System',
+  );
 
   /// Primary brand color as a hex ARGB int literal, e.g. `0xFF1565C0`.
   static const String _brandHex =

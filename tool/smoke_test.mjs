@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Synthetic smoke test for a SIA instance.
+// Synthetic smoke test for a SIAS instance.
 //
 // Probes the worker liveness + security endpoints and verifies the cron health
 // pulses in RTDB are fresh. Exits non-zero on any breach so it can gate CI /

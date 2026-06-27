@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-Short, immutable records of the significant architectural decisions behind SIA —
+Short, immutable records of the significant architectural decisions behind SIAS —
 the *why* behind the structure, so future engineers (and buyers' technical
 reviewers) don't have to reverse-engineer intent. Format: Michael Nygard's ADR.
 

@@ -1,4 +1,4 @@
-# Smart Industrial Alert (SIA) — Threat Model
+# SIAS - Smart Industrial Alert System — Threat Model
 
 Status: living document. Last reviewed 2026-06-16. Owner: Security Lead.
 Methodology: STRIDE per trust boundary, scored with a lightweight DREAD-style
@@ -8,7 +8,7 @@ each release (see `RELEASE.md`).
 
 ## 1. System overview & trust boundaries
 
-SIA is a dedicated-instance product: each customer runs their own Firebase project
+SIAS is a dedicated-instance product: each customer runs their own Firebase project
 and provisions their own Cloudflare Worker secrets through the SuperAdmin console.
 There is no shared multi-tenant data plane, which bounds the blast radius of any
 single compromise to one customer instance.

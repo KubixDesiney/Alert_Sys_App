@@ -1,11 +1,11 @@
-# SIA Trust Center
+# SIAS Trust Center
 
-**Smart Industrial Alert (SIA)** — operated by KubixDesiney
+**SIAS - Smart Industrial Alert System** — operated by KubixDesiney
 
 Last updated: 2026-06-23
 
 This page summarizes the security, privacy, and reliability controls in place for
-SIA. It is written for prospective and early-pilot enterprise customers and links
+SIAS. It is written for prospective and early-pilot enterprise customers and links
 to the underlying source-of-truth documents in this repository. It describes
 controls **as they exist today** and intentionally does not assert any
 certification the project has not earned (see *Compliance posture* below).
@@ -14,7 +14,7 @@ certification the project has not earned (see *Compliance posture* below).
 
 ## 1. Architecture and tenant isolation
 
-SIA is delivered as a **dedicated instance per customer**. Each customer's data
+SIAS is delivered as a **dedicated instance per customer**. Each customer's data
 resides in that customer's own Firebase project and is served by Cloudflare
 Workers deployed for that customer. There is no shared, multi-tenant data store
 across customers, which removes a large class of cross-tenant data-leak risk.
@@ -133,7 +133,7 @@ Optional integrations are enabled only at the customer's direction.
 
 ## 11. Compliance posture (what we claim and what we do not)
 
-- SIA is **not** currently certified or attested under SOC 2, ISO 27001, or any
+- SIAS is **not** currently certified or attested under SOC 2, ISO 27001, or any
   other framework, and this document makes no such claim.
 - We maintain **readiness materials** mapped to common control frameworks to support
   future audits and customer due diligence — for example a SOC 2 control matrix and

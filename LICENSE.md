@@ -1,6 +1,6 @@
 # Proprietary Software License
 
-**Smart Industrial Alert (SIA)**
+**SIAS - Smart Industrial Alert System**
 
 Copyright © 2026 KubixDesiney. All rights reserved.
 
@@ -44,7 +44,7 @@ Licensor or by mandatory applicable law, you may **not**:
 The Licensor retains all right, title, and interest in and to the Software,
 including all intellectual property rights. No ownership rights are transferred
 by this license or by any use of the Software. "KubixDesiney", "Smart Industrial
-Alert", and "SIA" are names and marks of the Licensor.
+Alert", and "SIAS" are names and marks of the Licensor.
 
 ## 5. Third-party components
 
@@ -65,4 +65,4 @@ warranties and limitation of liability.
 
 ## 8. Contact
 
-Licensing inquiries: <chefbriotemendez@gmail.com>
+Licensing inquiries: <aziz.nagati01@gmail.com>

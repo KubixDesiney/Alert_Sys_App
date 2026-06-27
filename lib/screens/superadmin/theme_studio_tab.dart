@@ -236,7 +236,7 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
                   _logoValue.startsWith('data:')
                       ? context.tr('Uploaded image.')
                       : _logoValue.isEmpty
-                          ? context.tr('Default Smart Industrial Alert mark.')
+                          ? context.tr('Default SIAS mark.')
                           : context.tr('Logo from URL.'),
                   style: Sa.body(size: 11.5, color: Sa.textDim),
                 ),

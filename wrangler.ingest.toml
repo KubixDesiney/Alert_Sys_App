@@ -1,4 +1,4 @@
-# Industrial telemetry ingestion + connector engine (SCADA / PLC / historian -> SIA).
+# Industrial telemetry ingestion + connector engine (SCADA / PLC / historian -> SIAS).
 # Deploy:  npx wrangler deploy --config wrangler.ingest.toml
 #
 # main bundles ./cloudflare_ingest_connectors.js automatically (wrangler/esbuild).

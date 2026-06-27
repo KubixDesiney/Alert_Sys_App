@@ -5,7 +5,7 @@ Status: Accepted — 2026-06
 ## Context
 Customer IT teams operate their own instances and want failures (CI breakage,
 worker/UI/log/RTDB health regressions) triaged and fixed quickly without a
-dedicated SIA engineer on call. Tying that automation to a single AI vendor would
+dedicated SIAS engineer on call. Tying that automation to a single AI vendor would
 be a lock-in and procurement problem, and auto-committing AI-generated code to
 `main` is risky without guardrails.
 

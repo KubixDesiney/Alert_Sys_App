@@ -1,6 +1,6 @@
 # Disaster recovery & reliability
 
-How Smart Industrial Alert protects a customer's data and keeps running through
+How SIAS - Smart Industrial Alert System protects a customer's data and keeps running through
 failures. One isolated instance per company (see PROVISIONING.md), so a disaster
 in one company's project never touches another's.
 

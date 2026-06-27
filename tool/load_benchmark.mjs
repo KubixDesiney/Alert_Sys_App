@@ -1,4 +1,4 @@
-// Load/scale benchmark for the Smart Industrial Alert AI assignment engine.
+// Load/scale benchmark for the SIAS AI assignment engine.
 // Exercises the REAL worker compute hot-paths (buildSupStats + scoreSupervisor)
 // at industrial volume. Measures pure compute scale (not Firebase network I/O).
 //
@@ -43,7 +43,7 @@ for (let i = 0; i < NUM_ALERTS; i++) {
 const fmt = (n) => n.toLocaleString('en-US');
 const ms = (t) => `${t.toFixed(1)} ms`;
 console.log('============================================================');
-console.log(' SIA AI assignment engine - load/scale benchmark');
+console.log(' SIAS AI assignment engine - load/scale benchmark');
 console.log('============================================================');
 console.log(` node ${process.version} | supervisors=${fmt(NUM_SUPS)} | history alerts=${fmt(NUM_ALERTS)} | decisions=${fmt(NUM_DECISIONS)}`);
 console.log('');

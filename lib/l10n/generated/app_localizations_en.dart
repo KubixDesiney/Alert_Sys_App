@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Smart Industrial Alert - SIA';
+  String get appTitle => 'SIAS - Smart Industrial Alert System';
 
   @override
   String get loginTitle => 'Sign in';

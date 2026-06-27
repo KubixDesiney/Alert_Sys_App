@@ -57,7 +57,7 @@ class SaPalette {
 ///
 /// The console follows the app-wide theme: a deep-space navy command-center
 /// look in dark mode and an arctic glass variant in light mode, built on the
-/// same brand blues as the rest of Smart Industrial Alert with cyan/violet
+/// same brand blues as the rest of SIAS with cyan/violet
 /// accents for AI surfaces. Call [Sa.setDark] before building the console
 /// subtree; every token below resolves against the active palette.
 class Sa {

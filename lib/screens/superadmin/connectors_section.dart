@@ -7,7 +7,7 @@ import 'superadmin_theme.dart';
 
 /// SuperAdmin → Infrastructure → Industrial Connectors.
 ///
-/// The IT team wires SIA on top of an existing automation estate — SCADA, PLC,
+/// The IT team wires SIAS on top of an existing automation estate — SCADA, PLC,
 /// historian, MQTT broker, or any REST source — then hits "Verify link test" and
 /// goes live. Flow: pick a connector → enter endpoint + token → Verify → done.
 class ConnectorsSection extends StatefulWidget {
@@ -631,11 +631,11 @@ String _gatewaySnippet(IndustrialConnector c, String url, String key) {
   final station = c.station.isEmpty ? 'S1' : c.station;
   switch (c.kind) {
     case ConnectorKind.opcua:
-      return '''// OPC-UA → SIA bridge (Node.js, node-opcua)
+      return '''// OPC-UA → SIAS bridge (Node.js, node-opcua)
 // npm i node-opcua node-fetch
 const { OPCUAClient, AttributeIds } = require("node-opcua");
 const fetch = require("node-fetch");
-const SIA_URL = "$url";
+const SIAS_URL = "$url";
 const KEY = "$key";
 (async () => {
   const client = OPCUAClient.create({ endpointMustExist: false });
@@ -643,7 +643,7 @@ const KEY = "$key";
   const session = await client.createSession();
   setInterval(async () => {
     const dv = await session.read({ nodeId: "ns=2;s=Bearing.Temp", attributeId: AttributeIds.Value });
-    await fetch(SIA_URL, { method: "POST",
+    await fetch(SIAS_URL, { method: "POST",
       headers: { "content-type": "application/json", "x-alertsys-ingest": KEY },
       body: JSON.stringify({ factory: "$fac", line: "$line", station: "$station",
         metric: "bearing_temp", value: dv.value.value, unit: "C",
@@ -651,18 +651,18 @@ const KEY = "$key";
   }, 5000);
 })();''';
     case ConnectorKind.modbus:
-      return '''// Modbus TCP → SIA poller (Node.js, modbus-serial)
+      return '''// Modbus TCP → SIAS poller (Node.js, modbus-serial)
 // npm i modbus-serial node-fetch
 const ModbusRTU = require("modbus-serial");
 const fetch = require("node-fetch");
-const SIA_URL = "$url"; const KEY = "$key";
+const SIAS_URL = "$url"; const KEY = "$key";
 const client = new ModbusRTU();
 (async () => {
   await client.connectTCP("YOUR-PLC", { port: 502 });
   client.setID(1);
   setInterval(async () => {
     const { data } = await client.readHoldingRegisters(0, 1); // register 40001
-    await fetch(SIA_URL, { method: "POST",
+    await fetch(SIAS_URL, { method: "POST",
       headers: { "content-type": "application/json", "x-alertsys-ingest": KEY },
       body: JSON.stringify({ factory: "$fac", line: "$line", station: "$station",
         metric: "pressure", value: data[0], unit: "bar",
@@ -670,7 +670,7 @@ const client = new ModbusRTU();
   }, 5000);
 })();''';
     case ConnectorKind.mqtt:
-      return '''# MQTT → SIA bridge (broker rule, or mosquitto_sub + curl)
+      return '''# MQTT → SIAS bridge (broker rule, or mosquitto_sub + curl)
 # The broker pushes; "Verify link test" proves the broker link with a real
 # MQTT CONNACK. Steady-state, forward matching topics to the ingest URL:
 mosquitto_sub -h YOUR-BROKER -t 'plant/#' | while read -r MSG; do
@@ -680,13 +680,13 @@ mosquitto_sub -h YOUR-BROKER -t 'plant/#' | while read -r MSG; do
     -d "{\\"factory\\":\\"$fac\\",\\"line\\":\\"$line\\",\\"station\\":\\"$station\\",\\"metric\\":\\"vibration\\",\\"value\\":\${MSG},\\"thresholds\\":{\\"warn\\":4,\\"critical\\":7}}"
 done''';
     case ConnectorKind.microcontroller:
-      return '''// ESP32 / Arduino → SIA (HTTPS POST)
+      return '''// ESP32 / Arduino → SIAS (HTTPS POST)
 #include <WiFi.h>
 #include <HTTPClient.h>
-const char* SIA_URL = "$url";
+const char* SIAS_URL = "$url";
 const char* KEY = "$key";
 void sendReading(float value) {
-  HTTPClient http; http.begin(SIA_URL);
+  HTTPClient http; http.begin(SIAS_URL);
   http.addHeader("content-type", "application/json");
   http.addHeader("x-alertsys-ingest", KEY);
   String body = String("{\\"factory\\":\\"$fac\\",\\"line\\":\\"$line\\",")
@@ -695,7 +695,7 @@ void sendReading(float value) {
   http.POST(body); http.end();
 }''';
     default:
-      return '''# Any system → SIA (HTTPS POST)
+      return '''# Any system → SIAS (HTTPS POST)
 curl -sS "$url" \\
   -H 'content-type: application/json' \\
   -H 'x-alertsys-ingest: $key' \\
