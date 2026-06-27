@@ -195,10 +195,22 @@ class VoiceAuthService {
     return l2Normalize(lastOutput);
   }
 
-  Future<void> enrollCurrentUser(List<List<double>> embeddings) async {
+  /// Biometric consent policy version recorded with each enrolment, so consent
+  /// is auditable and can be re-prompted if the policy changes.
+  static const String consentPolicyVersion = 'biometric-voiceprint-v1';
+
+  Future<void> enrollCurrentUser(
+    List<List<double>> embeddings, {
+    bool consentGiven = false,
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       throw StateError('You must be signed in to enroll a voiceprint.');
+    }
+    if (!consentGiven) {
+      throw StateError(
+        'Explicit biometric consent is required before enrolling a voiceprint.',
+      );
     }
     if (embeddings.length < 3) {
       throw ArgumentError('Voice enrollment requires 3 samples.');
@@ -210,8 +222,20 @@ class VoiceAuthService {
       'threshold': threshold,
       'model': 'tflite-hub/conformer-speaker-encoder/conformer_tisid_small',
       'sampleCount': embeddings.length,
+      'consentPolicy': consentPolicyVersion,
+      'consentAt': ServerValue.timestamp,
       'updatedAt': ServerValue.timestamp,
     });
+  }
+
+  /// Erases the enrolled voiceprint (biometric data) for the signed-in user.
+  /// Supports the "right to erasure" required for special-category data.
+  Future<void> deleteEnrollment() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      throw StateError('You must be signed in to delete a voiceprint.');
+    }
+    await FirebaseDatabase.instance.ref('users/$uid/voiceprint').remove();
   }
 
   static List<double> averageEmbeddings(List<List<double>> embeddings) {

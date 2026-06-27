@@ -162,13 +162,26 @@ AiModel aiModelById(String? id) => kAiModels.firstWhere(
       orElse: () => kAiModels.first,
     );
 
-/// Per-agent model selection. The key is stored alongside (superadmin-only
-/// node); empty for the built-in Llama.
+/// Per-agent model selection. The provider API key is NEVER stored in (or read
+/// back from) the client-readable `ai_model_config` node — it lives write-only
+/// in the worker-only `ai_model_secrets` vault. The client only ever knows
+/// whether a key is configured (`hasKey`), never its value.
 class AiModelConfig {
   final String modelId;
+
+  /// Plaintext key, present only on a config the UI is about to *save*. Reads
+  /// from RTDB always return this empty — the secret is worker-only.
   final String apiKey;
 
-  const AiModelConfig({this.modelId = kDefaultAiModelId, this.apiKey = ''});
+  /// Whether a key is already on file in the vault (drives the "•••• set"
+  /// affordance without ever exposing the value).
+  final bool hasKey;
+
+  const AiModelConfig({
+    this.modelId = kDefaultAiModelId,
+    this.apiKey = '',
+    this.hasKey = false,
+  });
 
   AiModel get model => aiModelById(modelId);
 
@@ -176,13 +189,15 @@ class AiModelConfig {
     if (m == null) return const AiModelConfig();
     return AiModelConfig(
       modelId: (m['modelId'] ?? kDefaultAiModelId).toString(),
-      apiKey: (m['apiKey'] ?? '').toString(),
+      hasKey: m['hasKey'] == true,
     );
   }
 
-  Map<String, dynamic> toMap() => {
+  /// Non-secret config persisted to `ai_model_config/{agent}`. The key is
+  /// deliberately excluded here.
+  Map<String, dynamic> toConfigMap() => {
         'modelId': modelId,
-        'apiKey': apiKey.trim(),
+        'hasKey': hasKey || apiKey.trim().isNotEmpty,
         'updatedAt': DateTime.now().toIso8601String(),
       };
 }
@@ -241,6 +256,8 @@ class AiModelConfigService {
   final FirebaseDatabase _db;
 
   DatabaseReference _ref(String agent) => _db.ref('ai_model_config/$agent');
+  DatabaseReference _secretRef(String agent) =>
+      _db.ref('ai_model_secrets/$agent');
 
   Stream<AiModelConfig> stream(String agent) =>
       _ref(agent).onValue.map((e) => AiModelConfig.fromMap(e.snapshot.value as Map?));
@@ -250,8 +267,20 @@ class AiModelConfigService {
     return AiModelConfig.fromMap(snap.value as Map?);
   }
 
-  Future<void> save(String agent, AiModelConfig config) =>
-      _ref(agent).set(config.toMap());
+  /// Persists the non-secret selection to `ai_model_config`. When a fresh key is
+  /// supplied it is written *separately* to the worker-only `ai_model_secrets`
+  /// vault (the client never reads it back). An empty key leaves any stored key
+  /// untouched, so re-saving the same model without re-typing the key is safe.
+  Future<void> save(String agent, AiModelConfig config) async {
+    await _ref(agent).set(config.toConfigMap());
+    final key = config.apiKey.trim();
+    if (key.isNotEmpty) {
+      await _secretRef(agent).set({
+        'apiKey': key,
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+    }
+  }
 
   /// Head-to-head eval: runs the candidate model and the current champion on a
   /// set of golden tasks (worker side) and returns scores + a verdict, so a

@@ -567,76 +567,6 @@ class _ProviderMarkPainter extends CustomPainter {
       old.id != id || old.color != color;
 }
 
-/// Square brand tile (logo mark + name) used in the provider picker grid and
-/// the credential card.
-class _ProviderTile extends StatelessWidget {
-  final _Provider provider;
-  final bool selected;
-  final VoidCallback? onTap;
-  const _ProviderTile({
-    required this.provider,
-    this.selected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = provider.color == const Color(0xFF111827) && !Sa.isDark
-        ? const Color(0xFF334155)
-        : provider.color;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        width: 116,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        decoration: BoxDecoration(
-          color: selected
-              ? c.withValues(alpha: Sa.isDark ? 0.16 : 0.10)
-              : Sa.bgRaised.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? c : Sa.border,
-            width: selected ? 1.4 : 1,
-          ),
-          boxShadow: [
-            if (selected)
-              BoxShadow(color: c.withValues(alpha: 0.3), blurRadius: 14),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: c.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: c.withValues(alpha: 0.4)),
-              ),
-              child: Center(
-                child: _ProviderLogo(provider: provider, size: 22, color: c),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              provider.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Sa.mono(
-                size: 9.5,
-                color: selected ? Sa.text : Sa.textDim,
-                weight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Lets the fleet rail be dragged horizontally with a mouse / trackpad / touch
 /// — the default web/desktop behavior only scrolls a horizontal list with a
 /// shift+wheel, which is why agents past the fold (Guardian) felt unreachable.
@@ -4887,6 +4817,7 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
   bool _saving = false;
   bool _obscure = true;
   bool _testing = false;
+  bool _hasKey = false; // a key is on file in the worker-only vault (value unknown to the client)
   ModelEvalResult? _eval;
   StreamSubscription<DatabaseEvent>? _driftSub;
   Map<String, dynamic>? _drift;
@@ -4914,7 +4845,10 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
       if (mounted) {
         setState(() {
           _modelId = cfg.modelId;
-          _key.text = cfg.apiKey;
+          // The key value is worker-only and never returned; we only learn
+          // whether one is on file.
+          _hasKey = cfg.hasKey;
+          _key.clear();
           _loading = false;
         });
       }
@@ -4926,7 +4860,9 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
   Future<void> _save() async {
     final model = aiModelById(_modelId);
     final key = _key.text.trim();
-    if (model.needsKey && key.isEmpty) {
+    // A key is required unless one is already on file for this keyed model
+    // (re-saving keeps the stored key — the client can't read it back to resend).
+    if (model.needsKey && key.isEmpty && !_hasKey) {
       _toast(
         context.tr('{label} needs an API key — paste it first.', {
           'label': model.label,
@@ -4939,8 +4875,19 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
     try {
       await _svc.save(
         widget.agent,
-        AiModelConfig(modelId: _modelId, apiKey: model.needsKey ? key : ''),
+        AiModelConfig(
+          modelId: _modelId,
+          apiKey: model.needsKey ? key : '',
+          hasKey: model.needsKey && (key.isNotEmpty || _hasKey),
+        ),
       );
+      if (mounted) {
+        setState(() {
+          if (model.needsKey && key.isNotEmpty) _hasKey = true;
+          if (!model.needsKey) _hasKey = false;
+          _key.clear();
+        });
+      }
       _toast(
         context.tr('Model saved — {label}. Live within 60s.', {
           'label': model.label,
@@ -5128,9 +5075,11 @@ class _ModelEnginePanelState extends State<_ModelEnginePanel> {
                       horizontal: 12,
                       vertical: 14,
                     ),
-                    hintText: context.tr('Paste your {provider} API key', {
-                      'provider': selected.provider,
-                    }),
+                    hintText: _hasKey
+                        ? context.tr('•••••••• key on file — paste a new one to replace it')
+                        : context.tr('Paste your {provider} API key', {
+                            'provider': selected.provider,
+                          }),
                     hintStyle: Sa.mono(size: 11.5, color: Sa.muted),
                     suffixIcon: IconButton(
                       tooltip: _obscure
@@ -6855,7 +6804,10 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   static const _gAmber = Color(0xFFD29922);
   static const _gPurple = Color(0xFFA371F7);
 
-  Map<dynamic, dynamic> _secrets = {};
+  // Non-secret presence flags ({field: true}) mirrored under
+  // ai_agents/guardian/secretFlags. The secrets themselves live in the
+  // worker-only ai_agent_secrets vault and are never read by the client.
+  Map<dynamic, dynamic> _secretFlags = {};
   Offset _simOffset = const Offset(10, 96);
   bool _deployAuto = false;
   Timer? _simTimer;
@@ -6876,10 +6828,8 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   void initState() {
     super.initState();
     _tracker.start();
-    _sec.get().then((s) {
-      if (mounted && s.value is Map)
-        setState(() => _secrets = s.value as Map<dynamic, dynamic>);
-    });
+    // Presence flags arrive via the _cfg stream (ai_agents/guardian); the
+    // secret vault is never read by the client.
   }
 
   @override
@@ -6889,7 +6839,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
     super.dispose();
   }
 
-  bool _hasSecret(String k) => (_secrets[k]?.toString() ?? '').isNotEmpty;
+  bool _hasSecret(String k) => _secretFlags[k] == true;
   String _ts() => DateTime.now().toIso8601String().substring(11, 19);
 
   bool _githubLatched(Map cfg) {
@@ -6908,6 +6858,8 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       builder: (context, snap) {
         final raw = snap.data?.snapshot.value;
         final cfg = (raw is Map) ? raw : const {};
+        _secretFlags =
+            (cfg['secretFlags'] is Map) ? cfg['secretFlags'] as Map : const {};
         final settings = (cfg['settings'] is Map)
             ? cfg['settings'] as Map
             : const {};
@@ -7456,15 +7408,21 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
                     context.tr('GitHub token'),
                     'github_pat_…',
                   ),
-                  child: _fieldRow(
-                    Icons.vpn_key,
-                    _hasSecret('githubToken')
-                        ? context.tr('•••••••• set')
-                        : context.tr('set token'),
-                    trailing: _hasSecret('githubToken')
-                        ? Icon(Icons.check, size: 14, color: _gGreen)
-                        : null,
-                  ),
+                  child: Builder(builder: (_) {
+                    // Presence flag, or a live worker-verified connection
+                    // (covers instances upgraded before secretFlags existed).
+                    final tokenSet =
+                        _hasSecret('githubToken') || cfg['githubConnected'] == true;
+                    return _fieldRow(
+                      Icons.vpn_key,
+                      tokenSet
+                          ? context.tr('•••••••• set')
+                          : context.tr('set token'),
+                      trailing: tokenSet
+                          ? Icon(Icons.check, size: 14, color: _gGreen)
+                          : null,
+                    );
+                  }),
                 ),
               ),
             ],
@@ -7958,16 +7916,16 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
       ),
     );
     if (v != null && v.isNotEmpty) {
+      // Secret value → worker-only vault (never read back by the client).
       await _sec.update({
         field: v,
         'updatedAt': DateTime.now().toUtc().toIso8601String(),
       });
+      // Non-secret presence flag → client-readable config node.
+      await _cfg.child('secretFlags').update({field: true});
       if (field == 'githubToken') {
         await _markGithubCredentialsChanged();
       }
-      final s = await _sec.get();
-      if (mounted && s.value is Map)
-        setState(() => _secrets = s.value as Map<dynamic, dynamic>);
     }
   }
 

@@ -44,7 +44,14 @@ class VoiceAuthService {
     return const <double>[];
   }
 
-  Future<void> enrollCurrentUser(List<List<double>> embeddings) async {}
+  static const String consentPolicyVersion = 'biometric-voiceprint-v1';
+
+  Future<void> enrollCurrentUser(
+    List<List<double>> embeddings, {
+    bool consentGiven = false,
+  }) async {}
+
+  Future<void> deleteEnrollment() async {}
 
   Future<void> preload() async {}
 }

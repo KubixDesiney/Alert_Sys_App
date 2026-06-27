@@ -995,7 +995,15 @@ const Map<String, String> kStringsFr = {
   'Verifying…': 'Vérification…',
   'Change number': 'Changer de numéro',
   'Voiceprint enrolled.': 'Empreinte vocale enregistrée.',
+  'Voiceprint deleted.': 'Empreinte vocale supprimée.',
   'Voice Enrollment': 'Enregistrement vocal',
+  'Biometric consent': 'Consentement biométrique',
+  'Voice enrolment creates a voiceprint — biometric data used only to verify it is you when you claim or resolve alerts by voice. It is stored encrypted in transit, never shared, and you can delete it at any time. Voice control is optional; you can use the app fully without it.':
+      'L\'enregistrement vocal crée une empreinte vocale — une donnée biométrique utilisée uniquement pour vérifier votre identité lorsque vous prenez ou résolvez des alertes par la voix. Elle est chiffrée en transit, jamais partagée, et vous pouvez la supprimer à tout moment. La commande vocale est facultative ; vous pouvez utiliser l\'application sans elle.',
+  'I consent to my voiceprint being collected and stored for voice verification.':
+      'Je consens à ce que mon empreinte vocale soit collectée et stockée à des fins de vérification vocale.',
+  'A voiceprint is currently enrolled.': 'Une empreinte vocale est actuellement enregistrée.',
+  'Delete my voiceprint': 'Supprimer mon empreinte vocale',
   'Map saved for {name}': 'Plan enregistré pour {name}',
   'Save failed: {error}': 'Échec de l\'enregistrement : {error}',
   'Add a factory in the Structure tab first.':
@@ -1458,6 +1466,8 @@ const Map<String, String> kStringsFr = {
   '{label} — API key': '{label} — clé API',
   'Paste your {provider} API key': 'Collez votre clé API {provider}',
   'Show': 'Afficher',
+  '•••••••• key on file — paste a new one to replace it':
+      '•••••••• clé enregistrée — collez-en une nouvelle pour la remplacer',
   'Hide': 'Masquer',
   'The key is read only by the edge worker and SuperAdmin. It never reaches supervisor or PM devices. If a call fails, the agent falls back to built-in Llama automatically.':
       'La clé n\'est lue que par le worker edge et le SuperAdmin. Elle n\'atteint jamais les appareils des superviseurs ou des responsables de production. Si un appel échoue, l\'agent revient automatiquement à Llama intégré.',

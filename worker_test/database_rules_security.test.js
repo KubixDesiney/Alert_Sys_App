@@ -60,16 +60,42 @@ describe('security database rules', () => {
     expect(agents['.write']).not.toContain("child('role').val() === 'admin'");
   });
 
-  test('ai_agent_secrets credential vault is superadmin-only, even for the worker service token', () => {
+  test('ai_agent_secrets credential vault is write-only from the client (superadmin write, no client read)', () => {
     const secrets = rules.ai_agent_secrets;
     const superadminOnly =
       "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')";
 
-    expect(secrets['.read']).toBe(superadminOnly);
+    // The client can never read the vault back — the worker reads it via its
+    // admin OAuth token, which bypasses rules entirely.
+    expect(secrets['.read']).toBe(false);
     expect(secrets['.write']).toBe(superadminOnly);
-    // Plain app-admin role and the worker service token must never unlock
-    // custom-agent API tokens.
+    // Plain app-admin role and the worker service-token claim must never unlock
+    // the vault through a rule.
     expect(JSON.stringify(secrets)).not.toContain("val() === 'admin'");
     expect(JSON.stringify(secrets)).not.toContain('auth.token.role');
+  });
+
+  test('LLM provider secrets are split: non-secret config vs worker-only key vault', () => {
+    // Selection metadata is client-readable (superadmin) + worker-readable.
+    const cfg = rules.ai_model_config;
+    expect(cfg['.read']).toContain("auth.token.role === 'admin'");
+    expect(cfg['.read']).toContain("'superadmin'");
+    expect(cfg.$agent.apiKey).toBeUndefined(); // the key never lives here anymore
+
+    // The key vault is worker-read-only (service-token claim), superadmin-write.
+    const vault = rules.ai_model_secrets;
+    expect(vault['.read']).toBe("auth != null && auth.token.role === 'admin'");
+    expect(vault['.write']).toContain("'superadmin'");
+  });
+
+  test('connector_secrets vault is worker-only, exposing only the ingest key to the operator', () => {
+    const cs = rules.connector_secrets;
+    expect(cs['.read']).toBe(false); // worker bypasses via OAuth; clients cannot read
+    expect(cs['.write']).toContain("'superadmin'");
+    expect(cs.$connectorId.ingestKey['.read']).toContain("'superadmin'");
+  });
+
+  test('anonymous alert creation is closed (auth required on every alert write)', () => {
+    expect(rules.alerts.$alertId['.write']).toBe('auth != null');
   });
 });
