@@ -354,8 +354,10 @@ async function assertActivePreflight() {
   if (config.publishMode === 'direct' && !envFlag('AGENT_DIRECT_MAIN_PUSH_ALLOWED')) {
     throw new Error('AGENT_DIRECT_MAIN_PUSH_ALLOWED=1 is required for direct main publishing');
   }
-  if (config.deployWeb && !process.env.FIREBASE_TOKEN) {
-    throw new Error('FIREBASE_TOKEN is required for direct production web deploy');
+  if (config.deployWeb && !hasFirebaseHostingAuth()) {
+    throw new Error(
+      'FIREBASE_SERVICE_ACCOUNT, GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_TOKEN is required for direct production web deploy',
+    );
   }
 }
 
@@ -1065,7 +1067,7 @@ async function deployProduction() {
     ].join(' ');
     results.push(await runShell(buildCommand, { timeoutMs: envInt('AGENT_WEB_BUILD_TIMEOUT_MS', 30 * 60 * 1000) }));
 
-    const deployCommand = process.env.AGENT_WEB_DEPLOY_COMMAND || 'npx firebase-tools deploy --only hosting --token "$FIREBASE_TOKEN"';
+    const deployCommand = process.env.AGENT_WEB_DEPLOY_COMMAND || 'node tool/firebase_hosting_deploy.mjs --non-interactive';
     results.push(await runShell(deployCommand, { timeoutMs: envInt('AGENT_WEB_DEPLOY_TIMEOUT_MS', 20 * 60 * 1000) }));
   }
 
@@ -1536,11 +1538,20 @@ Common configuration:
   AGENT_DETECTION_COMMANDS       Newline separated commands for bug detection.
   AGENT_VALIDATION_COMMANDS      Newline separated commands for final validation.
   CLAUDE_FIX_MODEL               Claude fix model. Defaults to claude-opus-4-8.
-  FIREBASE_TOKEN                 Required only for direct web deploy mode.
+  FIREBASE_SERVICE_ACCOUNT       Firebase service account JSON for RTDB context and direct web deploy.
+  GOOGLE_APPLICATION_CREDENTIALS Firebase service account file path for direct web deploy.
+  FIREBASE_TOKEN                 Legacy fallback for direct web deploy mode.
   AGENT_SKIP_WEB_DEPLOY=1        Direct mode only: skip Firebase Hosting deploy.
   AGENT_DEPLOY_WORKERS=1         Direct mode only: also deploy Cloudflare workers.
-  FIREBASE_SERVICE_ACCOUNT       Firebase service account JSON for RTDB context.
   FIREBASE_DATABASE_URL          RTDB URL. Defaults to alertappsys.
   WORKER_SHARED_SECRET           Optional Cloudflare worker health auth header.
 `);
+}
+
+function hasFirebaseHostingAuth() {
+  return Boolean(
+    process.env.FIREBASE_SERVICE_ACCOUNT ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      process.env.FIREBASE_TOKEN,
+  );
 }

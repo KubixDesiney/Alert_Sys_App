@@ -12,7 +12,7 @@ name: Guardian drill (self-heal)
 # Secrets (see `node tool/guardian_preflight.mjs`):
 #   GUARDIAN_FIX_API_KEY / GUARDIAN_REVIEW_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY)
 #   AUTOFIX_GITHUB_TOKEN (push/PR; falls back to the default GITHUB_TOKEN)
-#   FIREBASE_TOKEN (web deploy)
+#   FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS or FIREBASE_TOKEN (web deploy)
 # Vars (optional): GUARDIAN_FIX_PROVIDER/MODEL, GUARDIAN_REVIEW_PROVIDER/MODEL.
 
 on:
@@ -164,6 +164,7 @@ jobs:
       contents: read
     env:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
     steps:
       - name: Checkout (healed main)
         uses: actions/checkout@v4
@@ -183,10 +184,10 @@ jobs:
         run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev
 
       - name: Deploy web to Firebase Hosting
-        if: env.FIREBASE_TOKEN != ''
+        if: env.FIREBASE_SERVICE_ACCOUNT != '' || env.FIREBASE_TOKEN != ''
         run: |
           npm i -g firebase-tools
-          firebase deploy --only hosting --token "$FIREBASE_TOKEN"
+          node tool/firebase_hosting_deploy.mjs --non-interactive
 
       - name: Build Android app
         run: flutter build apk --debug --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev

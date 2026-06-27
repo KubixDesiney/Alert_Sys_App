@@ -5,8 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Least privilege: this workflow only reads the repo and deploys to Firebase
-# (auth via the FIREBASE_TOKEN secret). It needs no write scope on the repo.
+# Least privilege: this workflow only reads the repo and deploys to Firebase.
+# Auth prefers FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS, with FIREBASE_TOKEN as a
+# legacy fallback while firebase-tools still accepts it.
 permissions:
   contents: read
 
@@ -33,5 +34,6 @@ jobs:
 
       - name: Deploy to Firebase Hosting
         env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        run: firebase deploy --only hosting --token "$FIREBASE_TOKEN"
+        run: node tool/firebase_hosting_deploy.mjs --non-interactive
