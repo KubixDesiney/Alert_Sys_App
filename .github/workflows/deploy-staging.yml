@@ -36,4 +36,4 @@ jobs:
       - name: Deploy to staging Firebase Hosting
         env:
           FIREBASE_TOKEN: ${{ secrets.STAGING_FIREBASE_TOKEN }}
-        run: firebase deploy --only hosting --project ${{ secrets.STAGING_FIREBASE_PROJECT }} --token "$FIREBASE_TOKEN"
+        run: node tool/firebase_hosting_deploy.mjs --non-interactive --project ${{ secrets.STAGING_FIREBASE_PROJECT }}

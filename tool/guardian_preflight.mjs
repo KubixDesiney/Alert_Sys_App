@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 // Guardian preflight: report which credentials are present and what each unlocks.
 // NEVER prints secret values — only present/absent. Pure checkSecrets() is testable;
 // the CLI prints a readable table for the GitHub Actions log and the console.
@@ -6,6 +7,11 @@
 /** @returns {{capabilities:object[], canRunLive:boolean, canDeployWeb:boolean, canDeployWorkers:boolean}} */
 export function checkSecrets(env = {}) {
   const has = (k) => typeof env[k] === 'string' && env[k].trim().length > 0;
+  const hasFirebaseHostingAuth =
+    has('FIREBASE_SERVICE_ACCOUNT') ||
+    has('FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS') ||
+    has('GOOGLE_APPLICATION_CREDENTIALS') ||
+    has('FIREBASE_TOKEN');
   const anyAiKey =
     has('GUARDIAN_FIX_API_KEY') || has('GUARDIAN_REVIEW_API_KEY') ||
     has('ANTHROPIC_API_KEY') || has('OPENAI_API_KEY') ||
@@ -27,8 +33,8 @@ export function checkSecrets(env = {}) {
     },
     {
       name: 'Deploy web (Firebase Hosting)',
-      present: has('FIREBASE_TOKEN'),
-      requires: 'FIREBASE_TOKEN',
+      present: hasFirebaseHostingAuth,
+      requires: 'FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS / FIREBASE_SERVICE_ACCOUNT / GOOGLE_APPLICATION_CREDENTIALS, or legacy FIREBASE_TOKEN',
       unlocks: 'auto-deploy of the healed web build in automatic mode',
     },
     {
@@ -54,7 +60,7 @@ export function checkSecrets(env = {}) {
   return {
     capabilities,
     canRunLive: anyAiKey && (has('AUTOFIX_GITHUB_TOKEN') || has('GITHUB_TOKEN')),
-    canDeployWeb: has('FIREBASE_TOKEN'),
+    canDeployWeb: hasFirebaseHostingAuth,
     canDeployWorkers: has('CLOUDFLARE_API_TOKEN') && has('CLOUDFLARE_ACCOUNT_ID'),
   };
 }
@@ -70,7 +76,7 @@ function mainCli() {
   }
   console.log('');
   console.log(`  live joint-fix possible : ${r.canRunLive ? 'YES' : 'NO (add an AI key + a GitHub token)'}`);
-  console.log(`  auto web deploy possible: ${r.canDeployWeb ? 'YES' : 'NO (add FIREBASE_TOKEN)'}`);
+  console.log(`  auto web deploy possible: ${r.canDeployWeb ? 'YES' : 'NO (add a Firebase service account or FIREBASE_TOKEN)'}`);
   console.log(`  worker (re)deploy       : ${r.canDeployWorkers ? 'YES' : 'NO (add CLOUDFLARE_API_TOKEN + ACCOUNT_ID)'}`);
 
   const strict = process.argv.includes('--strict');
@@ -80,4 +86,6 @@ function mainCli() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) mainCli();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  mainCli();
+}
