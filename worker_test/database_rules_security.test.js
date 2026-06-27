@@ -82,9 +82,10 @@ describe('security database rules', () => {
     expect(cfg['.read']).toContain("'superadmin'");
     expect(cfg.$agent.apiKey).toBeUndefined(); // the key never lives here anymore
 
-    // The key vault is worker-read-only (service-token claim), superadmin-write.
+    // The key vault is unreadable by any rule-bound auth, including the worker's
+    // own admin-claim idToken; the worker reads it via OAuth, which bypasses rules.
     const vault = rules.ai_model_secrets;
-    expect(vault['.read']).toBe("auth != null && auth.token.role === 'admin'");
+    expect(vault['.read']).toBe(false);
     expect(vault['.write']).toContain("'superadmin'");
   });
 
