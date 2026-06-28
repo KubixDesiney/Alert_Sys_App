@@ -7,7 +7,7 @@
       ".indexOn": [
         "usine", "status", "superviseurId", "assistantId",
         "type", "convoyeur", "poste", "assetId", "alertNumber",
-        "push_sent", "isEscalated"
+        "push_sent", "isEscalated", "timestamp"
       ],
       "$alertId": {
         ".read": "auth != null",
@@ -25,6 +25,7 @@
         "push_sending": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "push_sending_at": { ".validate": "!newData.exists() || newData.isString()" },
         "push_sent_at": { ".validate": "!newData.exists() || newData.isString()" },
+        "received_at": { ".validate": "!newData.exists() || newData.isString()" },
         "push_last_error_at": { ".validate": "!newData.exists() || newData.isString()" },
         "push_skip_reason": { ".validate": "!newData.exists() || newData.isString()" },
         "notificationSent": { ".validate": "!newData.exists() || newData.isBoolean()" },
@@ -538,6 +539,12 @@
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
       ".indexOn": ["updatedAtMs"]
+    },
+
+    "slo": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      ".write": false,
+      ".indexOn": ["at"]
     },
 
     ".read": false,
