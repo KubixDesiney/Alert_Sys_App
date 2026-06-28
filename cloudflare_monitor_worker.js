@@ -15,6 +15,8 @@
  * Manual:  GET https://<worker>/check
  */
 
+import { harvestSamples, summarize, deliveryBreaches, DEFAULT_TARGETS } from './slo_delivery.js';
+
 function b64urlFromString(s) {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -168,6 +170,53 @@ async function runChecks(env) {
     const notify = await rtdbGet(base, token, 'workers/health/notifyLastRun');
     const age = ageMin(notify && (notify.at || notify.finishedAt));
     if (age > 12) problems.push(`Notification worker stale (${Number.isFinite(age) ? Math.round(age) + ' min' : 'no pulse'})`);
+  }
+  if (on('deliveryLatency')) {
+    // Passive harvest: read the last hour of alerts and measure created -> push_sent_at
+    // latency. No change to the delivery hot path; reuses fields already written.
+    const sinceMs = Date.now() - 60 * 60 * 1000;
+    const sinceIso = new Date(sinceMs).toISOString();
+    const recent = await rtdbQuery(base, token, 'alerts', 'timestamp', sinceIso);
+    const h = harvestSamples(recent || {}, sinceMs, 'push_sent_at');
+    const sum = summarize(h.samples);
+    const nowIso = new Date().toISOString();
+    const snapshot = {
+      at: nowIso,
+      windowMin: 60,
+      profile: 'accepted',
+      count: sum.count,
+      p50Ms: sum.p50,
+      p95Ms: sum.p95,
+      p99Ms: sum.p99,
+      maxMs: sum.maxMs,
+      total: h.total,
+      delivered: h.delivered,
+      successRate: h.successRate == null ? null : Math.round(h.successRate * 10000) / 10000,
+    };
+    const day = nowIso.slice(0, 10);
+    const hour = nowIso.slice(11, 13);
+    await rtdbPut(base, token, 'slo/delivery/latest', snapshot);
+    await rtdbPut(base, token, `slo/delivery/byHour/${day}/${hour}`, snapshot);
+    for (const b of deliveryBreaches(sum, h.successRate, DEFAULT_TARGETS, 'accepted')) problems.push(b);
+
+    // True end-to-end: created -> received_at (first device ack, written by the
+    // app in phase 2). Empty until clients ship the new build -> no false breach.
+    const hr = harvestSamples(recent || {}, sinceMs, 'received_at');
+    const sumr = summarize(hr.samples);
+    await rtdbPut(base, token, 'slo/delivery/received/latest', {
+      at: nowIso,
+      windowMin: 60,
+      profile: 'received',
+      count: sumr.count,
+      p50Ms: sumr.p50,
+      p95Ms: sumr.p95,
+      p99Ms: sumr.p99,
+      maxMs: sumr.maxMs,
+      total: hr.total,
+      delivered: hr.delivered,
+      successRate: hr.successRate == null ? null : Math.round(hr.successRate * 10000) / 10000,
+    });
+    for (const b of deliveryBreaches(sumr, hr.successRate, DEFAULT_TARGETS, 'received')) problems.push(b);
   }
   if (on('appErrorBudget')) {
     const today = new Date().toISOString().slice(0, 10);

@@ -340,6 +340,21 @@ class FcmService {
     );
   }
 
+  /// Phase 2 delivery receipt. The first device to receive a new-alert push
+  /// stamps `alerts/{id}/received_at` via a first-wins transaction, closing the
+  /// created -> received SLO loop the monitor worker measures. Best-effort: a
+  /// missed receipt only marginally lowers the measured delivery rate, so any
+  /// failure (e.g. no auth in the background isolate) is swallowed silently.
+  static Future<void> _recordDeliveryReceipt(String alertId) async {
+    try {
+      final ref = FirebaseDatabase.instance.ref('alerts/$alertId/received_at');
+      await ref.runTransaction((current) {
+        if (current != null) return Transaction.abort();
+        return Transaction.success(DateTime.now().toUtc().toIso8601String());
+      });
+    } catch (_) {}
+  }
+
   static Future<void> showVoiceActionNotificationForMessage(
     RemoteMessage message,
   ) async {
@@ -360,6 +375,7 @@ class FcmService {
 
     // ── New alert: buzz the free supervisor ──────────────────────────────────
     if (notifType == 'new_alert' && alertId.isNotEmpty) {
+      unawaited(_recordDeliveryReceipt(alertId));
       await _showBuzzNotification(
         id: id,
         title: title,
