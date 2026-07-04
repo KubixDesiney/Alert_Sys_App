@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/alert_type_registry.dart';
 import '../../services/forecast/forecast_model_store.dart';
 import '../../services/forecast/forecast_training_controller.dart';
 import '../../services/forecast/forecast_types.dart';
@@ -535,9 +536,11 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           const SizedBox(height: 8),
           Text(
             context.tr(
-              'Engine: XGBoost-class gradient-boosted decision trees · {features} engineered features (lags, rolling counts, recency, calendar) · 4 ensembles (one per alert type) · second-order logistic boosting · histogram splits · class-imbalance weighting · early stopping (patience {patience}).',
+              'Engine: XGBoost-class gradient-boosted decision trees · {features} engineered features (lags, rolling counts, recency, calendar) · {ensembles} ensembles (one per alert type) · second-order logistic boosting · histogram splits · class-imbalance weighting · early stopping (patience {patience}).',
               {
-                'features': '${kForecastFeatureCols.length}',
+                'features':
+                    '${forecastFeatureCountFor(AlertTypeRegistry.instance.codes.length)}',
+                'ensembles': '${AlertTypeRegistry.instance.codes.length}',
                 'patience': '${c.config.patience}',
               },
             ),

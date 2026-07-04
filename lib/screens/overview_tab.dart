@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/alert_model.dart';
 import '../../models/hierarchy_model.dart';
+import '../../utils/alert_meta.dart';
+import '../../widgets/alerts/alert_source_badge.dart';
 import '../../services/alert_pdf_service.dart';
 import '../../services/forecast/forecast_overview_engine.dart';
 import '../../services/predictive_intel_service.dart';
@@ -688,12 +690,7 @@ class _OverviewTabState extends State<AdminOverviewTab> {
   }
 
   Map<String, Map<String, int>> _typeStats() {
-    const keys = [
-      'qualite',
-      'maintenance',
-      'defaut_produit',
-      'manque_ressource',
-    ];
+    final keys = allAlertTypeCodes();
     return {
       for (final k in keys)
         k: {

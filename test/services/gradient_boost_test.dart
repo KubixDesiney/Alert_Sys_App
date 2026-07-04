@@ -153,4 +153,61 @@ void main() {
       expect(copy.trees[0].length, 11);
     });
   });
+
+  group('GradientBoostModel dynamic (non-default) type set', () {
+    test('trains, sizes and serializes a custom 3-type ensemble', () {
+      const types = ['overheating', 'vibration', 'leak'];
+      final width = forecastFeatureCountFor(types.length); // 3*3+13 = 22
+      final rng = math.Random(5);
+      final x = <Float64List>[];
+      final y = <Float64List>[];
+      for (var i = 0; i < 200; i++) {
+        final f = Float64List(width);
+        f[0] = rng.nextDouble();
+        final t = Float64List(types.length);
+        t[0] = f[0] > 0.5 ? 1 : 0;
+        x.add(f);
+        y.add(t);
+      }
+      final booster = GbdtBooster(
+        trainX: x,
+        trainY: y,
+        valX: const [],
+        valY: const [],
+        config: const ForecastTrainingConfig(
+          rounds: 6,
+          learningRate: 0.2,
+          maxDepth: 3,
+          minSamplesLeaf: 5,
+        ),
+        types: types,
+      );
+      for (var r = 0; r < 6; r++) {
+        booster.boostOneRound();
+      }
+      final model = booster.model;
+      expect(model.types, types);
+      expect(model.outputSize, 3);
+      expect(model.featureCount, width);
+      expect(model.featureCount, 22);
+      expect(model.thresholds.length, 3);
+
+      final probe = Float64List(width)..[0] = 0.9;
+      expect(model.predict(probe).length, 3);
+
+      final restored =
+          GradientBoostModel.fromJsonString(model.toJsonString());
+      expect(restored.types, types);
+      expect(restored.featureCount, width);
+      expect(restored.predict(probe).length, 3);
+    });
+
+    test('legacy JSON without a types list defaults to the standard set', () {
+      const json = '{"algo":"gbdt","featureCount":25,"base":[0,0,0,0],'
+          '"baseRounds":0,"adaptedRounds":0,'
+          '"thresholds":[0.5,0.5,0.5,0.5],"trees":[[],[],[],[]]}';
+      final m = GradientBoostModel.fromJsonString(json);
+      expect(m.types, kForecastAlertTypes);
+    });
+  });
 }

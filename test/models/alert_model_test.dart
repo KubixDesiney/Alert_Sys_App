@@ -78,6 +78,25 @@ void main() {
       expect(a.assetId, isNull);
     });
 
+    test('parses source and sourceType, blanks become null', () {
+      final scada = AlertModel.fromMap('a', {
+        'source': 'scada:modbus',
+        'sourceType': 'edge_push',
+      });
+      expect(scada.source, 'scada:modbus');
+      expect(scada.sourceType, 'edge_push');
+
+      final manual = AlertModel.fromMap('b', {'source': 'Manual'});
+      expect(manual.source, 'Manual');
+
+      final legacy = AlertModel.fromMap('c', <String, dynamic>{});
+      expect(legacy.source, isNull);
+      expect(legacy.sourceType, isNull);
+
+      final blank = AlertModel.fromMap('d', {'source': '   '});
+      expect(blank.source, isNull);
+    });
+
     test('parses collaborators list', () {
       final m = AlertModel.fromMap('a', {
         'collaborators': [

@@ -1,9 +1,12 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:alertsysapp/services/forecast/forecast_engine.dart';
+import 'package:alertsysapp/services/forecast/forecast_model_store.dart';
 import 'package:alertsysapp/services/forecast/forecast_overview_engine.dart';
 import 'package:alertsysapp/services/forecast/forecast_trainer.dart';
 import 'package:alertsysapp/services/forecast/forecast_types.dart';
+import 'package:alertsysapp/services/forecast/gradient_boost.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 MachineForecast _forecast(
@@ -263,6 +266,71 @@ void main() {
       expect(
           ForecastTrainer.isLearningFromStats(stats(0.96).sublist(0, 2)),
           isFalse);
+    });
+  });
+
+  group('dynamic (non-default) type set', () {
+    final now = DateTime(2026, 6, 11, 8);
+
+    test('risk curves follow the forecasts’ configured type set', () {
+      final forecasts = [
+        const MachineForecast(
+          usine: 'P',
+          convoyeur: 1,
+          poste: 1,
+          typeProbabilities: {'overheating': 0.8, 'vibration': 0.3},
+        ),
+      ];
+      final model = ForecastOverviewEngine.buildPredictiveModel(
+        forecasts: forecasts,
+        records: const [],
+        now: now,
+      );
+      expect(model.curves.keys.toSet(), {'overheating', 'vibration'});
+      expect(model.predictions.map((p) => p.type),
+          contains('overheating'));
+    });
+  });
+
+  group('stale-model fallback (ForecastEngine width guard)', () {
+    List<AlertRecord> burst(String type) => [
+          for (var d = 1; d <= 12; d++)
+            _record('P', 1, 1, type, DateTime.utc(2026, 1, d)),
+        ];
+
+    test('skips inference when the model width no longer matches its types', () {
+      // Simulates a stale model: its persisted featureCount (the old 4-type
+      // width, 25) disagrees with its 2-type set (width 19). Inference must
+      // not mis-index — it returns nothing so the caller falls back to the
+      // statistical model.
+      final model = GradientBoostModel.empty(
+        featureCount: 25,
+        baseScores: Float64List.fromList([0, 0]),
+        types: const ['overheating', 'vibration'],
+      );
+      final out = ForecastEngine.computeForecasts(
+        TrainedForecastModel(model: model),
+        burst('overheating'),
+        now: DateTime.utc(2026, 1, 20),
+      );
+      expect(out, isEmpty);
+    });
+
+    test('forecasts a matching custom-type model with per-type probabilities',
+        () {
+      final model = GradientBoostModel.empty(
+        featureCount: forecastFeatureCountFor(2),
+        baseScores: Float64List.fromList([0, 0]),
+        types: const ['overheating', 'vibration'],
+      );
+      final out = ForecastEngine.computeForecasts(
+        TrainedForecastModel(model: model),
+        burst('overheating'),
+        now: DateTime.utc(2026, 1, 20),
+      );
+      expect(out, isNotEmpty);
+      expect(out.first.typeProbabilities.keys.toSet(),
+          {'overheating', 'vibration'});
     });
   });
 }

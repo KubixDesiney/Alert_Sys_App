@@ -119,6 +119,30 @@ describe('mergeConnectorDefaults', () => {
     expect(alert.type).toBe('Mechanical');
     expect(alert.isCritical).toBe(true);
     expect(alert.usine).toBe('Plant 1');
+    // Every ingest alert is stamped with its connector's source so the app can
+    // render an origin badge.
+    expect(alert.source).toBe('scada:historian_pi');
+  });
+
+  test('stamps the connector kind as the alert source (edge push)', () => {
+    const alert = normalizeTelemetry(
+      { factory: 'Plant 2', machine: 'MACH-004', value: 5, alert: true },
+      { source: 'modbus' },
+    );
+    expect(alert).not.toBeNull();
+    expect(alert.source).toBe('scada:modbus');
+  });
+
+  test('falls back to a webhook source when the payload omits one', () => {
+    const alert = normalizeTelemetry({
+      factory: 'Plant 3',
+      station: 'S1',
+      metric: 'temperature',
+      value: 120,
+      thresholds: { critical: 90 },
+    });
+    expect(alert).not.toBeNull();
+    expect(alert.source).toBe('scada:webhook');
   });
 });
 

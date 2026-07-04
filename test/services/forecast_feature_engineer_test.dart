@@ -152,4 +152,41 @@ void main() {
       expect(f[20], 0); // qualite recency
     });
   });
+
+  group('dynamic (non-default) type set', () {
+    test('builds a narrower schema for a 2-type deployment', () {
+      const types = ['overheating', 'vibration'];
+      final records = <AlertRecord>[
+        for (var d = 1; d <= 12; d++)
+          _alert('2026-01-${d.toString().padLeft(2, '0')}T08:00:00Z',
+              'overheating'),
+      ];
+      final rows = ForecastFeatureEngineer.buildDailyRows(records, types: types);
+      // Daily width = N + 4 = 6, and rows carry the type count.
+      expect(rows.first.features.length, 6);
+      expect(rows.first.typeCount, 2);
+
+      final samples = ForecastFeatureEngineer.buildSamples(rows);
+      expect(samples, isNotEmpty);
+      // Tabular width = 3N + 13 = 19 for a 2-type set.
+      expect(samples.first.features.length, forecastFeatureCountFor(2));
+      expect(samples.first.features.length, 19);
+      expect(samples.first.target.length, 2);
+      // The first configured type occurred next day.
+      expect(samples.first.target[0], 1);
+    });
+
+    test('a type outside the configured set leaves per-type columns at zero '
+        'but still marks the day as a failure', () {
+      const types = ['overheating', 'vibration'];
+      final rows = ForecastFeatureEngineer.buildDailyRows([
+        _alert('2026-01-01T08:00:00Z', 'gremlin'),
+      ], types: types);
+      expect(rows.single.features[0], 0); // overheating column
+      expect(rows.single.features[1], 0); // vibration column
+      expect(rows.single.totalCount, 0); // not attributed to any known type
+      // The day is still a failure day, so days_since_failure resets to 0.
+      expect(rows.single.features[types.length + 1], 0);
+    });
+  });
 }

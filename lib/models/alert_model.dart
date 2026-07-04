@@ -14,6 +14,10 @@ class AlertModel {
   final int poste;
   final String adresse;
   final String? assetId;
+  // Origin of the alert: "Manual" (app-created), or an ingest connector's
+  // kind/name (e.g. "SCADA", "Modbus", "OPC-UA"). Null/empty ⇒ no source badge.
+  final String? source;
+  final String? sourceType;
   final DateTime timestamp;
   final String description;
   final String? assistantId;
@@ -69,6 +73,8 @@ class AlertModel {
     required this.poste,
     required this.adresse,
     this.assetId,
+    this.source,
+    this.sourceType,
     required this.timestamp,
     required this.description,
     this.isEscalated = false,
@@ -128,6 +134,12 @@ class AlertModel {
       poste: (data['poste'] as num?)?.toInt() ?? 1,
       adresse: data['adresse'] ?? data['poste_id'] ?? '',
       assetId: assetId == null || assetId.isEmpty ? null : assetId,
+      source: (data['source']?.toString().trim().isNotEmpty ?? false)
+          ? data['source'].toString().trim()
+          : null,
+      sourceType: (data['sourceType']?.toString().trim().isNotEmpty ?? false)
+          ? data['sourceType'].toString().trim()
+          : null,
       timestamp: _parseDate(data['timestamp']),
       description: data['description'] ?? data['message'] ?? '',
       assistantId: data['assistantId'],
@@ -184,6 +196,8 @@ class AlertModel {
         'poste': poste,
         'adresse': adresse,
         'assetId': assetId,
+        'source': source,
+        'sourceType': sourceType,
         'timestamp': timestamp.toIso8601String(),
         'description': description,
         'assistantId': assistantId,
@@ -277,6 +291,8 @@ class AlertModel {
         poste: poste,
         adresse: adresse,
         assetId: assetId ?? this.assetId,
+        source: source,
+        sourceType: sourceType,
         timestamp: timestamp,
         description: description,
         assistantId: assistantId ?? this.assistantId,

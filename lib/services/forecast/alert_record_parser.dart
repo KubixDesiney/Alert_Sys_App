@@ -5,6 +5,7 @@ import 'package:csv/csv.dart';
 import 'package:excel/excel.dart' as xls;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
+import '../../models/alert_type.dart';
 import 'forecast_types.dart';
 
 /// Result of ingesting one uploaded file.
@@ -51,26 +52,29 @@ class AlertRecordParser {
     'priority', 'priorite',
   };
 
-  /// Entry point: dispatches by file extension.
+  /// Entry point: dispatches by file extension. [types] is the tenant's active
+  /// alert-type registry (defaults to the standard set) and drives type-value
+  /// normalization onto configured codes.
   static Future<ParsedDataset> parse({
     required String fileName,
     required Uint8List bytes,
+    List<AlertTypeDef> types = kDefaultAlertTypeDefs,
   }) async {
     final lower = fileName.toLowerCase();
     if (lower.endsWith('.csv') || lower.endsWith('.txt') || lower.endsWith('.tsv')) {
-      return parseCsvText(fileName, _decodeText(bytes));
+      return parseCsvText(fileName, _decodeText(bytes), types: types);
     }
     if (lower.endsWith('.json')) {
-      return parseJsonText(fileName, _decodeText(bytes));
+      return parseJsonText(fileName, _decodeText(bytes), types: types);
     }
     if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
-      return parseXlsxBytes(fileName, bytes);
+      return parseXlsxBytes(fileName, bytes, types: types);
     }
     if (lower.endsWith('.sql') || lower.endsWith('.dump')) {
-      return parseSqlText(fileName, _decodeText(bytes));
+      return parseSqlText(fileName, _decodeText(bytes), types: types);
     }
     if (lower.endsWith('.pdf')) {
-      return parsePdfBytes(fileName, bytes);
+      return parsePdfBytes(fileName, bytes, types: types);
     }
     throw FormatException(
       'Unsupported file type "$fileName". Supported: CSV, TSV, JSON, XLSX, '
@@ -99,7 +103,8 @@ class AlertRecordParser {
 
   // ── CSV ─────────────────────────────────────────────────────────────────
 
-  static ParsedDataset parseCsvText(String fileName, String text) {
+  static ParsedDataset parseCsvText(String fileName, String text,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     final firstLine = text.split(RegExp(r'\r?\n')).firstWhere(
           (l) => l.trim().isNotEmpty,
           orElse: () => '',
@@ -119,6 +124,7 @@ class AlertRecordParser {
       'csv',
       header,
       rows.skip(1).map((r) => r.map((e) => e as dynamic).toList()).toList(),
+      types: types,
     );
   }
 
@@ -140,7 +146,8 @@ class AlertRecordParser {
 
   // ── JSON ────────────────────────────────────────────────────────────────
 
-  static ParsedDataset parseJsonText(String fileName, String text) {
+  static ParsedDataset parseJsonText(String fileName, String text,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     final decoded = jsonDecode(text);
     Iterable<Map<String, dynamic>> objects;
     if (decoded is List) {
@@ -165,7 +172,7 @@ class AlertRecordParser {
     for (final obj in objects) {
       final normalized = <String, dynamic>{};
       obj.forEach((k, v) => normalized[_normKey(k)] = v);
-      final record = _recordFromKeyed(normalized);
+      final record = _recordFromKeyed(normalized, types: types);
       if (record != null) {
         records.add(record);
       } else {
@@ -177,7 +184,8 @@ class AlertRecordParser {
 
   // ── Excel ───────────────────────────────────────────────────────────────
 
-  static ParsedDataset parseXlsxBytes(String fileName, Uint8List bytes) {
+  static ParsedDataset parseXlsxBytes(String fileName, Uint8List bytes,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     final book = xls.Excel.decodeBytes(bytes);
     for (final table in book.tables.values) {
       if (table.rows.isEmpty) continue;
@@ -188,7 +196,7 @@ class AlertRecordParser {
       for (final row in table.rows.skip(1)) {
         dataRows.add(row.map((c) => _cellToDynamic(c?.value)).toList());
       }
-      return _fromTable(fileName, 'excel', header, dataRows);
+      return _fromTable(fileName, 'excel', header, dataRows, types: types);
     }
     throw const FormatException(
       'No sheet with a recognizable header row (need at least a date and a '
@@ -209,7 +217,8 @@ class AlertRecordParser {
 
   // ── SQL dump ────────────────────────────────────────────────────────────
 
-  static ParsedDataset parseSqlText(String fileName, String text) {
+  static ParsedDataset parseSqlText(String fileName, String text,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     // Column list from INSERT … (col, col) VALUES, falling back to the
     // CREATE TABLE definition when the dump omits column names.
     final insertRe = RegExp(
@@ -261,7 +270,7 @@ class AlertRecordParser {
         for (var i = 0; i < columns.length; i++) {
           keyed[_normKey(columns[i])] = tuple[i];
         }
-        final record = _recordFromKeyed(keyed);
+        final record = _recordFromKeyed(keyed, types: types);
         if (record != null) {
           records.add(record);
         } else {
@@ -347,14 +356,16 @@ class AlertRecordParser {
 
   // ── PDF ─────────────────────────────────────────────────────────────────
 
-  static ParsedDataset parsePdfBytes(String fileName, Uint8List bytes) {
+  static ParsedDataset parsePdfBytes(String fileName, Uint8List bytes,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     final document = PdfDocument(inputBytes: bytes);
     final text = PdfTextExtractor(document).extractText();
     document.dispose();
-    return parsePdfText(fileName, text);
+    return parsePdfText(fileName, text, types: types);
   }
 
-  static ParsedDataset parsePdfText(String fileName, String text) {
+  static ParsedDataset parsePdfText(String fileName, String text,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     final lines = text
         .split(RegExp(r'\r?\n'))
         .map((l) => l.trim())
@@ -371,7 +382,8 @@ class AlertRecordParser {
           if (row.length >= 2) dataRows.add(row);
         }
         try {
-          final parsed = _fromTable(fileName, 'pdf', cells, dataRows);
+          final parsed =
+              _fromTable(fileName, 'pdf', cells, dataRows, types: types);
           if (parsed.records.isNotEmpty) return parsed;
         } on FormatException {
           // fall through to the heuristic scan
@@ -393,7 +405,7 @@ class AlertRecordParser {
         skipped++;
         continue;
       }
-      final type = _findTypeKeyword(line);
+      final type = _findTypeKeyword(line, types: types);
       if (type == null) {
         skipped++;
         continue;
@@ -446,8 +458,9 @@ class AlertRecordParser {
     String fileName,
     String kind,
     List<String> header,
-    List<List<dynamic>> rows,
-  ) {
+    List<List<dynamic>> rows, {
+    List<AlertTypeDef> types = kDefaultAlertTypeDefs,
+  }) {
     final idx = <String, int>{};
     for (var i = 0; i < header.length; i++) {
       idx[_normKey(header[i])] = i;
@@ -485,7 +498,7 @@ class AlertRecordParser {
       }
       records.add(AlertRecord(
         timestamp: ts,
-        type: normalizeType(at(row, typeIdx)?.toString()),
+        type: normalizeType(at(row, typeIdx)?.toString(), types: types),
         usine: at(row, usineIdx)?.toString().trim().isNotEmpty == true
             ? at(row, usineIdx).toString().trim()
             : 'Factory',
@@ -549,7 +562,8 @@ class AlertRecordParser {
     );
   }
 
-  static AlertRecord? _recordFromKeyed(Map<String, dynamic> keyed) {
+  static AlertRecord? _recordFromKeyed(Map<String, dynamic> keyed,
+      {List<AlertTypeDef> types = kDefaultAlertTypeDefs}) {
     dynamic firstOf(Set<String> keys) {
       for (final k in keys) {
         if (keyed.containsKey(k) && keyed[k] != null) return keyed[k];
@@ -562,7 +576,7 @@ class AlertRecordParser {
     final usineRaw = firstOf(_usineKeys)?.toString().trim();
     return AlertRecord(
       timestamp: ts,
-      type: normalizeType(firstOf(_typeKeys)?.toString()),
+      type: normalizeType(firstOf(_typeKeys)?.toString(), types: types),
       usine: usineRaw == null || usineRaw.isEmpty ? 'Factory' : usineRaw,
       convoyeur: _asInt(firstOf(_convoyeurKeys)),
       poste: _asInt(firstOf(_posteKeys)),
@@ -573,22 +587,27 @@ class AlertRecordParser {
   static String _normKey(String key) =>
       key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
-  /// Maps free-form type labels onto the four canonical types the network
-  /// predicts; anything else is kept as a sanitized label (it still counts
-  /// toward totals and days-since-failure features).
-  static String normalizeType(String? raw) {
+  /// Maps a free-form type label onto one of the configured alert-type codes
+  /// using each type's [AlertTypeDef.synonyms]; anything else is kept as a
+  /// sanitized label (it still counts toward totals and days-since-failure
+  /// features). [types] defaults to [kDefaultAlertTypeDefs], whose synonyms
+  /// reproduce the historical substring behaviour, so existing history parses
+  /// identically when no tenant registry is supplied.
+  static String normalizeType(String? raw, {List<AlertTypeDef>? types}) {
     final t = (raw ?? '').trim().toLowerCase();
     if (t.isEmpty) return 'unknown';
-    if (t.contains('qual')) return 'qualite';
-    if (t.contains('mainten') || t.contains('entretien')) return 'maintenance';
-    if (t.contains('defaut') || t.contains('defect') || t.contains('damag') ||
-        t.contains('produit') || t.contains('product')) {
-      return 'defaut_produit';
+    final defs = types ?? kDefaultAlertTypeDefs;
+    // Exact code match first.
+    for (final d in defs) {
+      if (d.code.toLowerCase() == t) return d.code;
     }
-    if (t.contains('ressource') || t.contains('resource') ||
-        t.contains('shortage') || t.contains('manque') || t.contains('stock')) {
-      return 'manque_ressource';
+    // Synonym substring match (first configured type wins).
+    for (final d in defs) {
+      for (final s in d.synonyms) {
+        if (s.isNotEmpty && t.contains(s)) return d.code;
+      }
     }
+    // Sanitized fallback keeps the raw label as its own bucket.
     return t.replaceAll(RegExp(r'[^a-z0-9]+'), '_');
   }
 
@@ -674,15 +693,14 @@ class AlertRecordParser {
     return null;
   }
 
-  static String? _findTypeKeyword(String line) {
+  static String? _findTypeKeyword(String line, {List<AlertTypeDef>? types}) {
+    final defs = types ?? kDefaultAlertTypeDefs;
     final l = line.toLowerCase();
-    if (l.contains('qual')) return 'qualite';
-    if (l.contains('mainten')) return 'maintenance';
-    if (l.contains('defaut') || l.contains('defect') || l.contains('damag')) {
-      return 'defaut_produit';
-    }
-    if (l.contains('ressource') || l.contains('resource') || l.contains('shortage') || l.contains('manque')) {
-      return 'manque_ressource';
+    for (final d in defs) {
+      if (l.contains(d.code.toLowerCase())) return d.code;
+      for (final s in d.synonyms) {
+        if (s.isNotEmpty && l.contains(s)) return d.code;
+      }
     }
     return null;
   }

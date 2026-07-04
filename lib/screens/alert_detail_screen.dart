@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../l10n/app_strings.dart';
 import '../utils/alert_claim_error.dart';
 import '../utils/user_friendly_error.dart';
+import '../widgets/alerts/alert_source_badge.dart';
 import '../widgets/common/app_loading_indicator.dart';
 
 class AlertDetailScreen extends StatefulWidget {
@@ -325,6 +326,13 @@ class _AlertDetailScreenState extends State<AlertDetailScreen> {
                         Text(context.tr('Type: {type}', {'type': alert.type}),
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold)),
+                        if ((alert.source ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: AlertSourceBadge(source: alert.source),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Text(context.tr(
                             'Location: {usine} - Line {conv} - Post {poste}', {

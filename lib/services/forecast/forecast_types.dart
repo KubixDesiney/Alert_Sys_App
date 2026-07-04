@@ -1,14 +1,60 @@
 import 'dart:typed_data';
 
-/// Canonical alert types the forecaster learns. Order matters: it defines the
-/// output vector layout of the model and must stay aligned with the
-/// Cloudflare worker's daily-feature schema.
+/// Default alert types the forecaster learns when no tenant registry is
+/// supplied. Order matters: it defines the output vector layout of the model.
+///
+/// The forecaster is **type-dynamic**: the active set is threaded in at train
+/// time from `AlertTypeRegistry` and persisted into the model metadata, so a
+/// deployment that configures its own alert types trains a matching per-type
+/// ensemble. This constant is only the fallback / historical standard set.
 const List<String> kForecastAlertTypes = [
   'qualite',
   'maintenance',
   'defaut_produit',
   'manque_ressource',
 ];
+
+/// Daily (machine-day) feature columns for an arbitrary ordered [types] list:
+/// one `is_<type>` flag per type, then the four shared columns. Generalizes
+/// [kDailyFeatureCols] (its N=4 case). Width = `types.length + 4`.
+List<String> dailyFeatureColsFor(List<String> types) => [
+      for (final t in types) 'is_$t',
+      'critical_count',
+      'days_since_failure',
+      'hour',
+      'dayofweek',
+    ];
+
+/// Engineered tabular feature columns for an arbitrary ordered [types] list.
+/// Generalizes [kForecastFeatureCols] (its N=4 case). Width = `3 * N + 13`.
+List<String> forecastFeatureColsFor(List<String> types) => [
+      // Today's machine-day snapshot: per-type counts + shared.
+      for (final t in types) '${t}_count',
+      'critical_count',
+      'days_since_failure',
+      'mean_hour',
+      'dayofweek',
+      // The day being predicted.
+      'target_dayofweek',
+      'target_is_weekend',
+      // Short-term any-type lags.
+      'total_today',
+      'total_yesterday',
+      'total_2d_ago',
+      // Per-type 7-day rolling counts.
+      for (final t in types) '${t}_7d',
+      // Rolling totals and tempo trend.
+      'total_7d',
+      'total_14d',
+      'trend_7d',
+      // Per-type recency (days since last occurrence, capped).
+      for (final t in types) '${t}_days_since',
+      // Critical pressure.
+      'critical_7d',
+    ];
+
+/// Feature-vector width for a given number of alert types (`3 * N + 13`).
+int forecastFeatureCountFor(int typeCount) => 3 * typeCount + 13;
 
 /// Base per-day feature columns of a machine-day row. Mirrors the worker's
 /// `_LSTM_FEATURE_COLS` daily schema so daily rows stay interchangeable with

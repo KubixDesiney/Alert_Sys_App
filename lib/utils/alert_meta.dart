@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/alert_type.dart';
+import '../services/alert_type_registry.dart';
 import '../theme.dart';
 
 /// Visual metadata for an alert type or status.
 ///
 /// Single source of truth used by every screen that renders alert chips,
 /// pills, icons or coloured stripes (alert_scan_screen, alert_tree_visualization,
-/// dashboard_screen, etc.). Add new alert types here, not in screens.
+/// dashboard_screen, etc.). Alert-type appearance is driven by the
+/// tenant-configurable [AlertTypeRegistry]; unknown/legacy codes degrade to a
+/// neutral chip showing the raw string.
 class AlertMeta {
   final String label;
   final IconData icon;
@@ -21,48 +25,34 @@ class AlertMeta {
   });
 }
 
-/// [context] is optional so existing call sites keep compiling without
-/// localization; pass it whenever a BuildContext is available so the label
-/// renders in the active app language.
+/// Visual metadata for an alert [type], resolved through the configurable
+/// [AlertTypeRegistry]. [context] is optional so existing call sites keep
+/// compiling without localization; pass it whenever a BuildContext is
+/// available so the label renders in the active app language.
+///
+/// The registry serves the default seed synchronously (identical to the
+/// historical standard set) before its stream resolves, so this never depends
+/// on a live Firebase connection. Codes absent from the registry — legacy
+/// alerts written before a type was removed, or foreign SCADA type strings —
+/// render as a neutral chip with the raw code, never crashing.
 AlertMeta typeMeta(String type, AppTheme t, [BuildContext? context]) {
   String tr(String s) => context == null ? s : context.tr(s);
-  switch (type) {
-    case 'qualite':
-      return AlertMeta(
-        label: tr('Quality'),
-        icon: Icons.fact_check_outlined,
-        color: t.red,
-        bg: t.redLt,
-      );
-    case 'maintenance':
-      return AlertMeta(
-        label: tr('Maintenance'),
-        icon: Icons.build_outlined,
-        color: t.blue,
-        bg: t.blueLt,
-      );
-    case 'defaut_produit':
-      return AlertMeta(
-        label: tr('Damaged Product'),
-        icon: Icons.report_problem_outlined,
-        color: t.green,
-        bg: t.greenLt,
-      );
-    case 'manque_ressource':
-      return AlertMeta(
-        label: tr('Resource Deficiency'),
-        icon: Icons.inventory_2_outlined,
-        color: t.yellow,
-        bg: t.yellowLt,
-      );
-    default:
-      return AlertMeta(
-        label: type,
-        icon: Icons.notifications_outlined,
-        color: t.muted,
-        bg: t.border,
-      );
+  final def = AlertTypeRegistry.instance.byCode(type);
+  if (def != null) {
+    final color = def.color;
+    return AlertMeta(
+      label: tr(def.label),
+      icon: alertTypeIcon(def.icon),
+      color: color,
+      bg: color.withValues(alpha: t.isDark ? 0.22 : 0.12),
+    );
   }
+  return AlertMeta(
+    label: type,
+    icon: Icons.notifications_outlined,
+    color: t.muted,
+    bg: t.border,
+  );
 }
 
 AlertMeta statusMeta(String status, AppTheme t, [BuildContext? context]) {
@@ -104,13 +94,12 @@ AlertMeta statusMeta(String status, AppTheme t, [BuildContext? context]) {
 bool isActiveStatus(String status) =>
     status == 'disponible' || status == 'en_cours';
 
-/// Canonical list of known alert types — useful for filter pickers.
-const List<String> kAllAlertTypes = [
-  'qualite',
-  'maintenance',
-  'defaut_produit',
-  'manque_ressource',
-];
+/// Active alert-type codes from the configurable registry — used by filter
+/// pickers and type dropdowns. Falls back to the default seed synchronously.
+List<String> allAlertTypeCodes() => AlertTypeRegistry.instance.codes;
+
+/// Active alert types (full defs) in registry order.
+List<AlertTypeDef> allAlertTypes() => AlertTypeRegistry.instance.types;
 
 const List<String> kAllAlertStatuses = [
   'disponible',

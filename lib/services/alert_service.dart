@@ -260,6 +260,9 @@ class AlertService {
       'poste': poste,
       'alertNumber': alertNumber,
       'adresse': '${usine.replaceAll(' ', '_')}_C${convoyeur}_P$poste',
+      // App/console-created alerts are stamped as manually raised; SCADA/ingest
+      // alerts carry their connector's source instead.
+      'source': 'Manual',
       'timestamp': now.toIso8601String(),
       'description': description.trim().isEmpty
           ? _defaultDescription(type)

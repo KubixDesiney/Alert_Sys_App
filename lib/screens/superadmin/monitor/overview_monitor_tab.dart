@@ -64,23 +64,9 @@ class _OverviewMonitorTabState extends State<OverviewMonitorTab> {
                   const SizedBox(height: 18),
                   OperationalInsight(controller: _c),
                   const SizedBox(height: 18),
-                  LayoutBuilder(builder: (context, cns) {
-                    final fleet = FleetConstellation(controller: _c);
-                    final workers = WorkersGrid(controller: _c);
-                    if (cns.maxWidth >= 1080) {
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(flex: 5, child: fleet),
-                          const SizedBox(width: 18),
-                          Expanded(flex: 6, child: workers),
-                        ],
-                      );
-                    }
-                    return Column(
-                      children: [fleet, const SizedBox(height: 18), workers],
-                    );
-                  }),
+                  // The AI Agent Fleet is the war-room hero — full-width, large
+                  // and live. Edge-worker status now lives in the Status tab.
+                  FleetConstellation(controller: _c),
                   const SizedBox(height: 18),
                   LayoutBuilder(builder: (context, cns) {
                     final db = DatabaseHologram(controller: _c);
@@ -124,20 +110,6 @@ class _CommandStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller;
 
-    final aiState = workerLiveState(c.aiHealth, onMin: 3, idleMin: 10);
-    final notifyState = workerLiveState(c.notifyHealth, onMin: 3, idleMin: 10);
-    final backupState = workerLiveState(c.backupHealth,
-        onMin: 26 * 60, idleMin: 50 * 60, okKey: 'ok');
-    final monitorState = workerLiveState(c.monitorHealth,
-        onMin: 7, idleMin: 20, stateKey: 'state');
-    final githubUp = c.github?.connected == true;
-
-    bool up(LiveState s) => s == LiveState.online || s == LiveState.idle;
-    final workersLive = [aiState, notifyState, backupState, monitorState]
-            .where(up)
-            .length +
-        (githubUp ? 1 : 0);
-
     final agentsOnline =
         _agentIds.where((id) => c.agent(id).enabled).length;
 
@@ -150,11 +122,10 @@ class _CommandStrip extends StatelessWidget {
 
     final dbReach = c.dbReachableCount;
 
-    // Overall posture.
-    final criticalDown =
-        aiState == LiveState.offline || notifyState == LiveState.offline;
-    final degraded = workersLive < 5 ||
-        agentsOnline < _agentIds.length ||
+    // Overall posture — fleet, data and app health. Edge-worker posture is
+    // owned by the Status tab now.
+    final criticalDown = crashFree < 0.90 || dbReach == 0;
+    final degraded = agentsOnline < _agentIds.length ||
         dbReach < kDbNodes.length ||
         crashFree < 0.95;
     final (postureColor, postureLabel) = criticalDown
@@ -164,15 +135,6 @@ class _CommandStrip extends StatelessWidget {
             : (Sa.green, context.tr('NOMINAL')));
 
     final kpis = <Widget>[
-      KpiReadout(
-        icon: Icons.dns_outlined,
-        label: context.tr('EDGE WORKERS'),
-        value: workersLive,
-        suffix: '/5',
-        accent: workersLive == 5 ? Sa.green : Sa.amber,
-        sub: context.tr('cloudflare cron live'),
-        pulse: workersLive == 5,
-      ),
       KpiReadout(
         icon: Icons.hub_outlined,
         label: context.tr('AI AGENTS'),

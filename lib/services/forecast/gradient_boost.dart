@@ -85,6 +85,11 @@ class GradientBoostModel {
   /// trees[k] is the boosted sequence for type k.
   final List<List<BoostTree>> trees;
 
+  /// Ordered alert-type codes this model learned (one ensemble per entry).
+  /// Persisted so inference rebuilds the identical feature vector and labels
+  /// each output; defaults to [kForecastAlertTypes] for legacy models.
+  final List<String> types;
+
   /// Rounds contributed by the original console training run.
   int baseRounds;
 
@@ -102,21 +107,23 @@ class GradientBoostModel {
     required this.trees,
     this.baseRounds = 0,
     this.adaptedRounds = 0,
+    List<String>? types,
     Float64List? thresholds,
-  }) : thresholds = thresholds ??
+  })  : types = types ?? kForecastAlertTypes,
+        thresholds = thresholds ??
             Float64List.fromList(
-                List.filled(kForecastAlertTypes.length, 0.5));
+                List.filled((types ?? kForecastAlertTypes).length, 0.5));
 
   factory GradientBoostModel.empty({
     required int featureCount,
     required Float64List baseScores,
+    List<String> types = kForecastAlertTypes,
   }) =>
       GradientBoostModel(
         featureCount: featureCount,
         baseScores: baseScores,
-        trees: [
-          for (var k = 0; k < kForecastAlertTypes.length; k++) <BoostTree>[]
-        ],
+        types: types,
+        trees: [for (var k = 0; k < types.length; k++) <BoostTree>[]],
       );
 
   int get outputSize => trees.length;
@@ -149,6 +156,7 @@ class GradientBoostModel {
   GradientBoostModel truncated(int rounds) => GradientBoostModel(
         featureCount: featureCount,
         baseScores: Float64List.fromList(baseScores),
+        types: types,
         trees: [
           for (final seq in trees) seq.sublist(0, math.min(rounds, seq.length))
         ],
@@ -160,6 +168,7 @@ class GradientBoostModel {
   GradientBoostModel clone() => GradientBoostModel(
         featureCount: featureCount,
         baseScores: Float64List.fromList(baseScores),
+        types: types,
         trees: [for (final seq in trees) List<BoostTree>.of(seq)],
         baseRounds: baseRounds,
         adaptedRounds: adaptedRounds,
@@ -169,6 +178,7 @@ class GradientBoostModel {
   Map<String, dynamic> toJson() => {
         'algo': 'gbdt',
         'featureCount': featureCount,
+        'types': types,
         'base': [for (final b in baseScores) BoostTree._compact(b)],
         'baseRounds': baseRounds,
         'adaptedRounds': adaptedRounds,
@@ -183,8 +193,12 @@ class GradientBoostModel {
   factory GradientBoostModel.fromJson(Map<String, dynamic> json) {
     final treesJson = json['trees'] as List;
     final thresholdsJson = json['thresholds'] as List?;
+    final typesJson = json['types'] as List?;
     return GradientBoostModel(
       featureCount: (json['featureCount'] as num).toInt(),
+      types: typesJson != null
+          ? typesJson.map((e) => e.toString()).toList()
+          : null,
       baseScores: Float64List.fromList(
           (json['base'] as List).map((e) => (e as num).toDouble()).toList()),
       trees: [
@@ -242,12 +256,15 @@ class GbdtBooster {
     required this.valY,
     required this.config,
     GradientBoostModel? resume,
+    List<String> types = kForecastAlertTypes,
   })  : posWeights = _computePosWeights(trainY, config.posWeightCap),
         model = resume?.clone() ??
             GradientBoostModel.empty(
-              featureCount:
-                  trainX.isEmpty ? kForecastFeatureCols.length : trainX.first.length,
-              baseScores: _priorLogOdds(trainY),
+              featureCount: trainX.isEmpty
+                  ? forecastFeatureCountFor(types.length)
+                  : trainX.first.length,
+              baseScores: _priorLogOdds(trainY, types.length),
+              types: types,
             ),
         _rng = math.Random(config.seed) {
     _trainMargins = _replayMargins(trainX);
@@ -256,7 +273,7 @@ class GbdtBooster {
   }
 
   static Float64List _computePosWeights(List<Float64List> y, double cap) {
-    final k = kForecastAlertTypes.length;
+    final k = y.isEmpty ? 0 : y.first.length;
     final out = Float64List(k);
     for (var t = 0; t < k; t++) {
       var pos = 0;
@@ -269,8 +286,7 @@ class GbdtBooster {
     return out;
   }
 
-  static Float64List _priorLogOdds(List<Float64List> y) {
-    final k = kForecastAlertTypes.length;
+  static Float64List _priorLogOdds(List<Float64List> y, int k) {
     final out = Float64List(k);
     for (var t = 0; t < k; t++) {
       var pos = 0;
@@ -516,8 +532,8 @@ class GbdtBooster {
           {Float64List? thresholds}) =>
       _eval(_valMargins, valY, thresholds ?? _defaultThresholds);
 
-  static Float64List get _defaultThresholds =>
-      Float64List.fromList(List.filled(kForecastAlertTypes.length, 0.5));
+  Float64List get _defaultThresholds =>
+      Float64List.fromList(List.filled(model.outputSize, 0.5));
 
   /// Grid-searches a per-type decision threshold (0.05–0.95) that maximizes
   /// validation F1 for that type. Types with no positive examples in the

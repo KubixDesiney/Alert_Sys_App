@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
+import '../alert_type_registry.dart';
 import '../app_logger.dart';
 import 'alert_record_parser.dart';
 import 'forecast_engine.dart';
@@ -42,6 +43,16 @@ class ForecastTrainingController extends ChangeNotifier {
   List<FeatureSample> _samples = const [];
   String? _error;
   ForecastTrainingConfig _config = ForecastTrainingConfig.auto(0);
+
+  /// The ordered alert-type set this run trains on. Captured from the live
+  /// registry at upload time (or restored from a resumed model), and baked into
+  /// the deployed model's metadata so inference rebuilds the identical schema.
+  List<String> _trainTypes = List<String>.of(kForecastAlertTypes);
+
+  static List<String> _activeTypes() {
+    final codes = AlertTypeRegistry.instance.codes;
+    return codes.isEmpty ? List<String>.of(kForecastAlertTypes) : codes;
+  }
 
   // ── Run state ─────────────────────────────────────────────────────────────
   bool _training = false;
@@ -121,9 +132,14 @@ class ForecastTrainingController extends ChangeNotifier {
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     try {
-      final parsed =
-          await AlertRecordParser.parse(fileName: fileName, bytes: bytes);
-      final rows = ForecastFeatureEngineer.buildDailyRows(parsed.records);
+      _trainTypes = _activeTypes();
+      final parsed = await AlertRecordParser.parse(
+        fileName: fileName,
+        bytes: bytes,
+        types: AlertTypeRegistry.instance.types,
+      );
+      final rows = ForecastFeatureEngineer.buildDailyRows(parsed.records,
+          types: _trainTypes);
       final samples = ForecastFeatureEngineer.buildSamples(rows);
       _dataset = parsed;
       _samples = samples;
@@ -208,6 +224,7 @@ class ForecastTrainingController extends ChangeNotifier {
       await for (final update in _trainer.train(
         samples: _samples,
         config: _config,
+        types: _trainTypes,
         resumeModel: resumeModel,
         startRound: startRound,
         resumeStats: resumeStats,
@@ -236,6 +253,7 @@ class ForecastTrainingController extends ChangeNotifier {
           samples: _samples,
           rounds: result.rounds,
           config: _config,
+          types: _trainTypes,
           summary: _dataset?.summary,
           cancelled: stopped,
         );
@@ -449,7 +467,9 @@ class ForecastTrainingController extends ChangeNotifier {
         ),
         warnings: const [],
       );
-      final rows = ForecastFeatureEngineer.buildDailyRows(records);
+      _trainTypes = _activeTypes();
+      final rows = ForecastFeatureEngineer.buildDailyRows(records,
+          types: _trainTypes);
       _dataset = parsed;
       _samples = ForecastFeatureEngineer.buildSamples(rows);
       _config = ForecastTrainingConfig.auto(_samples.length);
@@ -458,6 +478,25 @@ class ForecastTrainingController extends ChangeNotifier {
     } catch (e) {
       _log.warning('Forecast dataset restore failed: $e');
       return false;
+    }
+  }
+
+  /// Switches the run's training type set (e.g. after restoring a model whose
+  /// types differ from the current registry) and rebuilds samples to match.
+  void _adoptTrainTypes(List<String> types) {
+    if (types.isEmpty) return;
+    final same = _trainTypes.length == types.length &&
+        () {
+          for (var i = 0; i < types.length; i++) {
+            if (_trainTypes[i] != types[i]) return false;
+          }
+          return true;
+        }();
+    _trainTypes = List<String>.of(types);
+    if (!same && _dataset != null) {
+      final rows = ForecastFeatureEngineer.buildDailyRows(_dataset!.records,
+          types: _trainTypes);
+      _samples = ForecastFeatureEngineer.buildSamples(rows);
     }
   }
 
@@ -476,6 +515,9 @@ class ForecastTrainingController extends ChangeNotifier {
     }
     try {
       final model = GradientBoostModel.fromJsonString(weights);
+      // Resume with the model's own type schema, rebuilding samples to match if
+      // the current registry drifted since the run started.
+      _adoptTrainTypes(model.types);
       _resumedRun = true;
       _log.info(
           'Resuming interrupted forecast run from round $round/${_config.rounds}');
@@ -497,6 +539,7 @@ class ForecastTrainingController extends ChangeNotifier {
     if (weights == null || weights.isEmpty) return;
     try {
       var model = GradientBoostModel.fromJsonString(weights);
+      _adoptTrainTypes(model.types);
       final bestRound = (cp['bestRound'] as num?)?.toInt();
       if (bestRound != null && bestRound < model.roundsPerType) {
         model = model.truncated(bestRound);
@@ -526,6 +569,7 @@ class ForecastTrainingController extends ChangeNotifier {
               samples: _samples,
               rounds: stats,
               config: _config,
+              types: _trainTypes,
               summary: _dataset?.summary,
               cancelled: (cp['status'] ?? '') == 'stopped',
             );

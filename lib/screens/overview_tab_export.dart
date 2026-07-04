@@ -153,12 +153,8 @@ class _ExportReportDialog extends StatefulWidget {
 }
 
 class _ExportReportDialogState extends State<_ExportReportDialog> {
-  static const _allTypes = <String>{
-    'qualite',
-    'maintenance',
-    'defaut_produit',
-    'manque_ressource',
-  };
+  // Active alert-type codes from the configurable registry.
+  Set<String> get _allTypes => allAlertTypeCodes().toSet();
 
   late final TextEditingController _nameController;
   bool _nameTouched = false;
