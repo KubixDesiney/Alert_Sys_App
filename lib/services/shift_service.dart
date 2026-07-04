@@ -10,6 +10,7 @@ import '../config/app_config.dart';
 import '../models/shift_model.dart';
 import '../models/user_model.dart';
 import 'app_logger.dart';
+import 'worker_auth.dart';
 
 /// CRUD + helpers for the Shifts module. Persists into RTDB under `/shifts`
 /// and triggers the Cloudflare worker `/shift-ai-action` endpoint when AI
@@ -230,7 +231,10 @@ class ShiftService {
       final res = await http
           .post(
             Uri.parse(AppConfig.shiftAiActionEndpoint),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              ...await WorkerAuth.headers(),
+            },
             body: jsonEncode({
               'shiftId': s.id,
               'action': action,
@@ -259,7 +263,10 @@ class ShiftService {
       final res = await http
           .post(
             Uri.parse(AppConfig.shiftAiActionEndpoint),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              ...await WorkerAuth.headers(),
+            },
             body: jsonEncode({
               'shiftId': shift.id,
               'action': 'handover',

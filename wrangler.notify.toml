@@ -4,3 +4,8 @@ compatibility_date = "2025-01-01"
 
 [triggers]
 crons = ["* * * * *"]
+
+[vars]
+# Caller auth for HTTP endpoints (/config stays public for status probes).
+# off | log | required — see wrangler.ai.toml for the rollout plan.
+WORKER_AUTH_MODE = "log"

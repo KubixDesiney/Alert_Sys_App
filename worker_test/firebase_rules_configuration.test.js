@@ -215,10 +215,74 @@ describe('Firebase rules company database template behavior', () => {
       timestamp: '2026-06-27T00:00:00.000Z', type: 'mechanical', usine: 'Usine A',
     };
     // Anonymous create is no longer permitted, even with a well-formed payload.
-    expect(evaluate(alertWrite, { auth: null, rootData: steel.root, data: undefined, newData: sample })).toBe(false);
-    // Authenticated producers (app users, ingest worker service token) still write.
-    expect(evaluate(alertWrite, { auth: steel.supervisor, rootData: steel.root })).toBe(true);
-    expect(evaluate(alertWrite, { auth: serviceAuth, rootData: steel.root })).toBe(true);
+    expect(evaluate(alertWrite, {
+      auth: null, rootData: steel.root, data: undefined, newData: sample, vars: { $alertId: 'a1' },
+    })).toBe(false);
+    // Privileged producers (PM admins, the worker service token) still write.
+    expect(evaluate(alertWrite, {
+      auth: steel.admin, rootData: steel.root, data: undefined, newData: sample, vars: { $alertId: 'a1' },
+    })).toBe(true);
+    expect(evaluate(alertWrite, {
+      auth: serviceAuth, rootData: steel.root, data: undefined, newData: sample, vars: { $alertId: 'a1' },
+    })).toBe(true);
+  });
+
+  test('Supervisor alert writes are ownership-scoped', () => {
+    const steel = companies.steelco;
+    const alertWrite = rules.alerts.$alertId['.write'];
+    const supervisor = steel.supervisor; // uid: steelSupervisor
+    const base = { rootData: steel.root, auth: supervisor, vars: { $alertId: 'a1' } };
+    const unassigned = { status: 'disponible', usine: 'Usine A' };
+    const ownedBySelf = { ...unassigned, status: 'en_cours', superviseurId: 'steelSupervisor' };
+    const ownedByOther = { ...unassigned, status: 'en_cours', superviseurId: 'someoneElse' };
+
+    // Claiming an unassigned alert for yourself: allowed.
+    expect(evaluate(alertWrite, {
+      ...base, data: unassigned, newData: { ...unassigned, superviseurId: 'steelSupervisor' },
+    })).toBe(true);
+    // Updating an alert you own (resolve, comment, return to queue): allowed.
+    expect(evaluate(alertWrite, {
+      ...base, data: ownedBySelf, newData: { ...ownedBySelf, status: 'validee' },
+    })).toBe(true);
+    // Touching someone else's alert — including stealing the claim: denied.
+    expect(evaluate(alertWrite, {
+      ...base, data: ownedByOther, newData: { ...ownedByOther, superviseurId: 'steelSupervisor' },
+    })).toBe(false);
+    expect(evaluate(alertWrite, {
+      ...base, data: ownedByOther, newData: { ...ownedByOther, isCritical: true },
+    })).toBe(false);
+    // Accepting help: self-assignment as assistant on an assistant-less alert.
+    expect(evaluate(alertWrite, {
+      ...base, data: ownedByOther, newData: { ...ownedByOther, assistantId: 'steelSupervisor' },
+    })).toBe(true);
+    // Acting on your own AI recommendation (accept or reject): allowed —
+    // the grant keys off the existing data, so clearing the recommendation
+    // in the same write is fine.
+    expect(evaluate(alertWrite, {
+      ...base,
+      data: { ...unassigned, aiRecommendedSupervisorId: 'steelSupervisor' },
+      newData: { ...unassigned, aiRecommendationStatus: 'rejected' },
+    })).toBe(true);
+    // A supervisor who was NOT recommended cannot use that branch.
+    expect(evaluate(alertWrite, {
+      ...base,
+      data: { ...unassigned, aiRecommendedSupervisorId: 'someoneElse' },
+      newData: { ...unassigned, aiRecommendationStatus: 'rejected' },
+    })).toBe(false);
+    // Deleting an alert: never allowed for supervisors, fine for admins.
+    expect(evaluate(alertWrite, { ...base, data: ownedBySelf, newData: undefined })).toBe(false);
+    expect(evaluate(alertWrite, {
+      auth: steel.admin, rootData: steel.root, data: ownedBySelf, newData: undefined, vars: { $alertId: 'a1' },
+    })).toBe(true);
+    // Collaboration-shared alerts stay writable for the collaborator.
+    const rootWithCollab = {
+      ...steel.root,
+      collaboration_alerts: { steelSupervisor: { a1: true } },
+    };
+    expect(evaluate(alertWrite, {
+      ...base, rootData: rootWithCollab, data: ownedByOther,
+      newData: { ...ownedByOther, comments: { c1: 'on my way' } },
+    })).toBe(true);
   });
 
   test('LLM provider keys live in a worker-only vault the client cannot read', () => {

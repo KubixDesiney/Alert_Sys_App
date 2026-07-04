@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import '../config/app_config.dart';
+import 'worker_auth.dart';
 
 class AIService {
   Future<String> getResolutionSuggestion({
@@ -16,7 +17,7 @@ class AIService {
       // /ai-suggest fetches Firebase history itself and uses Llama 3.2.
       final response = await http.post(
         Uri.parse(AppConfig.aiSuggestEndpoint),
-        headers: _workerHeaders(),
+        headers: await _workerHeaders(),
         body: jsonEncode({
           'type': alertType,
           'usine': usine,
@@ -35,13 +36,8 @@ class AIService {
     }
   }
 
-  Map<String, String> _workerHeaders() {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
-    if (AppConfig.workerSharedSecret.isNotEmpty) {
-      headers['x-worker-secret'] = AppConfig.workerSharedSecret;
-    }
-    return headers;
-  }
+  Future<Map<String, String>> _workerHeaders() async => {
+        'Content-Type': 'application/json',
+        ...await WorkerAuth.headers(),
+      };
 }

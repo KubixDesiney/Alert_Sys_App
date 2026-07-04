@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
+import 'worker_auth.dart';
 
 class WorkerTriggerQueue {
   WorkerTriggerQueue._();
@@ -178,6 +179,11 @@ class WorkerTriggerQueue {
       final queue = await _loadQueue();
       if (queue.isEmpty) return;
 
+      // Auth headers are attached at SEND time, never persisted with the
+      // queued request: Firebase ID tokens expire within an hour, so a token
+      // stored alongside an offline-queued trigger would be stale on replay.
+      final authHeaders = await WorkerAuth.headers();
+
       final remaining = <_QueuedWorkerRequest>[];
       var networkFailed = false;
 
@@ -189,16 +195,17 @@ class WorkerTriggerQueue {
 
         try {
           final client = _httpClientForTesting;
+          final sendHeaders = {...authHeaders, ...request.headers};
           final response =
               await (client == null
                       ? http.post(
                           Uri.parse(request.url),
-                          headers: request.headers,
+                          headers: sendHeaders,
                           body: request.body,
                         )
                       : client.post(
                           Uri.parse(request.url),
-                          headers: request.headers,
+                          headers: sendHeaders,
                           body: request.body,
                         ))
                   .timeout(_requestTimeout);

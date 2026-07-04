@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import 'predictive_models.dart';
 import 'predictive_scope.dart';
+import 'worker_auth.dart';
 
 class PredictiveRepository {
   PredictiveRepository({FirebaseDatabase? database, http.Client? client})
@@ -120,20 +121,13 @@ class PredictiveRepository {
   Future<Object?> _fetchJson(String url) async {
     try {
       final response = await _client
-          .get(Uri.parse(url), headers: _workerHeaders())
+          .get(Uri.parse(url), headers: await WorkerAuth.headers())
           .timeout(requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) return null;
       return jsonDecode(response.body);
     } catch (_) {
       return null;
     }
-  }
-
-  Map<String, String> _workerHeaders() {
-    if (AppConfig.workerSharedSecret.isEmpty) {
-      return const {};
-    }
-    return {'x-worker-secret': AppConfig.workerSharedSecret};
   }
 
   bool _isFresh(DateTime? cachedAt) {

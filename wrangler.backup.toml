@@ -16,6 +16,14 @@ crons = ["0 2 * * *"]
 
 [vars]
 BACKUP_KEEP = "30"
+# Alert retention policy: terminal alerts (validee/cancelled) older than this
+# many days are archived to R2 (alerts_archive/) and removed from RTDB after
+# each successful backup, at most RETENTION_BATCH per daily run. This keeps the
+# alerts table bounded for the every-minute worker crons. "0" disables.
+# 365 keeps a full seasonal year live, comfortably above the predictive
+# model's 180-day window and the forecaster's training lookback.
+RETENTION_DAYS = "365"
+RETENTION_BATCH = "500"
 
 # Secrets (set with `wrangler secret put NAME --config wrangler.backup.toml`):
 #   FIREBASE_SERVICE_ACCOUNT   the service-account JSON (full admin to export)

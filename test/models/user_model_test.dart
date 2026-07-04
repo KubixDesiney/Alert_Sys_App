@@ -88,6 +88,21 @@ void main() {
       expect(round.hiredDate?.toUtc().year, 2024);
     });
 
+    test('toMap never leaks PII into the public users record', () {
+      final u = UserModel(
+        id: 'u',
+        firstName: 'A',
+        lastName: 'B',
+        email: 'a@b.com',
+        phone: '123',
+        role: 'supervisor',
+        usine: 'Usine A',
+      );
+      expect(u.toMap().containsKey('email'), isFalse);
+      expect(u.toMap().containsKey('phone'), isFalse);
+      expect(u.toPrivateMap(), {'email': 'a@b.com', 'phone': '123'});
+    });
+
     test('handles malformed dates gracefully', () {
       final u = UserModel.fromMap('u', {'hiredDate': 'not-a-date'});
       expect(u.hiredDate, isNull);
