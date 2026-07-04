@@ -42,15 +42,22 @@ class UserModel {
     );
   }
 
+  /// Serializes the broadly-readable `users/*` record. Deliberately excludes
+  /// `email` and `phone`: PII lives only in the access-scoped `users_private`
+  /// node (enforced by database rules) — use [toPrivateMap] for that write.
   Map<String, dynamic> toMap() => {
     'firstName': firstName,
     'lastName': lastName,
-    'email': email,
-    'phone': phone,
     'role': role,
     'usine': usine,
     'status': status,
     'hiredDate': hiredDate?.toIso8601String(),
     'lastSeen': lastSeen?.toIso8601String(),
+  };
+
+  /// The access-scoped PII payload for `users_private/{uid}`.
+  Map<String, dynamic> toPrivateMap() => {
+    'email': email,
+    'phone': phone,
   };
 }

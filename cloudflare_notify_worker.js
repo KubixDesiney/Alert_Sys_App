@@ -44,6 +44,127 @@ function _fbUrl(env, path) {
   return `${_fbBaseUrl(env)}${String(path || '').replace(/^\/+/, '')}`;
 }
 
+// ── Worker auth: Firebase ID-token verification ─────────────────────────────
+// Mirrors cloudflare_ai_worker.js. Accepts the caller's Firebase ID token
+// (Authorization: Bearer …) or the legacy shared secret (x-worker-secret)
+// while the installed client fleet migrates. WORKER_AUTH_MODE: 'off' | 'log'
+// | 'required'. `/config` stays public for uptime/status probes.
+const _FIREBASE_JWKS_URL =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+let _jwksKeys = null;
+let _jwksExpMs = 0;
+
+function _b64urlDecodeToBytes(s) {
+  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
+  const bin = atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function _fbProjectId(env) {
+  try {
+    const sa = parseJsonSecret(env.FIREBASE_SERVICE_ACCOUNT, 'FIREBASE_SERVICE_ACCOUNT');
+    if (sa.project_id) return String(sa.project_id);
+  } catch (_) {}
+  const m = String(env.FB_DB_URL || '').match(/https:\/\/([^.]+?)(?:-default-rtdb)?\./);
+  return m ? m[1] : '';
+}
+
+async function _fetchFirebaseJwks() {
+  const now = Date.now();
+  if (_jwksKeys && now < _jwksExpMs) return _jwksKeys;
+  const res = await fetch(_FIREBASE_JWKS_URL);
+  if (!res.ok) throw new Error('jwks fetch failed: ' + res.status);
+  const body = await res.json();
+  _jwksKeys = Array.isArray(body?.keys) ? body.keys : [];
+  const cc = res.headers.get('Cache-Control') || '';
+  const maxAge = Number((cc.match(/max-age=(\d+)/) || [])[1] || 3600);
+  _jwksExpMs = now + Math.min(maxAge, 6 * 3600) * 1000;
+  return _jwksKeys;
+}
+
+function _validateIdTokenClaims(payload, projectId, nowSec) {
+  if (!payload || typeof payload !== 'object') return { ok: false, error: 'bad_payload' };
+  if (!projectId) return { ok: false, error: 'no_project' };
+  if (Number(payload.exp || 0) <= nowSec) return { ok: false, error: 'expired' };
+  if (Number(payload.iat || 0) > nowSec + 300) return { ok: false, error: 'issued_in_future' };
+  if (payload.aud !== projectId) return { ok: false, error: 'bad_aud' };
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) {
+    return { ok: false, error: 'bad_iss' };
+  }
+  const uid = String(payload.sub || payload.user_id || '');
+  if (!uid) return { ok: false, error: 'no_uid' };
+  return { ok: true, uid };
+}
+
+async function _verifyFirebaseIdToken(env, idToken) {
+  try {
+    const parts = String(idToken || '').split('.');
+    if (parts.length !== 3) return { ok: false, error: 'malformed' };
+    const header = JSON.parse(new TextDecoder().decode(_b64urlDecodeToBytes(parts[0])));
+    if (header.alg !== 'RS256') return { ok: false, error: 'bad_alg' };
+    const payload = JSON.parse(new TextDecoder().decode(_b64urlDecodeToBytes(parts[1])));
+    const claims = _validateIdTokenClaims(payload, _fbProjectId(env), Math.floor(Date.now() / 1000));
+    if (!claims.ok) return claims;
+
+    const jwks = await _fetchFirebaseJwks();
+    const jwk = jwks.find((k) => k.kid === header.kid);
+    if (!jwk) return { ok: false, error: 'unknown_kid' };
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      _b64urlDecodeToBytes(parts[2]),
+      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+    );
+    return valid ? { ok: true, uid: claims.uid } : { ok: false, error: 'bad_signature' };
+  } catch (e) {
+    return { ok: false, error: 'verify_error: ' + e.message };
+  }
+}
+
+function _constantTimeEquals(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  if (sa.length !== sb.length || sa.length === 0) return false;
+  let diff = 0;
+  for (let i = 0; i < sa.length; i++) diff |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
+  return diff === 0;
+}
+
+async function _workerAuthCheck(request, env) {
+  const mode = String(env.WORKER_AUTH_MODE || 'off').toLowerCase();
+  if (mode === 'off') return { ok: true, mode, method: 'none' };
+
+  const secret = String(env.WORKER_SHARED_SECRET || env.SIA_WORKER_SHARED_SECRET || '').trim();
+  const presented = String(request.headers.get('x-worker-secret') || '').trim();
+  if (secret && _constantTimeEquals(presented, secret)) {
+    return { ok: true, mode, method: 'secret' };
+  }
+
+  const authHeader = String(request.headers.get('Authorization') || '');
+  const idToken = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : String(request.headers.get('x-firebase-token') || '').trim();
+  if (idToken) {
+    const verified = await _verifyFirebaseIdToken(env, idToken);
+    if (verified.ok) return { ok: true, mode, method: 'id_token', uid: verified.uid };
+    if (mode === 'required') return { ok: false, mode, error: verified.error };
+    return { ok: true, mode, method: 'invalid_token_logged', error: verified.error };
+  }
+
+  return mode === 'required'
+    ? { ok: false, mode, error: 'no_credentials' }
+    : { ok: true, mode, method: 'unauthenticated_logged' };
+}
+
 function _securityGuard(request, endpoint = 'default') {
   const now = Date.now();
   const ip =
@@ -1159,6 +1280,16 @@ export default {
     const guard = _securityGuard(request, url.pathname === '/notify' ? 'notify' : 'default');
     if (!guard.ok) return guard.response;
 
+    // Caller authentication (Firebase ID token or legacy shared secret).
+    // `/config` stays public for uptime/status probes.
+    if (url.pathname !== '/config') {
+      const auth = await _workerAuthCheck(request, env);
+      if (!auth.ok) return _json({ ok: false, error: 'unauthorized' }, 401);
+      if (auth.mode === 'log' && (auth.method === 'unauthenticated_logged' || auth.method === 'invalid_token_logged')) {
+        console.warn(`[AUTH] ${url.pathname}: caller without valid credentials (${auth.error || 'none presented'})`);
+      }
+    }
+
     if (url.pathname === '/config') {
       return _json({
         service: 'alertsys-notifications-worker',
@@ -1227,4 +1358,7 @@ export {
   pushSingleNotification,
   pushNotificationRefs,
   normalizeNotificationRefs,
+  _validateIdTokenClaims,
+  _constantTimeEquals,
+  _workerAuthCheck,
 };

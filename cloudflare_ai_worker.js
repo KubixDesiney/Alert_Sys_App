@@ -23,8 +23,6 @@ const MAX_CRON_FANOUT = 1;
 const PUSH_LOCK_TTL_MS = 2 * 60 * 1000;
 const VALIDATION_CRON_INTERVAL_MIN = 30;
 const PREDICTIVE_CRON_INTERVAL_MIN = 60;
-const LSTM_CRON_INTERVAL_MIN = 60;
-const LSTM_CRON_ENABLED = false;
 const SECURITY_SCAN_INTERVAL_MIN = 30;
 
 function _cronEvery(runStartMs, intervalMin) {
@@ -291,7 +289,6 @@ const _SECURITY = Object.freeze({
     'ai-proxy':            { windowSec: 60, max: 20 },
     'briefing':            { windowSec: 60, max: 15 },
     'predict':             { windowSec: 60, max: 10 },
-    'predict-lstm':        { windowSec: 60, max: 10 },
     'suggest-assignee':    { windowSec: 60, max: 20 },
     'auto-fix':            { windowSec: 60, max: 10 },
     'auto-fix-full':       { windowSec: 60, max: 6 },
@@ -1033,6 +1030,141 @@ async function _securityFlushSiemOutbox(env, ctx) {
 //   textFields:  array of body keys whose contents will be (a) scanned for
 //                prompt injection and (b) sanitized in-place if clean
 //   maxTextLen:  optional cap override per endpoint
+// ── Worker auth: Firebase ID-token verification ─────────────────────────────
+// The long-term client credential is the caller's own Firebase ID token
+// (short-lived, per-user, verifiable against Google's public JWKS) instead of
+// the static shared secret baked into app builds. Both are accepted while the
+// installed fleet migrates; WORKER_AUTH_MODE controls enforcement:
+//   'off'      — no check (legacy behaviour, default when unset)
+//   'log'      — verify and log unauthenticated callers, but allow them
+//   'required' — 401 unless a valid ID token or the shared secret is presented
+// Rollout: ship clients that send ID tokens → flip to 'required' → drop the
+// ALERTSYS_WORKER_SHARED_SECRET dart-define from app builds (the secret then
+// remains only for worker-to-worker and CI calls).
+const _FIREBASE_JWKS_URL =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+let _jwksKeys = null;
+let _jwksExpMs = 0;
+
+function _b64urlDecodeToBytes(s) {
+  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
+  const bin = atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function _b64urlDecodeToString(s) {
+  return new TextDecoder().decode(_b64urlDecodeToBytes(s));
+}
+
+function _fbProjectId(env) {
+  try {
+    const sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT || '{}');
+    if (sa.project_id) return String(sa.project_id);
+  } catch (_) {}
+  // Fall back to the RTDB host: https://<project>-default-rtdb.firebaseio.com/
+  const m = String(env.FB_DB_URL || '').match(/https:\/\/([^.]+?)(?:-default-rtdb)?\./);
+  return m ? m[1] : '';
+}
+
+async function _fetchFirebaseJwks() {
+  const now = Date.now();
+  if (_jwksKeys && now < _jwksExpMs) return _jwksKeys;
+  const res = await fetch(_FIREBASE_JWKS_URL);
+  if (!res.ok) throw new Error('jwks fetch failed: ' + res.status);
+  const body = await res.json();
+  _jwksKeys = Array.isArray(body?.keys) ? body.keys : [];
+  // Honor Cache-Control max-age when present; default to 1 hour.
+  const cc = res.headers.get('Cache-Control') || '';
+  const maxAge = Number((cc.match(/max-age=(\d+)/) || [])[1] || 3600);
+  _jwksExpMs = now + Math.min(maxAge, 6 * 3600) * 1000;
+  return _jwksKeys;
+}
+
+// Pure claims validation (unit-tested): signature checking happens separately.
+function _validateIdTokenClaims(payload, projectId, nowSec) {
+  if (!payload || typeof payload !== 'object') return { ok: false, error: 'bad_payload' };
+  if (!projectId) return { ok: false, error: 'no_project' };
+  if (Number(payload.exp || 0) <= nowSec) return { ok: false, error: 'expired' };
+  if (Number(payload.iat || 0) > nowSec + 300) return { ok: false, error: 'issued_in_future' };
+  if (payload.aud !== projectId) return { ok: false, error: 'bad_aud' };
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) {
+    return { ok: false, error: 'bad_iss' };
+  }
+  const uid = String(payload.sub || payload.user_id || '');
+  if (!uid) return { ok: false, error: 'no_uid' };
+  return { ok: true, uid };
+}
+
+async function _verifyFirebaseIdToken(env, idToken) {
+  try {
+    const parts = String(idToken || '').split('.');
+    if (parts.length !== 3) return { ok: false, error: 'malformed' };
+    const header = JSON.parse(_b64urlDecodeToString(parts[0]));
+    if (header.alg !== 'RS256') return { ok: false, error: 'bad_alg' };
+    const payload = JSON.parse(_b64urlDecodeToString(parts[1]));
+    const claims = _validateIdTokenClaims(payload, _fbProjectId(env), Math.floor(Date.now() / 1000));
+    if (!claims.ok) return claims;
+
+    const jwks = await _fetchFirebaseJwks();
+    const jwk = jwks.find((k) => k.kid === header.kid);
+    if (!jwk) return { ok: false, error: 'unknown_kid' };
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    );
+    const valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      _b64urlDecodeToBytes(parts[2]),
+      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+    );
+    return valid ? { ok: true, uid: claims.uid } : { ok: false, error: 'bad_signature' };
+  } catch (e) {
+    return { ok: false, error: 'verify_error: ' + e.message };
+  }
+}
+
+function _constantTimeEquals(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  if (sa.length !== sb.length || sa.length === 0) return false;
+  let diff = 0;
+  for (let i = 0; i < sa.length; i++) diff |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
+  return diff === 0;
+}
+
+// Checks the caller's credentials: legacy shared secret OR Firebase ID token.
+async function _workerAuthCheck(request, env) {
+  const mode = String(env.WORKER_AUTH_MODE || 'off').toLowerCase();
+  if (mode === 'off') return { ok: true, mode, method: 'none' };
+
+  const secret = String(env.WORKER_SHARED_SECRET || env.SIA_WORKER_SHARED_SECRET || '').trim();
+  const presented = String(request.headers.get('x-worker-secret') || '').trim();
+  if (secret && _constantTimeEquals(presented, secret)) {
+    return { ok: true, mode, method: 'secret' };
+  }
+
+  const authHeader = String(request.headers.get('Authorization') || '');
+  const idToken = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : String(request.headers.get('x-firebase-token') || '').trim();
+  if (idToken) {
+    const verified = await _verifyFirebaseIdToken(env, idToken);
+    if (verified.ok) return { ok: true, mode, method: 'id_token', uid: verified.uid };
+    if (mode === 'required') return { ok: false, mode, error: verified.error };
+    return { ok: true, mode, method: 'invalid_token_logged', error: verified.error };
+  }
+
+  return mode === 'required'
+    ? { ok: false, mode, error: 'no_credentials' }
+    : { ok: true, mode, method: 'unauthenticated_logged' };
+}
+
 async function _securityGuard(request, env, options) {
   const opts = options || {};
   const endpoint = opts.endpoint || 'default';
@@ -1071,6 +1203,31 @@ async function _securityGuard(request, env, options) {
         },
       ),
     };
+  }
+
+  // 1b. Caller authentication (Firebase ID token or legacy shared secret).
+  // `/config` stays public: it is the uptime probe / status-page target and
+  // returns no tenant data. Everything else is gated by WORKER_AUTH_MODE.
+  if (endpoint !== 'config') {
+    const auth = await _workerAuthCheck(request, env);
+    if (!auth.ok) {
+      await _securityRecordAction(env, {
+        kind: 'auth_reject',
+        endpoint,
+        reason: auth.error,
+        fingerprint: rl.fingerprint,
+      });
+      return {
+        ok: false,
+        response: new Response(JSON.stringify({ error: 'unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }),
+      };
+    }
+    if (auth.mode === 'log' && (auth.method === 'unauthenticated_logged' || auth.method === 'invalid_token_logged')) {
+      console.warn(`[AUTH] ${endpoint}: caller without valid credentials (${auth.error || 'none presented'})`);
+    }
   }
 
   // 2. Body parse (size + JSON) and text-field scanning + sanitization.
@@ -1826,348 +1983,6 @@ function buildPredictiveModel(alertsMap = {}) {
     horizonDays: _PREDICTIVE_HORIZON_DAYS,
     halflifeDays: _PREDICTIVE_HALFLIFE_DAYS,
   };
-}
-
-const _LSTM_ENDPOINT = 'https://kubixdesiney-alertsys-lstm.hf.space/predict';
-const _LSTM_DAY_MS = 24 * 60 * 60 * 1000;
-const _LSTM_TYPES = ['qualite', 'maintenance', 'defaut_produit', 'manque_ressource'];
-const _LSTM_FEATURE_COLS = [
-  'is_qualite',
-  'is_maintenance',
-  'is_defaut_produit',
-  'is_manque_ressource',
-  'critical_count',
-  'days_since_failure',
-  'hour',
-  'dayofweek',
-];
-
-function _lstmUtcDayStartMs(tsMs) {
-  const d = new Date(tsMs);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-}
-
-function _lstmUtcDateKey(tsMs) {
-  const d = new Date(tsMs);
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function _lstmDayOfWeek(tsMs) {
-  // Mirror pandas dayofweek semantics: Monday=0, Sunday=6.
-  return (new Date(tsMs).getUTCDay() + 6) % 7;
-}
-
-function _lstmMachineKey(machine) {
-  const usine = String(machine?.usine || '').trim();
-  const convoyeur = Number(machine?.convoyeur ?? 0);
-  const poste = Number(machine?.poste ?? 0);
-  return `${usine}|${convoyeur}|${poste}`;
-}
-
-function _buildDailyFeatures(alertsMap = {}) {
-  const machines = {};
-
-  for (const alert of Object.values(alertsMap || {})) {
-    if (!alert || typeof alert !== 'object') continue;
-    const tsMs = _toMs(
-      alert.timestamp ??
-      alert.createdAt ??
-      alert.created_at ??
-      alert.date ??
-      alert.ts,
-    );
-    if (tsMs == null) continue;
-
-    const usine = String(alert.usine || alert.factoryId || '').trim();
-    const convoyeur = Number(alert.convoyeur ?? 0);
-    const poste = Number(alert.poste ?? 0);
-    const machineKey = _lstmMachineKey({ usine, convoyeur, poste });
-    const dayMs = _lstmUtcDayStartMs(tsMs);
-    const dayKey = _lstmUtcDateKey(tsMs);
-    const type = String(alert.type || '');
-
-    if (!machines[machineKey]) {
-      machines[machineKey] = {
-        usine,
-        convoyeur,
-        poste,
-        minDayMs: dayMs,
-        maxDayMs: dayMs,
-        days: {},
-      };
-    }
-    const machine = machines[machineKey];
-    if (dayMs < machine.minDayMs) machine.minDayMs = dayMs;
-    if (dayMs > machine.maxDayMs) machine.maxDayMs = dayMs;
-
-    if (!machine.days[dayKey]) {
-      machine.days[dayKey] = {
-        date: dayKey,
-        dayMs,
-        totalAlerts: 0,
-        hourSum: 0,
-        hourSamples: 0,
-        is_qualite: 0,
-        is_maintenance: 0,
-        is_defaut_produit: 0,
-        is_manque_ressource: 0,
-        critical_count: 0,
-      };
-    }
-
-    const day = machine.days[dayKey];
-    if (_LSTM_TYPES.includes(type)) {
-      day[`is_${type}`] += 1;
-    }
-    day.totalAlerts += 1;
-    if (alert.isCritical === true) day.critical_count += 1;
-    day.hourSum += new Date(tsMs).getUTCHours();
-    day.hourSamples += 1;
-  }
-
-  const rows = [];
-  for (const machine of Object.values(machines)) {
-    let dayMs = machine.minDayMs;
-    let lastFailureDayMs = null;
-
-    while (dayMs <= machine.maxDayMs) {
-      const dayKey = _lstmUtcDateKey(dayMs);
-      const day = machine.days[dayKey];
-      const hadFailure = (day?.totalAlerts || 0) > 0;
-
-      if (hadFailure) lastFailureDayMs = dayMs;
-
-      rows.push({
-        usine: machine.usine,
-        convoyeur: machine.convoyeur,
-        poste: machine.poste,
-        date: dayKey,
-        is_qualite: day?.is_qualite || 0,
-        is_maintenance: day?.is_maintenance || 0,
-        is_defaut_produit: day?.is_defaut_produit || 0,
-        is_manque_ressource: day?.is_manque_ressource || 0,
-        critical_count: day?.critical_count || 0,
-        days_since_failure: hadFailure || lastFailureDayMs == null
-          ? 0
-          : Math.round((dayMs - lastFailureDayMs) / _LSTM_DAY_MS),
-        hour: hadFailure && (day?.hourSamples || 0) > 0
-          ? Number((day.hourSum / day.hourSamples).toFixed(4))
-          : 0,
-        dayofweek: _lstmDayOfWeek(dayMs),
-      });
-
-      dayMs += _LSTM_DAY_MS;
-    }
-  }
-
-  return rows;
-}
-
-function _fitGlobalScaler(dailyRows = [], featureCols = _LSTM_FEATURE_COLS) {
-  const scaler = {};
-
-  for (const col of featureCols) {
-    scaler[col] = { min: Infinity, max: -Infinity };
-  }
-
-  for (const row of dailyRows || []) {
-    for (const col of featureCols) {
-      const value = Number(row?.[col]);
-      if (!Number.isFinite(value)) continue;
-      if (value < scaler[col].min) scaler[col].min = value;
-      if (value > scaler[col].max) scaler[col].max = value;
-    }
-  }
-
-  for (const col of featureCols) {
-    if (!Number.isFinite(scaler[col].min) || !Number.isFinite(scaler[col].max)) {
-      scaler[col] = { min: 0, max: 0 };
-    }
-  }
-
-  return scaler;
-}
-
-function _scaleFeatures(featureRows = [], scaler = {}, featureCols = Object.keys(scaler || {})) {
-  return (featureRows || []).map((row) => {
-    const scaled = {};
-    for (const col of featureCols) {
-      const bounds = scaler[col] || { min: 0, max: 0 };
-      const value = Number(row?.[col]);
-      const safeValue = Number.isFinite(value) ? value : 0;
-      scaled[col] = bounds.max === bounds.min
-        ? 0.5
-        : (safeValue - bounds.min) / (bounds.max - bounds.min);
-    }
-    return scaled;
-  });
-}
-
-function _mergeLstmIntoPredictiveModel(model = {}, lstmPayload = null) {
-  const predictions = Array.isArray(model?.predictions) ? model.predictions : [];
-  const curves = model?.curves && typeof model.curves === 'object' ? model.curves : {};
-  const lstmPredictions = Array.isArray(lstmPayload?.predictions)
-    ? lstmPayload.predictions
-    : Array.isArray(lstmPayload)
-      ? lstmPayload
-      : [];
-
-  const byMachine = {};
-  const curveAgg = {};
-  for (const type of _LSTM_TYPES) {
-    curveAgg[type] = [];
-  }
-
-  for (const pred of lstmPredictions) {
-    const key = `${aiSanitizeFactoryId(pred?.factoryId || pred?.usine || '')}|${Number(pred?.convoyeur ?? 0)}|${Number(pred?.poste ?? 0)}`;
-    byMachine[key] = pred;
-
-    const probs = pred?.lstmProbs || {};
-    for (const type of _LSTM_TYPES) {
-      const value = Number(probs[type]);
-      if (Number.isFinite(value)) curveAgg[type].push(value);
-    }
-  }
-
-  const mergedPredictions = predictions.map((pred) => {
-    const key = `${aiSanitizeFactoryId(pred?.factoryId || pred?.usine || '')}|${Number(pred?.convoyeur ?? 0)}|${Number(pred?.poste ?? 0)}`;
-    const lstm = byMachine[key];
-    if (!lstm) return pred;
-    return {
-      ...pred,
-      lstmProbabilities: lstm.lstmProbs || {},
-    };
-  });
-
-  const mergedCurves = {};
-  for (const [type, curve] of Object.entries(curves)) {
-    const values = curveAgg[type] || [];
-    const avg = values.length > 0
-      ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : null;
-    const max = values.length > 0 ? Math.max(...values) : null;
-    mergedCurves[type] = {
-      ...curve,
-      lstmProbabilities: values.length > 0
-        ? {
-            average: Number(avg.toFixed(4)),
-            max: Number(max.toFixed(4)),
-            sampleSize: values.length,
-          }
-        : null,
-    };
-  }
-
-  return {
-    ...model,
-    curves: mergedCurves,
-    predictions: mergedPredictions,
-    lstmGeneratedAt: lstmPayload?.generatedAt || null,
-  };
-}
-
-function _normalizeLstmProbabilityEntry(entry) {
-  if (!entry || typeof entry !== 'object') return null;
-  if (entry.probabilities && typeof entry.probabilities === 'object') {
-    return entry.probabilities;
-  }
-
-  const direct = {};
-  let found = false;
-  for (const type of _LSTM_TYPES) {
-    const value = Number(entry[type]);
-    if (Number.isFinite(value)) {
-      direct[type] = value;
-      found = true;
-    }
-  }
-  if (Array.isArray(entry.top)) direct.top = entry.top;
-  return found ? direct : null;
-}
-
-async function _runLstmForecast(env, ctx) {
-  const dailyRows = _buildDailyFeatures(ctx?.alertsMap || {});
-  if (dailyRows.length === 0) return [];
-
-  const scaler = _fitGlobalScaler(dailyRows, _LSTM_FEATURE_COLS);
-  const grouped = {};
-  for (const row of dailyRows) {
-    const key = _lstmMachineKey(row);
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(row);
-  }
-
-  const machines = [];
-  for (const rows of Object.values(grouped)) {
-    rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    if (rows.length < 14) continue;
-
-    const windowRows = rows.slice(-14);
-    const scaledWindow = _scaleFeatures(windowRows, scaler, _LSTM_FEATURE_COLS);
-    machines.push({
-      factoryId: aiSanitizeFactoryId(rows[0].usine || ''),
-      usine: rows[0].usine,
-      convoyeur: Number(rows[0].convoyeur ?? 0),
-      poste: Number(rows[0].poste ?? 0),
-      features: scaledWindow.map((row) => _LSTM_FEATURE_COLS.map((col) => Number(row[col] ?? 0))),
-    });
-  }
-
-  if (machines.length === 0) return [];
-
-  const generatedAt = new Date().toISOString();
-  try {
-    // The live HF endpoint accepts exactly one JSON key: `features`, shaped as
-    // a 3D tensor [machineCount, 14, 8]. Alternate keys like `inputs` / `batch`
-    // and 4D nesting are rejected. Successful responses now arrive as
-    // `{ ok: true, predictions: [...] }`, where each prediction entry lines up
-    // by index with the machine metadata we pushed into the batch tensor.
-    const raw = await fetch(_LSTM_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        features: machines.map((machine) => machine.features),
-      }),
-    });
-    if (!raw.ok) {
-      console.error(`[LSTM] Forecast batch request failed: HTTP ${raw.status}`);
-      return [];
-    }
-
-    const data = await raw.json();
-    if (!data?.ok || !Array.isArray(data?.predictions)) {
-      console.error('[LSTM] Invalid batch response payload');
-      return [];
-    }
-
-    if (data.predictions.length !== machines.length) {
-      console.warn(
-        `[LSTM] Batch response length mismatch: predictions=${data.predictions.length}, machines=${machines.length}`,
-      );
-    }
-
-    const limit = Math.min(data.predictions.length, machines.length);
-    const predictions = [];
-    for (let i = 0; i < limit; i++) {
-      const probs = _normalizeLstmProbabilityEntry(data.predictions[i]);
-      if (!probs) continue;
-      predictions.push({
-        factoryId: machines[i].factoryId,
-        usine: machines[i].usine,
-        convoyeur: machines[i].convoyeur,
-        poste: machines[i].poste,
-        lstmProbs: probs,
-        generatedAt,
-      });
-    }
-    return predictions;
-  } catch (e) {
-    console.error('[LSTM] Forecast batch request failed: ' + e.message);
-    return [];
-  }
 }
 
 // ============ FCM access token and send helper ============
@@ -6231,7 +6046,6 @@ async function _writeCronHealth(token, env, {
   handoversGenerated,
   errors,
   securityActions,
-  lstmPredictions,
 }) {
   if (!token || !env?.FB_DB_URL) return;
   try {
@@ -6248,7 +6062,6 @@ async function _writeCronHealth(token, env, {
         // New: security agent telemetry. Field is always present so the
         // Flutter side can deserialize without conditional decoding.
         securityActions: Number(securityActions || 0),
-        lstmPredictions: Number(lstmPredictions || 0),
       }),
     });
   } catch (e) {
@@ -6267,7 +6080,6 @@ export default {
         let collaborationsApproved = 0;
         let handoversGenerated = 0;
         let securityActions = 0;
-        let lstmPredictions = 0;
         let cronToken;
         let lockUrl;
 
@@ -6320,7 +6132,6 @@ export default {
             handoversGenerated,
             errors: healthErrors,
             securityActions: carriedOverActions,
-            lstmPredictions,
           });
           if (lockUrl) fetch(lockUrl, { method: 'DELETE' }).catch(() => {});
           return;
@@ -6338,7 +6149,6 @@ export default {
         const securityAgentOn = _agentEnabled(agentControl, 'security');
 
         const runPredictive = runPredictiveBase && predictiveAgentOn;
-        const runLstm = LSTM_CRON_ENABLED && runPredictive && _cronEvery(runStart, LSTM_CRON_INTERVAL_MIN);
         const runSecurityScan = runSecurityScanBase && securityAgentOn &&
           _agentSetting(agentControl, 'security', 'anomalyScan');
 
@@ -6385,10 +6195,9 @@ export default {
           catch (e) { console.error('[CRON] modelDriftCycle: ' + e.message); healthErrors.push('modelDriftCycle: ' + e.message); }
         }
 
-        let basePredictiveModel = null;
         if (runPredictive) {
           try {
-            basePredictiveModel = buildPredictiveModel(coreCtx.alertsMap || {});
+            const basePredictiveModel = buildPredictiveModel(coreCtx.alertsMap || {});
             await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
@@ -6397,50 +6206,6 @@ export default {
           } catch (e) {
             console.error('[CRON] buildPredictiveModel: ' + e.message);
             healthErrors.push('buildPredictiveModel: ' + e.message);
-          }
-        }
-
-        if (runLstm) {
-          try {
-            const lstmForecasts = await _runLstmForecast(env, coreCtx);
-            lstmPredictions = lstmForecasts.length;
-            if (lstmForecasts.length > 0) {
-              await fetch(`${env.FB_DB_URL}ai_predictions/lstm.json?auth=${coreCtx.token}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  generatedAt: new Date().toISOString(),
-                  predictions: lstmForecasts,
-                }),
-              });
-
-              let latestModel = basePredictiveModel;
-              try {
-                const latestRes = await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`);
-                if (latestRes.ok) {
-                  const latestData = await latestRes.json();
-                  if (latestData && typeof latestData === 'object') latestModel = latestData;
-                }
-              } catch (_) {}
-
-              let lstmPayload = { predictions: lstmForecasts, generatedAt: new Date().toISOString() };
-              try {
-                const lstmRes = await fetch(`${env.FB_DB_URL}ai_predictions/lstm.json?auth=${coreCtx.token}`);
-                if (lstmRes.ok) {
-                  const lstmData = await lstmRes.json();
-                  if (lstmData && typeof lstmData === 'object') lstmPayload = lstmData;
-                }
-              } catch (_) {}
-
-              const enriched = _mergeLstmIntoPredictiveModel(latestModel || {}, lstmPayload);
-              await fetch(`${env.FB_DB_URL}ai_predictions/latest.json?auth=${coreCtx.token}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(enriched),
-              });
-              }
-          } catch (e) {
-            console.error('[LSTM] Forecast cycle failed: ' + e.message);
           }
         }
 
@@ -6479,7 +6244,6 @@ export default {
           handoversGenerated,
           errors: healthErrors,
           securityActions,
-          lstmPredictions,
         });
 
         // ── Step 4: release lock ──────────────────────────────────────────────────
@@ -6492,34 +6256,6 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
-    }
-
-    // ── LSTM prediction endpoint ─────────────────────────────────────────
-    if (url.pathname === '/predict-lstm') {
-      const guard = await _securityGuard(request, env, {
-        endpoint: 'predict-lstm',
-        requireBody: true,
-      });
-      if (!guard.ok) return guard.response;
-
-      try {
-        const hfUrl = 'https://kubixdesiney-alertsys-lstm.hf.space/predict';
-        const raw = await fetch(hfUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ features: guard.body.features }),
-        });
-        const data = await raw.json();
-        return new Response(JSON.stringify(data), {
-          status: raw.ok ? 200 : raw.status,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: 'LSTM model unreachable' }), {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
     }
 
     // /config is dirt-cheap but we still apply a rate limit to keep an
@@ -6611,14 +6347,13 @@ export {
   _writeCronHealth,
   validatePredictions,
   _historyKey,
-  _buildDailyFeatures,
-  _fitGlobalScaler,
-  _scaleFeatures,
-  _runLstmForecast,
   processShiftCollaborations,
   suspendAcceptedAssistantAlerts,
   _buildAssistantAlertSuspensionPatch,
   _securityDetectPromptInjection,
+  _validateIdTokenClaims,
+  _constantTimeEquals,
+  _workerAuthCheck,
   _agentEnabled,
   _agentSetting,
   _assistFillPrompt,

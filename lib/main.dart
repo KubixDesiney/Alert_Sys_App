@@ -28,6 +28,7 @@ import 'services/background_sync_service.dart';
 import 'services/app_lifecycle_observer.dart';
 import 'services/bug_report_service.dart';
 import 'services/telemetry_service.dart';
+import 'services/alert_type_registry.dart';
 import 'theme.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'l10n/app_strings.dart';
@@ -85,6 +86,9 @@ void main() async {
   BugReportService.instance.init();
   // Crash-free / error-rate telemetry (chains the hooks above, never replaces).
   TelemetryService.instance.init();
+  // Stream the deployment's configurable alert-type registry (defaults serve
+  // synchronously until it resolves).
+  AlertTypeRegistry.instance.start();
   await OfflineDatabaseService.configure();
   // Initialize background sync service for offline support
   BackgroundSyncService.instance.initialize();
@@ -233,6 +237,7 @@ class _RoleRouterState extends State<RoleRouter> {
   @override
   void initState() {
     super.initState();
+    unawaited(OfflineDatabaseService.syncUserScopedPaths(widget.uid));
     _loadRole();
   }
 
