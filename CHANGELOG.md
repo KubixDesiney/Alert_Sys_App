@@ -47,10 +47,10 @@ documentation a pilot sponsor expects.
 - **SuperAdmin Overview Monitor.** A live, single-screen operations view that
   aggregates worker health, the AI agent fleet, database topology, security
   events, and active sessions from real platform state.
-- **Hardware Lab.** A factory machinery binding map plus a pure-Dart Arduino
-  simulation bench (lexer, parser, interpreter, circuit/netlist solver) and an
-  honest ESP32-to-Firebase connectivity tester, with a broad automated test
-  corpus.
+- **Hardware Lab.** A factory machinery binding map: binds controllers (ESP32,
+  Arduino, …) and their sensors/actuators to real plant machines picked from
+  live inventory. (An earlier Arduino simulation bench and connectivity tester
+  were removed before this release — 2026-06-22 — and are not shipped.)
 - **Reliability & monitoring.** A deadman monitor worker with configurable
   checks and webhook delivery (Slack, Discord, Teams, Telegram, generic), plus
   an in-app application performance signal (crash-free / error budget) with SLO

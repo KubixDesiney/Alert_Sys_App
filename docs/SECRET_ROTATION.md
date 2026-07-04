@@ -89,7 +89,23 @@ GitHub Actions and Cloudflare:
 
 ## History purge status
 
-Status: not proven complete by repository state alone.
+Status: **NOT DONE — verified 2026-07-04 against the local repository.**
+
+Measured facts (re-run the commands below to re-verify):
+
+```bash
+git log --all --oneline -- service-account.json   # → 22fede5 (file still in history)
+git log --all --oneline -- "backups/*"            # → 70697b2, 8e8853c (dumps still in history)
+```
+
+- The Firebase service-account key file is still reachable at commit `22fede5`.
+- Historical RTDB backup dumps are still reachable at commits `70697b2` and `8e8853c`.
+- Until the purge below is executed and force-pushed, treat the old key as
+  compromised (rotation, not history, is what makes it dead) and the backup
+  dumps as disclosed to anyone with a clone.
+
+The purge is a coordinated, destructive operation (history rewrite + force-push
++ re-clones); it must be run deliberately by the owner, not by CI or an agent.
 
 Risk while purge is pending:
 

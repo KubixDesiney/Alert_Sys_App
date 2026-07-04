@@ -1,6 +1,6 @@
 # SIAS - Smart Industrial Alert System App Handoff Notes
 
-Last verified: 2026-06-10 from the local repository.
+Last verified: 2026-07-04 from the local repository.
 
 This file is the working context for future coding agents. Keep it updated when the
 app structure, worker deployment, Firebase schema, or CI behavior changes.
@@ -33,7 +33,7 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 
 ## Repository Map
 
-- `lib/`: Flutter application code. There are currently 140 Dart files.
+- `lib/`: Flutter application code. There are currently 212 Dart files (recounted 2026-07-04).
 - `lib/main.dart`: Firebase init, service init, providers, localization, auth gate, role router, offline account fallback.
 - `lib/config/app_config.dart`: Single source for worker URLs, Dart defines, worker endpoints, and request timeouts.
 - `lib/models/`: Alert, user, collaboration, hierarchy, factory map, shift, and predictive data models.
@@ -49,8 +49,8 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 - `android/app/src/main/kotlin/com/example/alertsysapp/`: Native Android method channels and lock-screen voice capture.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
-- `worker_test/`: Jest worker test suite. There are currently 14 worker test files.
-- `test/`: Flutter unit/widget tests. There are currently 27 Dart test files.
+- `worker_test/`: Jest worker test suite. There are currently 39 worker test files (recounted 2026-07-04).
+- `test/`: Flutter unit/widget tests. There are currently 39 Dart test files (recounted 2026-07-04).
 - `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Claude fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, optional worker deploy, `bugs/agent` RTDB run records, and GitHub issue escalation on rejection.
 - `functions/`: Firebase Cloud Functions. AI assignment retry triggers (the legacy third-party push function was removed 2026-06-14).
 - `database.rules.json`: Realtime Database security rules and validation.
@@ -107,7 +107,21 @@ The VM modules warning from Node is expected.
 
 ## Active Worker Split
 
-SIAS - Smart Industrial Alert System uses two active Cloudflare Workers so notification delivery does not compete with AI/security work inside one invocation.
+SIAS - Smart Industrial Alert System runs **seven** active Cloudflare Workers. The core split keeps notification delivery from competing with AI/security work inside one invocation; the rest carve out ingestion, identity, observability, and backups:
+
+| Worker | Config | Main file | Cron | Role |
+|---|---|---|---|---|
+| `alert-notifier` | `wrangler.ai.toml` | `cloudflare_ai_worker.js` | `* * * * *` | AI assignment, escalations, security agent |
+| `alertsys` | `wrangler.notify.toml` | `cloudflare_notify_worker.js` | `* * * * *` | FCM push fan-out |
+| `alertsys-github` | `wrangler.github.toml` | `cloudflare_github_worker.js` | — | Guardian GitHub proxy |
+| `alertsys-ingest` | `wrangler.ingest.toml` | `cloudflare_ingest_worker.js` | `* * * * *` | SCADA/PLC/MQTT/historian connectors |
+| `alertsys-scim` | `wrangler.scim.toml` | `cloudflare_scim_worker.js` | — | SCIM 2.0 provisioning from IdPs |
+| `alertsys-monitor` | `wrangler.monitor.toml` | `cloudflare_monitor_worker.js` | every 5 min | Synthetic probes + SLO/error-budget alerting |
+| `alertsys-backup` | `wrangler.backup.toml` | `cloudflare_backup_worker.js` | daily 02:00 UTC | RTDB → R2 snapshots + **alert retention policy** |
+
+All seven deploy from CI on protected `main` pushes (`.github/workflows/ci.yml`) and via `npm run deploy:workers` (per-worker `deploy:ai` … `deploy:backup` scripts exist too). Do not hand-deploy a subset — that is how config drift happens.
+
+Worker HTTP auth (2026-07-04): the AI and notify workers verify callers with the Firebase **ID token** (`Authorization: Bearer …`, validated against Google's JWKS) or the legacy `x-worker-secret`, controlled by `WORKER_AUTH_MODE` in their wrangler `[vars]` (`off`/`log`/`required`, currently `log`). `/config` stays public for status probes. Client side, `lib/services/worker_auth.dart` (`WorkerAuth.headers()`) attaches both credentials; once the installed fleet sends ID tokens, flip the mode to `required` and drop `ALERTSYS_WORKER_SHARED_SECRET` from app builds (keep it for CI/worker-to-worker).
 
 ### AI And Security Worker
 
@@ -125,7 +139,6 @@ Responsibilities:
 - Collaboration approval automation and assistant alert suspension.
 - Shift handover generation.
 - Predictive model generation and validation.
-- Optional LSTM forecast integration through `https://kubixdesiney-alertsys-lstm.hf.space/predict`.
 - Security guard, request rate limits, prompt-injection detection, anomaly scan, `/security-status`.
 - AI suggestions and generic AI proxy.
 - AI auto-fix endpoints used by CI self-heal flow.
@@ -141,9 +154,9 @@ Important cron behavior:
 - Runs `processShiftEnding`.
 - Runs prediction validation every 30 minutes.
 - Rebuilds base predictive model every 60 minutes.
-- LSTM cron is currently gated by `LSTM_CRON_ENABLED = false`.
 - Runs security anomaly scan every 30 minutes.
-- Writes health with assignment, collaboration, handover, security, LSTM, and error metrics.
+- Writes health with assignment, collaboration, handover, security, and error metrics.
+- The legacy HuggingFace LSTM integration (`kubixdesiney-alertsys-lstm.hf.space`, gated off since the GBDT swap) was DELETED on 2026-07-04 — code, `/predict-lstm` endpoint, and tests. The GBDT forecaster is the only ML path.
 
 HTTP routes:
 
@@ -157,7 +170,6 @@ HTTP routes:
 - `POST /auto-fix-full`
 - `POST /shift-ai-action`
 - `POST /validate-predictions`
-- `POST /predict-lstm`
 - `GET /security-status`
 - `POST /ai-retry`
 - `/` default manual trigger for AI/security work only.
@@ -454,13 +466,15 @@ Important RTDB roots from `database.rules.json` and code:
 - `security/actions`
 - `workers/health`
 - `cron_lock`
-- `ai_forecast` (GBDT model trees/metadata, training telemetry, resumable run checkpoint and persisted training dataset under `ai_forecast/training/*`, run history, self-evaluation ledger under `ai_forecast/accuracy/*`, adaptation lock under `ai_forecast/learning/lock`)
+- `ai_forecast` (GBDT model trees/metadata, training telemetry, resumable run checkpoint and persisted training dataset under `ai_forecast/training/*`, run history, self-evaluation ledger under `ai_forecast/accuracy/*`, adaptation lock under `ai_forecast/learning/lock`). `ai_forecast/model` now persists the exact ordered `types` list the model learned plus its `featureCount` (feature width = `3 * typeCount + 13`); inference rebuilds the identical vector and a mismatch vs the live `app_config/alertTypes` marks the model stale.
 - `bugs/client` (deduplicated app error reports) and `bugs/agent` (autonomous agent run outcomes)
 - `hardware_lab` (SuperAdmin Hardware Lab: `bindings/{id}` machine↔device bindings, `machines/{id}` lab-added machine catalog entries)
+- `app_config/alertTypes` (tenant-configurable alert-type registry; `auth != null` readable, SuperAdmin-writable; each `{code}` entry is `{ code, label, color, icon, synonyms[], severityDefault, order }`, indexed on `order`). Seeded with the standard set on first read if empty — see the "Configurable Alert Types" section.
 
 Alert fields used across app and workers:
 
 - Identity/location: `id`, `alertNumber`, `type`, `usine`, `factoryId`, `convoyeur`, `poste`, `adresse`, `assetId`.
+- Source/origin: `source` (e.g. `Manual` for app/console-created alerts, or `scada:<kind>` stamped by the ingest worker), `sourceType` (optional). Both optional strings; legacy alerts without them show no source badge.
 - Lifecycle: `status`, `timestamp`, `takenAtTimestamp`, `resolvedAt`, `validatedAt`, `elapsedTime`.
 - Assignment: `superviseurId`, `superviseurName`, `assistantId`, `assistantName`, collaborators.
 - Collaboration/help: `helpRequestId`, `helpRequesterId`, `helpRequesterName`, `collaborationRequestId`.
@@ -595,7 +609,7 @@ Worker-side AI:
 - `handleSuggestAssignee` returns best candidate and runners-up.
 - `buildPredictiveModel` produces risk curves, predictions, and factory risk.
 - `validatePredictions` records prediction accuracy after enough time has elapsed.
-- `_runLstmForecast` is available but cron-disabled.
+- The LSTM path (`_runLstmForecast` and friends) was deleted on 2026-07-04.
 
 Predictive app services:
 
@@ -799,6 +813,49 @@ Required GitHub Actions secrets:
 - On this dev machine, `npx firebase database:set "/some/path" ...` fails with "Path must begin with /" unless run as `MSYS_NO_PATHCONV=1 npx firebase database:set ...` — Git Bash on Windows mangles the leading-slash argument otherwise.
 - **Naming (2026-06-27):** the product's display/brand name is **SIAS - Smart Industrial Alert System** (short form `SIAS`) — every UI string, doc, and PDF/notification title was repointed to it on this date. This is distinct from the long-lived internal identifiers that stay as-is and must NOT be renamed to match: the Flutter package/import root `alertsysapp`, the npm worker package `alertsys-worker`, the Firebase project alias `alertappsys`, every `ALERTSYS_*` dart-define / env var, and every deployed Cloudflare worker name/hostname (`alert-notifier`, `alertsys`, `alertsys-github`, `alertsys-ingest`, plus their `*.workers.dev` URLs). Renaming those is a live-infrastructure operation (new worker, new DNS, redeploy, Firebase relink) that was explicitly out of scope for the brand rename. If you ever see the old name spelled out as `Smart Industrial Alert - SIA` or `Smart Industrial Alert (SIA)` in a file, that's stale — fix it to the new name, but never touch an `alertsys*`/`ALERTSYS_*` token while doing so.
 
+## Due-Diligence Remediation (2026-07-04)
+
+A buyer technical review drove a hardening pass. What changed:
+
+- **Database rules — ownership model.** `alerts/$alertId` writes now require a
+  privileged role (PM `admin`, superadmin, worker token) or supervisor
+  ownership: own the alert, claim it while unassigned, assist (or accept
+  assistance on an assistant-less alert), hold its AI recommendation, or share
+  it via `collaboration_alerts`. Supervisors can never delete an alert. Push
+  bookkeeping fields (`push_sent*`, `push_delivery_mode`, `notificationSent`)
+  keep a field-level `auth != null` write so the stream fan-out dedup works
+  without ownership. `alertCounter` writes are privileged-only.
+- **Parent-grant holes closed.** RTDB cascades a parent `.write` past child
+  restrictions, so the blanket `auth != null` writes on
+  `supervisor_active_alerts`, `collaboration_alerts`, `notifications`,
+  `pm_actions`, and `shift_presence` were removed; child rules now carry the
+  real policy (producers create-only for other users' queues). Because the
+  roots are no longer world-readable, `OfflineDatabaseService` keeps
+  per-user copies synced via `syncUserScopedPaths(uid)` (called from
+  `RoleRouter`).
+- **Role self-escalation blocked.** `users/$userId/role` validates as
+  unchanged unless the writer is admin/superadmin/worker.
+- **PII split completed.** `email`, `phone`, and `currentLocation` are
+  `.validate: false` under `users/*` — they live only in `users_private`
+  (readable by self + admin roles). `UserModel.toMap()` no longer serializes
+  email/phone (`toPrivateMap()` exists for the private write). One-time
+  cleanup of legacy values: `tool/migrate_user_pii.mjs` (staged, dry-run
+  first).
+- **Alert retention policy.** The backup worker archives terminal alerts
+  older than `RETENTION_DAYS` (default 365) to R2 `alerts_archive/` and
+  deletes them from RTDB after each successful daily snapshot (batch-capped).
+  This bounds the full-table alert scan the every-minute crons perform — see
+  LOAD_TESTING.md for the actual scaling math.
+- **Worker HTTP auth.** Firebase ID-token verification landed on the AI and
+  notify workers (`WORKER_AUTH_MODE`, currently `log`), as the migration path
+  off the client-baked shared secret. See "Active Worker Split" above.
+- **LSTM removed** (see cron notes above). **CI deploys all seven workers.**
+  `ai_agents_tab.dart` was split into part files (`ai_agents_tab_shift.dart`,
+  `_briefing_assist`, `_security_predictive`, `_guardian`) — one library,
+  same private namespace, ~1.5k lines each instead of 8.4k in one file.
+- After pulling: `firebase deploy --only database` and redeploy the AI,
+  notify, and backup workers.
+
 ## Recent Local Fix
 
 On 2026-05-15, the notification push lock behavior was fixed:
@@ -810,6 +867,17 @@ On 2026-05-15, the notification push lock behavior was fixed:
 - `worker/alerts.js` was kept in sync with the deployed notification worker.
 - `npm test` passes all worker tests after the change.
 
+
+## Configurable Alert Types (Tenant Registry, 2026-07)
+
+Alert types are no longer a hardcoded standard set — each single-tenant deployment defines its own from the SuperAdmin console, and the operational DB, all UI, and the on-device GBDT forecaster adapt to it.
+
+- **Source of truth:** RTDB `app_config/alertTypes` (SuperAdmin-writable, `auth != null` readable). Each `{code}` child is `{ code, label, color (#hex), icon (key), synonyms[], severityDefault (normal|critical), order }`. The default seed **equals the historical standard set** (`qualite`, `maintenance`, `defaut_produit`, `manque_ressource`) with the same labels/icons/colours and synonyms that reproduce the old `normalizeType` substring behaviour — so a fresh/empty deployment behaves exactly as before with zero migration, and existing alerts with old type strings keep rendering.
+- **Model + service:** `lib/models/alert_type.dart` (pure, no Firebase) — `AlertTypeDef`, `kDefaultAlertTypeDefs`, `kDefaultAlertTypeCodes`, `parseHexColor`, `alertTypeIcon`/`kAlertTypeIcons`/`kAlertTypeIconKeys`. `lib/services/alert_type_registry.dart` — `AlertTypeRegistry.instance` (a `ChangeNotifier` singleton) streams the node, seeds defaults if empty (best-effort, SuperAdmin-gated), and **serves `kDefaultAlertTypeDefs` synchronously** before the stream resolves and in provider-less widget tests (mirrors the `context.tr` null-safe pattern). `start()` is called from `main.dart` after Firebase init. `debugSetTypes`/`debugReset` are `@visibleForTesting` injectors.
+- **UI:** `typeMeta()` in `lib/utils/alert_meta.dart` resolves label/icon/colour through the registry; unknown/legacy codes degrade to a neutral chip with the raw string. `allAlertTypeCodes()`/`allAlertTypes()` replaced the old `kAllAlertTypes` const and drive every picker/filter/breakdown (admin "Simulate" dialog, `tree_filter_bar`, overview type stats + history/export filters, escalation per-type thresholds — with a default threshold for types missing from `escalation_settings`, supervisor performance breakdowns). Custom labels render English (their source) since operators author them; type CODES are never translated.
+- **Management tab:** SuperAdmin console **Alert Types** tab (`lib/screens/superadmin/alert_types_tab.dart`) — add/edit/reorder/delete types (label, colour swatch, icon grid, synonyms, default-severity toggle), Save/Revert against the registry. Code is locked after creation so existing alerts + the trained model keep matching. Shows a stale-model banner (below) and an unsaved-changes hint.
+- **Forecaster:** see the type-dynamic plumbing under "Pure-Dart Gradient-Boosted Forecaster". `ai_forecast/model` persists the exact `types` + `featureCount`; if the deployed model's `types` ≠ the live registry the model is **stale** → `ForecastOverviewEngine` clears its forecasts and both PM predictive cards fall back to the statistical model until a retrain (surfaced in the Alert Types tab). A width-mismatch guard in `ForecastEngine.computeForecasts` prevents mis-indexing.
+- **Tests:** `test/services/alert_type_registry_test.dart` (defaults, custom set, unknown-type rendering, model round-trip), plus dynamic-type cases in `gradient_boost_test`/`forecast_feature_engineer_test`/`forecast_overview_engine_test` (incl. the stale-width fallback) and `alert_record_parser_test` (custom synonyms). Rules coverage in `worker_test/database_rules_security.test.js`.
 
 ## SuperAdmin Console And On-Device Gradient-Boosted Forecaster (2026-06-10, GBDT swap 2026-06-11)
 
@@ -824,12 +892,13 @@ A full SuperAdmin tier was added on top of the existing admin/supervisor roles, 
 
 ### SuperAdmin Console (lib/screens/superadmin/)
 
-Futuristic "Command Center" design with an animated neural-mesh vector background (`superadmin_theme.dart`: `SaPalette`, `NeuralBackground`, `GlassPanel`, `GlowChip`, `PulseDot`, `SaButton`, …). Since 2026-06-11 the console follows the app-wide `ThemeProvider` (light/dark): the dashboard build calls `Sa.setDark(...)` and a sun/moon toggle sits in the console header. `Sa` color tokens are palette *getters* (deep-space dark + arctic light), so never capture `Sa.*` colors inside `const` expressions. Terminal-style surfaces (console viewer, raw JSON blocks, DB schema map) intentionally stay dark in both themes via the fixed `Sa.term*` constants. Decorative painters (neural mesh, DB map) are throttled to ~25–30fps behind RepaintBoundaries, the header clock/status chips are isolated self-refreshing widgets, and `PulseDot` paints its ripple outside a fixed-size box so status chips never shift layout. Five tabs:
+Futuristic "Command Center" design with an animated neural-mesh vector background (`superadmin_theme.dart`: `SaPalette`, `NeuralBackground`, `GlassPanel`, `GlowChip`, `PulseDot`, `SaButton`, …). Since 2026-06-11 the console follows the app-wide `ThemeProvider` (light/dark): the dashboard build calls `Sa.setDark(...)` and a sun/moon toggle sits in the console header. `Sa` color tokens are palette *getters* (deep-space dark + arctic light), so never capture `Sa.*` colors inside `const` expressions. Terminal-style surfaces (console viewer, raw JSON blocks, DB schema map) intentionally stay dark in both themes via the fixed `Sa.term*` constants. Decorative painters (neural mesh, DB map) are throttled to ~25–30fps behind RepaintBoundaries, the header clock/status chips are isolated self-refreshing widgets, and `PulseDot` paints its ripple outside a fixed-size box so status chips never shift layout. Key tabs (the shell `superadmin_dashboard_screen.dart` wires eleven, incl. a **Status** page — `status_tab.dart`, added 2026-06-29 — a public-status-page-style board for the Cloudflare workers, GitHub proxy and Firebase RTDB/Auth, each with a live reachability pill + rolling session-uptime strip; and an **Alert Types** page — `alert_types_tab.dart` — the tenant alert-type registry manager, see "Configurable Alert Types" below):
 
 1. **AI Training** (`ai_training_tab.dart`): upload company alert history, watch deployed-model status plus the live continuous-learning ledger (forecasts graded, precision/recall, Brier score, last adaptation), auto-tuned but always-visible/editable hyperparameters (boosting rounds, learning rate, max depth, min leaf samples, subsample, L2 — AUTO-TUNE recomputes them from the dataset shape), live training monitor (gradient progress bar, train/val loss curves, accuracy/F1 curves, LEARNING/NOT-LEARNING verdict), next-24h forecast preview, one-click deploy.
-2. **AI Agents** (`ai_agents_tab.dart`, added 2026-06-12): the AI Agent Fleet console — see "AI Agent Fleet" section below.
+2. **Alert Types** (`alert_types_tab.dart`): CRUD + reorder over the tenant alert-type registry (`app_config/alertTypes`) — label, colour, icon, parser synonyms, default severity. Surfaces a **stale-model banner** when the deployed forecaster's `types` no longer match the registry (retrain required). See "Configurable Alert Types" below.
+3. **AI Agents** (`ai_agents_tab.dart`, added 2026-06-12): the AI Agent Fleet console — see "AI Agent Fleet" section below.
 3. **Production Managers** (`production_managers_tab.dart`): provision/revoke Production Manager (`role: admin`) accounts and send password resets. Account creation runs through a secondary Firebase app (`superadmin_service.dart`) so the SuperAdmin session is never replaced.
-4. **Overview Monitor** (`monitor/overview_monitor_tab.dart`, added 2026-06-19, replaced the old `logs_tab.dart`): a holographic "war-room" that lays the whole platform bare for the IT team in one scroll. All live state flows through a single `MonitorController` (`monitor/monitor_data.dart`) — worker health pulses, `ai_agents/*`, the `users` node (→ live sessions), `telemetry/daily/{today}`, `security/actions`, `bugs/client`, the `HwMachineStore` factory catalog, a REST shallow DB probe, and the `alertsys-github` proxy reachability. Sections (all theme-aware, capped-fps painters behind RepaintBoundaries): a KPI **command strip** + system-posture banner, **Operational Insight** ring gauges (fleet/hardware/workers/database), the **Factory Digital Twin** (`monitor/factory_hologram.dart` — live isometric 3D plant floor: conveyors as belts, every `MACH-XXX` an extruded status-lit pillar with energy pulses, per-factory selector), the **AI Agent Fleet constellation** (`monitor/fleet_workers.dart`) + **Cloudflare Edge Workers** heartbeat grid (ECG strips, 5 workers incl. GitHub proxy), the **Database Conception** topology (`monitor/database_hologram.dart` — same REST shallow probe + RESCAN as before), a **Security & Integrity** threat feed (`monitor/security_feed.dart` — edge Sentinel enforcements + client-bug budget), and **Active Sessions** (`monitor/sessions_panel.dart` — presence from each user's `lastSeen`, online ring + crash-free %). Shared holographic widgets/painters live in `monitor/monitor_kit.dart` (`HoloPanel`, `HoloHeader`, `KpiReadout`, `RingGauge`, `Heartbeat`, `StatePip`). The old Logs sub-sections (raw AppLogBuffer console, standalone bugs list) were dropped; `AppLogBuffer` itself stays (it still feeds `bugs/client`). Note: never wrap a `monitor/` panel in `IntrinsicHeight` — they contain `LayoutBuilder`s; use `Row`+`Expanded`+`CrossAxisAlignment.start` like the orchestrator does.
+4. **Overview Monitor** (`monitor/overview_monitor_tab.dart`, added 2026-06-19, replaced the old `logs_tab.dart`): a holographic "war-room" that lays the whole platform bare for the IT team in one scroll. All live state flows through a single `MonitorController` (`monitor/monitor_data.dart`) — worker health pulses, `ai_agents/*`, the `users` node (→ live sessions), `telemetry/daily/{today}`, `security/actions`, `bugs/client`, the `HwMachineStore` factory catalog, a REST shallow DB probe, and the `alertsys-github` proxy reachability. Sections (all theme-aware, capped-fps painters behind RepaintBoundaries): a KPI **command strip** + system-posture banner, **Operational Insight** ring gauges (fleet/hardware/database/sessions), the **Factory Digital Twin** (`monitor/factory_hologram.dart` — live isometric 3D plant floor: conveyors as belts, every `MACH-XXX` an extruded status-lit pillar with energy pulses, per-factory selector), the full-width **AI Agent Fleet constellation** (`monitor/fleet_workers.dart` — enlarged 2026-06-29: elliptical orbit, twinkling starfield, per-agent activity-ring orbs and a fleet stat strip; **the Cloudflare edge-workers heartbeat grid was removed from here and now lives in the new Status tab** — `WorkersGrid`/`_WorkerCard` were deleted), the **Database Conception** topology (`monitor/database_hologram.dart` — same REST shallow probe + RESCAN as before), a **Security & Integrity** threat feed (`monitor/security_feed.dart` — edge Sentinel enforcements + client-bug budget), and **Active Sessions** (`monitor/sessions_panel.dart` — presence from each user's `lastSeen`, online ring + crash-free %). Shared holographic widgets/painters live in `monitor/monitor_kit.dart` (`HoloPanel`, `HoloHeader`, `KpiReadout`, `RingGauge`, `Heartbeat`, `StatePip`). The old Logs sub-sections (raw AppLogBuffer console, standalone bugs list) were dropped; `AppLogBuffer` itself stays (it still feeds `bugs/client`). Note: never wrap a `monitor/` panel in `IntrinsicHeight` — they contain `LayoutBuilder`s; use `Row`+`Expanded`+`CrossAxisAlignment.start` like the orchestrator does.
 5. **Hardware** (`hardware_tab.dart` → `hardware/hardware_lab.dart`): the **Hardware Lab** — see the "SuperAdmin Hardware Lab" section below.
 
 ### SuperAdmin Hardware Lab (2026-06-18, reduced to the factory machinery map only on 2026-06-22)
@@ -884,8 +953,9 @@ The PM "not enough data" bug had three causes, all fixed in `forecast_overview_e
 
 The forecaster is a real second-order (Newton) gradient-boosting engine trained on-device — the same formulation XGBoost/LightGBM use, with no HuggingFace or external inference dependency:
 
-- `forecast_types.dart`: canonical types (`kForecastAlertTypes`), the 8 base daily columns (`kDailyFeatureCols`, mirrors the worker's daily schema), the 25 engineered tabular columns (`kForecastFeatureCols`), `AlertRecord`/`DatasetSummary`/`FeatureSample`, `ForecastTrainingConfig` (auto-tuned from sample count; rounds/lr/depth/minLeaf/subsample/colsample/L2/patience/`posWeightCap` all visible+editable), `RoundStat` (round 0 = pre-boosting baseline), `MachineForecast`.
-- `alert_record_parser.dart`: ingests CSV/TSV, JSON (incl. Firebase RTDB exports), Excel (.xlsx), MySQL dumps (.sql INSERT parsing with CREATE TABLE fallback), and PDFs (table extraction via Syncfusion + heuristic line scan). Header-synonym mapping (EN/FR), flexible timestamps (ISO, epoch s/ms, dd/MM/yyyy, Excel serial), type normalization onto the four canonical types.
+- `forecast_types.dart`: default types (`kForecastAlertTypes`, the fallback/standard set), the base daily columns (`kDailyFeatureCols`) and 25 tabular columns (`kForecastFeatureCols`) for that default set, plus **type-dynamic** schema builders `dailyFeatureColsFor(types)`, `forecastFeatureColsFor(types)` and `forecastFeatureCountFor(N)` (= `3*N+13`). The forecaster is dynamic end-to-end: the active ordered type list is threaded in at train time (from `AlertTypeRegistry`) and every stage (feature engineer, booster, model, trainer, engine) sizes itself to it. `AlertRecord`/`DatasetSummary`/`FeatureSample`, `ForecastTrainingConfig` (auto-tuned; rounds/lr/depth/minLeaf/subsample/colsample/L2/patience/`posWeightCap` all visible+editable), `RoundStat` (round 0 = baseline), `MachineForecast`.
+- Type-dynamic plumbing: `ForecastFeatureEngineer.buildDailyRows(records, {types})` carries `DailyRow.typeCount`; `GradientBoostModel` stores its `types` list (round-trips through JSON, defaults to `kForecastAlertTypes` for legacy models); `GbdtBooster`/`ForecastTrainer.train`/`diagnose` take a `types` param; `ForecastEngine.computeForecasts` uses `model.types` and **guards on feature width** (skips inference rather than mis-indexing a stale model); `ForecastModelStore.saveModel` writes `types` into `ai_forecast/model`; `ForecastOverviewEngine.modelStale` compares deployed `types` to the live registry and falls back to the statistical model when they differ; `ForecastTrainingController` captures the active registry types at upload, bakes them into the model, and re-adopts a resumed model's types.
+- `alert_record_parser.dart`: ingests CSV/TSV, JSON (incl. Firebase RTDB exports), Excel (.xlsx), MySQL dumps (.sql INSERT parsing with CREATE TABLE fallback), and PDFs (table extraction via Syncfusion + heuristic line scan). Header-synonym mapping (EN/FR), flexible timestamps (ISO, epoch s/ms, dd/MM/yyyy, Excel serial). `normalizeType(raw, {types})` maps free-text type values onto the configured codes via each `AlertTypeDef.synonyms`; `types` defaults to `kDefaultAlertTypeDefs`, whose synonyms reproduce the historical substring behaviour so old history parses identically.
 - `forecast_feature_engineer.dart`: per-machine gap-free daily rows (same `_buildDailyFeatures` schema as the worker), then tabular samples per machine-day: today's snapshot, tomorrow's calendar context, total lags (t-1/t-2), per-type 7d rolling counts, 7/14d totals, week-over-week trend, per-type recency (capped 30d), critical pressure. No scaler — trees are scale-invariant. `buildInferenceFeatures` pads quiet machines to today.
 - `gradient_boost.dart`: `BoostTree` (flat-array regression tree), `GradientBoostModel` (per-type ensembles + prior log-odds base scores, per-type `thresholds` for "alert called" classification, `truncated()` best-round snapshots, JSON (de)serialization, `baseRounds`/`adaptedRounds` bookkeeping), and `GbdtBooster` (histogram split finding with ≤64 quantile bins, leaf weights `-G/(H+λ)`, gain pruning, row/feature subsampling, shrinkage folded into leaves, class-imbalance weighting via per-type pos-weights capped at `config.posWeightCap`, `bestValThresholds()` grid-searches per-type decision thresholds that maximize validation F1, weighted-BCE/accuracy/macro-F1 eval from cached margins using those thresholds instead of a fixed 0.5).
 - `forecast_trainer.dart`: deterministic seeded train/val split, a round-0 baseline stat so curves show the real improvement over the prior, one tree per type per round with ~10ms cooperative yielding (UI stays smooth on web/mobile), early stopping with best-round truncation, a quantitative learning verdict (best val loss <= 97% of the round-0 baseline), `diagnose()` for NOT-LEARNING explanations, checkpoint resume (`resumeModel`/`startRound`/`resumeStats`), and `adapt()` — the continuous-learning entry point that boosts a few stiffly-regularized extra trees onto a deployed model. After training, the final model's `thresholds` are set from `bestValThresholds()` on the held-out validation set, and live `RoundStat.valF1` curves use those same tuned thresholds (not a fixed 0.5) so F1 reflects genuine probability separation under class imbalance.

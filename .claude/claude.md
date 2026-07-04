@@ -123,7 +123,8 @@ FcmService.alertProvider is injected from AlertProvider at app boot so notificat
 Main operational entity is AlertModel (lib/models/alert_model.dart), with key fields including:
 - id
 - alertNumber (human-readable number)
-- type
+- type (a code from the tenant alert-type registry — see AlertTypeDef below)
+- source / sourceType (origin: "Manual" for app/console-created alerts, or "scada:<kind>" stamped by the ingest worker; optional, legacy alerts have neither and show no source badge)
 - usine, convoyeur, poste
 - status (disponible, en_cours, validee)
 - superviseurId/superviseurName
@@ -135,6 +136,7 @@ Main operational entity is AlertModel (lib/models/alert_model.dart), with key fi
 
 Other major models:
 - UserModel: user identity, role, usine, activity.
+- AlertTypeDef (lib/models/alert_type.dart): a tenant-configurable alert type (code, label, color, icon, synonyms, default severity, order). Streamed by AlertTypeRegistry from `app_config/alertTypes`; defaults to the historical standard set. Drives every type picker/icon/colour and the forecaster's per-type ensembles. See root CLAUDE.md "Configurable Alert Types".
 - CollaborationRequest and related collaboration entities.
 - Hierarchy model: factory, conveyor, station structures.
 - Factory map model: layout and visualization data.
@@ -160,6 +162,7 @@ Core paths used by app and worker:
 - ai_briefing
 - alertCounter
 - assetCounter
+- app_config/alertTypes (tenant alert-type registry: `{code} -> {code,label,color,icon,synonyms[],severityDefault,order}`; `auth != null` read, SuperAdmin write; seeded with the standard set if empty)
 
 Operational pattern:
 - Client reads and writes directly where allowed by security rules.
@@ -443,25 +446,30 @@ The worker codebase has been refactored into 15 modular ES6 modules under `/work
 - `/notify` â€” Fan-out pending notifications from RTDB queue.
 - Default (all other fetch) â€” Unified manual trigger: runs assignments, alerts, escalations, collaborations.
 
-**Deployment Status (reconciled 2026-06-27 — root `CLAUDE.md` is the source of truth):**
+**Deployment Status (reconciled 2026-07-04 — root `CLAUDE.md` is the source of truth):**
 
 - **The monolithic `cloudflare_workerV2.js` was DELETED on 2026-06-14**, along with the
   bare `wrangler.toml` / `worker/wrangler.toml` that pointed at it. There is no longer a
   monolithic-worker deploy path. The historical sections below that reference
   `cloudflare_workerV2.js` describe where that code *originated*; the live behavior now
   lives in the split workers.
-- **Active deployment:** the split Cloudflare workers — `wrangler.ai.toml`
+- **The HuggingFace LSTM path was DELETED on 2026-07-04** (helpers, `/predict-lstm`
+  endpoint, cron gate, tests). Historical mentions of LSTM cron steps and
+  `ai_predictions/lstm` below are archaeology, not live behavior — the pure-Dart GBDT
+  forecaster is the only ML path.
+- **Active deployment:** seven split Cloudflare workers — `wrangler.ai.toml`
   (`cloudflare_ai_worker.js`, AI + security), `wrangler.notify.toml`
   (`cloudflare_notify_worker.js`, push fan-out), `wrangler.github.toml`
-  (`cloudflare_github_worker.js`, Guardian proxy), and `wrangler.ingest.toml`
-  (`cloudflare_ingest_worker.js`, SCADA/PLC/MQTT ingest). Deploy with
-  `npm run deploy:workers` (or the per-worker `deploy:ai`/`deploy:notify`/`deploy:github`).
+  (`cloudflare_github_worker.js`, Guardian proxy), `wrangler.ingest.toml`
+  (`cloudflare_ingest_worker.js`, SCADA/PLC/MQTT ingest), `wrangler.scim.toml`
+  (`cloudflare_scim_worker.js`, SCIM provisioning), `wrangler.monitor.toml`
+  (`cloudflare_monitor_worker.js`, synthetic probes + SLO alerting), and
+  `wrangler.backup.toml` (`cloudflare_backup_worker.js`, daily RTDB→R2 backups +
+  the alert retention policy). Deploy all with `npm run deploy:workers`; CI deploys
+  all seven on protected `main` pushes.
 - **Modular reference:** `/worker` contains the refactored 15-module implementation;
   `cloudflare_worker.js` re-exports `worker/index.js` and is imported by the Jest suite
   for helper-level coverage.
-- **Configuration:** each `wrangler.*.toml` specifies cron `* * * * *` and secrets via
-  `wrangler secret put`; worker names are `alert-notifier`, `alertsys`, `alertsys-github`,
-  `alertsys-ingest`.
 - **Testing:** worker_test/ includes Jest tests for pure functions; npm test runs all tests.
 
 **Recent Worker updates (May 2026):**
