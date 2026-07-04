@@ -12,6 +12,7 @@ import '../services/offline_account_cache.dart';
 import '../theme.dart';
 import '../utils/alert_meta.dart';
 import '../utils/alert_claim_error.dart';
+import '../widgets/alerts/alert_source_badge.dart';
 import '../widgets/dashboard_common.dart';
 import 'login_screen.dart';
 import 'alert_detail_screen.dart';

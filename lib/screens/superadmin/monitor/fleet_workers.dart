@@ -83,9 +83,25 @@ class _FleetConstellationState extends State<FleetConstellation>
 
   @override
   Widget build(BuildContext context) {
-    final online = _kFleet.where((a) => widget.controller.agent(a.id).enabled).length;
+    final ctrl = widget.controller;
+    final flags = [for (final a in _kFleet) ctrl.agent(a.id).enabled];
+    final online = flags.where((e) => e).length;
+    final headlines = [for (final a in _kFleet) ctrl.agent(a.id).headline];
+    var totalActions = 0;
+    for (final n in headlines) {
+      totalActions += n;
+    }
+    var busiestIdx = -1, busiestVal = -1;
+    for (var i = 0; i < _kFleet.length; i++) {
+      if (flags[i] && headlines[i] > busiestVal) {
+        busiestVal = headlines[i];
+        busiestIdx = i;
+      }
+    }
+
     return HoloPanel(
       accent: Sa.violet,
+      glow: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -105,26 +121,26 @@ class _FleetConstellationState extends State<FleetConstellation>
               pulse: true,
             ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 380,
-            child: LayoutBuilder(builder: (context, c) {
-              final w = c.maxWidth, h = c.maxHeight;
-              final center = Offset(w / 2, h / 2);
-              const sw = 130.0, sh = 112.0;
-              final radius = math.min(w, h) / 2 - 68;
-              final points = <Offset>[];
-              for (var i = 0; i < _kFleet.length; i++) {
-                final ang = i / _kFleet.length * math.pi * 2 - math.pi / 2;
-                points.add(Offset(
-                  center.dx + radius * math.cos(ang),
-                  center.dy + radius * math.sin(ang),
-                ));
-              }
-              final onlineFlags = [
-                for (final a in _kFleet) widget.controller.agent(a.id).enabled
-              ];
-              return Stack(
+          const SizedBox(height: 14),
+          LayoutBuilder(builder: (context, c) {
+            final w = c.maxWidth;
+            final h = w >= 1180 ? 520.0 : (w >= 760 ? 470.0 : 430.0);
+            final sw = w >= 760 ? 152.0 : 122.0;
+            const sh = 144.0;
+            final center = Offset(w / 2, h / 2);
+            final rx = math.min(w * 0.34, 380.0);
+            final ry = (h / 2 - sh / 2 - 6).clamp(70.0, h / 2 - 20);
+            final points = <Offset>[];
+            for (var i = 0; i < _kFleet.length; i++) {
+              final ang = i / _kFleet.length * math.pi * 2 - math.pi / 2;
+              points.add(Offset(
+                center.dx + rx * math.cos(ang),
+                center.dy + ry * math.sin(ang),
+              ));
+            }
+            return SizedBox(
+              height: h,
+              child: Stack(
                 children: [
                   Positioned.fill(
                     child: RepaintBoundary(
@@ -132,28 +148,32 @@ class _FleetConstellationState extends State<FleetConstellation>
                         painter: _ConstellationPainter(
                           tick: _tick,
                           center: center,
+                          rx: rx,
+                          ry: ry,
                           points: points,
-                          online: onlineFlags,
+                          online: flags,
                           colors: [for (final a in _kFleet) a.accent],
+                          isDark: Sa.isDark,
                         ),
                       ),
                     ),
                   ),
-                  // Central core label.
+                  // Central core label, riding the painted nucleus.
                   Positioned(
-                    left: center.dx - 50,
-                    top: center.dy - 22,
-                    width: 100,
+                    left: center.dx - 70,
+                    top: center.dy - 17,
+                    width: 140,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(context.tr('AI CORE'),
-                            style: Sa.display(size: 13, color: Sa.cyan)),
+                            style: Sa.display(size: 15, color: Sa.cyan)),
+                        const SizedBox(height: 2),
                         Text(
-                            context.tr('{online} ACTIVE', {
+                            context.tr('{online} UNITS LIVE', {
                               'online': '$online',
                             }),
-                            style: Sa.mono(size: 9, color: Sa.muted)),
+                            style: Sa.mono(size: 8.5, color: Sa.muted)),
                       ],
                     ),
                   ),
@@ -165,18 +185,45 @@ class _FleetConstellationState extends State<FleetConstellation>
                       height: sh,
                       child: _AgentNode(
                         agent: _kFleet[i],
-                        runtime: widget.controller.agent(_kFleet[i].id),
+                        runtime: ctrl.agent(_kFleet[i].id),
+                        tick: _tick,
                         onTap: (anchorContext) => _openAgentDetail(
                           anchorContext,
                           _kFleet[i],
-                          widget.controller.agent(_kFleet[i].id),
-                          widget.controller,
+                          ctrl.agent(_kFleet[i].id),
+                          ctrl,
                         ),
                       ),
                     ),
                 ],
-              );
-            }),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SaStatTile(
+                label: context.tr('Online units'),
+                value: '$online/${_kFleet.length}',
+                icon: Icons.power_settings_new,
+                color: online == _kFleet.length ? Sa.green : Sa.amber,
+              ),
+              SaStatTile(
+                label: context.tr('Fleet actions'),
+                value: '$totalActions',
+                icon: Icons.bolt,
+                color: Sa.violet,
+              ),
+              if (busiestIdx >= 0)
+                SaStatTile(
+                  label: context.tr('Busiest unit'),
+                  value: context.tr(_kFleet[busiestIdx].name),
+                  icon: Icons.local_fire_department_outlined,
+                  color: Sa.cyan,
+                ),
+            ],
           ),
         ],
       ),
@@ -547,98 +594,302 @@ class _PopoverIconButton extends StatelessWidget {
   }
 }
 
-class _AgentNode extends StatelessWidget {
+class _AgentNode extends StatefulWidget {
   final _FleetAgent agent;
   final AgentRuntime runtime;
+  final ValueNotifier<double> tick;
   final void Function(BuildContext anchorContext) onTap;
   const _AgentNode({
     required this.agent,
     required this.runtime,
+    required this.tick,
     required this.onTap,
   });
 
   @override
+  State<_AgentNode> createState() => _AgentNodeState();
+}
+
+class _AgentNodeState extends State<_AgentNode> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
-    final online = runtime.enabled;
+    final agent = widget.agent;
+    final online = widget.runtime.enabled;
     final c = online ? agent.accent : Sa.muted;
-    return InkWell(
-      onTap: () => onTap(context),
-      borderRadius: BorderRadius.circular(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [c.withValues(alpha: 0.3), c.withValues(alpha: 0.05)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: () => widget.onTap(context),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedScale(
+              scale: _hover ? 1.08 : 1.0,
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              child: SizedBox(
+                width: 76,
+                height: 76,
+                child: AnimatedBuilder(
+                  animation: widget.tick,
+                  builder: (_, __) => CustomPaint(
+                    painter: _AgentOrbPainter(
+                      t: widget.tick.value,
+                      color: c,
+                      online: online,
+                      hover: _hover,
+                    ),
+                    child: Center(child: Icon(agent.icon, color: c, size: 28)),
+                  ),
+                ),
               ),
-              shape: BoxShape.circle,
-              border: Border.all(color: c.withValues(alpha: online ? 0.85 : 0.4), width: 1.6),
-              boxShadow: online
-                  ? [BoxShadow(color: c.withValues(alpha: 0.4), blurRadius: 16)]
-                  : null,
             ),
-            child: Icon(agent.icon, color: c, size: 26),
-          ),
-          const SizedBox(height: 10),
-          Text(context.tr(agent.name),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Sa.heading(size: 12, color: online ? Sa.text : Sa.muted)),
-          const SizedBox(height: 3),
-          Text(online ? '${runtime.headline}' : context.tr('OFFLINE'),
-              style: Sa.mono(size: 9.5, color: c, weight: FontWeight.w700)),
-        ],
+            const SizedBox(height: 9),
+            Text(context.tr(agent.name),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Sa.heading(size: 12.5, color: online ? Sa.text : Sa.muted)),
+            const SizedBox(height: 1),
+            Text(agent.code,
+                style: Sa.mono(size: 7.5, color: Sa.muted, weight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            if (online)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('${widget.runtime.headline}',
+                      style: Sa.display(size: 15, color: c)),
+                  const SizedBox(width: 4),
+                  Text(context.tr('RUNS'),
+                      style: Sa.mono(size: 8, color: Sa.muted)),
+                ],
+              )
+            else
+              Text(context.tr('OFFLINE'),
+                  style: Sa.mono(size: 9.5, color: Sa.muted, weight: FontWeight.w700)),
+          ],
+        ),
       ),
     );
   }
 }
 
+/// Paints one fleet agent's orb: a glowing nucleus with a rotating activity
+/// arc + orbiting satellite (online) and a breathing halo. Driven by the
+/// shared constellation clock so it never spins up its own controller.
+class _AgentOrbPainter extends CustomPainter {
+  final double t;
+  final Color color;
+  final bool online;
+  final bool hover;
+  _AgentOrbPainter({
+    required this.t,
+    required this.color,
+    required this.online,
+    required this.hover,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ctr = size.center(Offset.zero);
+    const orbR = 27.0;
+    final breathe = 0.5 + 0.5 * math.sin(t * math.pi * 2 * 2);
+
+    // Breathing halo (online only).
+    if (online) {
+      canvas.drawCircle(
+        ctr,
+        orbR + 6 + breathe * 5,
+        Paint()..color = color.withValues(alpha: 0.08 + 0.10 * breathe),
+      );
+    }
+    // Nucleus gradient.
+    canvas.drawCircle(
+      ctr,
+      orbR,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, -0.35),
+          colors: [
+            color.withValues(alpha: online ? 0.36 : 0.10),
+            color.withValues(alpha: 0.03),
+          ],
+        ).createShader(Rect.fromCircle(center: ctr, radius: orbR)),
+    );
+    // Rim.
+    canvas.drawCircle(
+      ctr,
+      orbR,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..color = color.withValues(alpha: online ? (hover ? 1.0 : 0.85) : 0.4),
+    );
+    if (!online) return;
+
+    // Rotating activity arc + leading satellite.
+    final ringRect = Rect.fromCircle(center: ctr, radius: orbR + 4.5);
+    final a0 = t * math.pi * 2;
+    const span = math.pi * 0.72;
+    canvas.drawArc(
+      ringRect,
+      a0,
+      span,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..shader = SweepGradient(
+          startAngle: a0,
+          endAngle: a0 + span,
+          colors: [color.withValues(alpha: 0), color],
+        ).createShader(ringRect),
+    );
+    final sat =
+        ctr + Offset(math.cos(a0 + span), math.sin(a0 + span)) * (orbR + 4.5);
+    canvas.drawCircle(sat, 5, Paint()..color = color.withValues(alpha: 0.3));
+    canvas.drawCircle(sat, 2.4, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AgentOrbPainter old) =>
+      old.t != t ||
+      old.color != color ||
+      old.online != online ||
+      old.hover != hover;
+}
+
+/// A drifting, twinkling background star.
+class _Star {
+  final double x, y, r, phase, spd;
+  const _Star(this.x, this.y, this.r, this.phase, this.spd);
+}
+
 class _ConstellationPainter extends CustomPainter {
   final ValueNotifier<double> tick;
   final Offset center;
+  final double rx, ry;
   final List<Offset> points;
   final List<bool> online;
   final List<Color> colors;
+  final bool isDark;
 
   _ConstellationPainter({
     required this.tick,
     required this.center,
+    required this.rx,
+    required this.ry,
     required this.points,
     required this.online,
     required this.colors,
+    required this.isDark,
   }) : super(repaint: tick);
 
   double get t => tick.value;
 
+  static final List<_Star> _stars = List.generate(64, (i) {
+    final r = math.Random(i * 977 + 13);
+    return _Star(
+      r.nextDouble(),
+      r.nextDouble(),
+      0.4 + r.nextDouble() * 1.5,
+      r.nextDouble() * math.pi * 2,
+      0.4 + r.nextDouble() * 1.2,
+    );
+  });
+
   @override
   void paint(Canvas canvas, Size size) {
-    final radius = (points.first - center).distance;
+    final cyan = Sa.cyan;
+    final violet = Sa.violet;
+    final dim = isDark ? 1.0 : 0.7;
 
-    // Orbit rings.
-    for (final rr in [radius, radius * 0.62]) {
+    // ── twinkling starfield
+    for (final s in _stars) {
+      final tw = 0.45 + 0.55 * math.sin(t * math.pi * 2 * s.spd + s.phase);
+      final col = s.x > 0.5 ? violet : cyan;
       canvas.drawCircle(
-        center,
-        rr,
+        Offset(s.x * size.width, s.y * size.height),
+        s.r,
+        Paint()..color = col.withValues(alpha: (0.04 + 0.13 * tw) * dim),
+      );
+    }
+
+    // ── elliptical orbit rings
+    for (final f in const [1.0, 0.62]) {
+      canvas.drawOval(
+        Rect.fromCenter(
+            center: center, width: 2 * rx * f, height: 2 * ry * f),
         Paint()
-          ..color = const Color(0x1A22D3EE)
           ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = cyan.withValues(alpha: 0.10 * dim),
+      );
+    }
+    // Rotating tick marks riding the outer ellipse.
+    for (var i = 0; i < 72; i++) {
+      final a = i / 72 * math.pi * 2 + t * math.pi * 2 * 0.12;
+      final ca = math.cos(a), sa = math.sin(a);
+      final p1 = center + Offset(ca * rx, sa * ry);
+      final ext = i % 6 == 0 ? 0.06 : 0.03;
+      final p2 = center + Offset(ca * rx * (1 + ext), sa * ry * (1 + ext));
+      canvas.drawLine(
+        p1,
+        p2,
+        Paint()
+          ..color = cyan.withValues(alpha: (i % 6 == 0 ? 0.22 : 0.11) * dim)
           ..strokeWidth = 1,
       );
     }
-    // Rotating tick marks on the outer orbit.
-    for (var i = 0; i < 48; i++) {
-      final a = i / 48 * math.pi * 2 + t * math.pi * 2 * 0.2;
-      final p1 = center + Offset(math.cos(a), math.sin(a)) * (radius + 3);
-      final p2 = center + Offset(math.cos(a), math.sin(a)) * (radius + (i % 4 == 0 ? 9 : 5));
-      canvas.drawLine(p1, p2, Paint()..color = const Color(0x2622D3EE)..strokeWidth = 1);
+
+    // ── slow radar sweep
+    final sweepA = t * math.pi * 2;
+    final sweepRect =
+        Rect.fromCenter(center: center, width: 2 * rx, height: 2 * ry);
+    final sweepPath = Path()
+      ..moveTo(center.dx, center.dy)
+      ..arcTo(sweepRect, sweepA, 0.55, false)
+      ..close();
+    canvas.drawPath(
+      sweepPath,
+      Paint()
+        ..shader = SweepGradient(
+          startAngle: sweepA,
+          endAngle: sweepA + 0.55,
+          colors: [cyan.withValues(alpha: 0.16 * dim), cyan.withValues(alpha: 0)],
+        ).createShader(sweepRect),
+    );
+
+    // ── constellation polygon between live nodes
+    final onPts = [
+      for (var i = 0; i < points.length; i++)
+        if (online[i]) points[i]
+    ];
+    if (onPts.length >= 2) {
+      final poly = Path()..moveTo(onPts.first.dx, onPts.first.dy);
+      for (var i = 1; i < onPts.length; i++) {
+        poly.lineTo(onPts[i].dx, onPts[i].dy);
+      }
+      poly.close();
+      canvas.drawPath(
+        poly,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = violet.withValues(alpha: 0.16 * dim),
+      );
     }
 
-    // Links + travelling pulses.
+    // ── links + travelling thought-pulses
     for (var i = 0; i < points.length; i++) {
       final on = online[i];
       final col = colors[i];
@@ -646,356 +897,49 @@ class _ConstellationPainter extends CustomPainter {
         center,
         points[i],
         Paint()
-          ..color = (on ? col : const Color(0xFF64748B)).withValues(alpha: on ? 0.32 : 0.12)
-          ..strokeWidth = on ? 1.4 : 0.8,
+          ..color = (on ? col : Sa.muted).withValues(alpha: (on ? 0.30 : 0.10) * dim)
+          ..strokeWidth = on ? 1.5 : 0.8,
       );
       if (on) {
         for (var k = 0; k < 2; k++) {
-          final pp = (t * 1.4 + i * 0.17 + k * 0.5) % 1.0;
+          final pp = (t * 1.4 + i * 0.16 + k * 0.5) % 1.0;
           final pos = Offset.lerp(center, points[i], pp)!;
-          canvas.drawCircle(pos, 2.2, Paint()..color = col);
-          canvas.drawCircle(pos, 5.5, Paint()..color = col.withValues(alpha: 0.3));
+          canvas.drawCircle(pos, 6, Paint()..color = col.withValues(alpha: 0.26 * dim));
+          canvas.drawCircle(pos, 2.4, Paint()..color = col.withValues(alpha: 0.95 * dim));
         }
       }
     }
 
-    // Central core.
-    final pulse = 0.5 + 0.5 * math.sin(t * math.pi * 2);
-    canvas.drawCircle(center, 30 + pulse * 6,
-        Paint()..color = const Color(0x1A22D3EE));
-    canvas.drawCircle(center, 22, Paint()..color = const Color(0xFF0A1A33));
+    // ── central core
+    final breathe = 0.5 + 0.5 * math.sin(t * math.pi * 2);
+    canvas.drawCircle(center, 44 + breathe * 8,
+        Paint()..color = cyan.withValues(alpha: 0.06 * dim));
     canvas.drawCircle(
       center,
-      22,
+      38,
       Paint()
-        ..shader = SweepGradient(
-          colors: const [Color(0xFF22D3EE), Color(0xFFA78BFA), Color(0xFF22D3EE)],
-          transform: GradientRotation(t * math.pi * 2),
-        ).createShader(Rect.fromCircle(center: center, radius: 22))
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
+        ..color = (isDark ? const Color(0xFF071226) : const Color(0xFFEFF5FF))
+            .withValues(alpha: 0.86),
     );
+    final coreRect = Rect.fromCircle(center: center, radius: 38);
+    canvas.drawCircle(
+      center,
+      38,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..shader = SweepGradient(
+          colors: [cyan, violet, cyan],
+          transform: GradientRotation(t * math.pi * 2),
+        ).createShader(coreRect),
+    );
+    canvas.drawCircle(center, 20 + breathe * 3,
+        Paint()..color = cyan.withValues(alpha: 0.10 * dim));
   }
 
   @override
   bool shouldRepaint(covariant _ConstellationPainter old) =>
-      old.online != online || old.points != points;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-//  CLOUDFLARE WORKERS — HEARTBEAT GRID
-// ════════════════════════════════════════════════════════════════════════════
-
-class WorkersGrid extends StatelessWidget {
-  final MonitorController controller;
-  const WorkersGrid({super.key, required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final cards = <Widget>[
-      _WorkerCard(
-        title: context.tr('AI · SECURITY'),
-        worker: 'alert-notifier',
-        icon: Icons.psychology_outlined,
-        accent: Sa.violet,
-        data: controller.aiHealth,
-        onlineMaxMin: 3,
-        idleMaxMin: 10,
-        metrics: [
-          ('aiAssignments', context.tr('assigns')),
-          ('securityActions', context.tr('security')),
-          ('errorCount', context.tr('errors')),
-        ],
-      ),
-      _WorkerCard(
-        title: context.tr('NOTIFICATIONS'),
-        worker: 'alertsys',
-        icon: Icons.notifications_active_outlined,
-        accent: Sa.cyan,
-        data: controller.notifyHealth,
-        onlineMaxMin: 3,
-        idleMaxMin: 10,
-        metrics: [
-          ('alertsPushed', context.tr('alerts')),
-          ('notificationsPushed', context.tr('notifs')),
-          ('errorCount', context.tr('errors')),
-        ],
-      ),
-      _WorkerCard(
-        title: context.tr('BACKUP'),
-        worker: 'alertsys-backup',
-        icon: Icons.cloud_done_outlined,
-        accent: Sa.blue,
-        data: controller.backupHealth,
-        onlineMaxMin: 26 * 60,
-        idleMaxMin: 50 * 60,
-        okKey: 'ok',
-        metrics: [('bytes', context.tr('snapshot'))],
-      ),
-      _WorkerCard(
-        title: context.tr('MONITOR'),
-        worker: 'alertsys-monitor',
-        icon: Icons.radar_outlined,
-        accent: Sa.green,
-        data: controller.monitorHealth,
-        onlineMaxMin: 7,
-        idleMaxMin: 20,
-        stateKey: 'state',
-        metrics: [('problems', context.tr('issues'))],
-      ),
-      _GithubWorkerCard(controller: controller),
-    ];
-
-    return HoloPanel(
-      accent: Sa.cyan,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          HoloHeader(
-            icon: Icons.dns_outlined,
-            title: context.tr('CLOUDFLARE EDGE WORKERS'),
-            subtitle: context.tr(
-              'Five workers at the edge — live cron heartbeat and throughput.',
-            ),
-            accent: Sa.cyan,
-          ),
-          const SizedBox(height: 14),
-          LayoutBuilder(builder: (context, c) {
-            final cols = c.maxWidth >= 1100
-                ? 3
-                : c.maxWidth >= 720
-                    ? 2
-                    : 1;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final card in cards)
-                  SizedBox(
-                    width: (c.maxWidth - (cols - 1) * 12) / cols,
-                    child: card,
-                  ),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
-
-class _WorkerCard extends StatelessWidget {
-  final String title;
-  final String worker;
-  final IconData icon;
-  final Color accent;
-  final Map<String, dynamic>? data;
-  final int onlineMaxMin;
-  final int idleMaxMin;
-  final String? okKey;
-  final String? stateKey;
-  final List<(String, String)> metrics;
-
-  const _WorkerCard({
-    required this.title,
-    required this.worker,
-    required this.icon,
-    required this.accent,
-    required this.data,
-    required this.onlineMaxMin,
-    required this.idleMaxMin,
-    required this.metrics,
-    this.okKey,
-    this.stateKey,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final at = DateTime.tryParse(
-        (data?['at'] ?? data?['finishedAt'] ?? data?['ranAt'] ?? '').toString());
-    LiveState state;
-    String ageLabel;
-    if (data == null || at == null) {
-      state = LiveState.unknown;
-      ageLabel = '—';
-    } else {
-      final age = DateTime.now().toUtc().difference(at.toUtc());
-      ageLabel = _ago(context, age);
-      final mins = age.inMinutes;
-      state = mins <= onlineMaxMin
-          ? LiveState.online
-          : (mins <= idleMaxMin ? LiveState.idle : LiveState.offline);
-    }
-    // Failure overrides.
-    if (okKey != null && data?[okKey] == false) state = LiveState.offline;
-    if (stateKey != null && (data?[stateKey] ?? '').toString() == 'degraded') {
-      state = LiveState.offline;
-    }
-    final c = liveColor(state);
-
-    return _InnerCard(
-      accent: accent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 17, color: accent),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Sa.heading(size: 13)),
-                    Text(worker, style: Sa.mono(size: 8.5, color: Sa.muted)),
-                  ],
-                ),
-              ),
-              StatePip(state: state),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Heartbeat(state: state),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.schedule, size: 12, color: c),
-              const SizedBox(width: 5),
-              Text(ageLabel, style: Sa.mono(size: 9.5, color: Sa.textDim)),
-              const Spacer(),
-              for (final (k, label) in metrics)
-                if (data?[k] != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: _metric(label, _fmt(k, data![k])),
-                  ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _fmt(String key, Object? v) {
-    if (key == 'bytes' && v is num) {
-      return '${(v / 1024 / 1024).toStringAsFixed(1)}MB';
-    }
-    if (key == 'problems' && v is List) return '${v.length}';
-    return '$v';
-  }
-
-  Widget _metric(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(value, style: Sa.mono(size: 11, color: Sa.text, weight: FontWeight.w700)),
-        Text(label.toUpperCase(), style: Sa.mono(size: 7.5, color: Sa.muted)),
-      ],
-    );
-  }
-
-  static String _ago(BuildContext context, Duration d) {
-    if (d.inSeconds < 90) {
-      return context.tr('{n}s ago', {'n': '${d.inSeconds}'});
-    }
-    if (d.inMinutes < 90) {
-      return context.tr('{n}m ago', {'n': '${d.inMinutes}'});
-    }
-    if (d.inHours < 48) {
-      return context.tr('{n}h ago', {'n': '${d.inHours}'});
-    }
-    return context.tr('{n}d ago', {'n': '${d.inDays}'});
-  }
-}
-
-class _GithubWorkerCard extends StatelessWidget {
-  final MonitorController controller;
-  const _GithubWorkerCard({required this.controller});
-
-  @override
-  Widget build(BuildContext context) {
-    final gh = controller.github;
-    final probing = controller.githubProbing;
-    final connected = gh?.connected == true;
-    final state = gh == null
-        ? LiveState.unknown
-        : (connected ? LiveState.online : LiveState.offline);
-    return _InnerCard(
-      accent: Sa.amber,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.account_tree_outlined, size: 17, color: Sa.amber),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(context.tr('GITHUB PROXY'), style: Sa.heading(size: 13)),
-                    Text('alertsys-github', style: Sa.mono(size: 8.5, color: Sa.muted)),
-                  ],
-                ),
-              ),
-              if (probing)
-                SizedBox(
-                    width: 13,
-                    height: 13,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Sa.amber))
-              else
-                StatePip(
-                    state: state,
-                    labelOverride: connected
-                        ? context.tr('CONNECTED')
-                        : context.tr('OFFLINE')),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Heartbeat(state: connected ? LiveState.online : LiveState.offline),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.hub_outlined, size: 12, color: Sa.amber),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  connected
-                      ? (gh!.repo.isEmpty
-                          ? context.tr('guardian console link')
-                          : gh.repo)
-                      : context.tr('no cron · pure HTTP proxy'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Sa.mono(size: 9.5, color: Sa.textDim),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InnerCard extends StatelessWidget {
-  final Widget child;
-  final Color accent;
-  const _InnerCard({required this.child, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Sa.bgRaised.withValues(alpha: Sa.isDark ? 0.55 : 0.92),
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: accent.withValues(alpha: 0.28)),
-      ),
-      child: child,
-    );
-  }
+      old.online != online || old.points != points || old.isDark != isDark;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1016,19 +960,12 @@ class OperationalInsight extends StatelessWidget {
     final activeMachines =
         machines.where((m) => m.status == HwMachineStatus.active).length;
 
-    // Workers.
-    final workerStates = [
-      workerLiveState(controller.aiHealth, onMin: 3, idleMin: 10),
-      workerLiveState(controller.notifyHealth, onMin: 3, idleMin: 10),
-      workerLiveState(controller.backupHealth,
-          onMin: 26 * 60, idleMin: 50 * 60, okKey: 'ok'),
-      workerLiveState(controller.monitorHealth,
-          onMin: 7, idleMin: 20, stateKey: 'state'),
-    ];
-    final workersLive = workerStates.where((s) => s != LiveState.offline && s != LiveState.unknown).length;
-
     // Database.
     final dbReach = controller.dbReachableCount;
+
+    // Sessions.
+    final online = controller.onlineSessions;
+    final accounts = controller.sessions.length;
 
     final cards = [
       _InsightCard(
@@ -1053,16 +990,6 @@ class OperationalInsight extends StatelessWidget {
         accent: Sa.cyan,
       ),
       _InsightCard(
-        icon: Icons.dns_outlined,
-        label: context.tr('WORKERS'),
-        value: workersLive / 4,
-        center: '$workersLive/4',
-        verdict: workersLive == 4
-            ? context.tr('Edge nominal')
-            : context.tr('Edge degraded'),
-        accent: Sa.green,
-      ),
-      _InsightCard(
         icon: Icons.schema_outlined,
         label: context.tr('DATABASE'),
         value: dbReach / kDbNodes.length,
@@ -1071,6 +998,16 @@ class OperationalInsight extends StatelessWidget {
           'count': '$dbReach',
         }),
         accent: Sa.amber,
+      ),
+      _InsightCard(
+        icon: Icons.groups_2_outlined,
+        label: context.tr('SESSIONS'),
+        value: accounts == 0 ? 0 : online / accounts,
+        center: '$online',
+        verdict: context.tr('{count} accounts total', {
+          'count': '$accounts',
+        }),
+        accent: Sa.green,
       ),
     ];
 
@@ -1083,7 +1020,7 @@ class OperationalInsight extends StatelessWidget {
             icon: Icons.insights_outlined,
             title: context.tr('OPERATIONAL INSIGHT'),
             subtitle: context.tr(
-              'One-glance posture across fleet, hardware, edge and data.',
+              'One-glance posture across fleet, hardware, data and people.',
             ),
             accent: Sa.green,
           ),

@@ -54,6 +54,7 @@ class ForecastTrainer {
   Stream<ForecastTrainingUpdate> train({
     required List<FeatureSample> samples,
     required ForecastTrainingConfig config,
+    List<String> types = kForecastAlertTypes,
     GradientBoostModel? resumeModel,
     int startRound = 1,
     List<RoundStat> resumeStats = const [],
@@ -97,6 +98,7 @@ class ForecastTrainer {
       valY: [for (final s in valSet) s.target],
       config: config,
       resume: resumeModel,
+      types: types,
     );
 
     final stats = List<RoundStat>.of(resumeStats);
@@ -135,7 +137,7 @@ class ForecastTrainer {
       if (_cancelRequested) break;
 
       final rows = booster.sampleRows();
-      for (var t = 0; t < kForecastAlertTypes.length; t++) {
+      for (var t = 0; t < types.length; t++) {
         booster.boostType(t, rows);
         // Yield to the event loop after ~10ms of compute so UI animation
         // stays smooth without paying an event-loop round trip per tree.
@@ -245,6 +247,7 @@ class ForecastTrainer {
     required List<FeatureSample> samples,
     required List<RoundStat> rounds,
     required ForecastTrainingConfig config,
+    List<String> types = kForecastAlertTypes,
     DatasetSummary? summary,
     bool cancelled = false,
   }) {
@@ -280,9 +283,11 @@ class ForecastTrainer {
 
     // ── Label balance ──
     if (samples.isNotEmpty) {
-      final pos = List<int>.filled(kForecastAlertTypes.length, 0);
+      final typeCount = samples.first.target.length;
+      final names = types.length == typeCount ? types : kForecastAlertTypes;
+      final pos = List<int>.filled(typeCount, 0);
       for (final s in samples) {
-        for (var k = 0; k < kForecastAlertTypes.length; k++) {
+        for (var k = 0; k < typeCount; k++) {
           if (s.target[k] >= 0.5) pos[k]++;
         }
       }
@@ -290,10 +295,10 @@ class ForecastTrainer {
       final maxRate = rates.reduce(math.max);
       final minRate = rates.reduce(math.min);
       final missing = <String>[
-        for (var k = 0; k < kForecastAlertTypes.length; k++)
-          if (pos[k] == 0) kForecastAlertTypes[k],
+        for (var k = 0; k < typeCount; k++)
+          if (pos[k] == 0) (k < names.length ? names[k] : 'type$k'),
       ];
-      if (missing.isNotEmpty && missing.length < kForecastAlertTypes.length) {
+      if (missing.isNotEmpty && missing.length < typeCount) {
         reasons.add(
             'No positive examples at all for: ${missing.join(', ')} — those '
             'outputs cannot be learned from this file.');
@@ -384,6 +389,7 @@ class ForecastTrainer {
       valY: const <Float64List>[],
       config: config,
       resume: model,
+      types: model.types,
     );
     for (var r = 0; r < rounds; r++) {
       booster.boostOneRound();

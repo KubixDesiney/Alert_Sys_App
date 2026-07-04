@@ -812,6 +812,10 @@ class _AlertRow extends StatelessWidget {
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: _navy))),
+                if ((alert.source ?? '').isNotEmpty) ...[
+                  AlertSourceBadge(source: alert.source, dense: true),
+                  const SizedBox(width: 6),
+                ],
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: Container(

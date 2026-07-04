@@ -118,10 +118,11 @@ class ForecastContinuousLearner {
       var tp = 0, fp = 0, fn = 0;
       final dayReality = occurred[dateKey] ?? const <String>{};
       final thresholds = deployed.model.thresholds;
+      final types = deployed.model.types;
       machines.forEach((machineKey, probs) {
         if (probs is! Map) return;
-        for (var ti = 0; ti < kForecastAlertTypes.length; ti++) {
-          final type = kForecastAlertTypes[ti];
+        for (var ti = 0; ti < types.length; ti++) {
+          final type = types[ti];
           final p = (probs[type] as num?)?.toDouble();
           if (p == null) continue;
           final happened = dayReality.contains('$machineKey~$type');

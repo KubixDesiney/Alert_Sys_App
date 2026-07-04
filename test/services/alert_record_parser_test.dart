@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:alertsysapp/models/alert_type.dart';
 import 'package:alertsysapp/services/forecast/alert_record_parser.dart';
 
 void main() {
@@ -114,6 +115,47 @@ Date          Type           Factory    Conveyor   Station
       expect(AlertRecordParser.normalizeType('Damaged product'), 'defaut_produit');
       expect(AlertRecordParser.normalizeType('missing stock'), 'manque_ressource');
       expect(AlertRecordParser.normalizeType('Electrical Fault'), 'electrical_fault');
+    });
+
+    test('maps onto a supplied (custom registry) type set', () {
+      const custom = [
+        AlertTypeDef(code: 'overheating', label: 'Overheating', synonyms: [
+          'overheat',
+          'temp',
+        ]),
+        AlertTypeDef(
+            code: 'vibration', label: 'Vibration', synonyms: ['vibrat']),
+      ];
+      expect(
+          AlertRecordParser.normalizeType('High temperature', types: custom),
+          'overheating');
+      expect(
+          AlertRecordParser.normalizeType('bearing vibration', types: custom),
+          'vibration');
+      // Unrecognized stays a sanitized bucket, and the old defaults no longer
+      // apply because they aren't in the supplied set.
+      expect(AlertRecordParser.normalizeType('quality', types: custom),
+          'quality');
+    });
+  });
+
+  group('AlertRecordParser dynamic type set (CSV)', () {
+    test('parses type values onto the configured codes', () {
+      const custom = [
+        AlertTypeDef(code: 'overheating', label: 'Overheating', synonyms: [
+          'overheat',
+          'temp',
+        ]),
+        AlertTypeDef(
+            code: 'vibration', label: 'Vibration', synonyms: ['vibrat']),
+      ];
+      const csv = 'timestamp,type,usine,convoyeur,poste\n'
+          '2026-01-05T08:00:00Z,High temperature,Plant Z,1,1\n'
+          '2026-01-06T08:00:00Z,Bearing vibration,Plant Z,1,1\n';
+      final parsed =
+          AlertRecordParser.parseCsvText('x.csv', csv, types: custom);
+      expect(parsed.records[0].type, 'overheating');
+      expect(parsed.records[1].type, 'vibration');
     });
   });
 }

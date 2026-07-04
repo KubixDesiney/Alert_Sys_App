@@ -18,7 +18,10 @@ class ForecastEngine {
     DateTime? now,
   }) {
     if (records.isEmpty) return const [];
-    final rows = ForecastFeatureEngineer.buildDailyRows(records);
+    // The deployed model dictates the type vocabulary and feature schema, so
+    // inference rebuilds the identical vector it was trained on.
+    final types = model.model.types;
+    final rows = ForecastFeatureEngineer.buildDailyRows(records, types: types);
     final features = ForecastFeatureEngineer.buildInferenceFeatures(
       rows,
       today: now,
@@ -26,6 +29,10 @@ class ForecastEngine {
 
     final forecasts = <MachineForecast>[];
     features.forEach((machineKey, x) {
+      // Feature-width guard: a mismatch means the built vector doesn't fit the
+      // model (e.g. a stale model whose types changed) — skip rather than
+      // index out of bounds.
+      if (x.length != model.model.featureCount) return;
       final parts = machineKey.split('|');
       final probs = model.model.predict(x);
       forecasts.add(MachineForecast(
@@ -33,9 +40,8 @@ class ForecastEngine {
         convoyeur: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
         poste: parts.length > 2 ? int.tryParse(parts[2]) ?? 0 : 0,
         typeProbabilities: {
-          for (var k = 0; k < kForecastAlertTypes.length; k++)
-            kForecastAlertTypes[k]:
-                double.parse(probs[k].clamp(0, 1).toStringAsFixed(4)),
+          for (var k = 0; k < types.length && k < probs.length; k++)
+            types[k]: double.parse(probs[k].clamp(0, 1).toStringAsFixed(4)),
         },
       ));
     });

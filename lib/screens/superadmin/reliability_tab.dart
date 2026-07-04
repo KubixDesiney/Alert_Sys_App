@@ -128,8 +128,6 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
             _apmPanel(),
             const SizedBox(height: 16),
             _alertsPanel(),
-            const SizedBox(height: 16),
-            _checksPanel(),
           ],
         ),
       ),
@@ -433,59 +431,6 @@ class _ReliabilityTabState extends State<ReliabilityTab> {
           Text(label.toUpperCase(), style: Sa.mono(size: 9, color: Sa.muted)),
         ],
       );
-
-  Widget _checksPanel() {
-    final c = _cfg.checks;
-    final items = <(String, String, bool, MonitorChecks Function(bool))>[
-      (context.tr('AI worker'), context.tr('Assignment / escalation / predictions edge'), c.aiWorker, (v) => c.copyWith(aiWorker: v)),
-      (context.tr('Notification worker'), context.tr('Push fan-out edge'), c.notifyWorker, (v) => c.copyWith(notifyWorker: v)),
-      (context.tr('Cron freshness'), context.tr('The every-minute engine is alive'), c.cron, (v) => c.copyWith(cron: v)),
-      (context.tr('Backups'), context.tr('Nightly snapshot ran and succeeded'), c.backup, (v) => c.copyWith(backup: v)),
-      (context.tr('Error spike'), context.tr('Surge of client errors in the last hour'), c.errorSpike, (v) => c.copyWith(errorSpike: v)),
-      (context.tr('Notification backlog'), context.tr('Notify worker keeping up'), c.notificationBacklog, (v) => c.copyWith(notificationBacklog: v)),
-      (context.tr('App error budget'), context.tr('Crash-free below the {slo}% SLO', {'slo': '${_cfg.crashFreeSlo}'}), c.appErrorBudget, (v) => c.copyWith(appErrorBudget: v)),
-      (context.tr('AI model drift'), context.tr('A deployed agent model regressed in quality'), c.modelDrift, (v) => c.copyWith(modelDrift: v)),
-    ];
-    return GlassPanel(
-      accent: Sa.blue,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SaSectionHeader(
-            icon: Icons.checklist_outlined,
-            title: context.tr('What gets monitored'),
-            subtitle: context.tr('Toggle the checks the deadman switch runs'),
-            accent: Sa.blue,
-          ),
-          const SizedBox(height: 8),
-          ...items.map((it) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(it.$1, style: Sa.heading(size: 13)),
-                          Text(it.$2, style: Sa.body(size: 11.5, color: Sa.muted)),
-                        ],
-                      ),
-                    ),
-                    Switch(
-                      value: it.$3,
-                      activeColor: Sa.cyan,
-                      onChanged: (v) => setState(() => _cfg = _cfg.copyWith(checks: it.$4(v))),
-                    ),
-                  ],
-                ),
-              )),
-          const SizedBox(height: 8),
-          Text(context.tr('Saved with the Save button above; applied on the next monitor run.'),
-              style: Sa.body(size: 11.5, color: Sa.muted)),
-        ],
-      ),
-    );
-  }
 
   Future<void> _sendTest() async {
     final url = _url.text.trim();

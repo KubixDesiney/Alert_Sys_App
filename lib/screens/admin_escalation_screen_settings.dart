@@ -139,51 +139,29 @@ class _SettingsTabState extends State<_SettingsTab> {
             ),
           ),
           const SizedBox(height: 24),
-          // Threshold cards
-          _ThresholdCard(
-            type: 'qualite',
-            label: context.tr('Quality Issues'),
-            color: t.red,
-            bgColor: t.redLt,
-            icon: Icons.warning_amber_rounded,
-            threshold: _settings!.thresholds['qualite']!,
-            onUpdate: (unclaimed, claimed) =>
-                _updateThreshold('qualite', unclaimed, claimed),
-          ),
-          const SizedBox(height: 16),
-          _ThresholdCard(
-            type: 'maintenance',
-            label: context.tr('Maintenance'),
-            color: t.blue,
-            bgColor: t.blueLt,
-            icon: Icons.build_circle,
-            threshold: _settings!.thresholds['maintenance']!,
-            onUpdate: (unclaimed, claimed) =>
-                _updateThreshold('maintenance', unclaimed, claimed),
-          ),
-          const SizedBox(height: 16),
-          _ThresholdCard(
-            type: 'defaut_produit',
-            label: context.tr('Damaged Product'),
-            color: t.green,
-            bgColor: t.greenLt,
-            icon: Icons.cancel,
-            threshold: _settings!.thresholds['defaut_produit']!,
-            onUpdate: (unclaimed, claimed) =>
-                _updateThreshold('defaut_produit', unclaimed, claimed),
-          ),
-          const SizedBox(height: 16),
-          _ThresholdCard(
-            type: 'manque_ressource',
-            label: context.tr('Resource Deficiency'),
-            color: t.orange,
-            bgColor: t.orangeLt,
-            icon: Icons.inventory_2,
-            threshold: _settings!.thresholds['manque_ressource']!,
-            onUpdate: (unclaimed, claimed) =>
-                _updateThreshold('manque_ressource', unclaimed, claimed),
-          ),
-          const SizedBox(height: 24),
+          // Threshold cards — one per configured alert type.
+          for (final def in allAlertTypes()) ...[
+            Builder(builder: (context) {
+              final meta = typeMeta(def.code, t, context);
+              return _ThresholdCard(
+                type: def.code,
+                label: meta.label,
+                color: meta.color,
+                bgColor: meta.bg,
+                icon: meta.icon,
+                threshold: _settings!.thresholds[def.code] ??
+                    EscalationThreshold(
+                      type: def.code,
+                      unclaimedMinutes: 20,
+                      claimedMinutes: 40,
+                    ),
+                onUpdate: (unclaimed, claimed) =>
+                    _updateThreshold(def.code, unclaimed, claimed),
+              );
+            }),
+            const SizedBox(height: 16),
+          ],
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(

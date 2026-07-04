@@ -758,10 +758,7 @@ class _ManagementSubTabState extends State<_ManagementSubTab>
   Map<String, _TypeStats> _typeStats(UserModel sup) {
     final involved = _alertsFor(sup);
     final types = <String>{
-      'qualite',
-      'maintenance',
-      'defaut_produit',
-      'manque_ressource',
+      ...allAlertTypeCodes(),
       ...involved.map((a) => a.type),
     }.toList();
     return {

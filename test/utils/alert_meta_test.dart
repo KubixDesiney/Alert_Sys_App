@@ -65,8 +65,8 @@ void main() {
   });
 
   group('canonical lists', () {
-    test('kAllAlertTypes contains expected types', () {
-      expect(kAllAlertTypes, [
+    test('allAlertTypeCodes defaults to the standard set', () {
+      expect(allAlertTypeCodes(), [
         'qualite',
         'maintenance',
         'defaut_produit',

@@ -57,12 +57,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
   }
 
   Map<String, _TypeStats> _typeStats() {
-    final types = [
-      'qualite',
-      'maintenance',
-      'defaut_produit',
-      'manque_ressource',
-    ];
+    final types = allAlertTypeCodes();
     return {
       for (var t in types)
         t: _TypeStats(
@@ -398,12 +393,7 @@ class _PerformanceSubTabState extends State<_PerformanceSubTab> {
             const SizedBox(height: 16),
             Row(
               children:
-                  [
-                    'qualite',
-                    'maintenance',
-                    'defaut_produit',
-                    'manque_ressource',
-                  ].map((tp) {
+                  allAlertTypeCodes().map((tp) {
                     final ts = _typeStats()[tp]!;
                     final clr = _typeColor(tp);
                     final tot = ts.validated + ts.notValidated;

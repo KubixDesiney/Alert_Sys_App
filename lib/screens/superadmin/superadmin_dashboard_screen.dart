@@ -13,11 +13,13 @@ import '../../widgets/common/language_toggle.dart';
 import 'access_identity_tab.dart';
 import 'ai_agents_tab.dart';
 import 'ai_training_tab.dart';
+import 'alert_types_tab.dart';
 import 'hardware_tab.dart';
 import 'infrastructure_tab.dart';
 import 'monitor/overview_monitor_tab.dart';
 import 'production_managers_tab.dart';
 import 'reliability_tab.dart';
+import 'status_tab.dart';
 import 'superadmin_theme.dart';
 import 'theme_studio_tab.dart';
 
@@ -38,7 +40,9 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
 
   static const _tabs = [
     (icon: Icons.monitor_heart_outlined, label: 'OVERVIEW MONITOR'),
+    (icon: Icons.cloud_done_outlined, label: 'STATUS'),
     (icon: Icons.psychology_outlined, label: 'AI TRAINING'),
+    (icon: Icons.label_outline, label: 'ALERT TYPES'),
     (icon: Icons.hub_outlined, label: 'AI AGENTS'),
     (icon: Icons.badge_outlined, label: 'PRODUCTION MANAGERS'),
     (icon: Icons.vpn_key_outlined, label: 'ACCESS & IDENTITY'),
@@ -121,13 +125,15 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                           key: ValueKey(_tab),
                           child: switch (_tab) {
                             0 => const OverviewMonitorTab(),
-                            1 => const AiTrainingTab(),
-                            2 => const AiAgentsTab(),
-                            3 => const ProductionManagersTab(),
-                            4 => const AccessIdentityTab(),
-                            5 => const ReliabilityTab(),
-                            6 => const ThemeStudioTab(),
-                            7 => const InfrastructureTab(),
+                            1 => const StatusTab(),
+                            2 => const AiTrainingTab(),
+                            3 => const AlertTypesTab(),
+                            4 => const AiAgentsTab(),
+                            5 => const ProductionManagersTab(),
+                            6 => const AccessIdentityTab(),
+                            7 => const ReliabilityTab(),
+                            8 => const ThemeStudioTab(),
+                            9 => const InfrastructureTab(),
                             _ => const HardwareTab(),
                           },
                         ),

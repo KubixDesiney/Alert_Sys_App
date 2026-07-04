@@ -312,7 +312,7 @@ class _TreeFilterBarState extends State<TreeFilterBar> {
     return Wrap(
       spacing: 6,
       runSpacing: 6,
-      children: kAllAlertTypes.map((type) {
+      children: allAlertTypeCodes().map((type) {
         final m = typeMeta(type, t, context);
         final on = widget.state.types.contains(type);
         return _filterChip(

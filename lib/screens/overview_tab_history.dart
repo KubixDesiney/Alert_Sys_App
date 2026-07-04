@@ -310,12 +310,7 @@ class _HistoryFilterSheetState extends State<_HistoryFilterSheet> {
                             style: const TextStyle(fontSize: 13),
                           ),
                         ),
-                        ...[
-                          'qualite',
-                          'maintenance',
-                          'defaut_produit',
-                          'manque_ressource',
-                        ].map(
+                        ...allAlertTypeCodes().map(
                           (t) => DropdownMenuItem(
                             value: t,
                             child: Text(
@@ -582,14 +577,12 @@ class _AlertHistoryBoxState extends State<_AlertHistoryBox> {
             if (a.status != 'validee') return false;
           case 'critical':
             if (!a.isCritical) return false;
-          case 'qualite':
-            if (a.type != 'qualite') return false;
-          case 'maintenance':
-            if (a.type != 'maintenance') return false;
-          case 'defaut_produit':
-            if (a.type != 'defaut_produit') return false;
-          case 'manque_ressource':
-            if (a.type != 'manque_ressource') return false;
+          default:
+            // Any configured alert-type code can be used as a quick filter.
+            if (allAlertTypeCodes().contains(widget.quickFilter) &&
+                a.type != widget.quickFilter) {
+              return false;
+            }
         }
       }
       return true;
@@ -1248,12 +1241,7 @@ class _FilterSheet extends StatelessWidget {
                           style: const TextStyle(fontSize: 13),
                         ),
                       ),
-                      ...[
-                        'qualite',
-                        'maintenance',
-                        'defaut_produit',
-                        'manque_ressource',
-                      ].map(
+                      ...allAlertTypeCodes().map(
                         (t) => DropdownMenuItem(
                           value: t,
                           child: Text(
@@ -1515,6 +1503,10 @@ class _AlertHistoryRow extends StatelessWidget {
                               ),
                             ),
                           ),
+                        if ((alert.source ?? '').isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          AlertSourceBadge(source: alert.source, dense: true),
+                        ],
                         const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(

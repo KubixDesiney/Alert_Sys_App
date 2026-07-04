@@ -111,4 +111,13 @@ describe('slo_delivery harvestSamples', () => {
   test('empty map yields null success rate', () => {
     expect(harvestSamples({}, sinceMs).successRate).toBeNull();
   });
+  test('synthetic canary alerts are excluded from the harvest', () => {
+    const withCanary = {
+      real: { timestamp: '2026-06-27T10:01:00.000Z', push_sent_at: '2026-06-27T10:01:02.000Z' },
+      canary: { synthetic: true, timestamp: '2026-06-27T10:02:00.000Z', push_sent_at: '2026-06-27T10:02:01.000Z' },
+    };
+    const h = harvestSamples(withCanary, sinceMs, 'push_sent_at');
+    expect(h.total).toBe(1);
+    expect(h.samples).toEqual([2000]);
+  });
 });

@@ -31,6 +31,7 @@ import '../l10n/app_strings.dart';
 import '../widgets/common/language_toggle.dart';
 import 'alerts_tree_tab.dart';
 
+import '../models/alert_type.dart';
 import '../utils/alert_meta.dart';
 import 'overview_tab.dart';
 import 'supervisors_tab.dart';
@@ -654,7 +655,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     int? selectedConveyorNumber;
     String? selectedStationId;
     int? selectedStationNumber;
-    String selectedType = 'qualite';
+    String selectedType = allAlertTypeCodes().first;
     String description = '';
     bool isCritical = false;
 
@@ -741,46 +742,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   DropdownButtonFormField<String>(
                     value: selectedType,
                     items: [
-                      DropdownMenuItem(
-                        value: 'qualite',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle_outline, size: 16),
-                            const SizedBox(width: 8),
-                            Text(context.tr('Quality')),
-                          ],
+                      for (final d in allAlertTypes())
+                        DropdownMenuItem(
+                          value: d.code,
+                          child: Row(
+                            children: [
+                              Icon(alertTypeIcon(d.icon), size: 16),
+                              const SizedBox(width: 8),
+                              Text(context.tr(d.label)),
+                            ],
+                          ),
                         ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'maintenance',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.handyman, size: 16),
-                            const SizedBox(width: 8),
-                            Text(context.tr('Maintenance')),
-                          ],
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'defaut_produit',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.report_problem, size: 16),
-                            const SizedBox(width: 8),
-                            Text(context.tr('Damaged Product')),
-                          ],
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'manque_ressource',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.inventory_2, size: 16),
-                            const SizedBox(width: 8),
-                            Text(context.tr('Resource Shortage')),
-                          ],
-                        ),
-                      ),
                     ],
                     onChanged: (val) => setState(() => selectedType = val!),
                     decoration: const InputDecoration(

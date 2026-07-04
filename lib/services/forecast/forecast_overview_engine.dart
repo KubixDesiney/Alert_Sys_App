@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../models/alert_model.dart';
+import '../alert_type_registry.dart';
 import '../predictive_models.dart';
 import 'alert_record_parser.dart';
 import 'forecast_engine.dart';
@@ -56,6 +57,18 @@ class ForecastOverviewEngine extends ChangeNotifier {
   List<MachineForecast> get forecasts => _forecasts;
   DateTime? get computedAt => _computedAt;
 
+  /// True when a model is deployed but its learned type set no longer matches
+  /// the live [AlertTypeRegistry] (a type was added/removed/reordered since
+  /// training). The forecaster then cleanly falls back to the statistical model
+  /// until a retrain, rather than mis-indexing the feature vector.
+  bool get modelStale {
+    final m = _model;
+    return m != null && _isStale(m);
+  }
+
+  static bool _isStale(TrainedForecastModel m) =>
+      !listEquals(m.types, AlertTypeRegistry.instance.codes);
+
   /// Push the dashboard's current alert stream in; inference re-runs at most
   /// once per 15s unless the deployed model itself changed.
   void updateAlerts(List<AlertModel> alerts) {
@@ -73,7 +86,9 @@ class ForecastOverviewEngine extends ChangeNotifier {
           timestamp: a.timestamp,
           // Live alerts must speak the same canonical type vocabulary the
           // model was trained on, or per-type features silently zero out.
-          type: AlertRecordParser.normalizeType(a.type),
+          // Normalize through the tenant registry's synonyms.
+          type: AlertRecordParser.normalizeType(a.type,
+              types: AlertTypeRegistry.instance.types),
           usine: a.usine,
           convoyeur: a.convoyeur,
           poste: a.poste,
@@ -86,7 +101,9 @@ class ForecastOverviewEngine extends ChangeNotifier {
 
   void _recompute({bool force = false}) {
     final model = _model;
-    if (model == null) {
+    // No usable model, or a stale one whose type set drifted from the live
+    // registry: clear forecasts so the cards fall back to the statistical model.
+    if (model == null || _isStale(model)) {
       if (_forecasts.isNotEmpty || force) {
         _forecasts = const [];
         _invalidateOverlay();
@@ -273,8 +290,13 @@ class ForecastOverviewEngine extends ChangeNotifier {
     final topFailures = failures.take(10).toList();
 
     // ── Risk curves per type ──
+    // Types come from the forecasts themselves (the deployed model's set), so
+    // the curves adapt to a tenant's configured type list.
+    final curveTypes = forecasts.isEmpty
+        ? const <String>[]
+        : forecasts.first.typeProbabilities.keys.toList();
     final curves = <String, RiskCurve>{};
-    for (final type in kForecastAlertTypes) {
+    for (final type in curveTypes) {
       // Plant-wide probability that at least one machine alerts with this
       // type in the next 24h.
       var noAlert = 1.0;

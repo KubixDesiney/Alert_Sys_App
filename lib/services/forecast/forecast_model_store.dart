@@ -29,6 +29,10 @@ class TrainedForecastModel {
     this.lastAdaptedAt,
   });
 
+  /// Ordered alert-type codes this deployed model learned. Compared against the
+  /// live [AlertTypeRegistry] to detect a stale model after a type-set change.
+  List<String> get types => model.types;
+
   static TrainedForecastModel? fromSnapshotValue(Object? value) {
     if (value is! Map) return null;
     final map = Map<String, dynamic>.from(value);
@@ -147,7 +151,9 @@ class ForecastModelStore {
       'featureCount': model.featureCount,
       'rounds': model.roundsPerType,
       'adaptedRounds': model.adaptedRounds,
-      'types': kForecastAlertTypes,
+      // The exact ordered type set the model learned — inference and staleness
+      // checks compare this against the live registry.
+      'types': model.types,
       // Tuned per-type decision thresholds, duplicated outside the weights
       // blob so the Cloudflare worker can grade outcomes without parsing the
       // full ensemble JSON.

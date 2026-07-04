@@ -77,7 +77,7 @@ export function harvestSamples(alertsMap, sinceMs, field = 'push_sent_at', succe
   let total = 0;
   let delivered = 0;
   for (const a of Object.values(alertsMap || {})) {
-    if (!a || typeof a !== 'object') continue;
+    if (!a || typeof a !== 'object' || a.synthetic === true) continue;
     const created = Date.parse(a.timestamp);
     if (Number.isNaN(created) || created < sinceMs) continue;
     total += 1;

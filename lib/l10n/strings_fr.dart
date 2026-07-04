@@ -7,6 +7,62 @@
 // Placeholders use `{name}` tokens that `context.tr(source, params)` fills in;
 // keep the same tokens in the French value.
 const Map<String, String> kStringsFr = {
+  // Alert source badge (SCADA/ingest origin)
+  'from {source}': 'via {source}',
+  // ── SuperAdmin Status tab + fleet/overview refresh (2026-06) ──
+  'ALL SYSTEMS OPERATIONAL': 'TOUS LES SYSTÈMES OPÉRATIONNELS',
+  'MOSTLY OPERATIONAL': 'GLOBALEMENT OPÉRATIONNEL',
+  'DEGRADED PERFORMANCE': 'PERFORMANCES DÉGRADÉES',
+  'PARTIAL OUTAGE': 'PANNE PARTIELLE',
+  'MAJOR OUTAGE': 'PANNE MAJEURE',
+  'PROBING SYSTEMS': 'ANALYSE DES SYSTÈMES',
+  'Live status of every backend SIAS depends on.':
+      'État en direct de chaque service dont dépend SIAS.',
+  'RE-CHECK': 'REVÉRIFIER',
+  'Operational': 'Opérationnel',
+  'Degraded': 'Dégradé',
+  'Down': 'Hors service',
+  'Outage': 'Panne',
+  'Probing': 'Analyse',
+  'OPERATIONAL': 'OPÉRATIONNEL',
+  'DISRUPTED': 'PERTURBÉ',
+  'Edge workers — cron heartbeat & reachability':
+      'Workers edge — battement cron et accessibilité',
+  'Guardian CI integration via the edge proxy':
+      'Intégration CI Guardian via le proxy edge',
+  'Realtime Database & Authentication':
+      'Base temps réel et authentification',
+  'AI · Security Worker': 'Worker IA · Sécurité',
+  'Notifications Worker': 'Worker Notifications',
+  'Ingest Worker': 'Worker d\'ingestion',
+  'Backup Worker': 'Worker de sauvegarde',
+  'Monitor Worker': 'Worker moniteur',
+  'GitHub Integration': 'Intégration GitHub',
+  'Realtime Database': 'Base temps réel',
+  '{pct}% session uptime': '{pct}% dispo. (session)',
+  'no data yet': 'pas encore de données',
+  'ran {ago}': 'exécuté {ago}',
+  'no heartbeat yet': 'aucun battement',
+  'config probe ok': 'sonde config ok',
+  'config probe blocked': 'sonde config bloquée',
+  'proxy unreachable': 'proxy injoignable',
+  'connected': 'connecté',
+  'socket connected': 'socket connecté',
+  'socket lost': 'socket perdu',
+  'session authenticated': 'session authentifiée',
+  'signed out': 'déconnecté',
+  'probing…': 'analyse…',
+  'Collecting telemetry…': 'Collecte de la télémétrie…',
+  'Last sampled {ago} · auto-refresh every 20s':
+      'Dernier relevé {ago} · actualisation auto toutes les 20s',
+  '{online} UNITS LIVE': '{online} UNITÉS EN LIGNE',
+  'RUNS': 'EXÉC.',
+  'Online units': 'Unités en ligne',
+  'Fleet actions': 'Actions de la flotte',
+  'Busiest unit': 'Unité la plus active',
+  'SESSIONS': 'SESSIONS',
+  'One-glance posture across fleet, hardware, data and people.':
+      'Posture en un coup d’œil : flotte, matériel, données et personnes.',
   // ── Industrial connectors (Infrastructure tab) ──
   'INDUSTRIAL CONNECTORS': 'CONNECTEURS INDUSTRIELS',
   'Feed alerts from SCADA · PLC · Historian · MQTT · REST — on top of what the plant already runs':
@@ -2070,4 +2126,39 @@ const Map<String, String> kStringsFr = {
   'Comments ({n})': 'Commentaires ({n})',
   'Auto-assigned': 'Affectée automatiquement',
   '{pct}% confidence': 'confiance {pct} %',
+  // Alert Types management (SuperAdmin)
+  'Add type': 'Ajouter un type',
+  'Define this deployment’s alert-type vocabulary — labels, colours, icons, parser synonyms and default severity. Everything (alerts, filters, the AI forecaster) adapts to this set.':
+      'Définissez le vocabulaire de types d’alerte de ce déploiement — libellés, couleurs, icônes, synonymes d’analyse et gravité par défaut. Tout (alertes, filtres, le prévisionniste IA) s’adapte à cet ensemble.',
+  'The deployed forecaster was trained on a different alert-type set. It is running in fallback mode (statistical model) and won’t forecast the new types until you retrain it in the AI Training tab.':
+      'Le prévisionniste déployé a été entraîné sur un ensemble de types différent. Il fonctionne en mode de repli (modèle statistique) et ne prévoira pas les nouveaux types tant que vous ne l’aurez pas réentraîné dans l’onglet Entraînement IA.',
+  'Unsaved changes. Save to apply across the app, then retrain the forecaster so it learns the updated type set.':
+      'Modifications non enregistrées. Enregistrez pour les appliquer dans toute l’application, puis réentraînez le prévisionniste pour qu’il apprenne le nouvel ensemble de types.',
+  'Keep at least one alert type — the app and forecaster need one.':
+      'Conservez au moins un type d’alerte — l’application et le prévisionniste en ont besoin.',
+  'Alert types saved.': 'Types d’alerte enregistrés.',
+  'Revert': 'Rétablir',
+  '{n} synonyms': '{n} synonymes',
+  'New alert type': 'Nouveau type d’alerte',
+  'Edit alert type': 'Modifier le type d’alerte',
+  'Label': 'Libellé',
+  'e.g. Overheating': 'p. ex. Surchauffe',
+  'Code (identifier)': 'Code (identifiant)',
+  'Code (locked)': 'Code (verrouillé)',
+  'The code is locked after creation so existing alerts and the trained model keep matching.':
+      'Le code est verrouillé après la création afin que les alertes existantes et le modèle entraîné restent cohérents.',
+  'Colour': 'Couleur',
+  'Icon': 'Icône',
+  'Parser synonyms (comma-separated)':
+      'Synonymes d’analyse (séparés par des virgules)',
+  'overheat, temperature, hot': 'surchauffe, température, chaud',
+  'Substrings used to map free-text types (uploaded history, SCADA payloads) onto this type.':
+      'Sous-chaînes utilisées pour rattacher les types en texte libre (historique importé, données SCADA) à ce type.',
+  'New alerts of this type default to critical':
+      'Les nouvelles alertes de ce type sont critiques par défaut',
+  'Enter a label.': 'Saisissez un libellé.',
+  'Enter a valid code.': 'Saisissez un code valide.',
+  'The code "{code}" already exists.': 'Le code « {code} » existe déjà.',
+  'Engine: XGBoost-class gradient-boosted decision trees · {features} engineered features (lags, rolling counts, recency, calendar) · {ensembles} ensembles (one per alert type) · second-order logistic boosting · histogram splits · class-imbalance weighting · early stopping (patience {patience}).':
+      'Moteur : arbres de décision à gradient boosté de classe XGBoost · {features} caractéristiques calculées (décalages, cumuls glissants, récence, calendrier) · {ensembles} ensembles (un par type d’alerte) · boosting logistique du second ordre · découpes par histogramme · pondération du déséquilibre de classes · arrêt anticipé (patience {patience}).',
 };
