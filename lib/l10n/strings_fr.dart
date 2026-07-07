@@ -2161,4 +2161,13 @@ const Map<String, String> kStringsFr = {
   'The code "{code}" already exists.': 'Le code « {code} » existe déjà.',
   'Engine: XGBoost-class gradient-boosted decision trees · {features} engineered features (lags, rolling counts, recency, calendar) · {ensembles} ensembles (one per alert type) · second-order logistic boosting · histogram splits · class-imbalance weighting · early stopping (patience {patience}).':
       'Moteur : arbres de décision à gradient boosté de classe XGBoost · {features} caractéristiques calculées (décalages, cumuls glissants, récence, calendrier) · {ensembles} ensembles (un par type d’alerte) · boosting logistique du second ordre · découpes par histogramme · pondération du déséquilibre de classes · arrêt anticipé (patience {patience}).',
+
+  // ── PM notification center (anchored bell popover) ──
+  'Unread': 'Non lues',
+  '{n} new': '{n} nouvelles',
+  "You're all caught up": 'Vous êtes à jour',
+  'New notifications will appear here':
+      'Les nouvelles notifications apparaîtront ici',
+  'Dismiss all': 'Tout effacer',
+  'Dismiss notification': 'Effacer la notification',
 };

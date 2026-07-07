@@ -1304,7 +1304,10 @@ class _ShiftBrainViewState extends State<_ShiftBrainView> {
 // THE CORTEX — a premium, self-explanatory picture of an agent's mind.
 //
 // The signals it weighs (left, labelled — sized by influence) flow as glowing
-// axons into a slowly-rotating 3D neural-mesh brain. The brain integrates them
+// axons into a slowly-rotating anatomical 3D brain: two hemispheres traced by
+// meandering gyri fold-lines around glassy lobe volumes, split by a
+// longitudinal fissure, with a striated cerebellum, a tapering brainstem,
+// interior neural dust and synaptic flashes. The brain integrates the signals
 // in a luminous nucleus and emits one confident decision (right). Thought-
 // pulses travel each axon; the busier a signal has been, the faster and
 // brighter it fires — so a glance reads "what it stores" and "how it thinks".
@@ -1372,6 +1375,7 @@ class _CortexHeroState extends State<_CortexHero>
   late final AnimationController _c;
   late final List<_P3> _nodes;
   late final List<List<int>> _edges;
+  late final List<_P3> _dust;
 
   @override
   void initState() {
@@ -1388,75 +1392,160 @@ class _CortexHeroState extends State<_CortexHero>
     }
   }
 
-  // A parametric two-lobe brain surface (lat/long grid) with cortical fold
-  // displacement plus cerebellum and temporal-lobe bulges, emitted as a
-  // wireframe mesh (built once, projected every frame).
+  // An anatomical brain, not a lat/long globe. Each cerebral hemisphere is
+  // traced by sagittal gyri fold-lines that meander front→back over the
+  // cortex (temporal-lobe bulge, fuller occiput, frontal taper, flattened
+  // underside, slight frontal-up tilt), split by a visible longitudinal
+  // fissure with a corpus-callosum seam glimpsed inside it. A striated
+  // cerebellum tucks under the occipital lobes and a tapering brainstem
+  // descends toward the podium. Emitted once as polyline strips plus
+  // interior "neural dust"; projected every frame.
   void _buildMesh() {
-    const nu = 40; // longitudes (front→back→front)
-    const nv = 20; // latitudes (crown→underside)
     final verts = <_P3>[];
-
-    double bump(
-      double u,
-      double v,
-      double u0,
-      double v0,
-      double amp,
-      double su,
-      double sv,
-    ) {
-      var du = (u - u0).abs();
-      if (du > math.pi) du = 2 * math.pi - du; // wrap on the ring
-      final dv = v - v0;
-      return amp *
-          math.exp(-(du * du) / (2 * su * su) - (dv * dv) / (2 * sv * sv));
-    }
-
-    for (var j = 0; j < nv; j++) {
-      final v = 0.08 * math.pi + (0.84 * math.pi) * (j / (nv - 1));
-      for (var i = 0; i < nu; i++) {
-        final u = 2 * math.pi * (i / nu);
-        final fold =
-            0.055 * math.sin(7 * u) * math.sin(6 * v) +
-            0.035 * math.sin(11 * u + 2) * math.sin(9 * v + 1) +
-            0.025 * math.cos(5 * u) * math.sin(8 * v);
-        var r = 1.0 + fold;
-        r += bump(
-          u,
-          v,
-          math.pi,
-          0.72 * math.pi,
-          0.16,
-          0.55,
-          0.34,
-        ); // cerebellum
-        r += bump(
-          u,
-          v,
-          0.18 * math.pi,
-          0.66 * math.pi,
-          0.10,
-          0.60,
-          0.30,
-        ); // temporal
-        final x = r * math.sin(v) * math.cos(u) * 1.16;
-        var y = r * math.cos(v) * 0.82;
-        final z = r * math.sin(v) * math.sin(u) * 0.80;
-        if (y < 0) y *= 0.86; // flatten the underside
-        verts.add(_P3(x, y, z));
-      }
-    }
-
-    int idx(int i, int j) => j * nu + (i % nu);
     final edges = <List<int>>[];
-    for (var j = 0; j < nv; j++) {
-      for (var i = 0; i < nu; i++) {
-        edges.add([idx(i, j), idx(i + 1, j)]); // longitude ring
-        if (j < nv - 1) edges.add([idx(i, j), idx(i, j + 1)]); // latitude line
+    // Anisotropic skull proportions — longer than wide, wider than tall —
+    // applied at emission so every structure shares them.
+    const sx = 1.55, sz = 1.30;
+
+    // Model is authored y-up; screen y grows downward, so emission negates y.
+    void strip(List<_P3> pts) {
+      final base = verts.length;
+      for (final p in pts) {
+        verts.add(_P3(p.x * sx, -p.y, p.z * sz));
+      }
+      for (var k = 0; k < pts.length - 1; k++) {
+        edges.add([base + k, base + k + 1]);
       }
     }
+
+    // Soft-clamp the underside so the cerebrum sits flat like a real brain.
+    double basePlane(double y) => y < -0.40 ? -0.40 + (y + 0.40) * 0.5 : y;
+
+    // ── cerebral hemispheres: sagittal gyri fold-lines, crown → underside
+    const foldLines = 17;
+    const foldSteps = 46;
+    for (final s in const [-1.0, 1.0]) {
+      for (var g = 0; g < foldLines; g++) {
+        final beta0 = (0.04 + 0.72 * (g / (foldLines - 1))) * math.pi;
+        // Stagger the pole approach per line so the endpoints never form a
+        // hard ring where every fold stops at once.
+        final phi0 = 0.02 + 0.022 * (0.5 + 0.5 * math.sin(g * 2.7));
+        final pts = <_P3>[];
+        for (var k = 0; k <= foldSteps; k++) {
+          final phi =
+              (phi0 + (1 - 2 * phi0) * (k / foldSteps)) * math.pi; // front→back
+          final sinP = math.sin(phi);
+          // Gyral meander: the fold snakes sideways as it travels back, so
+          // neighbouring lines interlock like real gyri instead of gridding.
+          final beta =
+              beta0 +
+              sinP *
+                  (0.11 * math.sin(phi * (5 + g % 3) + g * 1.9) +
+                      0.05 * math.sin(phi * 11 + g * 3.7));
+          // Cortical ridges: bumpy radius so sulci dip between the lines.
+          final ridge =
+              1.0 +
+              0.045 * math.sin(phi * 9 + g * 2.6) +
+              0.028 * math.sin(phi * 17 + g * 1.3 + beta * 3);
+          final dTemp1 = (phi - 0.40 * math.pi) / 0.42;
+          final dTemp2 = (beta - 0.60 * math.pi) / 0.46;
+          final temporal = 0.24 * math.exp(-dTemp1 * dTemp1 - dTemp2 * dTemp2);
+          final dOcc = (phi - 0.80 * math.pi) / 0.50;
+          final occiput = 0.07 * math.exp(-dOcc * dOcc);
+          final dFro = (phi - 0.10 * math.pi) / 0.35;
+          final frontal = -0.06 * math.exp(-dFro * dFro);
+          final lat = 0.50 * ridge * (1 + temporal + occiput + frontal);
+          final z = math.cos(phi) * 0.94;
+          final pinch = math.sqrt(sinP); // folds converge at the poles
+          final x = s * (0.055 * pinch + sinP * math.sin(beta) * lat);
+          var y = basePlane(sinP * math.cos(beta) * 0.88 * ridge);
+          y += 0.06 * z + 0.04; // frontal-up tilt; float a touch high
+          pts.add(_P3(x, y, z));
+        }
+        strip(pts);
+      }
+    }
+
+    // ── corpus-callosum seam, glimpsed through the longitudinal fissure
+    {
+      final pts = <_P3>[];
+      for (var k = 0; k <= 30; k++) {
+        final phi = (0.10 + 0.80 * (k / 30)) * math.pi;
+        final z = math.cos(phi) * 0.92;
+        final y =
+            math.sin(phi) * 0.72 -
+            0.05 +
+            0.03 * math.sin(phi * 9) +
+            0.06 * z +
+            0.04;
+        pts.add(_P3(0, y, z));
+      }
+      strip(pts);
+    }
+
+    // ── cerebellum: two lobes of fine horizontal foliation striations
+    const cbLines = 6;
+    const cbSteps = 24;
+    for (final s in const [-1.0, 1.0]) {
+      for (var g = 0; g < cbLines; g++) {
+        final theta = (0.22 + 0.56 * (g / (cbLines - 1))) * math.pi;
+        final ringR = math.sin(theta);
+        final pts = <_P3>[];
+        for (var k = 0; k <= cbSteps; k++) {
+          final a = math.pi * (0.5 + k / cbSteps); // back-facing half sweep
+          final wob = 1.0 + 0.045 * math.sin(a * 9 + g * 2.1);
+          pts.add(
+            _P3(
+              s * 0.17 + math.sin(a) * ringR * 0.22 * wob,
+              -0.66 + math.cos(theta) * 0.17,
+              -0.57 + math.cos(a) * ringR * 0.26 * wob,
+            ),
+          );
+        }
+        strip(pts);
+      }
+    }
+
+    // ── brainstem: a tapering column descending toward the podium
+    const stemLevels = 5;
+    _P3 stemAt(double f, double a) {
+      final rr = 0.145 - 0.05 * f;
+      // Ring plane tilted perpendicular to the descending stem axis.
+      final ring = math.sin(a) * rr * 0.8;
+      return _P3(
+        math.cos(a) * rr,
+        -0.34 - 0.50 * f + ring * 0.38,
+        -0.30 + 0.22 * f + ring,
+      );
+    }
+
+    for (var g = 0; g < stemLevels; g++) {
+      final f = g / (stemLevels - 1);
+      strip([for (var k = 0; k <= 14; k++) stemAt(f, k / 14 * 2 * math.pi)]);
+    }
+    for (var k = 0; k < 4; k++) {
+      final a = k / 4 * 2 * math.pi + 0.4;
+      strip([
+        for (var g = 0; g < stemLevels; g++) stemAt(g / (stemLevels - 1), a),
+      ]);
+    }
+
+    // ── interior neural dust: sparse thoughts drifting inside the volume
+    final rnd = math.Random(7);
+    final dust = <_P3>[];
+    while (dust.length < 42) {
+      final x = (rnd.nextDouble() * 2 - 1) * 0.60;
+      final y = (rnd.nextDouble() * 2 - 1) * 0.52 + 0.14;
+      final z = (rnd.nextDouble() * 2 - 1) * 0.88;
+      final ex = x / 0.60, ey = (y - 0.14) / 0.52, ez = z / 0.88;
+      if (ex * ex + ey * ey + ez * ez < 1) {
+        dust.add(_P3(x * sx, -y, z * sz));
+      }
+    }
+
     _nodes = verts;
     _edges = edges;
+    _dust = dust;
   }
 
   @override
@@ -1499,6 +1588,7 @@ class _CortexHeroState extends State<_CortexHero>
                 ],
                 nodes: _nodes,
                 edges: _edges,
+                dust: _dust,
                 showLabels: showLabels,
                 dim: widget.animate ? 1.0 : 0.5,
                 inHeader: ctx.tr(widget.inHeader),
@@ -1525,6 +1615,7 @@ class _CortexPainter extends CustomPainter {
   final List<_CortexInput> inputs;
   final List<_P3> nodes;
   final List<List<int>> edges;
+  final List<_P3> dust;
   final bool showLabels;
   final double dim;
   final String inHeader;
@@ -1543,6 +1634,7 @@ class _CortexPainter extends CustomPainter {
     required this.inputs,
     required this.nodes,
     required this.edges,
+    required this.dust,
     required this.showLabels,
     required this.dim,
     required this.inHeader,
@@ -1612,7 +1704,11 @@ class _CortexPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
     final t = tick.value;
-    final rot = t * 2 * math.pi; // slow brain rotation (one turn / 24s)
+    final rot = t * 2 * math.pi; // drives ring arcs and pulse phases
+    // Museum-hologram sway: rock ±~48° around the lateral profile instead of
+    // spinning 360°, so the anatomy always reads and the fold-lines never
+    // collapse into a radial fan at the frontal/occipital poles.
+    final yaw = math.pi / 2 + 0.70 * math.sin(t * 4 * math.pi);
     final breathe = 0.5 + 0.5 * math.sin(t * 2 * math.pi * 5); // nucleus pulse
 
     final labelW = showLabels ? w * 0.27 : 0.0;
@@ -1761,77 +1857,143 @@ class _CortexPainter extends CustomPainter {
       );
     }
 
-    // ── 3D brain wireframe (hemisphere-colored, rotated/tilted/projected)
-    final cosY = math.cos(rot), sinY = math.sin(rot);
-    const ax = -0.18; // slight downward tilt
+    // ── 3D anatomical brain (hemisphere-colored, rotated/tilted/projected)
+    final cosY = math.cos(yaw), sinY = math.sin(yaw);
+    const ax = -0.32; // viewed slightly from above: crown + fissure visible
     final cosX = math.cos(ax), sinX = math.sin(ax);
     const focal = 3.4;
-    final proj = List<_Proj>.generate(nodes.length, (i) {
-      final p = nodes[i];
+    _Proj project(_P3 p) {
       final x = p.x * cosY + p.z * sinY;
       var z = -p.x * sinY + p.z * cosY;
-      var y = p.y;
-      final y2 = y * cosX - z * sinX;
-      final z2 = y * sinX + z * cosX;
-      y = y2;
-      z = z2;
+      final y = p.y * cosX - z * sinX;
+      z = p.y * sinX + z * cosX;
       final scale = focal / (focal - z);
       return _Proj(cx + x * scale * r, cy + y * scale * r, z, scale);
-    });
+    }
+
+    final proj = [for (final p in nodes) project(p)];
+    final midNear = Color.lerp(blueNear, orangeNear, 0.5)!;
+    final midFar = Color.lerp(blueFar, orangeFar, 0.5)!;
+    // Model z now spans ±1.27 (skull proportions); normalize depth by 1.25.
+    double depthOf(double z) => (((z / 1.25) + 1) / 2).clamp(0.0, 1.0);
+
+    // translucent lobe volumes — glassy mass the fold-lines wrap around
+    final volumes = [
+      (project(const _P3(-0.42, -0.17, 0.0)), blue),
+      (project(const _P3(0.42, -0.17, 0.0)), orange),
+    ]..sort((a, b) => a.$1.z.compareTo(b.$1.z)); // far lobe first
+    for (final (vp, vc) in volumes) {
+      final vr = r * 0.62 * vp.scale;
+      canvas.drawCircle(
+        Offset(vp.x, vp.y),
+        vr,
+        Paint()
+          ..shader = ui.Gradient.radial(
+            Offset(vp.x, vp.y),
+            vr,
+            [
+              vc.withValues(alpha: (isDark ? 0.13 : 0.10) * dim),
+              vc.withValues(alpha: 0.02 * dim),
+              vc.withValues(alpha: 0.0),
+            ],
+            [0.0, 0.7, 1.0],
+          ),
+      );
+    }
+
+    // interior neural dust — faint thoughts drifting with the rotation
+    for (final d in dust) {
+      final p = project(d);
+      final dn = depthOf(p.z);
+      final col = d.x < -0.09 ? blueNear : (d.x > 0.09 ? orangeNear : midNear);
+      canvas.drawCircle(
+        Offset(p.x, p.y),
+        0.7 + 0.9 * dn,
+        Paint()..color = col.withValues(alpha: (0.08 + 0.26 * dn) * dim),
+      );
+    }
 
     const bands = 6;
     // Split by hemisphere (model-space x) so the left lobe stays blue and the
-    // right lobe orange as the whole mesh rotates through depth.
+    // right lobe orange as the whole mesh rotates through depth; midline
+    // structures (fissure seam, brainstem) blend the two minds.
     final leftBands = List.generate(bands, (_) => Path());
     final rightBands = List.generate(bands, (_) => Path());
+    final midBands = List.generate(bands, (_) => Path());
     for (final e in edges) {
       final a = proj[e[0]];
       final b = proj[e[1]];
-      final depth = ((a.z + b.z) / 2).clamp(-1.0, 1.0);
-      var bi = (((depth + 1) / 2) * bands).floor();
+      var bi = (depthOf((a.z + b.z) / 2) * bands).floor();
       if (bi < 0) bi = 0;
       if (bi >= bands) bi = bands - 1;
-      final left = (nodes[e[0]].x + nodes[e[1]].x) < 0;
-      (left ? leftBands : rightBands)[bi]
+      final mx = (nodes[e[0]].x + nodes[e[1]].x) / 2;
+      final target = mx < -0.09
+          ? leftBands
+          : (mx > 0.09 ? rightBands : midBands);
+      target[bi]
         ..moveTo(a.x, a.y)
         ..lineTo(b.x, b.y);
     }
     for (var bi = 0; bi < bands; bi++) {
       final f = bands == 1 ? 1.0 : bi / (bands - 1);
-      final lc = Color.lerp(blueFar, blueNear, f) ?? blueNear;
-      final rc = Color.lerp(orangeFar, orangeNear, f) ?? orangeNear;
-      final sw = 0.6 + 0.6 * f;
-      final al = (0.12 + 0.46 * f) * dim;
-      canvas.drawPath(
-        leftBands[bi],
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = sw
-          ..isAntiAlias = true
-          ..color = lc.withValues(alpha: al),
-      );
-      canvas.drawPath(
-        rightBands[bi],
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = sw
-          ..isAntiAlias = true
-          ..color = rc.withValues(alpha: al),
-      );
+      final sw = 0.55 + 0.85 * f;
+      final al = (0.10 + 0.52 * f) * dim;
+      void band(Path path, Color far, Color near) {
+        canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = sw
+            ..isAntiAlias = true
+            ..color = (Color.lerp(far, near, f) ?? near).withValues(alpha: al),
+        );
+      }
+
+      band(leftBands[bi], blueFar, blueNear);
+      band(rightBands[bi], orangeFar, orangeNear);
+      band(midBands[bi], midFar, midNear);
     }
 
     // bright sparkle on the closest vertices (hemisphere-tinted)
     for (var i = 0; i < proj.length; i++) {
       final p = proj[i];
-      final dn = (p.z + 1) / 2;
-      if (dn > 0.74) {
-        final col = nodes[i].x < 0 ? blueNear : orangeNear;
+      final dn = depthOf(p.z);
+      if (dn > 0.78) {
+        final col = nodes[i].x < -0.09
+            ? blueNear
+            : (nodes[i].x > 0.09 ? orangeNear : midNear);
         canvas.drawCircle(
           Offset(p.x, p.y),
-          0.7 + 1.1 * ((dn - 0.74) / 0.26),
-          Paint()..color = col.withValues(alpha: 0.6 * dn * dim),
+          0.7 + 1.0 * ((dn - 0.78) / 0.22),
+          Paint()..color = col.withValues(alpha: 0.5 * dn * dim),
         );
       }
+    }
+
+    // synaptic firing — brief flashes travelling the cortex
+    for (var k = 0; k < 10; k++) {
+      final cyc = t * 16 + k * 0.63;
+      final win = cyc.floor();
+      final ph = cyc - win;
+      final vi = ((win * 131 + k * 379) & 0x7fffffff) % nodes.length;
+      final p = proj[vi];
+      final dn = depthOf(p.z);
+      if (dn < 0.45) continue;
+      final flash = math.sin(ph * math.pi);
+      final col = nodes[vi].x < -0.09
+          ? blueNear
+          : (nodes[vi].x > 0.09 ? orangeNear : midNear);
+      final fr = 1.1 + 2.1 * flash;
+      canvas.drawCircle(
+        Offset(p.x, p.y),
+        fr + 2.6,
+        Paint()..color = col.withValues(alpha: 0.15 * flash * dn * dim),
+      );
+      canvas.drawCircle(
+        Offset(p.x, p.y),
+        fr,
+        Paint()..color = col.withValues(alpha: 0.6 * flash * dn * dim),
+      );
     }
 
     // inner nucleus glow (where the two minds meet)
@@ -1839,8 +2001,7 @@ class _CortexPainter extends CustomPainter {
       Offset(cx, cy),
       r * 0.42 * (0.85 + 0.15 * breathe),
       Paint()
-        ..color = Color.lerp(blueNear, orangeNear, 0.5)!
-            .withValues(alpha: (0.05 + 0.05 * breathe) * dim),
+        ..color = midNear.withValues(alpha: (0.05 + 0.05 * breathe) * dim),
     );
 
     // integration rings — one faint full ring, one sweeping arc

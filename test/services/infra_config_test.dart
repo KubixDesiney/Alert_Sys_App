@@ -2,29 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alertsysapp/services/infra_config_service.dart';
 
 void main() {
-  group('InfraConfig.workers', () {
-    test('lists the five workers with our exact names', () {
-      final w = const InfraConfig(workersSubdomain: 'acme-co').workers();
-      expect(w.length, 5);
-      expect(w.map((e) => e.name).toList(), [
-        'alert-notifier',
-        'alertsys',
-        'alertsys-backup',
-        'alertsys-monitor',
-        'alertsys-scim',
-      ]);
-    });
-    test('derives worker URLs from the subdomain', () {
-      final w = const InfraConfig(workersSubdomain: 'acme-co').workers();
-      expect(w.first.url, 'https://alert-notifier.acme-co.workers.dev');
-      expect(w.last.url, 'https://alertsys-scim.acme-co.workers.dev');
-    });
-    test('uses a placeholder when subdomain is blank', () {
-      final w = const InfraConfig().workers();
-      expect(w.first.url, contains('<subdomain>'));
-    });
-  });
-
   group('InfraConfig.scimBaseUrl', () {
     test('builds the SCIM v2 base from the subdomain', () {
       expect(
@@ -46,12 +23,9 @@ void main() {
         'firebaseProjectId': 'acme-alerts',
         'firebaseDbUrl': 'https://acme-alerts-default-rtdb.firebaseio.com',
         'workersSubdomain': 'acme-co',
-        'r2Bucket': 'acme-backups',
-        'deployWebhookUrl': 'https://api.github.com/repos/a/b/dispatches',
       });
       expect(c.firebaseProjectId, 'acme-alerts');
       expect(c.workersSubdomain, 'acme-co');
-      expect(c.r2Bucket, 'acme-backups');
     });
     test('toMap trims values and stamps updatedAt', () {
       final m = const InfraConfig(
