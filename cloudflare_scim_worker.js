@@ -299,12 +299,22 @@ async function provisionLocation(req, id) {
   return new URL(req.url).origin + '/scim/v2/Users/' + id;
 }
 
-async function writeUser(env, token, id, rec) {
+export async function writeUser(env, token, id, rec, previousEmail = '') {
   const stamp = new Date().toISOString();
   const stored = { ...rec, scimId: id, updatedAt: stamp };
   await rtdbPut(env, token, `scim/Users/${id}`, stored);
   if (rec.email) {
     const key = emailKey(rec.email);
+    // If the SCIM identity's userName/email changed, retire the mapping AND the
+    // provisioning record keyed by the OLD email. Otherwise a Firebase account
+    // that still owns (or later registers) the old address keeps inheriting this
+    // identity's role/factory — a stale authorization the deprovision flow would
+    // never revoke, because it only touches the current email key.
+    const prevKey = previousEmail ? emailKey(previousEmail) : '';
+    if (prevKey && prevKey !== key) {
+      await rtdbPut(env, token, `scim/byUserName/${prevKey}`, null);
+      await rtdbPut(env, token, `provisioning/${prevKey}`, null);
+    }
     await rtdbPut(env, token, `scim/byUserName/${key}`, id);
     // The authorization record the app consumes on login.
     await rtdbPut(env, token, `provisioning/${key}`, {
@@ -425,7 +435,7 @@ export default {
       if (req.method === 'PUT') {
         const body = await req.json();
         const rec = { ...current, ...scimToRecord(body, env), createdAt: current.createdAt };
-        const stored = await writeUser(env, token, id, rec);
+        const stored = await writeUser(env, token, id, rec, current.email);
         ctx.waitUntil(beacon(env, 'replace', true));
         ctx.waitUntil(scimAudit(env, token, 'replace', { target: emailKey(rec.email), scimId: id, role: rec.role, active: rec.active !== false, ip: fp, status: 200 }));
         return scimJson(recordToScim(id, stored, await provisionLocation(req, id)));
@@ -433,7 +443,7 @@ export default {
       if (req.method === 'PATCH') {
         const body = await req.json();
         const rec = applyPatch(current, body);
-        const stored = await writeUser(env, token, id, rec);
+        const stored = await writeUser(env, token, id, rec, current.email);
         ctx.waitUntil(beacon(env, 'patch', true));
         ctx.waitUntil(scimAudit(env, token, 'patch', { target: emailKey(rec.email), scimId: id, active: rec.active !== false, ip: fp, status: 200 }));
         return scimJson(recordToScim(id, stored, await provisionLocation(req, id)));

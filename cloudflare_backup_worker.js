@@ -200,7 +200,10 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === '/backup') {
-      if (env.WORKER_SHARED_SECRET &&
+      // Fail closed: the manual trigger exports the whole RTDB to R2 with the
+      // service account. Without a configured secret the route is denied, so an
+      // unconfigured deploy cannot be driven anonymously.
+      if (!env.WORKER_SHARED_SECRET ||
           url.searchParams.get('key') !== env.WORKER_SHARED_SECRET) {
         return new Response('forbidden', { status: 403 });
       }
@@ -212,7 +215,9 @@ export default {
       }
     }
     if (url.pathname === '/retention') {
-      if (env.WORKER_SHARED_SECRET &&
+      // Fail closed (same reasoning as /backup): retention deletes aged alerts
+      // from the live database after archiving them.
+      if (!env.WORKER_SHARED_SECRET ||
           url.searchParams.get('key') !== env.WORKER_SHARED_SECRET) {
         return new Response('forbidden', { status: 403 });
       }

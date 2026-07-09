@@ -8,6 +8,7 @@ import {
   timingSafeEqual,
   scimRateLimit,
   scimAuthLogThrottle,
+  writeUser,
 } from '../cloudflare_scim_worker.js';
 
 const ENTERPRISE = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
@@ -194,5 +195,54 @@ describe('scimAuthLogThrottle', () => {
     expect(scimAuthLogThrottle(0, 5000, 5000)).toBe(true);
     expect(scimAuthLogThrottle(5000, 7000, 5000)).toBe(false);
     expect(scimAuthLogThrottle(5000, 10000, 5000)).toBe(true);
+  });
+});
+
+
+describe('writeUser retires stale provisioning keys on email change', () => {
+  const ENV = { FB_DB_URL: 'https://db.example' };
+  let calls;
+  beforeEach(() => {
+    calls = [];
+    globalThis.fetch = async (url, opts = {}) => {
+      const method = (opts.method || 'GET').toUpperCase();
+      calls.push({
+        url: String(url),
+        method,
+        body: opts.body != null ? JSON.parse(opts.body) : undefined,
+      });
+      // GET (e.g. provisioning/{key}/uid live-account lookup) → no linked uid.
+      if (method === 'GET') return { ok: true, json: async () => null };
+      return { ok: true, json: async () => ({}) };
+    };
+  });
+
+  test('deletes provisioning/{oldKey} + scim/byUserName/{oldKey} and writes the new keys', async () => {
+    await writeUser(
+      ENV, 'tok', 'id1',
+      { email: 'new@acme.com', role: 'supervisor', active: true },
+      'old@acme.com',
+    );
+    const oldKey = emailKey('old@acme.com');
+    const newKey = emailKey('new@acme.com');
+    const puts = calls.filter((c) => c.method === 'PUT');
+    // Old authorization keys retired (PUT null == delete).
+    expect(puts.some((c) => c.url.includes(`provisioning/${oldKey}.json`) && c.body === null)).toBe(true);
+    expect(puts.some((c) => c.url.includes(`scim/byUserName/${oldKey}.json`) && c.body === null)).toBe(true);
+    // New keys written.
+    expect(puts.some((c) => c.url.includes(`scim/byUserName/${newKey}.json`) && c.body === 'id1')).toBe(true);
+    expect(puts.some((c) => c.url.includes(`provisioning/${newKey}.json`) && c.body && c.body.email === 'new@acme.com')).toBe(true);
+  });
+
+  test('does not delete anything when the email is unchanged', async () => {
+    await writeUser(
+      ENV, 'tok', 'id1',
+      { email: 'same@acme.com', role: 'supervisor', active: true },
+      'same@acme.com',
+    );
+    const key = emailKey('same@acme.com');
+    const puts = calls.filter((c) => c.method === 'PUT');
+    expect(puts.some((c) => c.body === null)).toBe(false);
+    expect(puts.some((c) => c.url.includes(`provisioning/${key}.json`) && c.body && c.body.email === 'same@acme.com')).toBe(true);
   });
 });

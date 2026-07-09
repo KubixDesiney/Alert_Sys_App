@@ -181,4 +181,65 @@ describe('security database rules', () => {
       expect(alert[field]['.validate']).toContain('isString');
     }
   });
+
+  test('supervisor alert claim is factory-scoped and self-attach needs a matching help request', () => {
+    const write = rules.alerts.$alertId['.write'];
+    // Claiming an unassigned alert requires the alert factory to match the
+    // claimer's own factory (usine or factoryId) — no cross-factory grab.
+    expect(write).toContain(
+      "data.child('usine').val() === root.child('users').child(auth.uid).child('usine').val()",
+    );
+    expect(write).toContain(
+      "data.child('factoryId').val() === root.child('users').child(auth.uid).child('factoryId').val()",
+    );
+    // Attaching yourself as assistant requires an active help request on the
+    // alert that targets you — not a bare self-attach to any alert.
+    expect(write).toContain("data.child('helpRequestId').exists()");
+    expect(write).toContain(
+      "root.child('help_requests').child(data.child('helpRequestId').val()).child('targetSupervisorId').val() === auth.uid",
+    );
+    // The old unconditional self-attach branch must be gone.
+    expect(write).not.toContain(
+      "!data.child('assistantId').exists() && newData.child('assistantId').val() === auth.uid)",
+    );
+  });
+
+  test('alert status is restricted to the known lifecycle values', () => {
+    const v = rules.alerts.$alertId.status['.validate'];
+    for (const s of ['disponible', 'en_cours', 'validee', 'cancelled']) {
+      expect(v).toContain(`'${s}'`);
+    }
+  });
+
+  test('push send-lock fields are privileged-only (clients cannot forge a fresh lock)', () => {
+    for (const field of ['push_sending', 'push_sending_at']) {
+      const w = rules.alerts.$alertId[field]['.write'];
+      expect(w).not.toBe('auth != null');
+      expect(w).toContain("val() === 'admin'");
+      expect(w).toContain("auth.token.role === 'admin'");
+    }
+  });
+
+  test('supervisors cannot forge reserved AI/system notification types for other users', () => {
+    const v = rules.notifications.$userId.$notifId.type['.validate'];
+    // The recipient / admin / worker keep full freedom.
+    expect(v).toContain('auth.uid === $userId');
+    expect(v).toContain("auth.token.role === 'admin'");
+    // A cross-user supervisor producer may not impersonate these system types.
+    for (const reserved of ['ai_assigned', 'ai_recommendation', 'alert_suspended', 'handover', 'confirm_presence']) {
+      expect(v).toContain(`newData.val() !== '${reserved}'`);
+    }
+  });
+
+  test('user factory placement (usine/factoryId) is admin-writable only, like role', () => {
+    const user = rules.users.$userId;
+    for (const field of ['usine', 'factoryId']) {
+      const v = user[field]['.validate'];
+      // Unchanged always passes (self profile edits keep working); a *change*
+      // requires an admin/superadmin/worker writer.
+      expect(v).toContain('newData.val() === data.val()');
+      expect(v).toContain("val() === 'admin'");
+      expect(v).toContain("auth.token.role === 'admin'");
+    }
+  });
 });

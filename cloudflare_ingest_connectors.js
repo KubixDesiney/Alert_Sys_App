@@ -195,9 +195,15 @@ async function createAlert(env, alert) {
 async function triggerNotify(env, alertId) {
   if (!env.NOTIFY_WORKER_URL || !alertId) return;
   try {
+    const headers = { 'content-type': 'application/json' };
+    // The notify worker runs in WORKER_AUTH_MODE=required; worker-to-worker
+    // triggers authenticate with the shared secret. (If it is unset the fast
+    // path 401s and the notify cron still delivers within a minute.)
+    const secret = env.WORKER_SHARED_SECRET || env.ALERTSYS_WORKER_SHARED_SECRET || '';
+    if (secret) headers['x-worker-secret'] = secret;
     await fetch(env.NOTIFY_WORKER_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers,
       body: JSON.stringify({ alertId }),
     });
   } catch (_) {
@@ -283,6 +289,23 @@ function extractValue(json, path) {
   return v;
 }
 
+function urlHost(u) {
+  try { return new URL(String(u || '')).host.toLowerCase(); } catch (_) { return ''; }
+}
+
+// Stored connector credentials (bearer/basic/api-key headers, query tokens) may
+// only be sent to the connector's OWN configured endpoint host. A connector
+// config writer (SuperAdmin, or a compromised SuperAdmin session) can point an
+// absolute `tag.url` at any host; without this gate the worker would fetch that
+// attacker URL with the connector's secret attached, exfiltrating it. When the
+// target host differs from the endpoint host the request still goes out, but
+// credential-free.
+function credentialsAllowedForUrl(connector = {}, url = '') {
+  const endpointHost = urlHost(connector.endpoint);
+  const targetHost = urlHost(url);
+  return !!endpointHost && endpointHost === targetHost;
+}
+
 function connectorAuthHeaders(connector = {}, secret = {}) {
   const a = connector.auth || {};
   const scheme = String(a.scheme || 'none').toLowerCase();
@@ -313,7 +336,8 @@ function buildRestUrl(connector = {}, tag = {}, secret = {}) {
     url = base;
   }
   const a = connector.auth || {};
-  if (String(a.scheme).toLowerCase() === 'query' && (secret.token || a.queryValue)) {
+  if (String(a.scheme).toLowerCase() === 'query' && (secret.token || a.queryValue)
+      && credentialsAllowedForUrl(connector, url)) {
     const k = a.queryParam || 'api_key';
     const v = secret.token || a.queryValue;
     url += `${url.includes('?') ? '&' : '?'}${encodeURIComponent(k)}=${encodeURIComponent(v)}`;
@@ -427,7 +451,12 @@ async function writeConnectorRuntime(env, token, id, patch) {
 async function fetchTagValue(connector, tag, secret, timeoutMs = DEFAULTS.verifyTimeoutMs) {
   const url = buildRestUrl(connector, tag, secret);
   if (!/^https?:\/\//i.test(url)) return { ok: false, status: 0, detail: 'endpoint must be an absolute http(s) URL' };
-  const headers = { accept: 'application/json', ...connectorAuthHeaders(connector, secret) };
+  // Withhold stored credentials unless the target host is the connector's own
+  // endpoint host (see credentialsAllowedForUrl).
+  const headers = { accept: 'application/json' };
+  if (credentialsAllowedForUrl(connector, url)) {
+    Object.assign(headers, connectorAuthHeaders(connector, secret));
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -565,7 +594,10 @@ function ingestStatus(env) {
 
 function adminAuthorized(env, request) {
   const want = env.WORKER_SHARED_SECRET || '';
-  if (!want) return true; // unset == open (dev)
+  // Fail closed: /verify and /control drive live connector actions with the
+  // worker service account. If no secret is configured the routes are denied
+  // (never "open in dev"), so a misconfigured deploy cannot be driven anonymously.
+  if (!want) return false;
   const got = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   return timingSafeEqual(got, want);
 }
@@ -750,6 +782,7 @@ export {
   getByPath,
   extractValue,
   connectorAuthHeaders,
+  credentialsAllowedForUrl,
   buildRestUrl,
   mergeConnectorDefaults,
   pollDue,

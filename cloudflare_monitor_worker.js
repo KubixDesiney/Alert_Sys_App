@@ -276,9 +276,14 @@ async function runChecks(env) {
     await rtdbPut(base, token, 'slo/canary/pending', { id: CANARY_ID, createdAt: nowIso2 });
     if (env.NOTIFY_WORKER_URL) {
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        // Notify worker runs WORKER_AUTH_MODE=required; authenticate the
+        // worker-to-worker canary trigger with the shared secret.
+        const secret = env.WORKER_SHARED_SECRET || env.ALERTSYS_WORKER_SHARED_SECRET || '';
+        if (secret) headers['x-worker-secret'] = secret;
         await fetch(env.NOTIFY_WORKER_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ alertId: CANARY_ID }),
         });
       } catch (_) {}

@@ -7,5 +7,7 @@ crons = ["* * * * *"]
 
 [vars]
 # Caller auth for HTTP endpoints (/config stays public for status probes).
-# off | log | required — see wrangler.ai.toml for the rollout plan.
-WORKER_AUTH_MODE = "log"
+# off | log | required — see wrangler.ai.toml. Enforced: unauthenticated callers
+# are rejected. Producers send a Firebase ID token (or the shared secret for
+# worker-to-worker triggers).
+WORKER_AUTH_MODE = "required"

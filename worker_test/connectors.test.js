@@ -5,6 +5,7 @@ import {
   getByPath,
   extractValue,
   connectorAuthHeaders,
+  credentialsAllowedForUrl,
   buildRestUrl,
   mergeConnectorDefaults,
   pollDue,
@@ -13,6 +14,7 @@ import {
   parseConnack,
   mqttRemainingLength,
   normalizeTelemetry,
+  adminAuthorized,
 } from '../cloudflare_ingest_connectors.js';
 
 describe('connector kind classification', () => {
@@ -87,6 +89,44 @@ describe('buildRestUrl', () => {
   test('query-string api key auth appends param', () => {
     const u = buildRestUrl({ kind: 'rest', endpoint: 'https://h/api', auth: { scheme: 'query', queryParam: 'key' } }, { tag: 'T1' }, { token: 'SEKRIT' });
     expect(u).toBe('https://h/api?tag=T1&key=SEKRIT');
+  });
+  test('does NOT leak a query-string secret to an attacker-supplied tag.url on another host', () => {
+    const u = buildRestUrl(
+      { kind: 'rest', endpoint: 'https://plant.local/api', auth: { scheme: 'query', queryParam: 'key' } },
+      { url: 'https://attacker.example/collect' },
+      { token: 'SEKRIT' },
+    );
+    expect(u).toBe('https://attacker.example/collect');
+    expect(u).not.toContain('SEKRIT');
+  });
+});
+
+describe('credentialsAllowedForUrl (SSRF credential binding)', () => {
+  const conn = { endpoint: 'https://plant.local/api' };
+  test('same host as the configured endpoint is allowed', () => {
+    expect(credentialsAllowedForUrl(conn, 'https://plant.local/api/streams/x')).toBe(true);
+  });
+  test('a different host is denied (credentials withheld)', () => {
+    expect(credentialsAllowedForUrl(conn, 'https://attacker.example/collect')).toBe(false);
+  });
+  test('no configured endpoint host denies', () => {
+    expect(credentialsAllowedForUrl({}, 'https://attacker.example/x')).toBe(false);
+    expect(credentialsAllowedForUrl({ endpoint: 'not-a-url' }, 'https://plant.local/x')).toBe(false);
+  });
+});
+
+describe('adminAuthorized (ingest /verify + /control, fail closed)', () => {
+  const reqWith = (auth) => ({ headers: { get: (k) => (k.toLowerCase() === 'authorization' && auth ? auth : null) } });
+  test('denies when no shared secret is configured (never open in dev)', () => {
+    expect(adminAuthorized({}, reqWith('Bearer anything'))).toBe(false);
+    expect(adminAuthorized({ WORKER_SHARED_SECRET: '' }, reqWith('Bearer anything'))).toBe(false);
+  });
+  test('accepts the exact shared secret bearer', () => {
+    expect(adminAuthorized({ WORKER_SHARED_SECRET: 's3cret' }, reqWith('Bearer s3cret'))).toBe(true);
+  });
+  test('rejects a wrong or missing bearer when a secret is set', () => {
+    expect(adminAuthorized({ WORKER_SHARED_SECRET: 's3cret' }, reqWith('Bearer nope'))).toBe(false);
+    expect(adminAuthorized({ WORKER_SHARED_SECRET: 's3cret' }, reqWith(null))).toBe(false);
   });
 });
 
