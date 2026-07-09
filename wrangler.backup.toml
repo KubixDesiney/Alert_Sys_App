@@ -28,4 +28,6 @@ RETENTION_BATCH = "500"
 # Secrets (set with `wrangler secret put NAME --config wrangler.backup.toml`):
 #   FIREBASE_SERVICE_ACCOUNT   the service-account JSON (full admin to export)
 #   FB_DB_URL                  https://<project>-default-rtdb.firebaseio.com/
-#   WORKER_SHARED_SECRET       optional; guards the manual /backup trigger
+#   WORKER_SHARED_SECRET       required to use the manual /backup + /retention
+#                              triggers; when unset those routes fail closed (403).
+#                              The daily cron backup runs regardless of this secret.

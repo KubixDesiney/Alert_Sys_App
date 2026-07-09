@@ -13,7 +13,8 @@ crons = ["* * * * *"]
 #   off      — no check (legacy)
 #   log      — verify Firebase ID token / shared secret, log offenders, allow
 #   required — 401 without a valid ID token or the shared secret
-# Flip to "required" once the installed client fleet sends ID tokens, then
-# drop ALERTSYS_WORKER_SHARED_SECRET from app builds (keep it for CI/worker-
-# to-worker calls only).
-WORKER_AUTH_MODE = "log"
+# Enforced: unauthenticated callers are rejected. The client sends the signed-in
+# user's Firebase ID token (WorkerAuth.headers); CI/worker-to-worker calls use
+# ALERTSYS_WORKER_SHARED_SECRET. Keep the secret out of untrusted contexts and
+# rotate it if it ever shipped in a public build.
+WORKER_AUTH_MODE = "required"

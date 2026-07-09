@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { selectPrunableAlerts } from '../cloudflare_backup_worker.js';
+import backup, { selectPrunableAlerts } from '../cloudflare_backup_worker.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-07-01T00:00:00.000Z');
@@ -58,5 +58,27 @@ describe('selectPrunableAlerts (alert retention policy)', () => {
   test('handles null/empty input safely', () => {
     expect(selectPrunableAlerts(null, CUTOFF)).toEqual([]);
     expect(selectPrunableAlerts({}, CUTOFF)).toEqual([]);
+  });
+});
+
+describe('manual /backup + /retention endpoints fail closed', () => {
+  test('/backup is 403 when WORKER_SHARED_SECRET is unset', async () => {
+    const res = await backup.fetch({ url: 'https://w/backup' }, {});
+    expect(res.status).toBe(403);
+  });
+  test('/retention is 403 when WORKER_SHARED_SECRET is unset', async () => {
+    const res = await backup.fetch({ url: 'https://w/retention' }, {});
+    expect(res.status).toBe(403);
+  });
+  test('/backup is 403 with a wrong key even when the secret is set', async () => {
+    const res = await backup.fetch(
+      { url: 'https://w/backup?key=wrong' },
+      { WORKER_SHARED_SECRET: 'right' },
+    );
+    expect(res.status).toBe(403);
+  });
+  test('a non-admin path is not gated (returns the plain banner)', async () => {
+    const res = await backup.fetch({ url: 'https://w/' }, {});
+    expect(res.status).toBe(200);
   });
 });

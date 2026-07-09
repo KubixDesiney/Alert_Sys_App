@@ -4,8 +4,8 @@
     "type": "base",
     "listRule": "@request.auth.id != \"\"",
     "viewRule": "@request.auth.id != \"\"",
-    "createRule": "@request.auth.id != \"\"",
-    "updateRule": "@request.auth.id != \"\"",
+    "createRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
+    "updateRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\" || superviseurId = @request.auth.id || assistantId = @request.auth.id || (superviseurId = \"\" && @request.data.superviseurId = @request.auth.id)",
     "deleteRule": null,
     "schema": [
       { "name": "alertNumber", "type": "number", "required": false, "options": {} },

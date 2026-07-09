@@ -151,6 +151,46 @@ async function resolveCreds(env, options = {}) {
   return { repo: _credCache.repo, token: _credCache.token };
 }
 
+// ── Firebase SuperAdmin gate for the public (non-service-binding) route ─────
+// The Guardian console holds a server-side GitHub token; a caller who merely
+// recovers the client-shipped WORKER_SHARED_SECRET must NOT be able to drive
+// token-backed reads/dispatches. The client always sends the signed-in user's
+// Firebase ID token as `X-Firebase-Auth: Bearer …`; the direct route requires
+// it to belong to a SuperAdmin (mirrors deploy/pages/guardian-proxy). The
+// RTDB read is authorized by the ID token itself, so an invalid/expired token
+// cannot read the role. Requests through the internal service binding
+// (Pages proxy) already did this check and call with { skipAuth: true }.
+function bearerToken(header) {
+  const value = String(header || '');
+  return value.toLowerCase().startsWith('bearer ') ? value.slice(7).trim() : '';
+}
+function decodeJwtPayload(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length < 2 || !parts[1]) return {};
+  const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  try { return JSON.parse(atob(padded)); } catch (_) { return {}; }
+}
+async function isSuperadminFirebaseToken(env, token) {
+  if (!token || !env.FB_DB_URL) return false;
+  const payload = decodeJwtPayload(token);
+  const uid = String(payload.user_id || payload.sub || '');
+  if (!uid) return false;
+  const base = env.FB_DB_URL.endsWith('/') ? env.FB_DB_URL.slice(0, -1) : env.FB_DB_URL;
+  let res;
+  try {
+    res = await fetch(
+      `${base}/users/${encodeURIComponent(uid)}/role.json?auth=${encodeURIComponent(token)}`,
+      { headers: { Accept: 'application/json' } },
+    );
+  } catch (_) {
+    return false;
+  }
+  if (!res.ok) return false;
+  const role = String((await res.json()) || '');
+  return role === 'superadmin' || role === 'SuperAdmin';
+}
+
 // ── pure mappers (trim GitHub payloads to what the console renders) ─────────
 export function mapRun(r = {}) {
   return {
@@ -210,7 +250,7 @@ export function stripLogTimestamps(text) {
 // ── http ───────────────────────────────────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, content-type, x-firebase-auth',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 function json(obj, status = 200, extra = {}) {
@@ -260,10 +300,15 @@ export async function handleGithubProxyRequest(req, env, options = {}) {
     return json({ error: 'rate_limited' }, 429, { 'Retry-After': '60' });
   }
   if (!options.skipAuth) {
-    const auth = req.headers.get('authorization') || '';
-    const presented = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    if (!env.WORKER_SHARED_SECRET || !timingSafeEqual(presented, env.WORKER_SHARED_SECRET)) {
+    // Public route: require a valid SuperAdmin Firebase ID token. The legacy
+    // client-shipped shared secret is NOT accepted here — recovering it from a
+    // build must not grant access to the server-side GitHub token.
+    const fbToken = bearerToken(req.headers.get('x-firebase-auth'));
+    if (!fbToken) {
       return json({ error: 'unauthorized' }, 401, { 'WWW-Authenticate': 'Bearer' });
+    }
+    if (!(await isSuperadminFirebaseToken(env, fbToken))) {
+      return json({ error: 'forbidden' }, 403);
     }
   }
   const cacheControl = req.headers.get('cache-control') || '';
@@ -271,19 +316,26 @@ export async function handleGithubProxyRequest(req, env, options = {}) {
     url.searchParams.get('fresh') === '1' ||
     cacheControl.toLowerCase().includes('no-cache');
   const creds = await resolveCreds(env, { bypassCache });
-  const repo = normalizeRepo(url.searchParams.get('repo')) || creds.repo || '';
   const token = creds.token || '';
+  const requestedRepo = normalizeRepo(url.searchParams.get('repo'));
   const path = url.pathname.replace(/\/+$/, '');
   try {
     if (path === '/config') {
       return json({
         ok: true,
-        repo,
-        connected: !!token && !!repo,
+        repo: creds.repo,
+        connected: !!token && !!creds.repo,
         hasToken: !!token,
-        canDispatch: !!token && !!repo,
+        canDispatch: !!token && !!creds.repo,
       });
     }
+    // Bind every token-backed route to the configured Guardian repo. A caller
+    // may not redirect the server-side token at a different repository (the
+    // stored PAT/App token can have broader scope than the intended repo).
+    if (requestedRepo && creds.repo && requestedRepo !== creds.repo) {
+      return json({ error: 'repo_not_allowed', repo: creds.repo }, 403);
+    }
+    const repo = creds.repo || requestedRepo || '';
     if (!token || !repo) {
       return json({
         error: 'not_configured',

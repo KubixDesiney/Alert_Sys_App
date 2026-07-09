@@ -230,16 +230,35 @@ describe('Firebase rules company database template behavior', () => {
   test('Supervisor alert writes are ownership-scoped', () => {
     const steel = companies.steelco;
     const alertWrite = rules.alerts.$alertId['.write'];
-    const supervisor = steel.supervisor; // uid: steelSupervisor
-    const base = { rootData: steel.root, auth: supervisor, vars: { $alertId: 'a1' } };
+    const supervisor = steel.supervisor; // uid: steelSupervisor, factory Usine A
+    // The supervisor needs a factory so the claim factory-scope can be checked,
+    // plus help-request records so assistant self-attach can be authorized.
+    const root = {
+      ...steel.root,
+      users: {
+        ...steel.root.users,
+        steelSupervisor: { role: 'supervisor', usine: 'Usine A' },
+      },
+      help_requests: {
+        hr1: { targetSupervisorId: 'steelSupervisor', alertId: 'a1' },
+        hrOther: { targetSupervisorId: 'someoneElse', alertId: 'a1' },
+      },
+    };
+    const base = { rootData: root, auth: supervisor, vars: { $alertId: 'a1' } };
     const unassigned = { status: 'disponible', usine: 'Usine A' };
     const ownedBySelf = { ...unassigned, status: 'en_cours', superviseurId: 'steelSupervisor' };
     const ownedByOther = { ...unassigned, status: 'en_cours', superviseurId: 'someoneElse' };
 
-    // Claiming an unassigned alert for yourself: allowed.
+    // Claiming an unassigned alert in your OWN factory: allowed.
     expect(evaluate(alertWrite, {
-      ...base, data: unassigned, newData: { ...unassigned, superviseurId: 'steelSupervisor' },
+      ...base, data: unassigned, newData: { ...unassigned, status: 'en_cours', superviseurId: 'steelSupervisor' },
     })).toBe(true);
+    // Claiming an unassigned alert in ANOTHER factory: denied (cross-factory grab).
+    expect(evaluate(alertWrite, {
+      ...base,
+      data: { status: 'disponible', usine: 'Usine B' },
+      newData: { status: 'en_cours', usine: 'Usine B', superviseurId: 'steelSupervisor' },
+    })).toBe(false);
     // Updating an alert you own (resolve, comment, return to queue): allowed.
     expect(evaluate(alertWrite, {
       ...base, data: ownedBySelf, newData: { ...ownedBySelf, status: 'validee' },
@@ -251,10 +270,21 @@ describe('Firebase rules company database template behavior', () => {
     expect(evaluate(alertWrite, {
       ...base, data: ownedByOther, newData: { ...ownedByOther, isCritical: true },
     })).toBe(false);
-    // Accepting help: self-assignment as assistant on an assistant-less alert.
+    // Accepting help: self-assignment as assistant is allowed only when a help
+    // request on THIS alert targets you.
+    const withHelp = { ...unassigned, status: 'en_cours', superviseurId: 'someoneElse', helpRequestId: 'hr1' };
+    expect(evaluate(alertWrite, {
+      ...base, data: withHelp, newData: { ...withHelp, assistantId: 'steelSupervisor', helpRequestId: null },
+    })).toBe(true);
+    // Bare self-attach as assistant with NO help request: denied.
     expect(evaluate(alertWrite, {
       ...base, data: ownedByOther, newData: { ...ownedByOther, assistantId: 'steelSupervisor' },
-    })).toBe(true);
+    })).toBe(false);
+    // A help request that targets someone else does not authorize self-attach.
+    const withHelpOther = { ...unassigned, status: 'en_cours', superviseurId: 'someoneElse', helpRequestId: 'hrOther' };
+    expect(evaluate(alertWrite, {
+      ...base, data: withHelpOther, newData: { ...withHelpOther, assistantId: 'steelSupervisor' },
+    })).toBe(false);
     // Acting on your own AI recommendation (accept or reject): allowed —
     // the grant keys off the existing data, so clearing the recommendation
     // in the same write is fine.
@@ -272,17 +302,48 @@ describe('Firebase rules company database template behavior', () => {
     // Deleting an alert: never allowed for supervisors, fine for admins.
     expect(evaluate(alertWrite, { ...base, data: ownedBySelf, newData: undefined })).toBe(false);
     expect(evaluate(alertWrite, {
-      auth: steel.admin, rootData: steel.root, data: ownedBySelf, newData: undefined, vars: { $alertId: 'a1' },
+      auth: steel.admin, rootData: root, data: ownedBySelf, newData: undefined, vars: { $alertId: 'a1' },
     })).toBe(true);
     // Collaboration-shared alerts stay writable for the collaborator.
     const rootWithCollab = {
-      ...steel.root,
+      ...root,
       collaboration_alerts: { steelSupervisor: { a1: true } },
     };
     expect(evaluate(alertWrite, {
       ...base, rootData: rootWithCollab, data: ownedByOther,
       newData: { ...ownedByOther, comments: { c1: 'on my way' } },
     })).toBe(true);
+  });
+
+  test('Self-writable user fields cannot move factory; reserved notification types cannot be forged', () => {
+    const steel = companies.steelco;
+    const supRoot = {
+      ...steel.root,
+      users: { ...steel.root.users, steelSupervisor: { role: 'supervisor', usine: 'Usine A' } },
+    };
+    const sup = steel.supervisor;
+
+    const usineValidate = rules.users.$userId.usine['.validate'];
+    // Unchanged usine (a self profile edit) passes.
+    expect(evaluate(usineValidate, { auth: sup, rootData: supRoot, data: 'Usine A', newData: 'Usine A', vars: { $userId: 'steelSupervisor' } })).toBe(true);
+    // A supervisor moving THEMSELVES to another factory is denied (confused-deputy vector).
+    expect(evaluate(usineValidate, { auth: sup, rootData: supRoot, data: 'Usine A', newData: 'Usine B', vars: { $userId: 'steelSupervisor' } })).toBe(false);
+    // An admin may reassign a supervisor's factory.
+    expect(evaluate(usineValidate, { auth: steel.admin, rootData: supRoot, data: 'Usine A', newData: 'Usine B', vars: { $userId: 'steelSupervisor' } })).toBe(true);
+
+    const typeValidate = rules.notifications.$userId.$notifId.type['.validate'];
+    // A supervisor may create a legitimate producer type in another user's queue.
+    expect(evaluate(typeValidate, { auth: sup, rootData: supRoot, newData: 'new_alert', vars: { $userId: 'steelAdmin' } })).toBe(true);
+    // But cannot forge a reserved AI/system type into another user's queue.
+    expect(evaluate(typeValidate, { auth: sup, rootData: supRoot, newData: 'ai_assigned', vars: { $userId: 'steelAdmin' } })).toBe(false);
+    // The recipient's own queue is unrestricted.
+    expect(evaluate(typeValidate, { auth: sup, rootData: supRoot, newData: 'ai_assigned', vars: { $userId: 'steelSupervisor' } })).toBe(true);
+
+    // Push send-lock fields are privileged-only (no client-forged delivery lock).
+    const lockWrite = rules.alerts.$alertId.push_sending['.write'];
+    expect(evaluate(lockWrite, { auth: sup, rootData: supRoot })).toBe(false);
+    expect(evaluate(lockWrite, { auth: steel.admin, rootData: supRoot })).toBe(true);
+    expect(evaluate(lockWrite, { auth: serviceAuth, rootData: supRoot })).toBe(true);
   });
 
   test('LLM provider keys live in a worker-only vault the client cannot read', () => {
