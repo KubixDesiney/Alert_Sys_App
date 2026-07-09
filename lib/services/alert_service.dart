@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:firebase_database/firebase_database.dart';
 import 'package:rxdart/rxdart.dart';
 import '../models/alert_model.dart';
 import '../services/hierarchy_service.dart';
+import '../utils/notification_eligibility.dart';
 import 'app_logger.dart';
 import 'fcm_service.dart';
 import 'worker_trigger_queue.dart';
@@ -50,49 +52,121 @@ class AlertService {
     );
   }
 
+  /// Supervisors currently engaged on an in-progress alert (owner, assistant,
+  /// or valid active claim). Best-effort: on any failure returns an empty set
+  /// so targeting stays permissive — the notify worker re-checks busy state at
+  /// send time and is the authoritative gate.
+  Future<Set<String>> _busySupervisorIds() async {
+    try {
+      final results = await Future.wait([
+        _db.child('alerts').orderByChild('status').equalTo('en_cours').get(),
+        _db.child('supervisor_active_alerts').get(),
+      ]);
+      final enCours = results[0].value;
+      final claims = results[1].value;
+      return busySupervisorIds(
+        enCoursAlerts: enCours is Map ? enCours : const {},
+        activeClaims: claims is Map ? claims : const {},
+      );
+    } catch (e) {
+      _logger.warning('Busy-supervisor lookup failed; worker will filter', e);
+      return const {};
+    }
+  }
+
+  /// Idempotent create of one queued new-alert row. The key is deterministic
+  /// (`new_alert_<alertId>`) so racing producers converge on a single row:
+  /// supervisors hit the create-only database rule on the second write, and
+  /// admin producers skip when the row already exists — a duplicate producer
+  /// can never reset `pushSent` on a row that already delivered.
+  Future<WorkerNotificationRef?> _createNewAlertNotificationRow(
+    String uid,
+    String alertId,
+    Map<String, dynamic> payload,
+  ) async {
+    final notifId = 'new_alert_$alertId';
+    final ref = _db.child('notifications/$uid/$notifId');
+    try {
+      try {
+        final existing = await ref.get();
+        if (existing.exists) return null;
+      } on FirebaseException {
+        // Supervisors cannot read other users' queues; the create-only rule
+        // below still guarantees idempotency.
+      }
+      await ref.set(payload);
+      return WorkerNotificationRef(uid: uid, notifId: notifId);
+    } on FirebaseException catch (e) {
+      if (e.code.toLowerCase().contains('permission')) {
+        return null; // create-only rule refused the write: row already exists
+      }
+      rethrow;
+    }
+  }
+
   Future<int> _queueNewAlertPushNotifications({
     required String alertId,
     required String alertType,
     required String description,
     required String usine,
     required int? alertNumber,
+    String? factoryId,
   }) async {
     final users = await getAllUsers();
+    final busyIds = await _busySupervisorIds();
+    final targetFactories = factoryCandidates({
+      'usine': usine,
+      'factoryId': factoryId,
+    });
     final refs = <WorkerNotificationRef>[];
     final nowIso = DateTime.now().toUtc().toIso8601String();
+    var alreadyQueued = 0;
 
     for (final entry in users.entries) {
       final rawUser = entry.value;
       if (rawUser is! Map) continue;
-      final user = Map<String, dynamic>.from(rawUser);
-      if (user['role']?.toString() != 'supervisor') continue;
-      if ((user['fcmToken']?.toString() ?? '').trim().isEmpty) continue;
+      if (!isEligibleNewAlertRecipient(
+        uid: entry.key,
+        user: rawUser,
+        targetFactories: targetFactories,
+        busyIds: busyIds,
+      )) {
+        continue;
+      }
 
-      final ref = await _writeNotification(entry.key, {
+      final ref = await _createNewAlertNotificationRow(entry.key, alertId, {
         'type': 'new_alert',
         'alertId': alertId,
         'alertType': alertType,
         'alertDescription': description,
         'alertNumber': alertNumber,
         'usine': usine,
+        if (factoryId != null && factoryId.isNotEmpty) 'factoryId': factoryId,
         'message': 'New alert from $usine: $alertType',
         'timestamp': nowIso,
         'status': 'pending',
         'pushSent': false,
         'pushDeliveryMode': 'notification_queue',
       });
-      if (ref != null) refs.add(ref);
+      if (ref != null) {
+        refs.add(ref);
+      } else {
+        alreadyQueued++;
+      }
     }
 
-    if (refs.isEmpty) return 0;
-    await _triggerNotificationRefs(refs);
-    await _db.child('alerts/$alertId').update({
-      'notificationSent': true,
-      'push_sent': true,
-      'push_sent_at': nowIso,
-      'push_delivery_mode': 'notification_queue',
-    });
-    return refs.length;
+    if (refs.isNotEmpty) {
+      await _triggerNotificationRefs(refs);
+      await _db.child('alerts/$alertId').update({
+        'notificationSent': true,
+        'push_sent': true,
+        'push_sent_at': nowIso,
+        'push_delivery_mode': 'notification_queue',
+      });
+    }
+    // Rows created by a racing producer still count as queued so the caller
+    // does not double-buzz through the legacy /alerts fallback.
+    return refs.length + alreadyQueued;
   }
 
   Stream<List<AlertModel>> getAlertsForUsine(String usine, {int? limit}) {
@@ -681,6 +755,7 @@ class AlertService {
     }
 
     final usine = alertSnap.child('usine').value?.toString() ?? 'Unknown plant';
+    final factoryId = alertSnap.child('factoryId').value?.toString();
     final rawAlertNumber = alertSnap.child('alertNumber').value;
     final alertNumber = rawAlertNumber is num
         ? rawAlertNumber.toInt()
@@ -692,6 +767,7 @@ class AlertService {
         description: description,
         usine: usine,
         alertNumber: alertNumber,
+        factoryId: factoryId,
       );
       if (queued == 0) {
         await WorkerTriggerQueue.instance.enqueueAlertTrigger(alertId);

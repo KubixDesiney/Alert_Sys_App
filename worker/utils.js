@@ -165,6 +165,36 @@ function aiResolveFactory(obj) {
   return usine ? aiSanitizeFactoryId(usine) : null;
 }
 
+// Alerts and users identify their factory inconsistently (factoryId vs usine
+// vs factoryName). Both sides are expanded into candidate-id sets and matched
+// on any intersection — mirrors cloudflare_notify_worker.js.
+function factoryCandidates(source) {
+  const out = new Set();
+  if (!source) return out;
+  if (typeof source === 'string') {
+    const id = aiSanitizeFactoryId(source);
+    if (id) out.add(id);
+    return out;
+  }
+  if (typeof source !== 'object') return out;
+  for (const key of ['factoryId', 'usine', 'factoryName', 'alertUsine']) {
+    const id = aiSanitizeFactoryId(source[key] || '');
+    if (id) out.add(id);
+  }
+  return out;
+}
+
+// Empty target set = record carries no factory info; passes rather than
+// silently dropping the notification for everyone.
+function factoryMatches(targetSet, userSet) {
+  if (!targetSet || targetSet.size === 0) return true;
+  if (!userSet || userSet.size === 0) return false;
+  for (const id of userSet) {
+    if (targetSet.has(id)) return true;
+  }
+  return false;
+}
+
 // Great-circle distance in kilometres between two {lat,lng} pairs.
 // Returns null when either coordinate is missing or non-numeric.
 function haversineKm(a, b) {
@@ -228,6 +258,8 @@ export {
   _historyKey,
   aiSanitizeFactoryId,
   aiResolveFactory,
+  factoryCandidates,
+  factoryMatches,
   haversineKm,
   loadFactoryLocations,
 };

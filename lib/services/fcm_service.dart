@@ -58,6 +58,39 @@ class FcmService {
   // detached context so we can't go through `Provider.of(context)`.
   static AlertProvider? alertProvider;
 
+  // ── Deep notification background palette ──────────────────────────────────
+  // Rich, dark tones so colorized lock-screen notifications read instantly by
+  // urgency/kind while keeping the white title/body text legible.
+  static const Color _deepAlertRed = Color(0xFF7F1D1D); // new alert buzz
+  static const Color _deepCollabIndigo = Color(0xFF312E81); // collaboration
+  static const Color _deepHelpTeal = Color(0xFF134E4A); // help / assistance
+  static const Color _deepAiViolet = Color(0xFF4C1D95); // AI decisions
+  static const Color _deepTransferBronze = Color(0xFF7C2D12); // cross-factory
+  static const Color _deepShiftNavy = Color(0xFF1E3A8A); // shift handover
+  static const Color _deepPresenceGreen = Color(0xFF14532D); // presence check
+  static const Color _deepDefaultSlate = Color(0xFF0F172A); // everything else
+
+  // Deep background color for a notification kind (worker `notifType`).
+  static Color _deepNotificationColor(String notifType) {
+    if (notifType == 'new_alert' || notifType == 'alert_critical_update') {
+      return _deepAlertRed;
+    }
+    if (notifType == 'confirm_presence') return _deepPresenceGreen;
+    if (notifType == 'cross_factory_transfer') return _deepTransferBronze;
+    if (notifType == 'shift_handover') return _deepShiftNavy;
+    if (notifType == 'help_request' ||
+        notifType == 'assistance_request' ||
+        notifType == 'help_accepted' ||
+        notifType == 'help_refused') {
+      return _deepHelpTeal;
+    }
+    if (notifType.startsWith('collab') || notifType == 'assistant_assigned') {
+      return _deepCollabIndigo;
+    }
+    if (notifType.startsWith('ai_')) return _deepAiViolet;
+    return _deepDefaultSlate;
+  }
+
   static const AndroidNotificationChannel _androidChannel =
       AndroidNotificationChannel(
         'alerts_voice_critical',
@@ -408,11 +441,14 @@ class FcmService {
         _localNotificationsInitialized = true;
       }
       await _ensureAndroidChannel();
+      final deepColor = _deepNotificationColor(
+        notifType.isNotEmpty ? notifType : queueType,
+      );
       await _localNotifications.show(
         id,
         title,
         body,
-        const NotificationDetails(
+        NotificationDetails(
           android: AndroidNotificationDetails(
             'alerts_voice_critical',
             'Critical voice alerts',
@@ -422,6 +458,9 @@ class FcmService {
             visibility: NotificationVisibility.public,
             playSound: true,
             enableVibration: true,
+            color: deepColor,
+            colorized: true,
+            styleInformation: BigTextStyleInformation(body),
           ),
         ),
       );
@@ -434,6 +473,7 @@ class FcmService {
       title: title,
       body: body,
       alertId: alertId,
+      notifType: notifType.isNotEmpty ? notifType : queueType,
     );
   }
 
@@ -470,6 +510,11 @@ class FcmService {
           ticker: title,
           visibility: NotificationVisibility.public,
           category: AndroidNotificationCategory.alarm,
+          // Deep crimson colorized background so the lock-screen buzz reads
+          // as an urgent factory alert at a glance.
+          color: _deepAlertRed,
+          colorized: true,
+          styleInformation: BigTextStyleInformation(body),
           fullScreenIntent: true,
           audioAttributesUsage: AudioAttributesUsage.alarm,
           actions: <AndroidNotificationAction>[
@@ -587,7 +632,7 @@ class FcmService {
           ticker: title,
           visibility: NotificationVisibility.public,
           category: AndroidNotificationCategory.reminder,
-          color: const Color(0xFF16A34A),
+          color: _deepPresenceGreen,
           colorized: true,
           styleInformation: BigTextStyleInformation(body),
           actions: <AndroidNotificationAction>[
@@ -680,6 +725,7 @@ class FcmService {
     required String title,
     required String body,
     required String alertId,
+    String notifType = '',
   }) async {
     if (!_localNotificationsInitialized) {
       await _localNotifications.initialize(_initializationSettings());
@@ -704,6 +750,9 @@ class FcmService {
           ticker: title,
           visibility: NotificationVisibility.public,
           category: AndroidNotificationCategory.alarm,
+          color: _deepNotificationColor(notifType),
+          colorized: true,
+          styleInformation: BigTextStyleInformation(body),
           // fullScreenIntent lets the voice action launch above the keyguard
           // where Android permits it. Requires USE_FULL_SCREEN_INTENT plus
           // showWhenLocked/turnScreenOn on the activity.
