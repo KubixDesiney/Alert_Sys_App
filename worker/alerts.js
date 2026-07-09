@@ -83,6 +83,7 @@ async function processAlerts(env, ctx) {
   const { token, alertsMap, usersMap, supervisorActiveAlertsMap } = ctx;
   const unsent = Object.entries(alertsMap || {})
     .filter(([, a]) => a && a.status === 'disponible' && a.push_sent === false && !_pushLockIsFresh(a))
+    .sort((a, b) => (_toMs(b[1]?.timestamp) ?? 0) - (_toMs(a[1]?.timestamp) ?? 0))
     .slice(0, MAX_ALERTS_TO_PUSH)
     .map(([id]) => id);
   if (!unsent.length) return;
@@ -91,10 +92,12 @@ async function processAlerts(env, ctx) {
     const claimed = await claimAlertPush(env, token, alertId);
     if (!claimed) continue;
     const { alertUrl, alert } = claimed;
-    const recipients = getFcmRecipientsForFactory(alert.factoryId || alert.usine, usersMap, alertsMap, {
+    // Aligned with cloudflare_notify_worker.js: eligibility is factory match +
+    // not busy + has token; the transient presence/status flag is not a gate.
+    const recipients = getFcmRecipientsForFactory(alert, usersMap, alertsMap, {
       allSupervisors: false,
       includeAdmins: false,
-      requireActiveSupervisors: true,
+      requireActiveSupervisors: false,
       supervisorActiveAlertsMap,
     });
     if (recipients.length === 0) {

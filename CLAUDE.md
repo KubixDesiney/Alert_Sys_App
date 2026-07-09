@@ -227,7 +227,44 @@ Push lock fields on queued notifications:
 - `pushSending`: boolean lock flag.
 - `pushSendingAt`: ISO lock timestamp.
 - `pushLastErrorAt`: ISO retryable failure timestamp.
+- `pushSkipReason`: string set when the row is closed terminally without an
+  FCM send (`busy_supervisor`, `factory_mismatch`, `expired`, `role_mismatch`,
+  `no_fcm_token`, `unknown_user`).
 - Stale notification locks are retried after `NOTIFICATION_LOCK_TTL_MS = 2 minutes`.
+
+Queued notification send-time gates (2026-07-08):
+
+- `evaluateNotificationDelivery` in `cloudflare_notify_worker.js` is the single
+  policy function for both the targeted push path (`pushSingleNotification`)
+  and the cron fan-out (`fanOutPendingNotifications`). It returns
+  send / terminal-skip / defer; terminal skips write `pushSent: true` +
+  `pushSkipReason` so dead rows stop being rescanned by every future cron.
+- **`new_alert` rows no longer bypass the busy and factory gates.** Even if a
+  producer queued a row for the wrong supervisor, the worker terminally skips
+  it at send time: busy supervisors (owner or assistant of an `en_cours` alert,
+  or a valid active claim) never buzz, and supervisors only receive alerts
+  from their own factory.
+- All other queued types (collaboration, help, AI assignment/recommendation,
+  presence, handover, critical updates) are personally addressed by their
+  producer and still bypass those gates.
+- Factory matching is candidate-set based (`factoryCandidates`/`factoryMatches`):
+  each side expands `factoryId`/`usine`/`factoryName` into sanitized ids and
+  matches on any intersection, so a factoryId-keyed user still matches a
+  usine-keyed alert. An alert with no factory info passes (never silently
+  drops everyone); a user with no factory assignment blocks.
+- Freshness caps: `new_alert` rows older than 15 minutes and any queued row
+  older than 24 hours are closed with `pushSkipReason: expired` — a buzz about
+  old news is worse than none, and the caps keep the `/notifications` backlog
+  bounded. Terminal closes are capped at `MAX_TERMINAL_SKIPS_PER_RUN = 25`.
+- Notify health (`workers/health/notifyLastRun`) includes
+  `notificationsSkipped` next to `notificationsProcessed`.
+- `pushSingleAlert` (fast path) computes busy supervisors with the same
+  semantics as the cron path: it queries
+  `alerts.json?orderBy="status"&equalTo="en_cours"` (indexed) in parallel and
+  feeds it to `engagedSupervisorIds`, so assistants count as busy and stale
+  `supervisor_active_alerts` entries no longer block free supervisors. If the
+  query fails it falls back to treating every claim entry as busy
+  (over-exclude, never over-notify).
 
 No-recipient push behavior:
 
@@ -241,6 +278,8 @@ Real-time delivery behavior:
 - The worker still reads RTDB and claims ETag locks before sending, so duplicate producer triggers are safe.
 - The one-minute cron remains the durable fallback for missed producer triggers, offline clients, worker errors, and retryable FCM failures.
 - New-alert FCM delivery uses the same targeted queue path as collaboration/help/AI notifications: producers write supervisor-only `new_alert` rows under `/notifications`, then call `POST /notify` with exact refs.
+- Producers filter recipients before queuing (2026-07-08): `AlertService._queueNewAlertPushNotifications` only writes rows for supervisors of the alert's factory who are not busy (`lib/utils/notification_eligibility.dart` mirrors the worker's gates; busy = owner/assistant of an `en_cours` alert or a valid active claim, computed from the indexed `status == en_cours` query + `supervisor_active_alerts`). If the eligibility lookup fails the producer stays permissive — the worker enforces the same gates at send time.
+- Queued `new_alert` rows use the deterministic key `new_alert_<alertId>` so racing producers (alert creator + every stream client) converge on one row per supervisor: supervisors hit the create-only rule on the second write, admin producers skip when the row exists, and a duplicate producer can never reset `pushSent` on a delivered row.
 - The `/alerts/{alertId}` push path remains only as a fallback when queued `new_alert` rows cannot be created. It targets supervisors, not admins/Production Managers.
 - App-created queued `new_alert` rows use `pushDeliveryMode: notification_queue`; the alert record is marked with `push_delivery_mode: notification_queue` so cron does not send a duplicate `/alerts` fan-out.
 - WebSockets/Durable Objects are not the primary wake-up mechanism because Firebase writes do not wake a Worker WebSocket, and mobile background sockets are not reliable; FCM remains the background/offline delivery path.
@@ -509,7 +548,7 @@ Typical app path:
 1. Admin or integration creates an alert under `alerts`.
 2. Alert creation reserves `alertCounter`.
 3. Alert initially includes `push_sent: false`.
-4. The producer creates supervisor-only `new_alert` rows under `/notifications/{uid}/{notifId}` with `pushSent: false`.
+4. The producer creates supervisor-only `new_alert` rows under `/notifications/{uid}/new_alert_{alertId}` with `pushSent: false` — only for eligible supervisors (same factory, not busy, has FCM token), with a deterministic key so racing producers converge on one row.
 5. `WorkerTriggerQueue.enqueueNotificationTriggers(...)` POSTs exact `{ uid, notifId }` refs to the notification worker fast path.
 6. Notification worker claims each queued notification with `pushSending: true`, sends FCM with `notifType: new_alert`, then marks `pushSent: true`.
 7. The alert record is marked `push_sent: true` / `push_delivery_mode: notification_queue` once queued rows are durable; if queuing fails, `WorkerTriggerQueue.enqueueAlertTrigger(alertId)` uses the legacy `/alerts` fallback.
@@ -536,6 +575,12 @@ Claim concurrency:
 - Notification tap routing to alert detail.
 - Android voice lock flow dispatch through `VoiceLockService` and `VoiceCommandParser`.
 - Local buzz cancellation with stable alert notification ids.
+- Deep-color lock-screen backgrounds (2026-07-08): every local notification is
+  `colorized: true` with a deep tone per kind via `_deepNotificationColor` —
+  new-alert buzz deep crimson `0xFF7F1D1D`, collaboration deep indigo, help
+  deep teal, AI deep violet, cross-factory deep bronze, handover deep navy,
+  presence deep green, default deep slate — plus `BigTextStyleInformation` for
+  expanded body text.
 
 Notification worker recipient logic:
 
@@ -552,7 +597,7 @@ Queued notification fan-out:
 - Supports supervisor-only `new_alert`, collaboration, assistant, cross-factory, help, critical update, AI recommendation, AI rejection, alert suspended, confirm-presence, and handover types.
 - Fast-path FCM data includes `notifType`, `notificationId`, `recipientId`, and available `alertId`, `collabRequestId`, `helpRequestId`, `shiftId`, `factoryId`, and factory/name fields.
 - Writes notification fan-out status fields after FCM send attempts.
-- New-alert/collaboration/help/AI direct-notification types bypass busy-supervisor and factory gates because they are addressed to specific users.
+- Collaboration/help/AI direct-notification types bypass busy-supervisor and factory gates because they are addressed to specific users. **`new_alert` does NOT bypass** (changed 2026-07-08): busy and factory gates are enforced at send time via `evaluateNotificationDelivery`, with terminal skips recorded in `pushSkipReason` — see "Queued notification send-time gates" above.
 
 AI-to-notification handoff:
 

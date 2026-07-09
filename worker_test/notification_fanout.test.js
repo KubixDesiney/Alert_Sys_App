@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
-import { getFcmTokensForFactory, processAlerts, pushSingleNotification } from '../cloudflare_notify_worker.js';
+import {
+  evaluateNotificationDelivery,
+  factoryCandidates,
+  factoryMatches,
+  getFcmTokensForFactory,
+  processAlerts,
+  pushSingleAlert,
+  pushSingleNotification,
+} from '../cloudflare_notify_worker.js';
 
 const fakePrivateKey = `-----BEGIN ${'PRIVATE KEY'}-----\nAAAA\n-----END ${'PRIVATE KEY'}-----\n`;
 
@@ -237,7 +245,7 @@ describe('targeted queued notification push', () => {
       type: 'help_request',
       alertId: 'a1',
       message: 'Need help on alert a1',
-      timestamp: '2026-05-20T10:00:00.000Z',
+      timestamp: new Date(Date.now() - 60 * 1000).toISOString(),
       pushSent: false,
     };
 
@@ -290,8 +298,9 @@ describe('targeted queued notification push', () => {
       type: 'new_alert',
       alertId: 'a1',
       alertType: 'maintenance',
+      usine: 'Usine A',
       message: 'New alert from Usine A: maintenance',
-      timestamp: '2026-05-20T10:00:00.000Z',
+      timestamp: new Date(Date.now() - 60 * 1000).toISOString(),
       pushSent: false,
     };
 
@@ -335,6 +344,15 @@ describe('targeted queued notification push', () => {
       queueNotificationId: 'n1',
     });
     expect(fcmCalls[0].body.message.data.notificationId).not.toBe('n1');
+
+    // The admin row is closed terminally so no future cron rescans it.
+    const adminSkip = calls.find(
+      (c) => c.url.includes('/notifications/admin1/n1.json') && c.method === 'PATCH',
+    );
+    expect(adminSkip.body).toMatchObject({
+      pushSent: true,
+      pushSkipReason: 'role_mismatch',
+    });
   });
 
   test('retries a stale notification lock and sends confirm presence shift id', async () => {
@@ -422,5 +440,225 @@ describe('targeted queued notification push', () => {
     expect(sent).toBe(false);
     expect(calls.some((c) => c.url.includes('fcm.googleapis.com'))).toBe(false);
     expect(calls.some((c) => c.url.includes('/notifications/u1/n1.json') && c.method === 'PUT')).toBe(false);
+  });
+});
+
+describe('new_alert send-time gates (busy + factory + freshness)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete globalThis.fetch;
+  });
+
+  function queuedNewAlertHarness({ notif, usersMap, alertsMap = {}, claimsMap = {} }) {
+    const calls = [];
+    globalThis.fetch = jest.fn((url, opts = {}) => {
+      const method = opts.method || 'GET';
+      const u = String(url);
+      const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
+      calls.push({ url: u, method, body });
+      if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
+      if (u === 'https://db.test/alerts.json?auth=fb-token') return Promise.resolve(jsonRes(alertsMap));
+      if (u === 'https://db.test/users.json?auth=fb-token') return Promise.resolve(jsonRes(usersMap));
+      if (u === 'https://db.test/supervisor_active_alerts.json?auth=fb-token') return Promise.resolve(jsonRes(claimsMap));
+      if (u.includes('/notifications/') && method === 'GET') return Promise.resolve(etagRes(notif));
+      if (u.includes('oauth2.googleapis.com/token')) return Promise.resolve(jsonRes({ access_token: 'fcm-access', expires_in: 3600 }));
+      if (u.includes('fcm.googleapis.com')) return Promise.resolve(jsonRes({ name: 'msg-1' }));
+      return Promise.resolve(jsonRes(body ?? {}));
+    });
+    return calls;
+  }
+
+  function freshNewAlertNotif(overrides = {}) {
+    return {
+      type: 'new_alert',
+      alertId: 'a1',
+      alertType: 'maintenance',
+      usine: 'Usine A',
+      message: 'New alert from Usine A: maintenance',
+      timestamp: new Date(Date.now() - 60 * 1000).toISOString(),
+      pushSent: false,
+      ...overrides,
+    };
+  }
+
+  test('busy owner of an en_cours alert is skipped terminally', async () => {
+    mockCrypto();
+    const calls = queuedNewAlertHarness({
+      notif: freshNewAlertNotif(),
+      usersMap: {
+        busySup: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-busy' },
+      },
+      alertsMap: {
+        a9: { status: 'en_cours', superviseurId: 'busySup' },
+      },
+    });
+
+    await expect(pushSingleNotification(serviceEnv(), 'busySup', 'n1')).resolves.toBe(false);
+    expect(calls.some((c) => c.url.includes('fcm.googleapis.com'))).toBe(false);
+    const skip = calls.find((c) => c.url.includes('/notifications/busySup/n1.json') && c.method === 'PATCH');
+    expect(skip.body).toMatchObject({ pushSent: true, pushSkipReason: 'busy_supervisor' });
+  });
+
+  test('assisting supervisor is busy too and never buzzed', async () => {
+    mockCrypto();
+    const calls = queuedNewAlertHarness({
+      notif: freshNewAlertNotif(),
+      usersMap: {
+        helper: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-helper' },
+      },
+      alertsMap: {
+        a9: { status: 'en_cours', superviseurId: 'someoneElse', assistantId: 'helper' },
+      },
+    });
+
+    await expect(pushSingleNotification(serviceEnv(), 'helper', 'n1')).resolves.toBe(false);
+    expect(calls.some((c) => c.url.includes('fcm.googleapis.com'))).toBe(false);
+    const skip = calls.find((c) => c.url.includes('/notifications/helper/n1.json') && c.method === 'PATCH');
+    expect(skip.body).toMatchObject({ pushSkipReason: 'busy_supervisor' });
+  });
+
+  test('supervisor from another factory is skipped terminally', async () => {
+    mockCrypto();
+    const calls = queuedNewAlertHarness({
+      notif: freshNewAlertNotif(),
+      usersMap: {
+        farAway: { role: 'supervisor', usine: 'Usine B', fcmToken: 'fcm-far' },
+      },
+    });
+
+    await expect(pushSingleNotification(serviceEnv(), 'farAway', 'n1')).resolves.toBe(false);
+    expect(calls.some((c) => c.url.includes('fcm.googleapis.com'))).toBe(false);
+    const skip = calls.find((c) => c.url.includes('/notifications/farAway/n1.json') && c.method === 'PATCH');
+    expect(skip.body).toMatchObject({ pushSkipReason: 'factory_mismatch' });
+  });
+
+  test('factoryId-keyed user still matches a usine-keyed alert', async () => {
+    mockCrypto();
+    const calls = queuedNewAlertHarness({
+      notif: freshNewAlertNotif(),
+      usersMap: {
+        idKeyed: { role: 'supervisor', factoryId: 'Usine A', fcmToken: 'fcm-id-keyed' },
+      },
+    });
+
+    await expect(pushSingleNotification(serviceEnv(), 'idKeyed', 'n1')).resolves.toBe(true);
+    const fcm = calls.find((c) => c.url.includes('fcm.googleapis.com'));
+    expect(fcm.body.message.token).toBe('fcm-id-keyed');
+  });
+
+  test('a stale new_alert row (>15 min) is closed instead of buzzing late', async () => {
+    mockCrypto();
+    const calls = queuedNewAlertHarness({
+      notif: freshNewAlertNotif({
+        timestamp: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+      }),
+      usersMap: {
+        freeSup: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-free' },
+      },
+    });
+
+    await expect(pushSingleNotification(serviceEnv(), 'freeSup', 'n1')).resolves.toBe(false);
+    expect(calls.some((c) => c.url.includes('fcm.googleapis.com'))).toBe(false);
+    const skip = calls.find((c) => c.url.includes('/notifications/freeSup/n1.json') && c.method === 'PATCH');
+    expect(skip.body).toMatchObject({ pushSkipReason: 'expired' });
+  });
+
+  test('personally-addressed types still bypass busy and factory gates', () => {
+    const busyAlertsMap = { a9: { status: 'en_cours', superviseurId: 'busySup' } };
+    const verdict = evaluateNotificationDelivery(
+      'busySup',
+      { role: 'supervisor', usine: 'Usine B', fcmToken: 'tok' },
+      {
+        type: 'help_request',
+        usine: 'Usine A',
+        timestamp: new Date().toISOString(),
+        pushSent: false,
+      },
+      busyAlertsMap,
+      {},
+    );
+    expect(verdict).toEqual({ action: 'send' });
+  });
+
+  test('factory candidate matching handles mixed identifier styles', () => {
+    expect(factoryMatches(
+      factoryCandidates({ usine: 'Usine A' }),
+      factoryCandidates({ factoryId: 'usine_a' }),
+    )).toBe(true);
+    expect(factoryMatches(
+      factoryCandidates({ factoryId: 'plant-7', usine: 'North Plant' }),
+      factoryCandidates({ usine: 'north plant' }),
+    )).toBe(true);
+    expect(factoryMatches(
+      factoryCandidates({ usine: 'Usine A' }),
+      factoryCandidates({ usine: 'Usine B' }),
+    )).toBe(false);
+    // No factory info on the alert → no constraint; none on the user → block.
+    expect(factoryMatches(new Set(), factoryCandidates({ usine: 'Usine A' }))).toBe(true);
+    expect(factoryMatches(factoryCandidates({ usine: 'Usine A' }), new Set())).toBe(false);
+  });
+});
+
+describe('pushSingleAlert fast path busy semantics', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete globalThis.fetch;
+  });
+
+  test('excludes en_cours owners/assistants and other factories; stale claims do not block', async () => {
+    mockCrypto();
+    const calls = [];
+    const alert = {
+      status: 'disponible',
+      push_sent: false,
+      type: 'maintenance',
+      usine: 'Usine A',
+      description: 'Motor overload',
+    };
+
+    globalThis.fetch = jest.fn((url, opts = {}) => {
+      const method = opts.method || 'GET';
+      const u = String(url);
+      const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
+      calls.push({ url: u, method, body });
+      if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
+      if (u.includes('/alerts/a1.json') && method === 'GET') return Promise.resolve(etagRes(alert));
+      if (u === 'https://db.test/users.json?auth=fb-token') {
+        return Promise.resolve(jsonRes({
+          freeSup: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-free' },
+          staleSup: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-stale' },
+          busyOwner: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-owner' },
+          busyAssistant: { role: 'supervisor', usine: 'Usine A', fcmToken: 'fcm-assist' },
+          otherFactory: { role: 'supervisor', usine: 'Usine B', fcmToken: 'fcm-other' },
+          admin: { role: 'admin', usine: 'Usine A', fcmToken: 'fcm-admin' },
+        }));
+      }
+      if (u === 'https://db.test/supervisor_active_alerts.json?auth=fb-token') {
+        return Promise.resolve(jsonRes({
+          staleSup: { alertId: 'long-resolved-alert' },
+          busyOwner: { alertId: 'a0' },
+        }));
+      }
+      if (u.startsWith('https://db.test/alerts.json?auth=fb-token&orderBy=')) {
+        return Promise.resolve(jsonRes({
+          a0: { status: 'en_cours', superviseurId: 'busyOwner' },
+          a2: { status: 'en_cours', superviseurId: 'someoneElse', assistantId: 'busyAssistant' },
+        }));
+      }
+      if (u.includes('oauth2.googleapis.com/token')) return Promise.resolve(jsonRes({ access_token: 'fcm-access', expires_in: 3600 }));
+      if (u.includes('fcm.googleapis.com')) return Promise.resolve(jsonRes({ name: 'msg-1' }));
+      return Promise.resolve(jsonRes(body ?? {}));
+    });
+
+    await expect(pushSingleAlert(serviceEnv(), 'a1')).resolves.toBe(true);
+
+    const fcmTokens = calls
+      .filter((c) => c.url.includes('fcm.googleapis.com'))
+      .map((c) => c.body.message.token)
+      .sort();
+    expect(fcmTokens).toEqual(['fcm-free', 'fcm-stale']);
+
+    const finish = calls.filter((c) => c.url.includes('/alerts/a1.json') && c.method === 'PATCH').pop();
+    expect(finish.body).toMatchObject({ push_sent: true });
   });
 });

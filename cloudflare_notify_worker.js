@@ -20,6 +20,16 @@ const MAX_FANOUT = 5;
 const MAX_CRON_FANOUT = 5;
 const PUSH_LOCK_TTL_MS = 2 * 60 * 1000;
 const NOTIFICATION_LOCK_TTL_MS = 2 * 60 * 1000;
+// A new-alert buzz is time-critical: past this age the alert has either been
+// claimed, escalated, or gone stale, so the queued row is closed instead of
+// buzzing someone about old news.
+const NEW_ALERT_MAX_AGE_MS = 15 * 60 * 1000;
+// Any queued notification we could not deliver within a day is dead weight;
+// closing it keeps the /notifications backlog bounded so crons stay fast.
+const QUEUED_NOTIFICATION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// Terminal skips are cheap PATCHes but still I/O; cap them per run so a large
+// stale backlog cannot starve actual sends inside one invocation.
+const MAX_TERMINAL_SKIPS_PER_RUN = 25;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 60;
 
@@ -365,6 +375,39 @@ function aiResolveFactory(obj) {
   return usine ? aiSanitizeFactoryId(usine) : null;
 }
 
+// Alerts and users identify their factory inconsistently: some records carry a
+// `factoryId`, some only the plant name in `usine`, some a `factoryName`.
+// Comparing a single resolved value silently drops every recipient when the two
+// sides use different fields, so both sides are expanded into a candidate set
+// and matched on any intersection.
+function factoryCandidates(source) {
+  const out = new Set();
+  if (!source) return out;
+  if (typeof source === 'string') {
+    const id = aiSanitizeFactoryId(source);
+    if (id) out.add(id);
+    return out;
+  }
+  if (typeof source !== 'object') return out;
+  for (const key of ['factoryId', 'usine', 'factoryName', 'alertUsine']) {
+    const id = aiSanitizeFactoryId(source[key] || '');
+    if (id) out.add(id);
+  }
+  return out;
+}
+
+// True when the user belongs to the target factory. An empty target set means
+// the record carries no factory information at all; blocking there would
+// silently drop the notification for everyone, so it passes instead.
+function factoryMatches(targetSet, userSet) {
+  if (!targetSet || targetSet.size === 0) return true;
+  if (!userSet || userSet.size === 0) return false;
+  for (const id of userSet) {
+    if (targetSet.has(id)) return true;
+  }
+  return false;
+}
+
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
   const [alertsRes, usersRes, activeClaimsRes] = await Promise.all([
@@ -518,8 +561,11 @@ function engagedSupervisorIds(alertsMap = {}, supervisorActiveAlertsMap = {}) {
   return ids;
 }
 
+// `factoryRef` accepts either a factory name/id string or a whole alert-like
+// object; the object form matches on any of factoryId/usine/factoryName so a
+// factoryId-only alert still reaches usine-keyed users (and vice versa).
 function getFcmRecipientsForFactory(
-  factoryName,
+  factoryRef,
   usersMap,
   alertsMap,
   {
@@ -530,7 +576,7 @@ function getFcmRecipientsForFactory(
     supervisorActiveAlertsMap = {},
   } = {},
 ) {
-  const targetId = aiSanitizeFactoryId(factoryName);
+  const targetFactories = factoryCandidates(factoryRef);
   const busySupervisors = allSupervisors
     ? new Set()
     : engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
@@ -540,10 +586,7 @@ function getFcmRecipientsForFactory(
     if (user.role === 'supervisor') {
       if (requireActiveSupervisors && !isActiveSupervisorForNotification(user)) continue;
       if (busySupervisors.has(uid)) continue;
-      if (!allFactories) {
-        const userFid = aiResolveFactory(user);
-        if (userFid !== targetId) continue;
-      }
+      if (!allFactories && !factoryMatches(targetFactories, factoryCandidates(user))) continue;
     } else if (user.role !== 'admin') {
       continue;
     } else if (!includeAdmins) {
@@ -654,7 +697,7 @@ async function processAlerts(env, ctx) {
     const claimed = await claimAlertPush(env, token, alertId);
     if (!claimed) continue;
     const { alertUrl, alert } = claimed;
-    const recipients = getFcmRecipientsForFactory(alert.factoryId || alert.usine, usersMap, alertsMap, {
+    const recipients = getFcmRecipientsForFactory(alert, usersMap, alertsMap, {
       allSupervisors: false,
       includeAdmins: false,
       requireActiveSupervisors: false,
@@ -704,33 +747,12 @@ async function processAlerts(env, ctx) {
   return processed;
 }
 
-const COLLAB_NOTIF_TYPES = new Set([
-  'collaboration_request',
-  'collaboration_assistant_accepted',
-  'collaboration_assistant_removed',
-  'collaboration_removed',
-  'collaboration_approved',
-  'collaboration_rejected',
-  'collaboration_refused',
-  'collaboration_request_admin',
-  'assistant_assigned',
-  'collab_auto_approved',
-  'cross_factory_transfer',
-  'help_request',
-  'assistance_request',
-  'alert_critical_update',
-]);
-
-const TARGETED_NOTIF_TYPES = new Set([
-  'new_alert',
-  'ai_assigned',
-  'ai_rejection',
-  'cross_factory_transfer',
-  'confirm_presence',
-  'shift_handover',
-  'help_accepted',
-  'help_refused',
-]);
+// `new_alert` rows are broadcast fan-out rows: no matter who queued them, the
+// busy + factory gates are enforced here at send time. Every other queued type
+// (collaboration, help, AI assignment/recommendation, presence, handover,
+// critical updates) is personally addressed by its producer, so those deliver
+// to their exact recipient regardless of busy state or factory.
+const BUSY_FACTORY_GATED_NOTIF_TYPES = new Set(['new_alert']);
 
 const ADMIN_ONLY_NOTIF_TYPES = new Set([
   'collaboration_request_admin',
@@ -747,19 +769,70 @@ function _notificationLockIsFresh(notif) {
   return started != null && Date.now() - started < NOTIFICATION_LOCK_TTL_MS;
 }
 
-function notificationBypassesBusy(notifType) {
-  return COLLAB_NOTIF_TYPES.has(notifType) || TARGETED_NOTIF_TYPES.has(notifType);
+// Candidate factory ids the notification targets: from its own fields first,
+// enriched by the referenced alert record when available.
+function notificationTargetFactory(notif, alertsMap = {}) {
+  const candidates = factoryCandidates(notif);
+  const alertId = String(notif?.alertId || '').trim();
+  if (alertId && alertsMap?.[alertId]) {
+    for (const id of factoryCandidates(alertsMap[alertId])) candidates.add(id);
+  }
+  return candidates;
 }
 
-function notificationTargetFactory(notif, alertsMap = {}) {
-  const directFactory =
-    notif?.usine || notif?.alertUsine || notif?.factoryName || notif?.factoryId || '';
-  if (String(directFactory || '').trim()) {
-    return aiSanitizeFactoryId(directFactory);
+// Single source of truth for "may this queued notification be pushed to this
+// user right now". Returns one of:
+//   { action: 'send' }                  — deliver via FCM
+//   { action: 'skip', reason: '...' }   — permanently ineligible: close the row
+//                                          (pushSent:true + pushSkipReason)
+//   { action: 'defer' }                 — transient: leave the row for a retry
+function evaluateNotificationDelivery(
+  uid,
+  user,
+  notif,
+  alertsMap = {},
+  supervisorActiveAlertsMap = {},
+  busySupervisors = null,
+) {
+  if (!notif || notif.pushSent === true || _notificationLockIsFresh(notif)) {
+    return { action: 'defer' };
   }
-  const alertId = String(notif?.alertId || '').trim();
-  if (!alertId) return null;
-  return aiResolveFactory(alertsMap?.[alertId] || null);
+  const notifType = String(notif.type || '');
+  if (LEGACY_SKIPPED_NOTIF_TYPES.has(notifType)) return { action: 'defer' };
+  if (!uid || uid === 'undefined' || !user) return { action: 'skip', reason: 'unknown_user' };
+
+  const userRole = String(user.role || '');
+  const isSupervisor = userRole === 'supervisor';
+  const isAdmin = userRole === 'admin';
+  if (!isSupervisor && !isAdmin) return { action: 'skip', reason: 'role_mismatch' };
+  if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) return { action: 'skip', reason: 'role_mismatch' };
+  if (SUPERVISOR_ONLY_NOTIF_TYPES.has(notifType) && !isSupervisor) return { action: 'skip', reason: 'role_mismatch' };
+
+  // Freshness: rows that outlived their usefulness are closed instead of being
+  // rescanned by every future cron. Rows without a timestamp are kept.
+  const createdMs = _toMs(notif.timestamp);
+  if (createdMs != null) {
+    const maxAge = notifType === 'new_alert' ? NEW_ALERT_MAX_AGE_MS : QUEUED_NOTIFICATION_MAX_AGE_MS;
+    if (Date.now() - createdMs > maxAge) return { action: 'skip', reason: 'expired' };
+  }
+
+  if (BUSY_FACTORY_GATED_NOTIF_TYPES.has(notifType) && isSupervisor) {
+    const busy = busySupervisors ?? engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
+    if (busy.has(uid)) return { action: 'skip', reason: 'busy_supervisor' };
+    const targetFactories = notificationTargetFactory(notif, alertsMap);
+    if (!factoryMatches(targetFactories, factoryCandidates(user))) {
+      return { action: 'skip', reason: 'factory_mismatch' };
+    }
+  }
+
+  if (!user.fcmToken) {
+    // A buzz for a new alert is dead without a registered device; other types
+    // wait for the token to re-register (bounded by the expiry above).
+    return notifType === 'new_alert'
+      ? { action: 'skip', reason: 'no_fcm_token' }
+      : { action: 'defer' };
+  }
+  return { action: 'send' };
 }
 
 function notifTitle(type) {
@@ -824,31 +897,6 @@ function notificationFcmData(uid, notifId, notif) {
   };
 }
 
-function notificationRecipientGate(uid, user, notif, alertsMap = {}, supervisorActiveAlertsMap = {}) {
-  if (!notif || notif.pushSent === true || _notificationLockIsFresh(notif)) return false;
-  const notifType = String(notif.type || '');
-  if (LEGACY_SKIPPED_NOTIF_TYPES.has(notifType)) return false;
-  if (!user || !user.fcmToken || uid === 'undefined') return false;
-
-  const userRole = String(user.role || '');
-  const isSupervisor = userRole === 'supervisor';
-  const isAdmin = userRole === 'admin';
-  if (!isSupervisor && !isAdmin) return false;
-  if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) return false;
-  if (SUPERVISOR_ONLY_NOTIF_TYPES.has(notifType) && !isSupervisor) return false;
-
-  const bypassBusyAndFactory = notificationBypassesBusy(notifType);
-  if (isSupervisor && !bypassBusyAndFactory) {
-    const busySupervisors = engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
-    if (busySupervisors.has(uid)) return false;
-    const targetFactoryId = notificationTargetFactory(notif, alertsMap);
-    const userFactoryId = aiResolveFactory(user || null);
-    if (targetFactoryId && targetFactoryId !== userFactoryId) return false;
-  }
-
-  return true;
-}
-
 function normalizeNotificationRefs(payload) {
   const refs = [];
   const pushRef = (value) => {
@@ -907,6 +955,25 @@ async function releaseNotificationPush(url) {
   });
 }
 
+// Terminal close for a queued notification that must never be pushed
+// (busy/wrong-factory/expired/…). Marks it delivered-with-reason so no future
+// cron rescans it; also clears any push lock we hold.
+async function skipNotificationPush(url, reason) {
+  const nowIso = new Date().toISOString();
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pushSent: true,
+      pushSentAt: nowIso,
+      pushSending: null,
+      pushSendingAt: null,
+      pushLastErrorAt: null,
+      pushSkipReason: String(reason || 'skipped'),
+    }),
+  });
+}
+
 async function finishNotificationPush(url, sent) {
   const nowIso = new Date().toISOString();
   await fetch(url, {
@@ -938,7 +1005,18 @@ async function pushSingleNotificationWithCtx(env, ctx, uid, notifId) {
 
   const { url, notif } = claimed;
   const user = usersMap?.[uid];
-  if (!notificationRecipientGate(uid, user, notif, alertsMap, supervisorActiveAlertsMap)) {
+  const verdict = evaluateNotificationDelivery(
+    uid,
+    user,
+    notif,
+    alertsMap,
+    supervisorActiveAlertsMap,
+  );
+  if (verdict.action === 'skip') {
+    await skipNotificationPush(url, verdict.reason);
+    return false;
+  }
+  if (verdict.action !== 'send') {
     await releaseNotificationPush(url);
     return false;
   }
@@ -982,46 +1060,46 @@ async function pushNotificationRefs(env, refs, options = {}) {
 async function fanOutPendingNotifications(env, ctx, options = {}) {
   const { token, usersMap, alertsMap, supervisorActiveAlertsMap } = ctx;
   const limit = Math.max(0, Number(options.limit ?? MAX_FANOUT) || 0);
-  if (limit <= 0) return 0;
+  if (limit <= 0) return { sent: 0, skipped: 0 };
   const nowIso = new Date().toISOString();
   const busySupervisors = engagedSupervisorIds(alertsMap, supervisorActiveAlertsMap);
   const notifRes = await fetch(`${_fbUrl(env, 'notifications.json')}?auth=${token}`);
-  if (!notifRes.ok) return 0;
+  if (!notifRes.ok) return { sent: 0, skipped: 0 };
   const allNotifs = (await readJsonResponse(notifRes, 'notifications.json')) || {};
   const candidates = [];
+  const ineligible = [];
 
   for (const [uid, bucket] of Object.entries(allNotifs)) {
     const user = usersMap[uid];
-    const fcmToken = user?.fcmToken;
-    const userRole = String(user?.role || '');
-    const isSupervisor = userRole === 'supervisor';
-    const isAdmin = userRole === 'admin';
-    if (!isSupervisor && !isAdmin) continue;
-    const userFactoryId = aiResolveFactory(user || null);
-
     for (const [notifId, notif] of Object.entries(bucket || {})) {
-      if (!notif || notif.pushSent === true || _notificationLockIsFresh(notif)) continue;
-      const notifType = String(notif.type || '');
-      if (LEGACY_SKIPPED_NOTIF_TYPES.has(notifType)) continue;
-      if (!user || !fcmToken || uid === 'undefined') continue;
-      const bypassBusyAndFactory = notificationBypassesBusy(notifType);
-      if (!bypassBusyAndFactory && isSupervisor && busySupervisors.has(uid)) continue;
-      if (ADMIN_ONLY_NOTIF_TYPES.has(notifType) && !isAdmin) continue;
-      if (SUPERVISOR_ONLY_NOTIF_TYPES.has(notifType) && !isSupervisor) continue;
-      if (isSupervisor && !bypassBusyAndFactory) {
-        const targetFactoryId = notificationTargetFactory(notif, alertsMap);
-        if (targetFactoryId && targetFactoryId !== userFactoryId) continue;
-      }
-      candidates.push({
+      const verdict = evaluateNotificationDelivery(
         uid,
-        notifId,
-        notif,
         user,
-        fcmToken,
-        isAdmin,
-        isSupervisor,
-        userFactoryId,
-      });
+        notif,
+        alertsMap,
+        supervisorActiveAlertsMap,
+        busySupervisors,
+      );
+      if (verdict.action === 'send') {
+        candidates.push({ uid, notifId, notif, user });
+      } else if (verdict.action === 'skip') {
+        ineligible.push({ uid, notifId, reason: verdict.reason });
+      }
+    }
+  }
+
+  // Terminally close rows that can never be pushed so they stop occupying the
+  // backlog. Bounded per run; leftovers are closed by subsequent crons.
+  let skipped = 0;
+  for (const dead of ineligible.slice(0, MAX_TERMINAL_SKIPS_PER_RUN)) {
+    try {
+      await skipNotificationPush(
+        `${_fbUrl(env, `notifications/${dead.uid}/${dead.notifId}.json`)}?auth=${token}`,
+        dead.reason,
+      );
+      skipped++;
+    } catch (e) {
+      console.error(`[NOTIFY] Skip-close ${dead.uid}/${dead.notifId} failed: ${e.message}`);
     }
   }
 
@@ -1034,23 +1112,29 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
   let processed = 0;
   for (const candidate of candidates) {
     if (processed >= limit) break;
-    const { uid, notifId, user, fcmToken, isAdmin, isSupervisor, userFactoryId } = candidate;
+    const { uid, notifId, user } = candidate;
     try {
       const url = `${_fbUrl(env, `notifications/${uid}/${notifId}.json`)}?auth=${token}`;
       const getRes = await fetch(url, { headers: { 'X-Firebase-ETag': 'true' } });
       if (!getRes.ok) continue;
       const etag = getRes.headers.get('ETag');
       const current = await readJsonResponse(getRes, `notifications/${uid}/${notifId}.json`);
-      if (!current || current.pushSent === true || _notificationLockIsFresh(current)) continue;
-      const currentType = String(current.type || '');
-      if (LEGACY_SKIPPED_NOTIF_TYPES.has(currentType)) continue;
-      const bypassBusyAndFactory = notificationBypassesBusy(currentType);
-      if (ADMIN_ONLY_NOTIF_TYPES.has(currentType) && !isAdmin) continue;
-      if (SUPERVISOR_ONLY_NOTIF_TYPES.has(currentType) && !isSupervisor) continue;
-      if (isSupervisor && !bypassBusyAndFactory) {
-        const targetFactoryId = notificationTargetFactory(current, alertsMap);
-        if (targetFactoryId && targetFactoryId !== userFactoryId) continue;
+      // Re-evaluate against the fresh row: another worker may have sent or
+      // mutated it between the bulk scan and now.
+      const verdict = evaluateNotificationDelivery(
+        uid,
+        user,
+        current,
+        alertsMap,
+        supervisorActiveAlertsMap,
+        busySupervisors,
+      );
+      if (verdict.action === 'skip') {
+        await skipNotificationPush(url, verdict.reason);
+        skipped++;
+        continue;
       }
+      if (verdict.action !== 'send') continue;
 
       const claimRes = await fetch(url, {
         method: 'PUT',
@@ -1059,6 +1143,7 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
       });
       if (claimRes.status === 412 || !claimRes.ok) continue;
 
+      const fcmToken = String(user.fcmToken);
       const result = await sendFcmDetailed(
         fcmToken,
         notifTitle(current.type),
@@ -1086,7 +1171,7 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
       console.error(`[NOTIFY] Fan-out candidate ${uid}/${notifId} failed: ${e.message}`);
     }
   }
-  return processed;
+  return { sent: processed, skipped };
 }
 
 async function writeNotifyHealth(env, token, data) {
@@ -1106,20 +1191,22 @@ async function writeNotifyHealth(env, token, data) {
 }
 
 // Fast-path: push one specific alert by ID.
-// • Users + active-claims fetches run IN PARALLEL with the claim retries so
-//   the slowest of {claim, users, claims} sets the wall time, not the sum.
+// • Users + active-claims + in-progress-alerts fetches run IN PARALLEL with
+//   the claim retries so the slowest fetch sets the wall time, not the sum.
 // • FCM fan-out runs in parallel (Promise.all) — 10 recipients ≈ same wall
 //   time as 1.
-// • Busy supervisors (those with any entry in supervisor_active_alerts) are
-//   excluded so they do not buzz while already handling another alert.
-//   Collab notifications take a different path (fanOutPendingNotifications)
-//   which intentionally bypasses this filter.
+// • Busy supervisors are excluded with the exact same semantics as the cron
+//   path (engagedSupervisorIds): owners AND assistants of en_cours alerts,
+//   plus active-claim entries that point at an en_cours alert. Stale
+//   supervisor_active_alerts rows (pointing at resolved/deleted alerts) do
+//   NOT block an otherwise-free supervisor.
 async function pushSingleAlert(env, alertId) {
   if (!alertId) return false;
   const token = await getFirebaseToken(env);
 
-  // Speculatively start the users + active-claims fetches now; they almost
-  // always finish before the claim loop does, so we pay zero extra wall time.
+  // Speculatively start the fetches now; they almost always finish before the
+  // claim loop does, so we pay zero extra wall time. The en_cours query is an
+  // indexed shallow slice — far cheaper than loading the whole alerts table.
   const usersP = fetch(`${_fbUrl(env, 'users.json')}?auth=${token}`)
     .then(r => r.ok ? readJsonResponse(r, 'users.json') : null)
     .then(v => v || {})
@@ -1128,6 +1215,11 @@ async function pushSingleAlert(env, alertId) {
     .then(r => r.ok ? readJsonResponse(r, 'supervisor_active_alerts.json') : null)
     .then(v => v || {})
     .catch(() => ({}));
+  const enCoursP = fetch(
+    `${_fbUrl(env, 'alerts.json')}?auth=${token}&orderBy=${encodeURIComponent('"status"')}&equalTo=${encodeURIComponent('"en_cours"')}`,
+  )
+    .then(r => r.ok ? readJsonResponse(r, 'alerts en_cours query') : null)
+    .catch(() => null);
 
   let claimed = null;
   for (let attempt = 0; attempt < 3 && !claimed; attempt++) {
@@ -1139,29 +1231,34 @@ async function pushSingleAlert(env, alertId) {
   const { alertUrl, alert } = claimed;
   const usersMap = await usersP;
   const supervisorActiveAlertsMap = await claimsP;
+  const enCoursMap = await enCoursP;
 
-  // A supervisor is "busy" iff they have any entry in supervisor_active_alerts
-  // (the entry is created on claim and removed when the alert is finished or
-  // returned). engagedSupervisorIds needs a full alertsMap to cross-reference;
-  // the fast path doesn't load that, so we compute busy directly here.
-  const busySupervisorUids = new Set();
-  for (const [uid, claim] of Object.entries(supervisorActiveAlertsMap || {})) {
-    if (!claim) continue;
-    const claimAlertId = typeof claim === 'string'
-      ? claim
-      : String(claim.alertId || claim.id || '').trim();
-    if (claimAlertId) busySupervisorUids.add(String(uid));
+  let recipients;
+  if (enCoursMap !== null) {
+    recipients = getFcmRecipientsForFactory(
+      alert,
+      usersMap,
+      enCoursMap || {},
+      { allSupervisors: false, includeAdmins: false, requireActiveSupervisors: false, supervisorActiveAlertsMap },
+    );
+  } else {
+    // The indexed query failed — fail safe: treat every active-claim entry as
+    // busy (may over-exclude, never buzzes a genuinely busy supervisor).
+    const busySupervisorUids = new Set();
+    for (const [uid, claim] of Object.entries(supervisorActiveAlertsMap || {})) {
+      if (!claim) continue;
+      const claimAlertId = typeof claim === 'string'
+        ? claim
+        : String(claim.alertId || claim.id || '').trim();
+      if (claimAlertId) busySupervisorUids.add(String(uid));
+    }
+    recipients = getFcmRecipientsForFactory(
+      alert,
+      usersMap,
+      {},
+      { allSupervisors: true, includeAdmins: false, requireActiveSupervisors: false, supervisorActiveAlertsMap },
+    ).filter(r => !busySupervisorUids.has(r.uid));
   }
-
-  // allSupervisors:true bypasses the built-in engagedSupervisorIds filter (we
-  // apply our own busy filter below). Factory filter still applies.
-  const allRecipients = getFcmRecipientsForFactory(
-    alert.factoryId || alert.usine,
-    usersMap,
-    { [alertId]: alert },
-    { allSupervisors: true, includeAdmins: false, requireActiveSupervisors: false, supervisorActiveAlertsMap },
-  );
-  const recipients = allRecipients.filter(r => !busySupervisorUids.has(r.uid));
 
   if (recipients.length === 0) {
     await skipAlertPush(alertUrl, 'no_recipients');
@@ -1209,15 +1306,20 @@ async function runNotificationCycle(env, options = {}) {
   const runStart = Date.now();
   const ctx = await loadCoreData(env);
   const alertsProcessed = await processAlerts(env, ctx);
-  const notificationsProcessed = await fanOutPendingNotifications(env, ctx, {
+  const fanout = await fanOutPendingNotifications(env, ctx, {
     limit: options.limit ?? MAX_FANOUT,
   });
   await writeNotifyHealth(env, ctx.token, {
     durationMs: Date.now() - runStart,
     alertsProcessed,
-    notificationsProcessed,
+    notificationsProcessed: fanout.sent,
+    notificationsSkipped: fanout.skipped,
   });
-  return { alertsProcessed, notificationsProcessed };
+  return {
+    alertsProcessed,
+    notificationsProcessed: fanout.sent,
+    notificationsSkipped: fanout.skipped,
+  };
 }
 
 async function recordNotifyError(env, error) {
@@ -1358,6 +1460,10 @@ export {
   pushSingleNotification,
   pushNotificationRefs,
   normalizeNotificationRefs,
+  evaluateNotificationDelivery,
+  factoryCandidates,
+  factoryMatches,
+  engagedSupervisorIds,
   _validateIdTokenClaims,
   _constantTimeEquals,
   _workerAuthCheck,
