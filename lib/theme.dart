@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'config/company_config.dart';
-
 // Static light-mode palette (kept for backward-compat const references)
 class AppColors {
   static const Color navy = Color(0xFF0D4A75);
@@ -82,6 +80,32 @@ extension AppThemeExtension on BuildContext {
 /// updating this and rebuilding re-skins the whole product live.
 Color? _runtimeBrand;
 void setRuntimeBrand(Color? c) => _runtimeBrand = c;
+
+/// The resolved app brightness, kept in a global mirror so the file-level
+/// `_navy`/`adminNavy` colour getters (which have no `BuildContext`) resolve
+/// against the *active* theme instead of hard-coding light mode. Set once at
+/// the root of the tree from `MaterialApp`'s builder whenever the theme flips,
+/// exactly like [setRuntimeBrand] / `Sa.setDark`. Because it is set on the root
+/// build before any descendant screen builds, descendants always read the
+/// current value.
+bool _appIsDark = false;
+void setThemeBrightness(bool isDark) => _appIsDark = isDark;
+
+/// Whether the app is currently in dark mode. Prefer `context.isDark` inside
+/// widgets; use this only in the top-level colour getters that lack a context.
+bool get appIsDark => _appIsDark;
+
+/// Theme-aware brand primary for the top-level `_navy` getters used across the
+/// admin/supervisor screens. Reads the global [appIsDark] so navy text no
+/// longer sits at ~1.5:1 on a dark card.
+Color get themeBrandPrimary => brandPrimary(_appIsDark);
+
+/// Theme-aware soft brand tint for the top-level `_navyLt` getters.
+Color get themeBrandPrimaryTint => brandPrimaryTint(_appIsDark);
+
+/// Theme-aware muted text colour for the top-level `_muted` getters.
+Color get themeMuted =>
+    _appIsDark ? const Color(0xFF94A3B8) : const Color(0xFF6B7280);
 
 const Color _navyLight = Color(0xFF0D4A75);
 const Color _navyDark = Color(0xFF60A5FA);

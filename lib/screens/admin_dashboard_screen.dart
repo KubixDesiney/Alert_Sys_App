@@ -37,8 +37,8 @@ import 'admin/shifts_tab.dart';
 part 'admin_dashboard_screen_header.dart';
 
 // ── Palette ─────────────────────────────────────────────────────────────
-Color get _navy => brandPrimary(false);
-Color get _navyLt => brandPrimaryTint(false);
+Color get _navy => themeBrandPrimary;
+Color get _navyLt => themeBrandPrimaryTint;
 const _red = AppColors.red;
 const _white = AppColors.white;
 const _border = AppColors.border;

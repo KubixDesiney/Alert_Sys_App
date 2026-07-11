@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/company_config.dart';
 import '../../l10n/app_strings.dart';
+import '../../providers/motion_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/branding_config_service.dart';
 import '../../widgets/branded_logo.dart';
@@ -214,8 +215,38 @@ class _ThemeStudioTabState extends State<ThemeStudioTab> {
           }),
         ),
         const SizedBox(height: 16),
+        _accessibilityCard(),
+        const SizedBox(height: 16),
         _saveBar(),
       ]);
+
+  Widget _accessibilityCard() {
+    final motion = context.watch<MotionProvider>();
+    return GlassPanel(
+      accent: Sa.violet,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _header(Icons.accessibility_new, context.tr('MOTION & ACCESSIBILITY')),
+          const SizedBox(height: 4),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            activeColor: _primary,
+            value: motion.reduceMotion,
+            onChanged: (v) => context.read<MotionProvider>().setReduceMotion(v),
+            title: Text(context.tr('Reduce motion'),
+                style:
+                    Sa.body(size: 13, color: Sa.text, weight: FontWeight.w600)),
+            subtitle: Text(
+                context.tr(
+                    'Freezes the neural background, pulsing dots and hover animations. Your device accessibility setting is always honoured.'),
+                style: Sa.body(size: 12, color: Sa.muted)),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _logoCard() => GlassPanel(
         accent: _primary,

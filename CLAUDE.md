@@ -440,6 +440,79 @@ string the moment it flips.
 - **Gotcha:** `widgets/admin/header.dart` (`AdminDashboardHeader`/`AdminPillTabBar`)
   is orphan/unused — the live PM header is `admin_dashboard_screen_header.dart`.
 
+## Theme-Aware Brand Colour And Reduced Motion (2026-07-11)
+
+An accessibility pass fixed a dark-mode contrast bug and added a reduce-motion
+mechanism. Both follow the same "global mirror set from the `MaterialApp`
+builder" pattern already used by `setRuntimeBrand`/`Sa.setDark`.
+
+- **Dark-mode contrast bug (fixed):** many screens declare file-level,
+  context-less colour getters — `Color get _navy => ...` in
+  `dashboard_screen.dart`, `admin_dashboard_screen.dart`, `hierarchy_screen.dart`,
+  `admin_escalation_screen.dart`, and `Color get adminNavy => ...` in
+  `admin/admin_dashboard_shared.dart` (`supervisors_tab.dart`'s `_navy` aliases
+  `adminNavy`). These previously hard-coded `brandPrimary(false)` /
+  `brandPrimaryTint(false)` — i.e. **always the light-mode brand colour** —
+  so in dark mode navy text (`#0D4A75`) rendered on the dark card
+  (`#1E293B`) at ~1.57:1 contrast, far under WCAG AA's 4.5:1 floor.
+- **Fix:** `lib/theme.dart` now exposes `setThemeBrightness(bool isDark)` /
+  `appIsDark` (a global mirror, same shape as `setRuntimeBrand`) plus
+  theme-aware getters `themeBrandPrimary`, `themeBrandPrimaryTint`, and
+  `themeMuted`. `main.dart`'s `MaterialApp` builder calls
+  `setThemeBrightness(themeProvider.isDark)` on every rebuild, before any
+  descendant screen builds — so the file-level getters listed above now read
+  `themeBrandPrimary`/`themeBrandPrimaryTint`/`themeMuted` instead of the
+  light-mode-only calls, and resolve correctly in both themes.
+- **When adding a new file-level `_navy`/`_muted`-style getter:** point it at
+  `themeBrandPrimary`/`themeMuted`, never at `brandPrimary(false)` directly —
+  that reintroduces the same bug. Prefer `context.appTheme.navy` /
+  `context.appTheme.muted` when a `BuildContext` is available; the top-level
+  getters exist only for the older screens that predate `AppTheme`.
+- **Regression test:** `test/theme_contrast_test.dart` asserts AA contrast
+  (>= 4.5:1) for the brand/muted colours against their real card surfaces in
+  both themes, and documents the old ~1.57:1 bug as a `lessThan(2.0)` check
+  so it can't silently return.
+
+- **Reduce motion:** `lib/providers/motion_provider.dart` (`MotionProvider`,
+  registered in `main.dart`'s `MultiProvider`) persists an in-app "Reduce
+  motion" toggle (SharedPreferences). `reduceMotionOf(context)` is the single
+  entry point — it returns true if either the in-app toggle **or** the OS-level
+  `MediaQuery.disableAnimations` accessibility flag is set, and degrades
+  safely (OS flag only) in provider-less contexts like widget tests. Wired
+  into the SuperAdmin console's decorative motion: `NeuralBackground` freezes
+  the mesh to a single frame, `PulseDot` renders a static dot with a soft
+  halo instead of animating, and `SaButton`'s hover lift/opacity transitions
+  collapse to zero duration. The toggle itself lives in the Theme Studio tab
+  (`theme_studio_tab.dart`, "Motion & Accessibility" card, above the save bar).
+  Any new decorative `AnimationController`-driven widget in the SuperAdmin
+  console should check `reduceMotionOf(context)` the same way before repeating
+  an animation.
+
+- **SuperAdmin console minimum label size:** `Sa.body()`/`Sa.mono()` in
+  `superadmin_theme.dart` now clamp to `Sa.minLabelPx` (11px) via
+  `math.max(size, minLabelPx)` — this was a systemic fix for dozens of
+  7.5–9.5px metadata labels across the console (fleet cards, hardware lab,
+  monitor panels, connectors, status tab, etc.) that were under the
+  accessibility floor. Call sites keep whatever `size:` they pass (some still
+  read `size: 7.5` in source) but the rendered size is always >= 11px. The
+  Theme Studio's **miniature dashboard previews** (`_SupervisorPreview`,
+  `_PmPreview`, `_SuperAdminPreview` in `theme_studio_tab.dart`) intentionally
+  use raw `TextStyle`, not `Sa.body`/`Sa.mono`, so their deliberately small
+  preview-scale text is unaffected by the floor.
+
+- **Other accessibility fixes in the same pass:** the supervisor dashboard's
+  bottom nav (`widgets/dashboard/dashboard_bottom_nav.dart`) and summary
+  cards (`dashboard_screen_views.dart`'s `_SummaryCard`) went from bare
+  `GestureDetector` to `MergeSemantics` + `Semantics(button, selected)` +
+  focusable/keyboard-activatable `InkWell` (visible focus ring, Enter/Space
+  activation) + `Tooltip`. Covered by
+  `test/accessibility_bottom_nav_test.dart` (200% text-scale overflow check
+  in both themes, selected-button semantics assertion). The supervisor
+  dashboard header's dead `clientName: 'SAGEM'` param (never rendered in
+  `_Header.build()`) was removed rather than resolved through config, since
+  nothing displayed it. The "Click to see details" microcopy became
+  "View details" (EN + FR) to match the touch-first supervisor product.
+
 ## Flutter Startup Flow
 
 `main.dart` does the following:

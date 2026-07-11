@@ -9,6 +9,7 @@ import 'config/company_config.dart';
 import 'providers/alert_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/locale_provider.dart';
+import 'providers/motion_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/mfa_enrollment_screen.dart';
@@ -160,6 +161,7 @@ class SmartIndustrialAlertApp extends StatelessWidget {
         }),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
+        ChangeNotifierProvider(create: (_) => MotionProvider()),
         ChangeNotifierProvider(create: (_) {
           final c = ConnectivityService();
           // Fire-and-forget; the service swallows its own errors.
@@ -168,7 +170,12 @@ class SmartIndustrialAlertApp extends StatelessWidget {
         }),
       ],
       child: Consumer2<ThemeProvider, LocaleProvider>(
-        builder: (context, themeProvider, localeProvider, _) => MaterialApp(
+        builder: (context, themeProvider, localeProvider, _) {
+          // Mirror the resolved brightness into the theme layer so the
+          // context-less `_navy`/`adminNavy`/`_muted` colour getters resolve
+          // against the active theme (fixes navy-on-dark-card contrast).
+          setThemeBrightness(themeProvider.isDark);
+          return MaterialApp(
           title: 'SIAS - Smart Industrial Alert System',
           debugShowCheckedModeBanner: false,
           themeMode: themeProvider.mode,
@@ -184,7 +191,8 @@ class SmartIndustrialAlertApp extends StatelessWidget {
           ],
           supportedLocales: AppLocalizations.supportedLocales,
           home: const AuthGate(),
-        ),
+        );
+        },
       ),
     );
   }

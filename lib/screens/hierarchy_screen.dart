@@ -23,7 +23,7 @@ import 'factory_mapping_tab.dart';
 
 part 'hierarchy_screen_dialogs.dart';
 
-Color get _navy => brandPrimary(false);
+Color get _navy => themeBrandPrimary;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
 const _red = AppColors.red;

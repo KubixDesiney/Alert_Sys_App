@@ -19,50 +19,77 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: t.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: active ? color : t.border, width: active ? 2 : 1),
-          boxShadow: active
-              ? [
-                  BoxShadow(
-                      color: color.withValues(alpha: 0.15),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
-                ]
-              : [],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: t.muted,
-                      fontWeight: FontWeight.w500)),
-              const SizedBox(height: 4),
-              Text('$count',
-                  style: TextStyle(
-                      fontSize: 26, fontWeight: FontWeight.bold, color: color)),
-              const SizedBox(height: 8),
-              Text(context.tr('Click to see details'),
-                  style: TextStyle(fontSize: 11, color: t.muted)),
-            ]),
-            Container(
-                width: 48,
-                height: 48,
-                decoration:
-                    BoxDecoration(color: bgColor, shape: BoxShape.circle),
-                child: Icon(icon, color: color, size: 24)),
-          ],
+    // A proper button: Semantics announces "$label, $count, selected" to screen
+    // readers; the InkWell (over a transparent Material above the card surface)
+    // gives a visible focus ring and Enter/Space activation; Tooltip surfaces
+    // the affordance on hover / long-press.
+    return Semantics(
+      button: true,
+      selected: active,
+      label: '$label: $count',
+      child: Tooltip(
+        message: context.tr('View details'),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: t.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: active ? color : t.border, width: active ? 2 : 1),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                        color: color.withValues(alpha: 0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2))
+                  ]
+                : [],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(label,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: t.muted,
+                                    fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 4),
+                            Text('$count',
+                                style: TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                    color: color)),
+                            const SizedBox(height: 8),
+                            Text(context.tr('View details'),
+                                style:
+                                    TextStyle(fontSize: 12.5, color: t.muted)),
+                          ]),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                            color: bgColor, shape: BoxShape.circle),
+                        child: Icon(icon, color: color, size: 24)),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -236,7 +263,7 @@ class _ClaimedView extends StatelessWidget {
             Text(
               context.tr(
                   'Hold detected! Would you like to request collaboration for this alert?'),
-              style: const TextStyle(fontSize: 13, color: _muted),
+              style: TextStyle(fontSize: 13, color: _muted),
             ),
             const SizedBox(height: 12),
             Container(
