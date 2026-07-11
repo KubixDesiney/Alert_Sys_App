@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../providers/motion_provider.dart';
+
 /// One full color set for the command center. Two instances exist — deep-space
 /// dark and arctic light — and [Sa] points at whichever the operator picked.
 class SaPalette {
@@ -146,6 +148,14 @@ class Sa {
   static const Color termDim = Color(0xFF94A3B8);
   static const Color termMuted = Color(0xFF64748B);
 
+  /// Accessibility floor for on-screen console text. The command center is a
+  /// dense desktop surface, so metadata labels may run small — but never below
+  /// this. Enforced in [body]/[mono] so a stray `size: 7.5` can't ship an
+  /// illegible label; call sites keep their intent, the token guarantees the
+  /// minimum. (The miniature dashboard previews in the Theme studio use raw
+  /// `TextStyle`, not these helpers, so their deliberate scale is unaffected.)
+  static const double minLabelPx = 11;
+
   static TextStyle display({double size = 22, Color? color}) =>
       GoogleFonts.orbitron(
         fontSize: size,
@@ -167,7 +177,7 @@ class Sa {
           Color? color,
           FontWeight weight = FontWeight.w400}) =>
       TextStyle(
-          fontSize: size,
+          fontSize: math.max(size, minLabelPx),
           color: color ?? _p.text,
           fontWeight: weight,
           height: 1.4);
@@ -177,7 +187,9 @@ class Sa {
           Color? color,
           FontWeight weight = FontWeight.w500}) =>
       GoogleFonts.jetBrainsMono(
-          fontSize: size, color: color ?? _p.text, fontWeight: weight);
+          fontSize: math.max(size, minLabelPx),
+          color: color ?? _p.text,
+          fontWeight: weight);
 }
 
 /// Animated neural-mesh background: drifting nodes joined by proximity links
@@ -226,6 +238,15 @@ class _NeuralBackgroundState extends State<NeuralBackground>
   @override
   Widget build(BuildContext context) {
     final isDark = Sa.isDark;
+    // Respect the reduce-motion preference / OS accessibility flag: freeze the
+    // mesh at a single calm frame instead of drifting it forever.
+    final reduce = reduceMotionOf(context);
+    if (reduce) {
+      if (_controller.isAnimating) _controller.stop();
+      _tick.value = 0.12;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -478,7 +499,7 @@ class SaSectionHeader extends StatelessWidget {
             children: [
               Text(title, style: Sa.heading(size: 16)),
               if (subtitle != null)
-                Text(subtitle!, style: Sa.body(size: 11.5, color: Sa.textDim)),
+                Text(subtitle!, style: Sa.body(size: 12.5, color: Sa.textDim)),
             ],
           ),
         ),
@@ -529,7 +550,7 @@ class GlowChip extends StatelessWidget {
             const SizedBox(width: 5),
           ],
           Text(label,
-              style: Sa.mono(size: 10.5, color: color, weight: FontWeight.w600)),
+              style: Sa.mono(size: 11.5, color: color, weight: FontWeight.w600)),
         ],
       ),
     );
@@ -570,6 +591,32 @@ class _PulseDotState extends State<PulseDot>
 
   @override
   Widget build(BuildContext context) {
+    // A calm, static dot (core + soft halo) when reduce-motion is requested.
+    if (reduceMotionOf(context)) {
+      if (_c.isAnimating) _c.stop();
+      return SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: Center(
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.color,
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withValues(alpha: 0.35),
+                  blurRadius: 3,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (!_c.isAnimating) _c.repeat();
     return RepaintBoundary(
       child: SizedBox(
         width: widget.size,
@@ -654,7 +701,7 @@ class SaStatTile extends StatelessWidget {
                       Sa.mono(size: 15, color: Sa.text, weight: FontWeight.w700)),
               Text(label.toUpperCase(),
                   style:
-                      Sa.mono(size: 8.5, color: Sa.muted, weight: FontWeight.w600)),
+                      Sa.mono(size: 11, color: Sa.muted, weight: FontWeight.w600)),
             ],
           ),
         ],
@@ -693,17 +740,18 @@ class _SaButtonState extends State<SaButton> {
   Widget build(BuildContext context) {
     final color = widget.color ?? Sa.cyan;
     final disabled = widget.onPressed == null || widget.busy;
-    final lifted = _hover && !disabled;
+    final reduce = reduceMotionOf(context);
+    final lifted = _hover && !disabled && !reduce;
     return MouseRegion(
       cursor: disabled ? MouseCursor.defer : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
+        duration: Duration(milliseconds: reduce ? 0 : 200),
         opacity: disabled ? 0.55 : 1,
         child: AnimatedScale(
           scale: lifted ? 1.03 : 1.0,
-          duration: const Duration(milliseconds: 150),
+          duration: Duration(milliseconds: reduce ? 0 : 150),
           curve: Curves.easeOut,
           child: Material(
             color: Colors.transparent,

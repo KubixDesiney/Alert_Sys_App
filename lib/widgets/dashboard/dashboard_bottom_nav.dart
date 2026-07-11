@@ -76,35 +76,59 @@ class _NavBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = context.appTheme;
+    final localizedLabel = context.tr(label);
+    // A real, focusable, keyboard-activatable tab. MergeSemantics collapses the
+    // icon + label into one node so a screen reader announces "<label>, selected,
+    // button" exactly once; the button/selected flags give it the tab role, the
+    // InkWell provides a visible focus ring and Enter/Space activation, and the
+    // Tooltip surfaces the label on hover / long-press.
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-          decoration: selected
-              ? BoxDecoration(
-                  color: t.navy,
-                  borderRadius: BorderRadius.circular(12),
-                )
-              : const BoxDecoration(),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: selected ? Colors.white : t.muted),
-              const SizedBox(height: 4),
-              Text(
-                context.tr(label),
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                  color: selected ? Colors.white : t.muted,
+      child: MergeSemantics(
+        child: Semantics(
+          button: true,
+          selected: selected,
+          child: Tooltip(
+            message: localizedLabel,
+            child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                decoration: selected
+                    ? BoxDecoration(
+                        color: t.navy,
+                        borderRadius: BorderRadius.circular(12),
+                      )
+                    : const BoxDecoration(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon,
+                        size: 22, color: selected ? Colors.white : t.muted),
+                    const SizedBox(height: 4),
+                    Text(
+                      localizedLabel,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.normal,
+                        color: selected ? Colors.white : t.muted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
+        ),
         ),
       ),
     );

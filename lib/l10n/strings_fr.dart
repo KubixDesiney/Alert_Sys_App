@@ -373,7 +373,6 @@ const Map<String, String> kStringsFr = {
   'Fixed Alerts': 'Alertes corrigées',
   'Claimed Alerts': 'Alertes réclamées',
   'Manage Pending Alerts': 'Gérer les alertes en attente',
-  'Click to see details': 'Cliquez pour voir les détails',
   'All Notifications': 'Toutes les notifications',
   'View and manage your alerts and PM actions':
       'Consultez et gérez vos alertes et actions du responsable',
@@ -1230,6 +1229,10 @@ const Map<String, String> kStringsFr = {
   'Backgroundless logo': 'Logo sans arrière-plan',
   'Drop the plate so the logo sits transparently.':
       'Retirez la plaque pour que le logo soit transparent.',
+  'MOTION & ACCESSIBILITY': 'MOUVEMENT & ACCESSIBILITÉ',
+  'Reduce motion': 'Réduire les animations',
+  'Freezes the neural background, pulsing dots and hover animations. Your device accessibility setting is always honoured.':
+      'Fige le fond neuronal, les points pulsés et les animations au survol. Le réglage d\'accessibilité de votre appareil est toujours respecté.',
   'Unsaved changes': 'Modifications non enregistrées',
   'All changes applied': 'Toutes les modifications appliquées',
   'Applying…': 'Application…',

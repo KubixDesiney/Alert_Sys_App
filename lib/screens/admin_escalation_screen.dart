@@ -19,7 +19,7 @@ import '../widgets/common/app_loading_indicator.dart';
 part 'admin_escalation_screen_collaborations.dart';
 part 'admin_escalation_screen_settings.dart';
 
-Color get _navy => brandPrimary(false);
+Color get _navy => themeBrandPrimary;
 const _muted = AppColors.mutedDark;
 const _green = AppColors.green;
 const _greenLt = AppColors.greenLight;

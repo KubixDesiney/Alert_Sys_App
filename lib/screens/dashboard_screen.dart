@@ -34,9 +34,9 @@ import '../services/collaboration_service.dart';
 
 part 'dashboard_screen_views.dart';
 
-Color get _navy => brandPrimary(false);
+Color get _navy => themeBrandPrimary;
 const _white = AppColors.white;
-const _muted = AppColors.textMuted;
+Color get _muted => themeMuted;
 
 String _formatTimestamp(DateTime dt) {
   final h12 = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
@@ -210,7 +210,6 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
           _Header(
             key: _headerKey,
             userName: widget.superviseurName,
-            clientName: 'SAGEM',
             activeBadge: badge,
             usine: widget.usine,
             onLogout: widget.onLogout,
@@ -300,14 +299,13 @@ class _OriginalDashboardContentState extends State<_OriginalDashboardContent> {
 
 // ---------- HEADER (with notifications, PM actions, vibration, stop buzzing) ----------
 class _Header extends StatefulWidget {
-  final String userName, clientName;
+  final String userName;
   final int activeBadge;
   final String usine;
   final VoidCallback onLogout;
   const _Header({
     super.key,
     required this.userName,
-    required this.clientName,
     required this.activeBadge,
     required this.usine,
     required this.onLogout,
