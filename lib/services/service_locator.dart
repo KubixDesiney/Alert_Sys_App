@@ -5,6 +5,8 @@ import 'alert_stream_service.dart';
 import 'app_logger.dart';
 import 'auth_service.dart';
 import 'collaboration_service.dart';
+import 'data/data_store.dart';
+import 'data/data_store_factory.dart';
 import 'hierarchy_service.dart';
 import 'notification_service.dart';
 import 'presence_service.dart';
@@ -27,6 +29,11 @@ class ServiceLocator {
   late final ShiftService shiftService;
   late final PresenceService presenceService;
 
+  /// Backend-agnostic data layer (Firebase by default; PocketBase when built
+  /// with --dart-define=SIAS_BACKEND=pocketbase). The alert lifecycle in
+  /// AlertActionsService/AlertStreamService routes through this instance.
+  late final DataStore dataStore;
+
   bool _initialized = false;
 
   void init() {
@@ -47,9 +54,11 @@ class ServiceLocator {
     aiService = AIService();
     shiftService = ShiftService(logger: logger);
     presenceService = PresenceService(logger: logger);
+    dataStore = createDataStore();
     alertStreamService = AlertStreamService(
       alertService: alertService,
       logger: logger,
+      dataStore: dataStore,
     );
     notificationService = NotificationService(
       alertService: alertService,
@@ -59,6 +68,7 @@ class ServiceLocator {
       alertService: alertService,
       aiService: aiService,
       logger: logger,
+      dataStore: dataStore,
     );
   }
 }

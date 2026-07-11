@@ -5,16 +5,25 @@ import 'package:rxdart/rxdart.dart';
 import '../models/alert_model.dart';
 import 'alert_service.dart';
 import 'app_logger.dart';
+import 'data/data_store.dart';
+import 'data/firebase_data_store.dart';
 
 class AlertStreamService {
   AlertStreamService({
     required AlertService alertService,
     required AppLogger logger,
+    DataStore? dataStore,
   }) : _alertService = alertService,
-       _logger = logger;
+       _logger = logger,
+       // Default preserves cloud behaviour: FirebaseDataStore delegates to
+       // the same AlertService streams.
+       _store = dataStore ?? FirebaseDataStore(alertService: alertService);
 
   final AlertService _alertService;
   final AppLogger _logger;
+  final DataStore _store;
+
+  bool get _isFirebase => _store.backendName == 'firebase';
 
   StreamSubscription<List<AlertModel>>? _alertsSubscription;
   final Map<String, DateTime> _lastProcessed = {};
@@ -30,7 +39,7 @@ class AlertStreamService {
     _pageSize = pageSize;
     _currentUsine = null;
     _start(
-      source: _alertService.getAllAlerts(limit: pageSize),
+      source: _store.watchAllAlerts(limit: pageSize),
       onAlerts: onAlerts,
       onLoading: onLoading,
     );
@@ -46,9 +55,33 @@ class AlertStreamService {
     _pageSize = pageSize;
     _currentUsine = usine;
 
-    final usineStream = _alertService.getAlertsForUsine(usine, limit: pageSize);
+    final usineStream = _store.watchAlertsForUsine(usine, limit: pageSize);
     if (currentUserId == null || currentUserId.isEmpty) {
       _start(source: usineStream, onAlerts: onAlerts, onLoading: onLoading);
+      return;
+    }
+
+    if (!_isFirebase) {
+      // On-prem: the store's supervisor stream already covers owner+assistant;
+      // collaborator visibility is a v3 item (see data/README.md).
+      final mineStream =
+          _store.watchAlertsForSupervisor(currentUserId, limit: pageSize);
+      _start(
+        source: Rx.combineLatest2<List<AlertModel>, List<AlertModel>,
+            List<AlertModel>>(
+          usineStream,
+          mineStream,
+          (usineAlerts, mineAlerts) {
+            final combined = [...usineAlerts, ...mineAlerts];
+            final seen = <String>{};
+            return combined.where((a) => seen.add(a.id)).toList()
+              ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          },
+        ),
+        onAlerts: onAlerts,
+        onLoading: onLoading,
+        fallback: () => _store.watchAlertsForUsine(usine, limit: pageSize),
+      );
       return;
     }
 
@@ -107,11 +140,8 @@ class AlertStreamService {
       return const [];
     }
     final oldest = currentAlerts.last.timestamp;
-    if (_currentUsine == null) {
-      return _alertService.fetchOlderAlerts(before: oldest, limit: _pageSize);
-    }
-    return _alertService.fetchOlderAlertsForUsine(
-      usine: _currentUsine!,
+    return _store.fetchOlderAlerts(
+      usine: _currentUsine,
       before: oldest,
       limit: _pageSize,
     );
@@ -183,11 +213,15 @@ class AlertStreamService {
       _lastProcessed[id] = now;
       final alert = newAlerts.firstWhere((a) => a.id == id);
       _logger.info('New alert detected: ${alert.id} (${alert.type})');
-      _alertService.sendNewAlertNotification(
-        alert.id,
-        alert.type,
-        alert.description,
-      );
+      if (_isFirebase) {
+        // Cloud path: queue FCM fan-out rows in RTDB. On-prem the
+        // worker-runner owns new-alert fan-out over LAN SSE.
+        _alertService.sendNewAlertNotification(
+          alert.id,
+          alert.type,
+          alert.description,
+        );
+      }
     }
     _previousAlertIds = newIds;
   }

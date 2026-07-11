@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import '../models/alert_model.dart';
 import '../services/alert_actions_service.dart';
 import '../services/alert_stream_service.dart';
+import '../services/data/data_store_factory.dart';
+import '../services/data/onprem_session.dart';
 import '../services/notification_service.dart';
 import '../services/service_locator.dart';
 
@@ -53,7 +55,7 @@ class AlertProvider extends ChangeNotifier {
     _loadedOlderAlertIds.clear();
     _alertStreamService.initForSupervisor(
       usine: usine,
-      currentUserId: FirebaseAuth.instance.currentUser?.uid,
+      currentUserId: currentSuperviseurId,
       pageSize: _pageSize,
       onLoading: _markLoading,
       onAlerts: _setAlerts,
@@ -223,11 +225,17 @@ class AlertProvider extends ChangeNotifier {
   }
 
   DateTime get currentTime => _currentTime;
-  String get currentSuperviseurId =>
-      FirebaseAuth.instance.currentUser?.uid ?? '';
-  String get currentSuperviseurName =>
-      FirebaseAuth.instance.currentUser?.email?.split('@').first ??
-      'Supervisor';
+
+  // Identity resolves against the active backend: the on-prem build must
+  // never touch FirebaseAuth (SIAS_BACKEND=pocketbase), while the Firebase
+  // build keeps its exact existing behaviour.
+  String get currentSuperviseurId => isPocketBaseBackend
+      ? (OnPremSession.instance.userId ?? '')
+      : FirebaseAuth.instance.currentUser?.uid ?? '';
+  String get currentSuperviseurName => isPocketBaseBackend
+      ? (OnPremSession.instance.userName ?? 'Supervisor')
+      : FirebaseAuth.instance.currentUser?.email?.split('@').first ??
+          'Supervisor';
 
   Future<void> takeAlert(
     String alertId,
@@ -278,11 +286,15 @@ class AlertProvider extends ChangeNotifier {
       note: note,
       updateLocal: _updateLocal,
     );
-    await _notificationService.notifyAllUsers(
-      alerts: _alerts,
-      alertId: alertId,
-      isCritical: isCritical,
-    );
+    if (!isPocketBaseBackend) {
+      // Firebase-only fan-out; on-prem the worker-runner watches the
+      // isCritical transition and pushes the LAN notification itself.
+      await _notificationService.notifyAllUsers(
+        alerts: _alerts,
+        alertId: alertId,
+        isCritical: isCritical,
+      );
+    }
   }
 
   Future<void> requestAssistanceForAlert(String alertId) {

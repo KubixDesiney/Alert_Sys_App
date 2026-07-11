@@ -4,7 +4,8 @@ import '../models/alert_model.dart';
 import 'ai_service.dart';
 import 'alert_service.dart';
 import 'app_logger.dart';
-import 'audit_service.dart';
+import 'data/data_store.dart';
+import 'data/firebase_data_store.dart';
 import 'worker_trigger_queue.dart';
 
 class AlertActionsService {
@@ -12,13 +13,20 @@ class AlertActionsService {
     required AlertService alertService,
     required AIService aiService,
     required AppLogger logger,
+    DataStore? dataStore,
   })  : _alertService = alertService,
         _aiService = aiService,
-        _logger = logger;
+        _logger = logger,
+        // Default preserves cloud behaviour exactly: FirebaseDataStore is a
+        // pure delegation layer over the same AlertService instance.
+        _store = dataStore ?? FirebaseDataStore(alertService: alertService);
 
   final AlertService _alertService;
   final AIService _aiService;
   final AppLogger _logger;
+  final DataStore _store;
+
+  bool get _isFirebase => _store.backendName == 'firebase';
 
   Future<void> takeAlert({
     required List<AlertModel> alerts,
@@ -36,7 +44,7 @@ class AlertActionsService {
       );
     }
 
-    await _alertService.takeAlert(alertId, superviseurId, superviseurName);
+    await _store.claimAlert(alertId, superviseurId, superviseurName);
     updateLocal(
       alertId,
       (a) => a.copyWith(
@@ -46,8 +54,8 @@ class AlertActionsService {
         takenAtTimestamp: DateTime.now(),
       ),
     );
-    unawaited(AuditService.instance.log(
-      action: AuditAction.alertClaim,
+    unawaited(_store.writeAudit(
+      action: 'alert.claim',
       targetType: 'alert',
       targetId: alertId,
       detail: 'Claimed by $superviseurName',
@@ -71,14 +79,18 @@ class AlertActionsService {
         clearTakenAt: true,
       ),
     );
-    await _alertService.returnToQueue(alertId, reason: reason);
-    await _alertService.notifyAdminsAboutSuspend(
-      alertId,
-      supervisorName,
-      reason,
-    );
-    unawaited(AuditService.instance.log(
-      action: AuditAction.alertReturn,
+    await _store.returnAlertToQueue(alertId, reason: reason);
+    if (_isFirebase) {
+      // Firebase: client fans out the suspend notification. On-prem the
+      // worker-runner detects the status transition and pushes over LAN SSE.
+      await _alertService.notifyAdminsAboutSuspend(
+        alertId,
+        supervisorName,
+        reason,
+      );
+    }
+    unawaited(_store.writeAudit(
+      action: 'alert.return',
       targetType: 'alert',
       targetId: alertId,
       factoryId: alert.usine,
@@ -107,16 +119,20 @@ class AlertActionsService {
       ),
     );
 
-    await _alertService.resolveAlert(
+    await _store.resolveAlert(
       alertId,
       reason,
       elapsed,
       assistingSupervisorId: alert.superviseurId,
       assistingSupervisorName: alert.superviseurName,
     );
-    await WorkerTriggerQueue.instance.enqueueAiRetry();
-    unawaited(AuditService.instance.log(
-      action: AuditAction.alertResolve,
+    if (_isFirebase) {
+      // Cloud-only: nudges the Cloudflare AI worker. On-prem assignment runs
+      // on its own cron inside the worker-runner.
+      await WorkerTriggerQueue.instance.enqueueAiRetry();
+    }
+    unawaited(_store.writeAudit(
+      action: 'alert.resolve',
       targetType: 'alert',
       targetId: alertId,
       factoryId: alert.usine,
@@ -137,7 +153,7 @@ class AlertActionsService {
     final alert = alerts.firstWhere((a) => a.id == alertId);
     final updatedComments = [...alert.comments, newComment];
     updateLocal(alertId, (a) => a.copyWith(comments: updatedComments));
-    await _alertService.addComment(alertId, newComment);
+    await _store.addComment(alertId, newComment);
   }
 
   Future<void> toggleCritical({
@@ -151,12 +167,9 @@ class AlertActionsService {
       alertId,
       (a) => a.copyWith(isCritical: isCritical, criticalNote: note),
     );
-    await _alertService.toggleCritical(alertId, isCritical);
-    if (note != null) {
-      await _alertService.setCriticalNote(alertId, note);
-    }
-    unawaited(AuditService.instance.log(
-      action: AuditAction.alertCriticalToggle,
+    await _store.setCritical(alertId, isCritical, note: note);
+    unawaited(_store.writeAudit(
+      action: 'alert.critical_toggle',
       targetType: 'alert',
       targetId: alertId,
       detail: isCritical

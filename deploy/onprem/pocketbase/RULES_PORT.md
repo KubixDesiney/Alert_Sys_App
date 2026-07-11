@@ -1,63 +1,73 @@
-# RTDB -> PocketBase rules port
+# RTDB -> PocketBase rules port (customer RBAC)
 
-Faithful translation of `database.rules.json` (Firebase RBAC) into PocketBase collection
-API rules for the on-prem path. The RBAC model is unchanged — only the enforcement engine.
+Translation of SIAS's authorization model into PocketBase collection API rules for the
+on-prem path — now built around the **customer role set**, not the cloud role names.
 
-## Identity mapping
-- The authed user is `@request.auth`. Its `role` field is `@request.auth.role`; its id is
-  `@request.auth.id`.
-- The **worker-runner connects as a PocketBase superuser**, which bypasses all collection
-  rules — the exact equivalent of the Firebase service-account bypassing RTDB rules. So any
-  node that was "worker/service-account writes" becomes a `null` (locked) client rule.
+## Customer roles (on-prem)
+| Role | Purpose | Key limits |
+|------|---------|-----------|
+| `company_owner` | Owns the deployment: branding, user accounts, connectors | **No deployment secrets** — TLS keys, PB admin password, worker shared secret and license keys live in the host `.env`/encrypted store, never in PocketBase |
+| `production_manager` | Factory operations: alerts, escalation policy, rosters | Cannot manage users/branding/connectors; cannot reach secrets |
+| `supervisor` | Handles alerts | Scoped to their own factory (`usine = @request.auth.usine`); cannot create or delete alerts |
+| `vendor_support` | Vendor diagnostics | **Disabled by default**, time-boxed (`vendorAccessExpiresAt > @now`), read-only (security logs only), every sign-in audited. One named account per engineer — no shared credentials |
+
+The internal **platform SuperAdmin does not exist on-prem**: vendor-side platform roles stay
+in the vendor cloud. On-prem "root" is PocketBase's own `_superusers` admin, held by the
+customer's IT, and the worker-runner's service identity (which bypasses collection rules —
+the equivalent of the Firebase service account).
+
+Legacy `admin` is still accepted in rules as an alias for `production_manager`
+(migration compatibility).
 
 ## Rule cheatsheet
-| RTDB | PocketBase rule |
-|------|-----------------|
-| `auth != null` | `@request.auth.id != ""` |
-| `root.child('users').child(auth.uid).child('role').val() === 'admin'` | `@request.auth.role = "admin"` |
-| `auth.uid === $ownerId` | `<ownerField> = @request.auth.id` |
-| superadmin only | `@request.auth.role = "superadmin"` |
+| Concept | PocketBase rule |
+|---------|-----------------|
+| authed | `@request.auth.id != ""` |
+| account not disabled | `@request.auth.disabled != true` |
+| factory scoping | `usine = @request.auth.usine` |
+| vendor window | `@request.auth.vendorAccessExpiresAt > @now` |
+| block role self-escalation | `@request.data.role:isset = false` on self-update |
+| author-pinned audit append | `@request.data.actorId = @request.auth.id` |
 | worker / service-account only | rule = `null` (superuser-only) |
-| public (pre-auth) read | rule = `""` |
 
-PocketBase semantics to remember: **`null` = locked (superuser only)**, **`""` = public**,
-a non-empty string = a filter that must pass.
+`null` = locked (superuser only), `""` = public, non-empty string = filter that must pass.
 
-## Per-collection rules
-| Collection | list | view | create | update | delete |
-|------------|------|------|--------|--------|--------|
-| `users` (auth) | authed | authed | null (provisioned by superadmin/worker) | self or admin/superadmin | superadmin |
-| `alerts` | authed | authed | authed | authed | null |
-| `supervisor_active_alerts` | authed | self or admin | self or admin | self or admin | self or admin |
-| `notifications` | self or admin | self or admin | authed | self or admin | null |
-| `escalation_settings` | authed | authed | admin | admin | admin |
-| `collaboration_requests` / `help_requests` | authed | authed | authed | authed | admin |
-| `security_logs` / `security_actions` | superadmin | superadmin | null | null | null |
-| `provisioning` / `infra_config` / `scim` | superadmin | superadmin | null | null | null |
-| `branding_config` / `auth_config` | public (`""`) | public | superadmin | superadmin | superadmin |
+## Per-collection summary (exact strings in `pb_schema.json`)
+| Collection | list/view | create | update | delete |
+|------------|-----------|--------|--------|--------|
+| `users` (auth) | self, owner, PM | owner | self (password only — role/disabled/vendor fields locked) or owner | owner (not self) |
+| `alerts` | owner/PM all; supervisor own factory | owner/PM | owner/PM; supervisor own-factory claim/own/assist | nobody |
+| `supervisor_active_alerts` | authed / self-or-managing | self or PM | self or PM | self or PM |
+| `notifications` | recipient or owner/PM | authed non-vendor | recipient or PM | nobody |
+| `escalation_settings` | authed | owner/PM | owner/PM | owner/PM |
+| `branding` | authed | owner | owner | owner |
+| `connectors` | owner | owner | owner | owner |
+| `connector_secrets` | **nobody (write-only)** | owner | owner | nobody |
+| `audit_logs` | owner | any active user, actorId pinned | **nobody** | **nobody** |
+| `security_logs` | owner, or vendor inside window | worker only | nobody | nobody |
 
-Exact PocketBase filter strings are in `pb_schema.json` (this folder).
+These rules are executable-tested: `worker_test/onprem_rbac.test.js` evaluates the real
+strings from `pb_schema.json` against a persona matrix via `rules_eval.mjs`.
+
+## Session / credential hygiene
+- Sessions expire with the PocketBase JWT; the Flutter `PocketBaseAuthService` also
+  enforces expiry locally and re-checks the disabled/vendor gates on every `auth-refresh`.
+- Password change requires the old password (PocketBase invalidates the token — forced
+  re-login). `mustChangePassword` supports first-login rotation.
+- MFA: `MfaProvider` interface is wired in the sign-in path (`NoopMfaProvider` by default).
+- No shared credentials: PocketBase enforces unique emails; provisioning scripts create
+  individual accounts only.
 
 ## Field validation
-RTDB `.validate` rules become PocketBase field **types** + `required`:
-- `isString()` -> `text`; `isNumber()` -> `number`; `isBoolean()` -> `bool`.
-- `currentLocation {lat,lng}` numeric -> two `number` fields (or a `json` field validated in a hook).
-- Range checks (e.g. `aiConfidence 0..1`, `startMinutes 0..1439`) -> PocketBase field
-  `min`/`max` options, or a lightweight `onRecordBeforeCreate/Update` hook.
-
-## Integration notes
-- `escalation_settings` is modeled as a single record with a `settings` (json) field holding
-  the `{type:{unclaimedMinutes,claimedMinutes}, default:{...}}` map. `PocketBaseStore.getEscalationSettings`
-  should read `items[0]?.settings ?? {}` (one-line tweak when wiring).
-- The unauthenticated constrained alert-create path (RTDB) is intentionally dropped on-prem:
-  integrations create alerts via the worker (superuser) or an authed account.
+RTDB `.validate` rules become PocketBase field **types** + `required` (`text`/`number`/
+`bool`/`date`/`json`); range checks use field `min`/`max` or a small
+`onRecordBeforeCreate/Update` hook.
 
 ## Applying it
 1. PocketBase Admin -> **Settings -> Import collections** -> paste `pb_schema.json`
-   (verify field types against your PocketBase version first), **or** drop it into
+   (verify field types against your PocketBase version), **or** drop it into
    `pb_migrations/` as a migration.
-2. Create the superuser the worker-runner uses; put its token in `PB_TOKEN` (see
-   `deploy/onprem/docker-compose.yml`).
+2. Create the superuser the worker-runner uses; put its token in `PB_TOKEN`.
 3. Migrate existing data (optional): `node migrate_rtdb_to_pocketbase.mjs --input export.json
    --pb http://localhost:8090 --token <superuser> --dry-run` (drop `--dry-run` to apply).
-4. Provision the first `superadmin` user record, then use the app/console as normal.
+4. Provision the first `company_owner` user, who then provisions everyone else in-app.
