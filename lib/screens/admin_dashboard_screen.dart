@@ -18,7 +18,7 @@ import 'admin_escalation_screen.dart';
 import 'hierarchy_screen.dart';
 import '../models/hierarchy_model.dart';
 import '../services/hierarchy_service.dart';
-import '../services/alert_service.dart';
+import '../services/service_locator.dart';
 import '../services/worker_trigger_queue.dart';
 import '../widgets/admin/notification_center.dart';
 import '../widgets/admin/pill_tab_bar.dart';
@@ -78,7 +78,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   late final FirebaseDatabase _db;
   late final AuthService _auth;
-  late final AlertService _alertService;
 
   // Filter state
   String _timeRange = 'all';
@@ -106,7 +105,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
     _db = FirebaseDatabase.instance;
     _auth = AuthService();
-    _alertService = AlertService();
     _loadSavedFilters();
     _loadSupervisors();
     _loadAlerts();
@@ -254,7 +252,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     required bool isCritical,
   }) async {
     try {
-      await _alertService.createAlertWithHierarchy(
+      // Routed through the backend-agnostic DataStore: Firebase builds keep
+      // createAlertWithHierarchy behaviour, on-prem builds write PocketBase.
+      await ServiceLocator.instance.dataStore.createAlert(
         type: type,
         usine: usine,
         convoyeur: convoyeur,

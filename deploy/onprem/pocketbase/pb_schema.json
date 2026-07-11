@@ -1,11 +1,34 @@
 [
   {
+    "name": "users",
+    "type": "auth",
+    "listRule": "@request.auth.disabled != true && (id = @request.auth.id || @request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\")",
+    "viewRule": "@request.auth.disabled != true && (id = @request.auth.id || @request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\")",
+    "createRule": "@request.auth.role = \"company_owner\"",
+    "updateRule": "(id = @request.auth.id && @request.data.role:isset = false && @request.data.disabled:isset = false && @request.data.vendorAccessExpiresAt:isset = false) || @request.auth.role = \"company_owner\"",
+    "deleteRule": "@request.auth.role = \"company_owner\" && id != @request.auth.id",
+    "schema": [
+      { "name": "name", "type": "text", "required": false, "options": {} },
+      { "name": "firstName", "type": "text", "required": false, "options": {} },
+      { "name": "lastName", "type": "text", "required": false, "options": {} },
+      { "name": "role", "type": "select", "required": true, "options": { "maxSelect": 1, "values": ["company_owner", "production_manager", "supervisor", "vendor_support", "admin"] } },
+      { "name": "usine", "type": "text", "required": false, "options": {} },
+      { "name": "factories", "type": "json", "required": false, "options": {} },
+      { "name": "disabled", "type": "bool", "required": false, "options": {} },
+      { "name": "vendorAccessExpiresAt", "type": "date", "required": false, "options": {} },
+      { "name": "mustChangePassword", "type": "bool", "required": false, "options": {} },
+      { "name": "status", "type": "text", "required": false, "options": {} },
+      { "name": "active", "type": "bool", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
     "name": "alerts",
     "type": "base",
-    "listRule": "@request.auth.id != \"\"",
-    "viewRule": "@request.auth.id != \"\"",
-    "createRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\"",
-    "updateRule": "@request.auth.role = \"admin\" || @request.auth.role = \"superadmin\" || superviseurId = @request.auth.id || assistantId = @request.auth.id || (superviseurId = \"\" && @request.data.superviseurId = @request.auth.id)",
+    "listRule": "@request.auth.id != \"\" && @request.auth.disabled != true && (@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\" || (@request.auth.role = \"supervisor\" && usine = @request.auth.usine))",
+    "viewRule": "@request.auth.id != \"\" && @request.auth.disabled != true && (@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\" || (@request.auth.role = \"supervisor\" && usine = @request.auth.usine))",
+    "createRule": "@request.auth.disabled != true && (@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\")",
+    "updateRule": "@request.auth.disabled != true && (@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\" || (@request.auth.role = \"supervisor\" && usine = @request.auth.usine && (superviseurId = @request.auth.id || assistantId = @request.auth.id || (superviseurId = \"\" && @request.data.superviseurId = @request.auth.id))))",
     "deleteRule": null,
     "schema": [
       { "name": "alertNumber", "type": "number", "required": false, "options": {} },
@@ -14,30 +37,45 @@
       { "name": "convoyeur", "type": "number", "required": false, "options": {} },
       { "name": "poste", "type": "number", "required": false, "options": {} },
       { "name": "adresse", "type": "text", "required": false, "options": {} },
+      { "name": "description", "type": "text", "required": false, "options": {} },
+      { "name": "source", "type": "text", "required": false, "options": {} },
       { "name": "status", "type": "text", "required": false, "options": {} },
       { "name": "superviseurId", "type": "text", "required": false, "options": {} },
       { "name": "superviseurName", "type": "text", "required": false, "options": {} },
       { "name": "assistantId", "type": "text", "required": false, "options": {} },
+      { "name": "assistantName", "type": "text", "required": false, "options": {} },
       { "name": "isCritical", "type": "bool", "required": false, "options": {} },
+      { "name": "criticalNote", "type": "text", "required": false, "options": {} },
       { "name": "isEscalated", "type": "bool", "required": false, "options": {} },
+      { "name": "escalatedAt", "type": "text", "required": false, "options": {} },
+      { "name": "escalationReason", "type": "text", "required": false, "options": {} },
       { "name": "timestamp", "type": "text", "required": false, "options": {} },
       { "name": "takenAtTimestamp", "type": "text", "required": false, "options": {} },
       { "name": "resolvedAt", "type": "text", "required": false, "options": {} },
       { "name": "elapsedTime", "type": "number", "required": false, "options": {} },
       { "name": "resolutionReason", "type": "text", "required": false, "options": {} },
+      { "name": "suspendReason", "type": "text", "required": false, "options": {} },
+      { "name": "comments", "type": "json", "required": false, "options": {} },
+      { "name": "assistingSupervisorId", "type": "text", "required": false, "options": {} },
+      { "name": "assistingSupervisorName", "type": "text", "required": false, "options": {} },
       { "name": "aiAssigned", "type": "bool", "required": false, "options": {} },
-      { "name": "aiAssignmentReason", "type": "text", "required": false, "options": {} }
+      { "name": "aiAssignmentReason", "type": "text", "required": false, "options": {} },
+      { "name": "dedupKey", "type": "text", "required": false, "options": {} }
     ],
-    "indexes": []
+    "indexes": [
+      "CREATE INDEX idx_alerts_status ON alerts (status)",
+      "CREATE INDEX idx_alerts_usine ON alerts (usine)",
+      "CREATE INDEX idx_alerts_timestamp ON alerts (timestamp)"
+    ]
   },
   {
     "name": "supervisor_active_alerts",
     "type": "base",
-    "listRule": "@request.auth.id != \"\"",
-    "viewRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
-    "createRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
-    "updateRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
-    "deleteRule": "supervisorId = @request.auth.id || @request.auth.role = \"admin\"",
+    "listRule": "@request.auth.id != \"\" && @request.auth.disabled != true",
+    "viewRule": "supervisorId = @request.auth.id || @request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "createRule": "supervisorId = @request.auth.id || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "updateRule": "supervisorId = @request.auth.id || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "deleteRule": "supervisorId = @request.auth.id || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
     "schema": [
       { "name": "supervisorId", "type": "text", "required": true, "options": {} },
       { "name": "alertId", "type": "text", "required": false, "options": {} },
@@ -48,15 +86,17 @@
   {
     "name": "notifications",
     "type": "base",
-    "listRule": "recipientId = @request.auth.id || @request.auth.role = \"admin\"",
-    "viewRule": "recipientId = @request.auth.id || @request.auth.role = \"admin\"",
-    "createRule": "@request.auth.id != \"\"",
-    "updateRule": "recipientId = @request.auth.id || @request.auth.role = \"admin\"",
+    "listRule": "recipientId = @request.auth.id || @request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "viewRule": "recipientId = @request.auth.id || @request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "createRule": "@request.auth.id != \"\" && @request.auth.disabled != true && @request.auth.role != \"vendor_support\"",
+    "updateRule": "recipientId = @request.auth.id || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
     "deleteRule": null,
     "schema": [
       { "name": "recipientId", "type": "text", "required": true, "options": {} },
       { "name": "notifType", "type": "text", "required": false, "options": {} },
       { "name": "alertId", "type": "text", "required": false, "options": {} },
+      { "name": "title", "type": "text", "required": false, "options": {} },
+      { "name": "body", "type": "text", "required": false, "options": {} },
       { "name": "pushSent", "type": "bool", "required": false, "options": {} },
       { "name": "createdAt", "type": "text", "required": false, "options": {} }
     ],
@@ -65,21 +105,91 @@
   {
     "name": "escalation_settings",
     "type": "base",
-    "listRule": "@request.auth.id != \"\"",
-    "viewRule": "@request.auth.id != \"\"",
-    "createRule": "@request.auth.role = \"admin\"",
-    "updateRule": "@request.auth.role = \"admin\"",
-    "deleteRule": "@request.auth.role = \"admin\"",
+    "listRule": "@request.auth.id != \"\" && @request.auth.disabled != true",
+    "viewRule": "@request.auth.id != \"\" && @request.auth.disabled != true",
+    "createRule": "@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "updateRule": "@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
+    "deleteRule": "@request.auth.role = \"company_owner\" || @request.auth.role = \"production_manager\" || @request.auth.role = \"admin\"",
     "schema": [
       { "name": "settings", "type": "json", "required": false, "options": {} }
     ],
     "indexes": []
   },
   {
+    "name": "branding",
+    "type": "base",
+    "listRule": "@request.auth.id != \"\" && @request.auth.disabled != true",
+    "viewRule": "@request.auth.id != \"\" && @request.auth.disabled != true",
+    "createRule": "@request.auth.role = \"company_owner\"",
+    "updateRule": "@request.auth.role = \"company_owner\"",
+    "deleteRule": "@request.auth.role = \"company_owner\"",
+    "schema": [
+      { "name": "companyName", "type": "text", "required": false, "options": {} },
+      { "name": "primaryColor", "type": "text", "required": false, "options": {} },
+      { "name": "secondaryColor", "type": "text", "required": false, "options": {} },
+      { "name": "logo", "type": "file", "required": false, "options": { "maxSelect": 1, "maxSize": 2097152 } }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "connectors",
+    "type": "base",
+    "listRule": "@request.auth.role = \"company_owner\"",
+    "viewRule": "@request.auth.role = \"company_owner\"",
+    "createRule": "@request.auth.role = \"company_owner\"",
+    "updateRule": "@request.auth.role = \"company_owner\"",
+    "deleteRule": "@request.auth.role = \"company_owner\"",
+    "schema": [
+      { "name": "kind", "type": "text", "required": true, "options": {} },
+      { "name": "label", "type": "text", "required": false, "options": {} },
+      { "name": "config", "type": "json", "required": false, "options": {} },
+      { "name": "enabled", "type": "bool", "required": false, "options": {} },
+      { "name": "runtime", "type": "json", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "connector_secrets",
+    "type": "base",
+    "listRule": null,
+    "viewRule": null,
+    "createRule": "@request.auth.role = \"company_owner\"",
+    "updateRule": "@request.auth.role = \"company_owner\"",
+    "deleteRule": null,
+    "schema": [
+      { "name": "connectorId", "type": "text", "required": true, "options": {} },
+      { "name": "secret", "type": "json", "required": false, "options": {} }
+    ],
+    "indexes": []
+  },
+  {
+    "name": "audit_logs",
+    "type": "base",
+    "listRule": "@request.auth.role = \"company_owner\"",
+    "viewRule": "@request.auth.role = \"company_owner\"",
+    "createRule": "@request.auth.id != \"\" && @request.auth.disabled != true && @request.data.actorId = @request.auth.id",
+    "updateRule": null,
+    "deleteRule": null,
+    "schema": [
+      { "name": "at", "type": "text", "required": false, "options": {} },
+      { "name": "action", "type": "text", "required": true, "options": {} },
+      { "name": "actorId", "type": "text", "required": true, "options": {} },
+      { "name": "actorName", "type": "text", "required": false, "options": {} },
+      { "name": "targetType", "type": "text", "required": false, "options": {} },
+      { "name": "targetId", "type": "text", "required": false, "options": {} },
+      { "name": "factoryId", "type": "text", "required": false, "options": {} },
+      { "name": "detail", "type": "text", "required": false, "options": {} }
+    ],
+    "indexes": [
+      "CREATE INDEX idx_audit_at ON audit_logs (at)",
+      "CREATE INDEX idx_audit_actor ON audit_logs (actorId)"
+    ]
+  },
+  {
     "name": "security_logs",
     "type": "base",
-    "listRule": "@request.auth.role = \"superadmin\"",
-    "viewRule": "@request.auth.role = \"superadmin\"",
+    "listRule": "@request.auth.role = \"company_owner\" || (@request.auth.role = \"vendor_support\" && @request.auth.disabled != true && @request.auth.vendorAccessExpiresAt > @now)",
+    "viewRule": "@request.auth.role = \"company_owner\" || (@request.auth.role = \"vendor_support\" && @request.auth.disabled != true && @request.auth.vendorAccessExpiresAt > @now)",
     "createRule": null,
     "updateRule": null,
     "deleteRule": null,

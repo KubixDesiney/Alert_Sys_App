@@ -26,7 +26,27 @@ export function recipientsForAssignment(alert) {
 
 /** In-memory SSE hub: uid -> set of open responses. */
 export class SseHub {
-  constructor() { this.clients = new Map(); }
+  constructor() { this.clients = new Map(); this._heartbeat = null; }
+
+  /** Comment-line heartbeat keeps idle LAN connections open through proxies
+   *  and lets clients detect a dead runner and reconnect (`retry:` is sent on
+   *  connect). */
+  startHeartbeat(intervalMs = 25000) {
+    if (this._heartbeat) return;
+    this._heartbeat = setInterval(() => {
+      for (const set of this.clients.values()) {
+        for (const res of set) {
+          try { res.write(': ping\n\n'); } catch (_) { /* closed */ }
+        }
+      }
+    }, intervalMs);
+    if (this._heartbeat.unref) this._heartbeat.unref();
+  }
+
+  stopHeartbeat() {
+    if (this._heartbeat) clearInterval(this._heartbeat);
+    this._heartbeat = null;
+  }
   connect(uid, res) {
     if (!this.clients.has(uid)) this.clients.set(uid, new Set());
     this.clients.get(uid).add(res);
