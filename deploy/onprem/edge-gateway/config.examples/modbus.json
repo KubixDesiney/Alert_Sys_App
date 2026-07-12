@@ -1,0 +1,43 @@
+{
+  "ingestUrl": "http://worker-runner:8787/ingest",
+  "adapters": {
+    "modbus": {
+      "enabled": true,
+      "host": "plc-line2.plant.local",
+      "port": 502,
+      "unitId": 1,
+      "pollMs": 10000,
+      "registers": [
+        {
+          "name": "oven_temp",
+          "fc": 3,
+          "address": 40001,
+          "dataType": "float32",
+          "wordOrder": "HL",
+          "factory": "Usine A",
+          "line": 2,
+          "station": 3,
+          "machine": "MACH-007",
+          "metric": "temperature",
+          "type": "maintenance",
+          "severity": "critical",
+          "thresholds": { "gte": 90 }
+        },
+        {
+          "name": "line_speed",
+          "fc": 4,
+          "address": 30010,
+          "dataType": "uint16",
+          "scale": 0.1,
+          "factory": "Usine A",
+          "line": 2,
+          "station": 1,
+          "metric": "speed_m_min",
+          "type": "manque_ressource",
+          "thresholds": { "lt": 5 },
+          "description": "Line speed dropped to {value} m/min"
+        }
+      ]
+    }
+  }
+}

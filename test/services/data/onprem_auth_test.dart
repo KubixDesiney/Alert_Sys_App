@@ -117,7 +117,9 @@ void main() {
         };
 
     test('sign-in activates the session and decodes token expiry', () async {
-      final exp = DateTime.utc(2026, 7, 12).millisecondsSinceEpoch ~/ 1000;
+      // Deliberately far in the future so the assertion never collides with
+      // the real wall clock OnPremSession.isSignedIn checks against.
+      final exp = DateTime.utc(2099, 7, 12).millisecondsSinceEpoch ~/ 1000;
       final client = MockClient((req) async {
         if (req.url.path.contains('auth-with-password')) {
           return http.Response(
@@ -134,7 +136,7 @@ void main() {
       expect(user.role, OnPremRole.supervisor);
       expect(session.userId, 'u1');
       expect(session.token, isNotEmpty);
-      expect(session.tokenExpiresAt, DateTime.utc(2026, 7, 12));
+      expect(session.tokenExpiresAt, DateTime.utc(2099, 7, 12));
       expect(auth.sessionValid, isTrue);
     });
 

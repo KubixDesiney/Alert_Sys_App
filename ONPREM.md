@@ -1,59 +1,105 @@
 # On-premise / air-gapped deployment
 
-Many industrial buyers cannot use cloud services on the plant network. This is the
-architecture and migration plan to run SIAS entirely on a customer's own hardware, plus a
-runnable scaffold under `deploy/onprem/`.
+Many industrial buyers cannot use cloud services on the plant network. This document is
+the architecture and the **honest status** of running SIAS entirely on a customer's own
+hardware. The runnable stack lives under `deploy/onprem/` (see its README for the
+production install guide).
 
-## Honest status
-Today SIAS runs on Firebase (Auth + Realtime Database) and Cloudflare Workers. A true
-air-gapped build replaces those two cloud dependencies. This document is a **plan + a
-working scaffold of the surrounding infrastructure** — the data/auth backend port and
-the worker-logic port are scoped here as defined engineering work, not yet shipped.
+## Honest status (updated 2026-07-12)
 
-## What already helps
-- The **GBDT forecaster runs fully on-device** (no inference server) — already air-gap friendly.
-- The **worker logic is plain JavaScript** — it can run under Node instead of Cloudflare.
-- **Per-tenant isolation** (`PROVISIONING.md`) already assumes a self-contained instance.
+The cloud product runs on Firebase (Auth + RTDB) and Cloudflare Workers. The on-prem
+build replaces both. What is genuinely DONE, PARTIAL or NOT DONE:
+
+**DONE**
+- **Data layer wired into the app**: `lib/services/data/` (`DataStore`) now carries the
+  core alert lifecycle — watch (PM/usine/supervisor), create, claim, resolve,
+  suspend/return, critical + note, comments, pagination, audit. `AlertProvider` →
+  `AlertActionsService`/`AlertStreamService` route through it. `SIAS_BACKEND=firebase`
+  is a pure delegation to the existing services (parity pinned by tests);
+  `SIAS_BACKEND=pocketbase` performs zero Firebase I/O on this path.
+- **On-prem auth + RBAC**: `PocketBaseAuthService` (password sign-in, token refresh,
+  local session expiry from the JWT, password change with forced re-auth, account
+  disable, vendor-window grant/revoke, MFA-ready `MfaProvider` seam) and the customer
+  role model `company_owner` / `production_manager` / `supervisor` / `vendor_support`
+  (`onprem_roles.dart`). PocketBase API rules in `deploy/onprem/pocketbase/pb_schema.json`
+  enforce it server-side — factory scoping, role self-escalation block, write-only
+  connector secrets, append-only author-pinned audit log, vendor disabled-by-default +
+  time-boxed. The rules are executable-tested (`worker_test/onprem_rbac.test.js`).
+  The platform SuperAdmin stays a vendor-cloud concept; on-prem "root" is PocketBase's
+  own `_superusers`.
+- **worker-runner** (Node, `deploy/onprem/worker-runner/`): cloud-parity AI assignment
+  (vendored scoring), escalation, **alert ingestion** (`POST /ingest`, canonical
+  payload), **dedup + alert-storm protection** (per-signal window, per-source/global
+  ceilings, single critical storm meta-alert), **lifecycle fan-out over LAN SSE**
+  (`/events`, token + session gated, heartbeat) driven by a snapshot ChangeWatcher
+  (new/critical/suspend/claim/resolve) with persisted notification rows for offline
+  devices, **retention** (archive-then-delete terminal alerts, notification purge),
+  **local backups** (nightly gzip JSON snapshots + prune; restore command),
+  **append-only audit trail** (PocketBase + local JSONL), retry/backoff on every
+  PocketBase call, `/health`, `/ready`, `/license-status`, structured JSON logs.
+- **Edge Gateway** (`deploy/onprem/edge-gateway/`): modular **read-only** adapters —
+  ESP32 HTTP, generic REST webhook, MQTT, OPC UA, Modbus TCP — all reduced to one
+  canonical alert payload with configurable tag/register mapping, scaling and
+  thresholds; API keys, token-bucket rate limiting, 32 KB payload cap; a bounded
+  retrying forwarder into the runner (which owns dedup). The Modbus builder only knows
+  read function codes (FC3/FC4) and OPC UA is subscribe-only, so writing to a PLC is
+  structurally impossible. **Adapter logic is tested against simulated data only — no
+  real PLC/OPC UA server/broker has been commissioned against it yet.**
+- **Licensing** (`deploy/onprem/license/`): Ed25519-signed tokens whose payload is a
+  hard whitelist (`companyId, plan, status, expiresAt, features, installationId,
+  version, issuedAt`) — operational data cannot be smuggled in on either end; offline
+  annual licence file for air-gapped plants; server validation with a 7/14-day cached
+  grace window when unreachable; Standard vs Industrial feature flags (protocol
+  adapters, forecaster, AI commander); validation runs inside the worker-runner.
+  Deliberate policy: an expired licence never bricks core alerting (safety floor) —
+  paid extras switch off and the state is surfaced on `/health`.
+- **Production installer** (`deploy/onprem/`): Linux `install.sh` + Windows
+  `install.ps1`, pinned image versions, health checks + restart policies, prod
+  hardening override (read-only rootfs, no-new-privileges, resource limits, log
+  rotation), generated secrets (0600) with optional AES-256 at-rest encryption,
+  `validate` / `test-alert` / `backup` / `restore` / `update` / `rollback` commands,
+  uninstall procedure that preserves customer data.
+
+**PARTIAL / NOT DONE (be honest in sales conversations)**
+- PocketBase reads in the Flutter app are **polled (5s)**, not realtime SSE, and the
+  worker-runner SSE stream is not yet consumed by the Flutter client for auto-refresh.
+- Collaborator/help/shift flows, voice claim and the SuperAdmin console still call
+  Firebase services directly — on the PocketBase build those surfaces are not yet
+  functional (v3 scope). The supervisor/PM core alert loop is.
+- On-prem claim concurrency is last-write-wins (no RTDB-style transaction); a
+  PocketBase hook or runner-side claim endpoint is the planned guard.
+- Login UI still drives FirebaseAuth; `PocketBaseAuthService` is implemented and
+  tested but the on-prem login screen wiring is not merged yet.
+- The Firebase→PocketBase data migration script exists (`migrate_rtdb_to_pocketbase.mjs`)
+  but has not been exercised against a production-size export.
 
 ## Cloud -> on-prem component map
-| Cloud component | On-prem replacement | Notes |
-|-----------------|---------------------|-------|
-| Firebase Auth | PocketBase auth (recommended) or Keycloak / Supabase GoTrue | OIDC/SAML SSO still supported via the IdP on the LAN |
-| Realtime Database | PocketBase (SQLite + realtime) for small/medium; Supabase (Postgres + realtime) for large | Requires a data-model + rules port |
-| Cloudflare Workers (cron + HTTP) | Node service (`worker-runner`) with `node-cron` | Reuses existing assignment/AI/notify logic |
-| FCM push | LAN WebSocket/SSE push; optional self-hosted UnifiedPush (ntfy) | Devices are on-site, so server-push over the LAN works |
-| Firebase Hosting | Caddy/Nginx static serving of the Flutter web build | Single TLS entry point |
-
-## Recommended air-gapped stack
-- **Caddy** — TLS termination + reverse proxy + static web hosting (one entry point).
-- **PocketBase** — single Go binary: data, realtime, auth, admin UI, SQLite (ideal for a
-  factory's local server; trivial backups = copy the data dir).
-- **worker-runner** — Node container running the cron + HTTP worker logic on the LAN.
-- (Large sites) swap PocketBase for **Supabase** self-hosted (Postgres + Realtime + GoTrue).
-
-## Phased migration
-1. **Abstract the data layer** - DONE (additive): `lib/services/data/` ships a `DataStore`
-   interface with a Firebase adapter (delegates to `AlertService`, zero behaviour change) and
-   a PocketBase adapter, selectable via `--dart-define=SIAS_BACKEND`. Remaining: switch callers
-   (`AlertProvider`/services) from Firebase-direct to `DataStore`.
-2. **Port `database.rules.json`** authorization to PocketBase API rules - DONE
-   (`deploy/onprem/pocketbase/RULES_PORT.md` + importable `pb_schema.json`).
-3. **Port worker logic** to `worker-runner`. DONE for AI assignment: `runAssignmentCycle`
-   reuses the cloud's pure `buildSupStats`/`scoreSupervisor` against a `PocketBaseStore`
-   (tested in `worker_test/onprem_assignment.test.js`). Escalation + LAN notifications DONE too.
-4. **Replace push** - DONE: LAN SSE hub in the worker-runner (`/events?uid=`), token-gated;
-   FCM remains an optional path for internet-connected sites.
-5. **Package** with the `deploy/onprem/` compose; ship as an appliance image.
+| Cloud component | On-prem replacement | Status |
+|-----------------|---------------------|--------|
+| Firebase Auth | PocketBase auth + customer RBAC | service + rules done; login-screen wiring pending |
+| Realtime Database | PocketBase (SQLite + REST; realtime later) | core alert lifecycle wired |
+| Cloudflare Workers (cron + HTTP) | `worker-runner` Node service | done for assignment/escalation/ingest/fan-out/maintenance |
+| FCM push | LAN SSE hub (`/events`) + persisted notification rows | done server-side; Flutter SSE client pending |
+| SCADA/PLC ingest worker | Edge Gateway (5 read-only adapters) | done (simulated-data tested) |
+| Firebase Hosting | Caddy static hosting | done |
+| — | Privacy-preserving licensing | done |
 
 ## Data residency & security benefits (sell these)
 - All data stays on the customer's hardware/network — no third-party processors.
-- Backups are a local file copy (PocketBase) or `pg_dump` (Supabase).
-- No outbound internet required; satisfies air-gap and data-sovereignty requirements.
+- Deployment secrets never enter the database; no in-app role can read them.
+- Backups are local files (nightly JSON snapshots + `pb_data` tarballs).
+- No outbound internet required — including licensing (offline annual file).
+- The licence service can only ever learn: company id, plan, status, expiry, features,
+  installation id, software version. This is enforced by code and tests, not policy.
 
-## Limitations to be honest about
-- Mobile push without internet relies on LAN connectivity to devices.
-- The data-layer + worker port is real work (estimate: a focused engineering effort, not a
-  config change). The scaffold in `deploy/onprem/` stands up the surrounding infra so that
-  port has a home.
+## Test coverage
+- Flutter: `test/services/data/` — PocketBase REST contract, Firebase delegation parity,
+  lifecycle-through-`AlertActionsService` on both backends, provider-level widget tests
+  on both backends, auth/role-policy suite.
+- Node (Jest): `worker_test/onprem_*.test.js` — RBAC rule matrix, ingestion pipeline
+  (ingest→assign→escalate→notify), dedup/storm, change fan-out, retention,
+  backup/restore, retry, licensing; `worker_test/edge_gateway.test.js` — all five
+  adapters against simulated frames/payloads, security, forwarder, plan gating.
 
-See `deploy/onprem/README.md` to run the scaffold.
+See `deploy/onprem/README.md` to install, and `lib/services/data/README.md` for the
+app-side coverage table.

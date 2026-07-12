@@ -1,0 +1,33 @@
+{
+  "ingestUrl": "http://worker-runner:8787/ingest",
+  "adapters": {
+    "opcua": {
+      "enabled": true,
+      "endpointUrl": "opc.tcp://plc-gateway.plant.local:4840",
+      "samplingMs": 1000,
+      "rules": [
+        {
+          "key": "ns=2;s=Line2.Station3.Motor.Temperature",
+          "factory": "Usine A",
+          "line": 2,
+          "station": 3,
+          "machine": "MACH-007",
+          "metric": "motor_temperature",
+          "type": "maintenance",
+          "severity": "critical",
+          "thresholds": { "gte": 90 }
+        },
+        {
+          "key": "ns=2;s=Line1.Station4.Conveyor.Fault",
+          "factory": "Usine A",
+          "line": 1,
+          "station": 4,
+          "metric": "conveyor_fault",
+          "type": "defaut_produit",
+          "thresholds": { "eq": 1 },
+          "description": "Conveyor fault bit raised"
+        }
+      ]
+    }
+  }
+}

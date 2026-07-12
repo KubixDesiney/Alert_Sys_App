@@ -1,0 +1,12 @@
+{
+  "name": "sias-edge-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": { "start": "node index.mjs" },
+  "optionalDependencies": {
+    "mqtt": "^5.5.0",
+    "node-opcua": "^2.125.0"
+  }
+}

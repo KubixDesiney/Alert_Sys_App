@@ -1,12 +1,32 @@
-# Plant hostname; use an internal CA or self-signed cert for air-gapped sites.
+# Plant hostname; use an internal CA or self-signed cert for air-gapped sites:
+#   {$SIA_HOST} { tls internal }   (Caddy mints its own CA)
 {$SIA_HOST:sia.local} {
   encode gzip
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "no-referrer"
+    -Server
+  }
+
+  # PocketBase (data + auth + realtime)
   handle_path /api/* {
     reverse_proxy pocketbase:8090
   }
+
+  # worker-runner (health, SSE events, ingest)
   handle_path /ws/* {
     reverse_proxy worker-runner:8787
   }
+
+  # Edge Gateway HTTP adapters (ESP32 + webhooks)
+  handle_path /gw/* {
+    reverse_proxy edge-gateway:8788
+  }
+
+  # Flutter web build
   handle {
     root * /srv/web
     try_files {path} /index.html
