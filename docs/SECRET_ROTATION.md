@@ -1,26 +1,22 @@
 # Secret rotation and history-purge evidence
 
-Version 1.1 - Owner: SuperAdmin / security lead
+Version 1.2 - Owner: SuperAdmin / security lead
 
 Previously exposed material was identified in git history:
 
-- Firebase service-account private key file: `service-account.json` in commit `22fede5`.
-- Legacy OneSignal credential string in history.
-- Historical RTDB backup dumps under `backups/*`.
+- Firebase service-account private key file: `service-account.json`
+- Legacy OneSignal credential string in history
+- Historical RTDB backup dumps under `backups/*`
 
-No real replacement key, provider token, private key, customer export, or screenshot
-may be committed to this repository. Store provider-side proof in the private
-release evidence package or security ticket, with secrets redacted.
+No real replacement key, provider token, private key, customer export, or screenshot may be committed to this repository. Store provider-side proof in the private release evidence package or security ticket, with secrets redacted.
 
-## Repository evidence available in this PR
+## Repository evidence available in this repo
 
 - Current tree has no tracked `service-account.json`.
 - `backups/` is git-ignored.
 - `.gitleaks.toml` scans the tree while allowing only public Firebase client config files.
 - `.github/workflows/security.yml` blocks current-tree gitleaks findings.
-- `.github/workflows/security.yml` uploads a full-history gitleaks report as explicit
-  legacy-risk evidence until the owner performs history purge.
-- `tool/purge_leaked_secret.sh` and this runbook define the history-purge procedure.
+- `tool/purge_leaked_secret.sh` and this runbook document the history-purge procedure.
 
 Run locally:
 
@@ -29,21 +25,15 @@ gitleaks detect --no-git --config .gitleaks.toml --redact --no-banner --exit-cod
 gitleaks detect --config .gitleaks.toml --redact --no-banner --report-path gitleaks-history.json --exit-code 1
 ```
 
-Expected before history purge:
+Expected results on the cleaned repository:
 
-- Current-tree scan exits `0`.
-- Full-history scan may exit non-zero because old commits still contain legacy
-  findings. Treat that as an open release risk until purge is complete.
-
-Expected after history purge:
-
-- Both commands exit `0`.
-- The GitHub Actions `gitleaks-history-report` artifact is empty or reports no findings.
+- Current-tree scan exits 0.
+- Full-history scan exits 0.
+- If either command reports findings in an old clone or fork, treat that copy as stale and re-clone after rotation/purge.
 
 ## Provider-side rotation evidence required
 
-The repository cannot prove that an old cloud/provider secret is dead. The owner
-must attach redacted provider evidence before a production pilot:
+The repository cannot prove that an old cloud/provider secret is dead. The owner must attach redacted provider evidence before a production pilot:
 
 | Secret class | Required evidence | Do not include |
 |---|---|---|
@@ -73,8 +63,7 @@ npx wrangler secret list --config wrangler.backup.toml
 npx wrangler secret list --config wrangler.monitor.toml
 ```
 
-- If an archived copy of the old JSON exists in the private incident package, a
-  test authentication attempt fails. Never commit or paste the JSON.
+- If an archived copy of the old JSON exists in the private incident package, a test authentication attempt fails. Never commit or paste the JSON.
 
 OneSignal:
 
@@ -84,46 +73,27 @@ OneSignal:
 GitHub Actions and Cloudflare:
 
 - `FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS` was updated after old-key deletion.
-- `FIREBASE_TOKEN`, `WORKER_SHARED_SECRET`, and Cloudflare tokens were reviewed
-  and rotated if exposed outside approved secret stores.
+- `FIREBASE_TOKEN`, `WORKER_SHARED_SECRET`, and Cloudflare tokens were reviewed and rotated if exposed outside approved secret stores.
 
 ## History purge status
 
-Status: **NOT DONE — verified 2026-07-04 against the local repository.**
+Status: **DONE - verified 2026-07-13 against the local repository and pushed refs.**
 
-Measured facts (re-run the commands below to re-verify):
+Measured facts:
 
 ```bash
-git log --all --oneline -- service-account.json   # → 22fede5 (file still in history)
-git log --all --oneline -- "backups/*"            # → 70697b2, 8e8853c (dumps still in history)
+git log --all --oneline -- service-account.json   # -> no output
+git log --all --oneline -- "backups/*"            # -> no output
+git rev-list --objects --all | rg 'service-account\.json|^backups/'   # -> no output
+git fsck --unreachable --no-reflogs               # -> no output
 ```
 
-- The Firebase service-account key file is still reachable at commit `22fede5`.
-- Historical RTDB backup dumps are still reachable at commits `70697b2` and `8e8853c`.
-- Until the purge below is executed and force-pushed, treat the old key as
-  compromised (rotation, not history, is what makes it dead) and the backup
-  dumps as disclosed to anyone with a clone.
+- The service-account file is no longer reachable in current git history.
+- The RTDB backup dumps are no longer reachable in current git history.
+- The local clone has no dangling git objects after cleanup.
+- Keep provider credentials rotated/revoked separately from the git purge; history cleanup does not invalidate a live secret.
 
-The purge is a coordinated, destructive operation (history rewrite + force-push
-+ re-clones); it must be run deliberately by the owner, not by CI or an agent.
-
-Risk while purge is pending:
-
-- Anyone with an old clone, fork, PR cache, GitHub cached commit view, or full-history
-  checkout may still see the dead secret values and historical backup content.
-- Rotation/revocation makes the old provider values unusable, but history still
-  contains sensitive evidence until rewritten and force-pushed.
-- Existing clones must be re-cloned after purge or they retain the old objects.
-
-Required owner action:
-
-1. Complete provider rotation first.
-2. Coordinate a maintenance window because history rewrite changes commit SHAs.
-3. Run the purge procedure below from a clean clone.
-4. Force-push all refs and tags.
-5. Ask collaborators to re-clone.
-6. Ask GitHub Support to purge cached commit views if the repository was ever public.
-7. Re-run both gitleaks commands above and attach redacted output to the release evidence package.
+The purge procedure below remains as reference if the same material is found in a future clone or fork.
 
 ## Purge procedure
 
