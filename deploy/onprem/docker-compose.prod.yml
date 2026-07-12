@@ -1,0 +1,39 @@
+# Production hardening override.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Adds: always-restart, no-new-privileges, read-only rootfs where possible,
+# and memory/CPU ceilings so one runaway container cannot starve the host.
+services:
+  caddy:
+    restart: always
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+
+  pocketbase:
+    restart: always
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes:
+      - pb_data:/pb_data   # the only writable path
+    mem_limit: 1g
+    cpus: 1.0
+
+  worker-runner:
+    restart: always
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    volumes:
+      - backups:/backups   # writable: snapshots + audit JSONL + licence cache
+      - ./secrets:/run/sias-secrets:ro
+    mem_limit: 512m
+    cpus: 1.0
+
+  edge-gateway:
+    restart: always
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    mem_limit: 256m
+    cpus: 0.5

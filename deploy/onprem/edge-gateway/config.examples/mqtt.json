@@ -1,0 +1,34 @@
+{
+  "ingestUrl": "http://worker-runner:8787/ingest",
+  "adapters": {
+    "mqtt": {
+      "enabled": true,
+      "url": "mqtt://broker.plant.local:1883",
+      "username": "sias-gateway",
+      "password": "SET-VIA-SECRET",
+      "topics": ["plant/+/line/+/station/+/temperature", "plant/usine-a/events/#"],
+      "rules": [
+        {
+          "key": "plant/usine-a/line/2/station/3/temperature",
+          "factory": "Usine A",
+          "line": 2,
+          "station": 3,
+          "machine": "MACH-007",
+          "metric": "temperature",
+          "type": "maintenance",
+          "severity": "critical",
+          "thresholds": { "gte": 90 }
+        },
+        {
+          "key": "plant/+/line/+/station/+/temperature",
+          "factory": "Usine A",
+          "line": 0,
+          "station": 0,
+          "metric": "temperature",
+          "type": "maintenance",
+          "thresholds": { "gte": 105 }
+        }
+      ]
+    }
+  }
+}

@@ -1,9 +1,13 @@
-# SIA on-prem scaffold - air-gapped infrastructure.
-# PocketBase (data/auth/realtime) + worker-runner (Node cron logic) + Caddy (TLS/proxy/static).
-# See ../../ONPREM.md for the full plan. Vendor all images into an internal registry for true air-gap.
+# SIAS on-prem stack — air-gapped core.
+# Caddy (TLS/proxy/static) + PocketBase (data/auth/realtime) + worker-runner
+# (cron logic, ingestion, SSE, backups, licence) + edge-gateway (industrial
+# read-only input adapters). See ../../ONPREM.md and ./README.md.
+#
+# Production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Air-gap: vendor these pinned images into your internal registry first.
 services:
   caddy:
-    image: caddy:2
+    image: caddy:2.8.4
     restart: unless-stopped
     ports: ["80:80", "443:443"]
     environment:
@@ -13,29 +17,78 @@ services:
       - ./web:/srv/web:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [pocketbase, worker-runner]
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+      worker-runner:
+        condition: service_started
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
 
   pocketbase:
-    image: ghcr.io/muchobien/pocketbase:0.22.0
+    image: ghcr.io/muchobien/pocketbase:0.22.21
     restart: unless-stopped
     environment:
       - TZ=${TZ:-UTC}
     volumes:
       - pb_data:/pb_data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *logging
 
   worker-runner:
     build:
       context: ../..
       dockerfile: deploy/onprem/worker-runner/Dockerfile
+    image: sias/worker-runner:${SIAS_TAG:-1.2.1}
     restart: unless-stopped
     environment:
       - PB_URL=http://pocketbase:8090
       - PB_TOKEN=${PB_TOKEN:-}
       - WORKER_SHARED_SECRET=${WORKER_SHARED_SECRET}
       - CRON_INTERVAL_MS=${CRON_INTERVAL_MS:-60000}
-    depends_on: [pocketbase]
+      - BACKUP_DIR=/backups
+      - RETENTION_DAYS=${RETENTION_DAYS:-365}
+      - BACKUP_KEEP=${BACKUP_KEEP:-14}
+      - INGEST_KEYS=${INGEST_KEYS:-}
+      - INSTALLATION_ID=${INSTALLATION_ID:-}
+      - SIAS_VERSION=${SIAS_TAG:-1.2.1}
+      - LICENSE_FILE=/run/sias-secrets/license.sias
+      - LICENSE_PUBLIC_KEY_FILE=/run/sias-secrets/license_public.pem
+      - LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-}
+      - LICENSE_GRACE_DAYS=${LICENSE_GRACE_DAYS:-7}
+    volumes:
+      - backups:/backups
+      - ./secrets:/run/sias-secrets:ro
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    logging: *logging
+
+  edge-gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/onprem/edge-gateway/Dockerfile
+    image: sias/edge-gateway:${SIAS_TAG:-1.2.1}
+    restart: unless-stopped
+    environment:
+      - INGEST_URL=http://worker-runner:8787/ingest
+      - WORKER_SHARED_SECRET=${WORKER_SHARED_SECRET}
+      - GATEWAY_CONFIG=/config/gateway.config.json
+      - GATEWAY_API_KEYS=${GATEWAY_API_KEYS:-}
+    volumes:
+      - ./gateway.config.json:/config/gateway.config.json:ro
+    depends_on:
+      - worker-runner
+    logging: *logging
 
 volumes:
   pb_data:
   caddy_data:
   caddy_config:
+  backups:

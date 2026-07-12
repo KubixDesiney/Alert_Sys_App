@@ -1,0 +1,27 @@
+{
+  "ingestUrl": "http://worker-runner:8787/ingest",
+  "apiKeys": { "oven-fleet": "REPLACE-WITH-LONG-RANDOM-KEY" },
+  "rateLimit": { "capacity": 120, "refillPerSec": 2 },
+  "devices": {
+    "esp32-oven-3": {
+      "factory": "Usine A",
+      "line": 2,
+      "station": 3,
+      "machine": "MACH-007",
+      "metric": "temperature",
+      "type": "maintenance",
+      "severity": "critical",
+      "thresholds": { "gte": 90 },
+      "description": "Oven bearing at {value}C (limit 90C)"
+    },
+    "esp32-press-1": {
+      "factory": "Usine A",
+      "line": 1,
+      "station": 1,
+      "machine": "MACH-002",
+      "metric": "vibration",
+      "type": "maintenance",
+      "thresholds": { "gt": 7.1 }
+    }
+  }
+}

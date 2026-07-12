@@ -1,0 +1,26 @@
+{
+  "ingestUrl": "http://worker-runner:8787/ingest",
+  "apiKeys": { "mes-system": "REPLACE-WITH-LONG-RANDOM-KEY" },
+  "webhooks": {
+    "mes-quality": {
+      "type": "qualite",
+      "fields": {
+        "factory": "plant.name",
+        "line": "location.lineNumber",
+        "station": "location.stationNumber",
+        "machine": "asset.code",
+        "value": "measurement.value",
+        "metric": "measurement.name",
+        "description": "message",
+        "timestamp": "occurredAt"
+      },
+      "thresholds": { "lt": 0.95 },
+      "severity": "normal"
+    },
+    "cmms-events": {
+      "type": "maintenance",
+      "constants": { "factory": "Usine B", "line": 0, "station": 0 },
+      "fields": { "description": "workorder.title", "machine": "workorder.assetId" }
+    }
+  }
+}
