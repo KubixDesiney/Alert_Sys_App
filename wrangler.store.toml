@@ -1,0 +1,19 @@
+name = "sias-store"
+main = "cloudflare_store_worker.js"
+compatibility_date = "2024-11-01"
+
+# Secrets (wrangler secret put --config wrangler.store.toml):
+#   STRIPE_SECRET_KEY       sk_test_/sk_live_ key — creates Checkout Sessions (server-side only)
+#   STRIPE_WEBHOOK_SECRET   whsec_... — verifies /api/stripe-webhook signatures
+#   CLICTOPAY_USER          ClicToPay (SMT) merchant API login — TND payments
+#   CLICTOPAY_PASSWORD      ClicToPay merchant API password
+#   N8N_INTAKE_WEBHOOK_URL  n8n WF1 "purchase intake" webhook URL (receives verified purchase events)
+#   N8N_WEBHOOK_AUTH        optional bearer token sent to the n8n webhook
+
+[vars]
+SALES_EMAIL = "chefbriotemendez@gmail.com"
+STORE_RATE_LIMIT = "10"
+# ClicToPay REST base. Use "https://test.clictopay.com/payment/rest" while testing.
+CLICTOPAY_BASE = "https://ipay.clictopay.com/payment/rest"
+# TND minor-unit exponent (3 = millimes). Verify with a small test payment before go-live.
+CLICTOPAY_AMOUNT_EXPONENT = "3"
