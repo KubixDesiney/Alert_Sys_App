@@ -9,6 +9,8 @@ compatibility_date = "2024-11-01"
 #   CLICTOPAY_PASSWORD      ClicToPay merchant API password
 #   N8N_INTAKE_WEBHOOK_URL  n8n WF1 "purchase intake" webhook URL (receives verified purchase events)
 #   N8N_WEBHOOK_AUTH        optional bearer token sent to the n8n webhook
+#   N8N_CHAT_WEBHOOK_URL    n8n WF2 "Kubix Copilot" chat webhook URL (server-side only,
+#                           proxied by POST /api/kubix — never exposed to the browser)
 
 [vars]
 SALES_EMAIL = "chefbriotemendez@gmail.com"

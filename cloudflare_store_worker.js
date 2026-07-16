@@ -346,6 +346,55 @@ export function purchaseEventPayload(event) {
   return null;
 }
 
+// --- Kubix Copilot chat proxy (pure helpers exported + unit-tested) --------
+const MAX_MESSAGE_LEN = 2000;
+const MAX_SESSION_ID_LEN = 80;
+const SESSION_ID_RE = /^[A-Za-z0-9._-]+$/;
+
+export function clipText(value, max) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+/** Validates + clips a raw /api/kubix request body. */
+export function validateChatRequest(body) {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'Invalid request body.' };
+
+  const message = typeof body.message === 'string' ? body.message.trim() : '';
+  if (!message || message.length > MAX_MESSAGE_LEN) {
+    return { ok: false, error: `message must be 1-${MAX_MESSAGE_LEN} characters.` };
+  }
+
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+  if (!sessionId || sessionId.length > MAX_SESSION_ID_LEN || !SESSION_ID_RE.test(sessionId)) {
+    return { ok: false, error: 'sessionId must be 1-80 chars of letters, digits, dot, underscore, or dash.' };
+  }
+
+  return {
+    ok: true,
+    value: {
+      message,
+      sessionId,
+      tenantCode: clipText(body.tenantCode, 40),
+      company: clipText(body.company, 120),
+      userName: clipText(body.userName, 80),
+      plan: clipText(body.plan, 30),
+    },
+  };
+}
+
+/** Shapes the exact payload forwarded to the n8n Kubix chat webhook. */
+export function buildForwardPayload(value) {
+  return {
+    message: value.message,
+    sessionId: value.sessionId,
+    tenantCode: value.tenantCode,
+    company: value.company,
+    userName: value.userName,
+    plan: value.plan,
+  };
+}
+
+
 // --- Tiny in-memory rate limit (per isolate; Stripe is the real gate) -----------
 const _hits = new Map();
 export function rateLimited(key, limit = 10, nowMs = Date.now(), windowMs = 60000) {
@@ -506,6 +555,63 @@ async function handleCtpOrderStatus(url, env) {
   });
 }
 
+async function handleKubixChat(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (rateLimited(`kx:${ip}`, 20)) {
+    return json({ ok: false, error: 'Too many messages. Please wait a moment and try again.' }, 429);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ ok: false, error: 'Invalid JSON body.' }, 400);
+  }
+
+  const validated = validateChatRequest(body);
+  if (!validated.ok) {
+    return json({ ok: false, error: validated.error }, 400);
+  }
+
+  if (!env.N8N_CHAT_WEBHOOK_URL) {
+    return json({ ok: false, error: 'Kubix is not configured for this instance yet.' }, 503);
+  }
+
+  const payload = buildForwardPayload(validated.value);
+  const headers = { 'Content-Type': 'application/json' };
+  if (env.N8N_WEBHOOK_AUTH) headers.Authorization = `Bearer ${env.N8N_WEBHOOK_AUTH}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+  let upstream;
+  try {
+    upstream = await fetch(env.N8N_CHAT_WEBHOOK_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch {
+    clearTimeout(timeout);
+    return json({ ok: false, error: 'Kubix is busy, try again in a moment.' }, 502);
+  }
+  clearTimeout(timeout);
+
+  if (!upstream.ok) {
+    return json({ ok: false, error: 'Kubix is busy, try again in a moment.' }, 502);
+  }
+
+  let data;
+  try {
+    data = await upstream.json();
+  } catch {
+    return json({ ok: false, error: 'Kubix is busy, try again in a moment.' }, 502);
+  }
+
+  return json({ ok: true, reply: data.reply, escalated: !!data.escalated, agent: data.agent });
+}
+
+
 async function handleStripeWebhook(request, env) {
   const payload = await request.text();
   const ok = await verifyStripeSignature(
@@ -549,14 +655,17 @@ export default {
           webhookSecret: !!env.STRIPE_WEBHOOK_SECRET,
           clictopay: !!(env.CLICTOPAY_USER && env.CLICTOPAY_PASSWORD),
           n8nIntake: !!env.N8N_INTAKE_WEBHOOK_URL,
+          kubixChat: !!env.N8N_CHAT_WEBHOOK_URL,
         });
       }
       if (pathname === '/api/checkout' && request.method === 'POST') return handleCheckout(request, env, url);
       if (pathname === '/api/session' && request.method === 'GET') return handleSessionStatus(url, env);
       if (pathname === '/api/ctp-order' && request.method === 'GET') return handleCtpOrderStatus(url, env);
+      if (pathname === '/api/kubix' && request.method === 'POST') return handleKubixChat(request, env);
       if (pathname === '/api/stripe-webhook' && request.method === 'POST') return handleStripeWebhook(request, env);
       if (pathname === '/clictopay/return') return handleClictopayReturn(url, env);
       if (pathname === '/buy') return html(buyPage(url, env));
+      if (pathname === '/copilot') return html(copilotPage());
       if (pathname === '/success') return html(successPage(env));
       if (pathname === '/cancel') return Response.redirect(`${url.origin}/#pricing`, 302);
       return html(landingPage(env));
@@ -633,6 +742,7 @@ function landingBody(env) {
     <a class="hideM" href="#features">Product</a>
     <a class="hideM" href="#integrations">Integrations</a>
     <a class="hideM" href="#kubix">Kubix Copilot</a>
+    <a class="hideM" href="/copilot">Copilot chat</a>
     <a class="hideM" href="#security">Security</a>
     <a href="#pricing">Pricing</a>
     <a class="btn btn-amber btn-sm" href="/buy?plan=growth&billing=annual">Get SIAS</a>
@@ -833,7 +943,7 @@ function landingBody(env) {
 
 <footer><div class="wrap">
   <span><b style="color:var(--ink2)">SIAS</b> &mdash; Smart Industrial Alert System &middot; by KubixDesiney</span>
-  <span><a href="#pricing">Pricing</a> &middot; <a href="#security">Security</a> &middot; <a href="mailto:${mail}">${mail}</a></span>
+  <span><a href="#pricing">Pricing</a> &middot; <a href="/copilot">Kubix Copilot</a> &middot; <a href="#security">Security</a> &middot; <a href="mailto:${mail}">${mail}</a></span>
   <span>&copy; 2026 KubixDesiney. All rights reserved.</span>
 </div></footer>
 
@@ -990,6 +1100,7 @@ function successBody(env) {
     <div class="card"><div class="n">2</div><div><b>Activation email &mdash; within 1 business day</b><br><span class="mut" style="font-size:14px">A one-time link to claim your Owner console: you set your password and MFA. We never send passwords by email.</span></div></div>
     <div class="card"><div class="n">3</div><div><b>Kubix Copilot introduces itself</b><br><span class="mut" style="font-size:14px" id="ok-kubix">Your named AI engineer will guide activation, team invites and your first integration.</span></div></div>
   </div>
+  <a class="btn btn-amber" id="ok-chat" style="display:none;margin-top:30px" href="/copilot">Chat with Kubix now &rarr;</a>
   <p class="dim" style="margin-top:30px;font-size:13.5px">Nothing after a day? Check spam, or write to <a href="mailto:${mail}">${mail}</a> &mdash; a human answers.</p>
 </main>
 
@@ -1007,12 +1118,211 @@ function successBody(env) {
           'Your dedicated SIAS instance ' + d.tenantCode + ' is being provisioned for ' + d.company + '.';
         document.getElementById('ok-kubix').textContent =
           'Kubix \\u00b7 ' + d.tenantCode + ' will email ' + (d.email || 'you') + ' to guide activation, team invites and your first integration.';
+        var b = document.getElementById('ok-chat');
+        b.href = '/copilot?tenant=' + encodeURIComponent(d.tenantCode) + '&company=' + encodeURIComponent(d.company) + '&name=' + encodeURIComponent(d.name || '') + '&plan=' + encodeURIComponent(d.plan || '');
+        b.style.display = 'inline-flex';
       }
     })
     .catch(function () {});
 })();
 </script>`;
 }
+
+function copilotPage() {
+  return page(
+    'Kubix Copilot \u2014 SIAS',
+    'Chat with your dedicated SIAS engineer: activation, integrations, anything.',
+    copilotBody(),
+  );
+}
+
+function copilotBody() {
+  return `
+<div class="kx-app">
+  <div class="kx-header">
+    <div class="kx-avatar">K</div>
+    <div class="kx-header-text">
+      <div class="kx-header-name"><span id="kx-agent-name">Kubix Copilot</span><span class="kx-online-dot"></span></div>
+      <div class="kx-header-sub">Your dedicated SIAS engineer</div>
+    </div>
+    <a class="kx-back" href="/">← Home</a>
+  </div>
+  <div class="kx-messages" id="kx-messages"></div>
+  <form class="kx-input-bar" id="kx-form">
+    <textarea class="kx-input" id="kx-input" rows="1" placeholder="Ask Kubix anything about your SIAS instance…"></textarea>
+    <button class="kx-send" id="kx-send" type="submit">Send</button>
+  </form>
+</div>
+<script>${COPILOT_CLIENT_JS}</script>`;
+}
+
+const COPILOT_CLIENT_JS = `
+(function () {
+  var params = new URLSearchParams(location.search);
+  var ctx = {
+    tenant: params.get('tenant') || '',
+    company: params.get('company') || '',
+    name: params.get('name') || '',
+    plan: params.get('plan') || '',
+  };
+  var STORAGE_KEY = 'kubix_copilot_v1';
+  var state = loadState();
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && parsed.sessionId) return parsed;
+      }
+    } catch (_) {}
+    return { sessionId: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()), transcript: [] };
+  }
+  function saveState() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
+  }
+
+  var els = {
+    agentName: document.getElementById('kx-agent-name'),
+    messages: document.getElementById('kx-messages'),
+    form: document.getElementById('kx-form'),
+    input: document.getElementById('kx-input'),
+    send: document.getElementById('kx-send'),
+  };
+  els.agentName.textContent = ctx.tenant ? ('Kubix · ' + ctx.tenant) : 'Kubix Copilot';
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function renderMarkdown(raw) {
+    var text = escapeHtml(raw == null ? '' : raw);
+    text = text.replace(/\`\`\`([\\s\\S]*?)\`\`\`/g, function (_, code) {
+      return '<pre class="kx-code"><code>' + code.replace(/^\\n/, '') + '</code></pre>';
+    });
+    text = text.replace(/\`([^\`\\n]+)\`/g, '<code>$1</code>');
+    text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+    text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+    text = text.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+    text = text.replace(/(^|\\n)((?:\\d+\\. .*(?:\\n|$))+)/g, function (_, pre, block) {
+      var items = block.trim().split('\\n').map(function (l) { return l.replace(/^\\d+\\.\\s*/, ''); });
+      return pre + '<ol>' + items.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ol>';
+    });
+    text = text.replace(/(^|\\n)((?:[-*] .*(?:\\n|$))+)/g, function (_, pre, block) {
+      var items = block.trim().split('\\n').map(function (l) { return l.replace(/^[-*]\\s*/, ''); });
+      return pre + '<ul>' + items.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ul>';
+    });
+    text = text.replace(/\\n{2,}/g, '</p><p>');
+    text = '<p>' + text.replace(/\\n/g, '<br>') + '</p>';
+    return text;
+  }
+
+  function addBubble(role, html, opts) {
+    opts = opts || {};
+    var wrap = document.createElement('div');
+    wrap.className = 'kx-msg kx-msg-' + role + (opts.error ? ' kx-msg-error' : '');
+    var bubble = document.createElement('div');
+    bubble.className = 'kx-bubble';
+    bubble.innerHTML = html;
+    wrap.appendChild(bubble);
+    els.messages.appendChild(wrap);
+    if (opts.escalated) {
+      var banner = document.createElement('div');
+      banner.className = 'kx-escalated-banner';
+      banner.textContent = 'A human engineer has been looped in and will follow up by email.';
+      els.messages.appendChild(banner);
+    }
+    els.messages.scrollTop = els.messages.scrollHeight;
+    return wrap;
+  }
+
+  function renderTranscript() {
+    els.messages.innerHTML = '';
+    state.transcript.forEach(function (m) {
+      addBubble(m.role, m.role === 'bot' ? renderMarkdown(m.text) : '<p>' + escapeHtml(m.text) + '</p>', { escalated: m.escalated });
+    });
+  }
+  renderTranscript();
+
+  var pending = false;
+  var typingEl = null;
+
+  function showTyping() {
+    typingEl = document.createElement('div');
+    typingEl.className = 'kx-msg kx-msg-bot';
+    typingEl.innerHTML = '<div class="kx-bubble kx-typing"><span></span><span></span><span></span></div>';
+    els.messages.appendChild(typingEl);
+    els.messages.scrollTop = els.messages.scrollHeight;
+  }
+  function hideTyping() {
+    if (typingEl) { typingEl.remove(); typingEl = null; }
+  }
+  function setPending(p) {
+    pending = p;
+    els.input.disabled = p;
+    els.send.disabled = p;
+  }
+
+  function sendMessage(text) {
+    state.transcript.push({ role: 'user', text: text });
+    saveState();
+    addBubble('user', '<p>' + escapeHtml(text) + '</p>');
+    setPending(true);
+    showTyping();
+    fetch('/api/kubix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text,
+        sessionId: state.sessionId,
+        tenantCode: ctx.tenant,
+        company: ctx.company,
+        userName: ctx.name,
+        plan: ctx.plan,
+      }),
+    }).then(function (res) {
+      return res.json().catch(function () { return null; }).then(function (data) { return { res: res, data: data }; });
+    }).then(function (r) {
+      hideTyping();
+      if (!r.res.ok || !r.data || r.data.ok === false) {
+        var msg = (r.data && r.data.error) || 'Something went wrong. Please try again.';
+        addBubble('bot', '<p>' + escapeHtml(msg) + '</p>', { error: true });
+        state.transcript.push({ role: 'bot', text: msg, error: true });
+        saveState();
+        return;
+      }
+      addBubble('bot', renderMarkdown(r.data.reply || ''), { escalated: !!r.data.escalated });
+      state.transcript.push({ role: 'bot', text: r.data.reply || '', escalated: !!r.data.escalated });
+      saveState();
+    }).catch(function () {
+      hideTyping();
+      addBubble('bot', '<p>Kubix is unreachable right now. Please try again shortly.</p>', { error: true });
+    }).finally(function () {
+      setPending(false);
+      els.input.focus();
+    });
+  }
+
+  els.form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (pending) return;
+    var text = els.input.value.trim();
+    if (!text) return;
+    els.input.value = '';
+    sendMessage(text);
+  });
+
+  els.input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (els.form.requestSubmit) els.form.requestSubmit();
+      else els.form.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+  });
+})();
+`;
 
 const BASE_CSS = `
 :root{
@@ -1156,6 +1466,59 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
 .nextsteps{text-align:left;margin-top:36px;display:grid;gap:12px}
 .nextsteps .card{padding:18px 20px;display:flex;gap:14px;align-items:flex-start}
 .nextsteps .n{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:rgba(245,158,11,.14);color:var(--amber2);display:grid;place-items:center;font-size:13px;font-weight:700}
+/* Kubix Copilot chat page */
+.kx-app { max-width: 760px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; height: 100vh; }
+.kx-header { display: flex; align-items: center; gap: 12px; padding: 14px 4px 18px; border-bottom: 1px solid var(--line); }
+.kx-avatar {
+  width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--amber), #D97706);
+  display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk',ui-monospace,monospace;
+  font-weight: 800; color: #14171c; font-size: 15px;
+}
+.kx-header-text { flex: 1; min-width: 0; }
+.kx-header-name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+.kx-online-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,0.18); }
+.kx-header-sub { color: var(--ink3); font-size: 12.5px; margin-top: 2px; }
+.kx-back { color: var(--ink3); font-size: 13px; }
+.kx-messages { flex: 1; overflow-y: auto; padding: 20px 4px; display: flex; flex-direction: column; gap: 12px; }
+.kx-msg { display: flex; }
+.kx-msg-user { justify-content: flex-end; }
+.kx-msg-bot { justify-content: flex-start; }
+.kx-bubble {
+  max-width: 78%; padding: 12px 15px; border-radius: 12px; font-size: 14.5px; word-wrap: break-word;
+}
+.kx-msg-user .kx-bubble { background: var(--amber); color: #14171c; border-bottom-right-radius: 3px; }
+.kx-msg-bot .kx-bubble { background: var(--bg2); border: 1px solid var(--line); border-bottom-left-radius: 3px; }
+.kx-msg-error .kx-bubble { background: rgba(248,113,113,.14); border: 1px solid rgba(239,68,68,0.4); color: #fecaca; }
+.kx-bubble p { margin: 0 0 8px; }
+.kx-bubble p:last-child { margin-bottom: 0; }
+.kx-bubble h2, .kx-bubble h3 { margin: 10px 0 6px; }
+.kx-bubble ul, .kx-bubble ol { margin: 4px 0 10px; padding-left: 20px; }
+.kx-bubble code { font-family: 'Space Grotesk',ui-monospace,monospace; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.kx-bubble pre.kx-code { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0; }
+.kx-bubble pre.kx-code code { background: none; padding: 0; }
+.kx-typing { display: flex; gap: 4px; padding: 14px 15px; }
+.kx-typing span { width: 6px; height: 6px; border-radius: 999px; background: var(--ink3); animation: kx-bounce 1.2s infinite ease-in-out; }
+.kx-typing span:nth-child(2) { animation-delay: 0.15s; }
+.kx-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes kx-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-5px); opacity: 1; } }
+.kx-escalated-banner {
+  align-self: stretch; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,0.4);
+  color: #fcd34d; font-size: 13px; padding: 10px 14px; border-radius: 8px; margin: -2px 0 4px;
+}
+.kx-input-bar { display: flex; gap: 10px; padding: 14px 4px 4px; border-top: 1px solid var(--line); }
+.kx-input {
+  flex: 1; resize: none; background: var(--bg2); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 10px; padding: 12px 14px; font-family: 'Inter',sans-serif; font-size: 14.5px; max-height: 140px;
+}
+.kx-input:focus { outline: none; border-color: var(--amber); }
+.kx-send {
+  border: none; background: var(--amber); color: #14171c; border-radius: 10px; padding: 0 20px;
+  font-weight: 700; cursor: pointer; font-size: 14px;
+}
+.kx-send:disabled { opacity: 0.5; cursor: default; }
+
+
 @media(max-width:960px){
   .hero,.kubix,.buywrap{grid-template-columns:1fr;gap:36px}
   .grid3,.steps,.plans{grid-template-columns:1fr}

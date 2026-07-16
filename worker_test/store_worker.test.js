@@ -20,6 +20,9 @@ import {
   clictopayPaid,
   merchantParamsToObject,
   ctpPurchasePayload,
+  clipText,
+  validateChatRequest,
+  buildForwardPayload,
 } from '../cloudflare_store_worker.js';
 
 const intake = (over = {}) => ({
@@ -324,5 +327,98 @@ describe('rate limiting', () => {
     expect(rateLimited(key, 3, now + 2)).toBe(false);
     expect(rateLimited(key, 3, now + 3)).toBe(true);
     expect(rateLimited(key, 3, now + 61000)).toBe(false);
+  });
+});
+
+describe('clipText', () => {
+  test('trims and truncates strings', () => {
+    expect(clipText('  hello  ', 3)).toBe('hel');
+  });
+  test('non-string input is empty string', () => {
+    expect(clipText(undefined, 10)).toBe('');
+    expect(clipText(42, 10)).toBe('');
+    expect(clipText(null, 10)).toBe('');
+  });
+});
+
+describe('validateChatRequest', () => {
+  const base = () => ({
+    message: 'Hello Kubix',
+    sessionId: 'abc-123.xyz_9',
+    tenantCode: 'NSW#7K2F',
+    company: 'Nagati Steel Works',
+    userName: 'Amine',
+    plan: 'growth',
+  });
+
+  test('accepts a well-formed request and clips optional context fields', () => {
+    const r = validateChatRequest(base());
+    expect(r.ok).toBe(true);
+    expect(r.value).toEqual({
+      message: 'Hello Kubix',
+      sessionId: 'abc-123.xyz_9',
+      tenantCode: 'NSW#7K2F',
+      company: 'Nagati Steel Works',
+      userName: 'Amine',
+      plan: 'growth',
+    });
+  });
+
+  test('rejects a non-object body', () => {
+    expect(validateChatRequest(null).ok).toBe(false);
+    expect(validateChatRequest('x').ok).toBe(false);
+    expect(validateChatRequest(undefined).ok).toBe(false);
+  });
+
+  test('rejects an empty message', () => {
+    expect(validateChatRequest({ ...base(), message: '   ' }).ok).toBe(false);
+  });
+
+  test('rejects a message over 2000 characters', () => {
+    expect(validateChatRequest({ ...base(), message: 'a'.repeat(2001) }).ok).toBe(false);
+  });
+
+  test('accepts a message at exactly 2000 characters', () => {
+    expect(validateChatRequest({ ...base(), message: 'a'.repeat(2000) }).ok).toBe(true);
+  });
+
+  test('rejects a missing sessionId', () => {
+    const { sessionId, ...rest } = base();
+    expect(validateChatRequest(rest).ok).toBe(false);
+  });
+
+  test('rejects a sessionId over 80 characters', () => {
+    expect(validateChatRequest({ ...base(), sessionId: 'a'.repeat(81) }).ok).toBe(false);
+  });
+
+  test('rejects a sessionId with disallowed characters', () => {
+    expect(validateChatRequest({ ...base(), sessionId: 'abc 123' }).ok).toBe(false);
+    expect(validateChatRequest({ ...base(), sessionId: 'abc/123' }).ok).toBe(false);
+    expect(validateChatRequest({ ...base(), sessionId: '<script>' }).ok).toBe(false);
+  });
+
+  test('clips oversized optional context fields instead of rejecting', () => {
+    const r = validateChatRequest({ ...base(), company: 'x'.repeat(200), tenantCode: 'y'.repeat(80) });
+    expect(r.ok).toBe(true);
+    expect(r.value.company.length).toBe(120);
+    expect(r.value.tenantCode.length).toBe(40);
+  });
+
+  test('missing optional context fields default to empty strings', () => {
+    const r = validateChatRequest({ message: 'hi', sessionId: 'abc' });
+    expect(r.ok).toBe(true);
+    expect(r.value.tenantCode).toBe('');
+    expect(r.value.company).toBe('');
+    expect(r.value.userName).toBe('');
+    expect(r.value.plan).toBe('');
+  });
+});
+
+describe('buildForwardPayload', () => {
+  test('shapes exactly the n8n webhook payload', () => {
+    const value = {
+      message: 'hi', sessionId: 's1', tenantCode: 't', company: 'c', userName: 'u', plan: 'p',
+    };
+    expect(buildForwardPayload(value)).toEqual(value);
   });
 });
