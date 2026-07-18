@@ -67,3 +67,8 @@ service-account.json
 
 # Local RTDB backup dumps (may contain PII) - never commit
 backups/
+
+# Per-tenant provisioning output (generated worker configs + secret values) —
+# never commit; see tool/provision_instance.mjs and docs/PROVISIONING.md
+deploy/tenants/
+*.env.tenant

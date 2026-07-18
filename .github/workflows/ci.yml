@@ -88,7 +88,7 @@ jobs:
       - name: Run worker and rules tests
         run: npm test
 
-      # All 7 workers deploy from CI so nothing drifts from what's in git.
+      # All 8 workers deploy from CI so nothing drifts from what's in git.
       # (Hand-deploying a subset guarantees config drift on exactly the
       # components buyers audit first: ingest, SCIM, monitoring, backups.)
       - name: Deploy workers (protected main pushes only)
@@ -106,6 +106,7 @@ jobs:
           npx wrangler deploy --config wrangler.scim.toml
           npx wrangler deploy --config wrangler.monitor.toml
           npx wrangler deploy --config wrangler.backup.toml
+          npx wrangler deploy --config wrangler.store.toml
 
       # Idempotent: re-running `wrangler secret put` with the same value is a no-op
       # other than a redeploy. The actual GitHub PAT lives only in the RTDB vault

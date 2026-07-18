@@ -31,10 +31,6 @@ Expected results on the cleaned repository:
 - Full-history scan exits 0.
 - If either command reports findings in an old clone or fork, treat that copy as stale and re-clone after rotation/purge.
 
-## Provider-side rotation evidence required
-
-The repository cannot prove that an old cloud/provider secret is dead. The owner must attach redacted provider evidence before a production pilot:
-
 | Secret class | Required evidence | Do not include |
 |---|---|---|
 | Firebase service-account key | Old key ID absent from `gcloud iam service-accounts keys list`; deletion timestamp; new key creation timestamp; list of Cloudflare/GitHub secret stores updated | Private key JSON, full client email if sensitive, screenshots with key material |
