@@ -18,3 +18,9 @@ paths = [
   '''(^|[\\/])deploy[\\/]onprem[\\/]worker-runner[\\/]vendor[\\/]''',
   '''(^|[\\/])\.env\.example$''',
 ]
+regexes = [
+  # Client-side localStorage namespace key in cloudflare_store_worker.js (Kubix Copilot
+  # chat) — a browser storage key, not a credential. The generic-api-key rule matches it
+  # only because the identifier is named STORAGE_KEY.
+  '''kubix_copilot_v1''',
+]
