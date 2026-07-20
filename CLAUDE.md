@@ -1209,6 +1209,37 @@ fully offline.
   end-to-end in `docs/integrations/SCADA_INTEGRATION.md`'s "Reference edge
   gateway" section and used as the demo engine in `docs/sales/DEMO_SCRIPT.md`.
 
+## n8n Commercial Workflows (2026-07-20)
+
+The commercial/onboarding automation lives in n8n Cloud (`kubixdesiney.app.n8n.cloud`),
+NOT in the repo — the workers only forward verified events to it. All published and
+tested end to end. Base: `https://kubixdesiney.app.n8n.cloud/webhook/`.
+
+| Workflow | ID | Webhook path | Purpose |
+|---|---|---|---|
+| WF1 Purchase Intake & Provisioning | `S7PiPrb3DWm2T7GN` | `sias-purchase-intake` | Routes `purchase_completed` / `quote_requested` / `payment_failed`; dedupes on `eventId`; records the customer or lead in `sias_customers`; branded Brevo emails to buyer + founder |
+| WF2 Kubix Copilot Chat | `dI4h0nH3bAsjuzGJ` | `kubix-copilot-chat` | Gemini agent + per-session memory + RAG over the `sias_knowledge` Supabase vector store; logs to `sias_chats`; `[ESCALATE]` emails the founder |
+| WF2b Kubix Knowledge Ingest | `fH7jUSm4rP0ga12H` | `sias-knowledge-ingest` | POST `{title, source, content}` → markdown chunking → `gemini-embedding-001` → `sias_knowledge` |
+| WF3 Owner Activation Email | `71muihOAczOl4u2k` | `sias-activation` | Receives the `provision_owner` summary → looks up the customer → sends the one-time activation link email (never a password) → flips status to `active` → confirms to founder |
+| WF4 Kubix Feedback Intake | `9l2JzN5rvLbquDFP` | `kubix-feedback` | Logs thumbs up/down to `sias_chat_feedback`; a downvote pulls the transcript and emails the founder so bad answers get fixed in the knowledge base |
+
+Wiring (secrets on `sias-store`, plus one env var on the provisioning CLI):
+
+- `N8N_INTAKE_WEBHOOK_URL` → `.../webhook/sias-purchase-intake` (WF1)
+- `N8N_CHAT_WEBHOOK_URL` → `.../webhook/kubix-copilot-chat` (WF2)
+- `N8N_FEEDBACK_WEBHOOK_URL` → `.../webhook/kubix-feedback` (WF4)
+- `N8N_ACTIVATION_WEBHOOK_URL` (env for `npm run provision:owner`) → `.../webhook/sias-activation` (WF3)
+- `N8N_WEBHOOK_AUTH` — optional shared bearer; set it as a store-worker secret AND as
+  Header Auth on each n8n webhook before taking real customers.
+
+n8n data tables: `sias_customers` (`ExqQw7LlJUTeFaNj`), `sias_chats`
+(`ZDmZevIqzlKOBTU0`), `sias_chat_feedback` (`XbAfPUKF3horkC2v`). Lead/customer
+status lifecycle: `quote_requested` → `provisioning` → `active` (quotes progress
+`quote_requested` → `quote_sent` → `won`/`lost`, set manually).
+
+Gemini runs on a FREE-TIER key today (`models/gemini-2.5-flash`, 20 requests/day) —
+enable paid billing and bump the WF2 model node before real customers.
+
 ## Per-Customer Provisioning (2026-07-17)
 
 Two CLIs automate the dedicated-instance runbook (full doc: `docs/PROVISIONING.md`):
