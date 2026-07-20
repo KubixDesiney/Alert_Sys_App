@@ -1,0 +1,100 @@
+{
+  "ingestUrl": "https://alertsys-ingest.aziz-nagati01.workers.dev/ingest/YOUR_CONNECTOR_ID",
+  "ingestKey": "YOUR_CONNECTOR_INGEST_KEY",
+  "statusIntervalMs": 10000,
+  "sources": [
+    {
+      "type": "opcua",
+      "endpoint": "opc.tcp://plc.plant.local:4840",
+      "publishingIntervalMs": 1000,
+      "map": [
+        {
+          "match": "ns=2;s=Line2.Station3.BearingTemp",
+          "factory": "Usine A",
+          "line": "Conveyor 2",
+          "station": "3",
+          "machine": "MACH-007",
+          "metric": "bearing_temperature",
+          "unit": "°C",
+          "scale": 0.1,
+          "thresholds": { "warn": 80, "critical": 90, "direction": "high" },
+          "type": "maintenance"
+        }
+      ]
+    },
+    {
+      "type": "modbus",
+      "host": "192.168.10.20",
+      "port": 502,
+      "unitId": 1,
+      "pollIntervalMs": 2000,
+      "registers": [
+        { "register": 40001, "kind": "uint16" },
+        { "register": 40010, "kind": "float32" }
+      ],
+      "map": [
+        {
+          "match": "modbus/1/40001",
+          "factory": "Usine A",
+          "line": "Conveyor 1",
+          "station": "5",
+          "machine": "MACH-012",
+          "metric": "motor_current",
+          "unit": "A",
+          "scale": 0.01,
+          "thresholds": { "warn": 42, "critical": 55, "direction": "high" },
+          "type": "maintenance"
+        }
+      ]
+    },
+    {
+      "type": "s7",
+      "host": "192.168.10.30",
+      "rack": 0,
+      "slot": 1,
+      "pollIntervalMs": 2000,
+      "map": [
+        {
+          "match": "DB10,REAL4",
+          "factory": "Usine B",
+          "line": "Press line",
+          "station": "2",
+          "machine": "MACH-021",
+          "metric": "hydraulic_pressure",
+          "unit": "bar",
+          "thresholds": { "warn": 180, "critical": 210, "direction": "high" },
+          "type": "maintenance"
+        }
+      ]
+    },
+    {
+      "type": "mqtt",
+      "url": "mqtt://broker.plant.local:1883",
+      "sparkplug": true,
+      "topics": ["spBv1.0/PlantA/DDATA/#", "plant/+/temperature"],
+      "map": [
+        {
+          "match": "spBv1.0/PlantA/DDATA/edge1/press2/Bearing Temp",
+          "factory": "Usine A",
+          "line": "Press line",
+          "station": "2",
+          "machine": "MACH-030",
+          "metric": "bearing_temperature",
+          "unit": "°C",
+          "thresholds": { "warn": 80, "critical": 90, "direction": "high" },
+          "type": "maintenance"
+        },
+        {
+          "match": "plant/+/temperature",
+          "factory": "Usine A",
+          "line": "Conveyor 3",
+          "station": "1",
+          "machine": "MACH-033",
+          "metric": "temperature",
+          "unit": "°C",
+          "thresholds": { "warn": 70, "critical": 85, "direction": "high" }
+        }
+      ]
+    }
+  ]
+}

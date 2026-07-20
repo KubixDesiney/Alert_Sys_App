@@ -11,6 +11,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { loadRegistry, saveRegistry, upsertTenant, markStatus } from './tenant_registry.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
@@ -187,6 +188,7 @@ const STEP_ORDER = [
   ['deploy', 'Deploy the 8 tenant workers'],
   ['seed-owner', "Seed the customer's Owner (SuperAdmin) account via tool/provision_owner.mjs"],
   ['summary', 'Write provision-summary.json and print remaining manual TODOs'],
+  ['verify', 'Post-provision verification — probe workers /config, RTDB reachability, rules denial'],
 ];
 
 /** Numbers the runbook and marks which steps --skip excludes. Pure — no execution. */
@@ -212,6 +214,16 @@ export function dbUrlForProject(projectId) {
 
 export function notifyWorkerUrl(tenant, subdomain) {
   return `https://alertsys-${tenant}.${subdomain || 'REPLACE-workers-subdomain'}.workers.dev/notify`;
+}
+
+/** Per-tenant worker base URLs, keyed like WORKER_TEMPLATES. Pure. */
+export function workerUrlsForTenant(written, subdomain) {
+  const out = {};
+  if (!subdomain) return out;
+  for (const cfg of written ?? []) {
+    if (cfg?.key && cfg?.workerName) out[cfg.key] = `https://${cfg.workerName}.${subdomain}.workers.dev`;
+  }
+  return out;
 }
 
 // ── CLI (not exercised by tests — only the pure helpers above are) ───────────
@@ -436,17 +448,45 @@ async function main() {
     }
 
     if (step.id === 'summary') {
+      const written = (plan.find((s) => s.id === 'worker-configs') || {})._written || [];
+      const workersSubdomain =
+        flags['workers-subdomain'] || process.env.CLOUDFLARE_WORKERS_SUBDOMAIN || null;
       const summary = {
         tenant,
         projectId,
         region,
         dbUrl,
-        workerConfigs: (plan.find((s) => s.id === 'worker-configs') || {})._written || [],
+        workersSubdomain,
+        workerUrls: workerUrlsForTenant(written, workersSubdomain),
+        workerConfigs: written,
         owner: (plan.find((s) => s.id === 'seed-owner') || {})._ownerSummary || null,
         generatedAt: new Date().toISOString(),
       };
       mkdirSync(tenantDir, { recursive: true });
       writeFileSync(join(tenantDir, 'provision-summary.json'), JSON.stringify(summary, null, 2) + '\n');
+      // Registry: the local ledger list_tenants/teardown read.
+      saveRegistry(upsertTenant(loadRegistry(), {
+        tenant,
+        projectId,
+        status: 'provisioned',
+        workerUrls: summary.workerUrls,
+        workerConfigs: written.map((w) => w.file),
+      }));
+      console.log(`[DONE]    ${step.n}. ${step.label}`);
+      continue;
+    }
+
+    if (step.id === 'verify') {
+      const v = runCmd('node', [join(REPO_ROOT, 'tool', 'verify_instance.mjs'), '--tenant', tenant]);
+      if (v.stdout) console.log(v.stdout);
+      if (v.status !== 0) {
+        saveRegistry(markStatus(loadRegistry(), tenant, 'failed-verification'));
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(v.stderr || '  One or more probes failed — see the table above.');
+        process.exit(1);
+        return;
+      }
+      saveRegistry(markStatus(loadRegistry(), tenant, 'verified'));
       console.log(`[DONE]    ${step.n}. ${step.label}`);
       continue;
     }

@@ -10,9 +10,10 @@ export default {
   collectCoverage: false,
   collectCoverageFrom: ['worker/**/*.js'],
   coverageReporters: ['text-summary', 'lcov'],
-  // Floor set just below the current baseline (lines ~64%) to block regressions
-  // without flaking on small changes. Ratchet upward as the suite grows.
+  // Floor set a few points below the current baseline (statements/lines ~89%,
+  // functions ~92%, branches ~71%) to block regressions with headroom for
+  // normal test churn. Ratchet upward as the suite grows.
   coverageThreshold: {
-    global: { statements: 60, branches: 54, functions: 62, lines: 60 },
+    global: { statements: 84, branches: 65, functions: 86, lines: 84 },
   },
 };

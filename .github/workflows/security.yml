@@ -68,3 +68,24 @@ jobs:
       - name: Audit codebasedelta packages
         working-directory: codebasedelta
         run: npm audit --audit-level=high
+
+  sbom:
+    name: SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install root packages
+        run: npm ci
+      - name: Generate CycloneDX SBOM (production deps)
+        run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 90

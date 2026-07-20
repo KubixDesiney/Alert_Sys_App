@@ -128,3 +128,19 @@ jobs:
           put WORKER_SHARED_SECRET "$WORKER_SHARED_SECRET"
           put FB_DB_URL "$FB_DB_URL"
           put FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT"
+
+  # Non-blocking by design: the legal drafts carry [[PLACEHOLDER]] markers until
+  # counsel resolves them, and that must never gate a code deploy. Naming and
+  # forbidden-claim violations still surface loudly in the job log.
+  legal-lint:
+    name: Legal pack lint (warning-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Lint docs/legal consistency
+        run: node tool/legal_lint.mjs

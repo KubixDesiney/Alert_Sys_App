@@ -5,8 +5,8 @@ suite. Two separate harnesses live in this repo:
 
 | Harness | Tooling | Scope |
 |---|---|---|
-| Flutter app | `flutter test` | Dart code under [lib/](lib/) â€” parser, models, services, widgets |
-| Cloudflare Worker | Jest | The pure helpers in [cloudflare_worker.js](cloudflare_worker.js) |
+| Flutter app | `flutter test` | Dart code under [lib/](lib/) — parser, models, services, widgets |
+| Cloudflare Workers + tools | Jest | Pure helpers across all 8 workers (`worker/`, `cloudflare_*_worker.js`, `cloudflare_ingest_connectors.js`, `cloudflare_store_worker.js`, `pricing.mjs`), every `tool/*.mjs` CLI, and `gateway/` |
 
 GitHub Actions wires both together in [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
@@ -17,16 +17,20 @@ GitHub Actions wires both together in [.github/workflows/ci.yml](.github/workflo
 ```bash
 # Flutter side
 flutter pub get
-flutter test                 # 198 tests
+flutter test                 # 450+ tests
 flutter analyze --no-fatal-infos --no-fatal-warnings
 
 # Worker side
 npm install
-npm test                     # 123 tests, <2s
+npm test                     # 65+ suites, 900+ tests, a few seconds
+npm run test:coverage        # same suite + v8 coverage report and threshold gate
 ```
 
-Both suites are hermetic â€” no Firebase emulator, no Cloudflare account, no
-network access required.
+Both suites are hermetic — no Firebase emulator, no Cloudflare account, no
+network access required. `worker_test/integration/` goes one step further:
+it drives `default.fetch` on the real `cloudflare_ingest_worker.js` and
+`cloudflare_store_worker.js` end to end against an in-memory fake RTDB and a
+mocked `fetch`, rather than importing pure helpers in isolation.
 
 ---
 
@@ -34,21 +38,16 @@ network access required.
 
 ```
 test/
-â”œâ”€â”€ voice_command_parser_test.dart        # 117 cases â€” every parser path
-â”œâ”€â”€ widget_test.dart                       # smoke
-â”œâ”€â”€ theme_test.dart                        # AppTheme tokens + extension
-â”œâ”€â”€ models/
-â”‚   â”œâ”€â”€ alert_model_test.dart              # fromMap/toMap/copyWith
-â”‚   â”œâ”€â”€ user_model_test.dart
-â”‚   â”œâ”€â”€ collaboration_model_test.dart
-â”‚   â””â”€â”€ predictive_models_test.dart
-â”œâ”€â”€ services/
-â”‚   â””â”€â”€ offline_account_cache_test.dart    # SharedPreferences-backed
-â”œâ”€â”€ utils/
-â”‚   â”œâ”€â”€ factory_id_test.dart
-â”‚   â””â”€â”€ alert_meta_test.dart
-â””â”€â”€ widgets/
-    â””â”€â”€ locator_painter_test.dart
+├── voice_command_parser_test.dart        # every parser path
+├── widget_test.dart                       # smoke
+├── theme_test.dart / theme_brand_test.dart / theme_contrast_test.dart
+├── accessibility_bottom_nav_test.dart
+├── models/          # alert, user, collaboration, shift, predictive
+├── services/        # AI scoring, forecaster, offline cache, PDF, data-layer backends...
+├── utils/           # factory_id, alert_meta, notification_eligibility,
+│                     # alert_claim_error, user_friendly_error
+└── widgets/         # admin_dashboard_screen, locator_painter,
+                      # factory_location_picker, overview_stat_card
 ```
 
 ### Adding a new test
@@ -138,33 +137,50 @@ Regenerate them with `flutter test --update-goldens`.
 
 ## Cloudflare Worker test layout
 
+`worker_test/` holds 65+ files — a few highlights, one per split worker plus
+the shared/tooling layers:
+
 ```
 worker_test/
-â”œâ”€â”€ factory_id.test.js          # aiSanitizeFactoryId, aiResolveFactory
-â”œâ”€â”€ score_supervisor.test.js    # buildSupStats, scoreSupervisor
-â”œâ”€â”€ predictive_model.test.js    # buildPredictiveModel + _toMs
-â””â”€â”€ briefing_helpers.test.js    # _aggregateWeek, notifTitle, FCM routing
+├── scoring.test.js / score_supervisor.test.js   # AI worker: buildSupStats, scoreSupervisor
+├── predictive_model.test.js                      # AI worker: buildPredictiveModel + _toMs
+├── briefing_helpers.test.js                       # AI worker: _aggregateWeek, notifTitle, FCM routing
+├── alerts_module.test.js / escalation_module.test.js / auth_module.test.js / utils_module.test.js
+│                                                   # worker/*.js modular helpers (direct, mocked-fetch)
+├── notification_fanout.test.js                    # notify worker
+├── github_worker.test.js                          # GitHub proxy worker
+├── connectors.test.js / ingest.test.js            # ingest worker + connector engine
+├── gateway_mapping.test.js / gateway_queue.test.js / gateway_contract.test.js
+│                                                   # gateway/ reference edge gateway
+├── store_worker.test.js / store_quote.test.js / kubix_copilot.test.js / legal_lint.test.js
+│                                                   # sias-store worker (checkout, quotes, Kubix, legal gate)
+├── provision_instance.test.js / verify_instance.test.js / tenant_registry.test.js
+│                                                   # per-tenant provisioning lifecycle tools
+├── database_rules_security.test.js                # RTDB rules, incl. adversarial fuzz cases
+└── integration/                                   # route-level: real default.fetch, mocked network
 ```
 
 ### How the worker exposes pure functions
 
-Cloudflare Workers ships ESM with a `default` export. Jest needs named
-exports, so the worker file ends with a named-export block (look for the
-`Test-only named exports` comment in
-[cloudflare_worker.js](cloudflare_worker.js)). The named exports are inert
-in production â€” Cloudflare only consumes the default export.
+Every Cloudflare Worker ships ESM with a `default` export (`{ fetch, scheduled }`).
+Jest needs named exports too, so each worker file ends with a named-export
+block (look for `export {`/`export function` near the bottom of
+`cloudflare_ai_worker.js`, `cloudflare_notify_worker.js`,
+`cloudflare_ingest_connectors.js`, `cloudflare_store_worker.js`, etc., or any
+file under `worker/`). The named exports are inert in production — Cloudflare
+only consumes the default export.
 
-To test a new helper:
+To test a new pure helper:
 
 1. Make sure the function is `function name(...)` at module scope (not
    nested inside another function or behind a side-effecting top-level
    `await`).
-2. Add it to the named-export block at the bottom of `cloudflare_worker.js`.
+2. Add it to that file's named-export block.
 3. Import it in a `worker_test/foo.test.js` file:
 
    ```js
    import { describe, test, expect } from '@jest/globals';
-   import { newHelper } from '../cloudflare_worker.js';
+   import { newHelper } from '../worker/scoring.js'; // or the relevant cloudflare_*_worker.js
 
    describe('newHelper', () => {
      test('does the thing', () => {
@@ -173,12 +189,20 @@ To test a new helper:
    });
    ```
 
+   For route-level behavior (the full `request → default.fetch → Response`
+   path), prefer the pattern in `worker_test/integration/`: call
+   `worker.fetch(new Request(...), env)` with a mocked `global.fetch` standing
+   in for Firebase/upstream network calls — see
+   `worker_test/integration/ingest_routes.test.js` for an in-memory fake RTDB.
+
 ### Running
 
 ```bash
 npm test               # one-shot
 npm run test:watch     # rebuild on change
 npm run test:rules     # Firebase RTDB rules/configuration behavior only
+npm run test:coverage  # v8 coverage report + coverageThreshold gate (jest.config.js)
+npm run legal:lint     # legal-pack consistency check (warning-only in CI)
 ```
 
 Jest is run with `--experimental-vm-modules` (configured in `package.json`)
@@ -210,55 +234,65 @@ They run as part of `npm test` in CI.
 ## Continuous integration
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push to
-`main` and every pull request, with two parallel jobs:
+`main` and every pull request, with three jobs (`flutter`, `worker`,
+`legal-lint`), plus a separate [security.yml](.github/workflows/security.yml)
+(secret scan, dependency audit, SBOM) and an on-demand, environment-gated
+[provision-tenant.yml](.github/workflows/provision-tenant.yml).
 
 ### `flutter` job
 
-1. Sets up JDK 17 (required by AGP 8) and Flutter `3.27.4` (stable).
+1. Sets up JDK 17 (required by AGP 8) and Flutter `3.41.6` (stable).
 2. Caches `~/.pub-cache` and `.dart_tool`.
 3. `flutter pub get`.
-4. `flutter analyze --no-fatal-infos --no-fatal-warnings` â€” fails on real
-   errors only. The codebase has pre-existing `withOpacity` deprecation
-   infos that don't block CI.
-5. `flutter test --reporter expanded` (blocking; no auto-fix bypass).
-6. `flutter build apk --debug` and `flutter build web --release`.
+4. `flutter analyze --no-fatal-infos --no-fatal-warnings` — fails on real
+   errors only; pre-existing style `info`s don't block CI.
+5. `flutter test --reporter expanded` (blocking).
+6. `flutter build apk --debug` and `flutter build web --release`, both with
+   the split worker URLs baked in via `--dart-define`.
 7. Uploads the web build as a CI artefact (`web-build`, 7-day retention).
 
 ### `worker` job
 
 1. Sets up Node 20 with the `npm` cache.
 2. `npm ci`.
-3. `npm test` â€” runs the Jest suite.
-4. **`wrangler deploy`** â€” only on direct pushes to `main` and only when
-   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are present. Forks
-   and pull requests skip the deploy step automatically.
+3. `npm test` — runs the full Jest suite (all 8 workers, `tool/`, `gateway/`).
+4. **Deploys all 8 workers** (`wrangler deploy` per `wrangler.*.toml`) — only
+   on direct pushes to `main` and only when `CLOUDFLARE_API_TOKEN` and
+   `CLOUDFLARE_ACCOUNT_ID` are present. Deploying all 8 together (never a
+   subset) is deliberate — it's how config drift gets introduced.
+5. Pushes the `alertsys-github` worker's bootstrap secrets (idempotent) on
+   the same protected pushes.
+
+### `legal-lint` job
+
+Runs `node tool/legal_lint.mjs` with `continue-on-error: true` — the legal
+drafts carry `[[PLACEHOLDER]]` markers until counsel resolves them, so this
+job surfaces naming/claim violations loudly without ever blocking a deploy.
 
 ### Required GitHub repository secrets
 
-| Secret | Purpose |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | Wrangler auth token (scope: `User Details:Read`, `Workers Scripts:Edit`) |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account id |
-| `FIREBASE_TOKEN` | (Already used by `deploy.yml` for Firebase Hosting.) |
-
-Set these under **Settings â†’ Secrets and variables â†’ Actions** in your
-GitHub repo. Without them, the `worker` job still runs the Jest suite â€”
-only the deploy step is skipped (with a warning annotation).
+See CLAUDE.md's "CI And Deploy" section for the authoritative, current list
+(`WORKER_SHARED_SECRET`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
+`FIREBASE_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS`, plus the `FB_DB_URL` repo variable).
+Set them under **Settings → Secrets and variables → Actions**. Without them,
+the `worker` job still runs the Jest suite — only the deploy step is skipped
+(with a warning annotation).
 
 ### Worker secrets (separate from GitHub secrets)
 
-The worker itself reads runtime secrets via the Cloudflare environment:
+Each of the 8 workers reads its own runtime secrets from the Cloudflare
+environment via its `wrangler.*.toml`, e.g.:
 
 ```bash
-wrangler secret put FB_DB_URL
-wrangler secret put FB_CLIENT_EMAIL
-wrangler secret put FB_PRIVATE_KEY
-wrangler secret put ANTHROPIC_API_KEY
-wrangler secret put GEMINI_API_KEY
+wrangler secret put FB_DB_URL --config wrangler.ai.toml
+wrangler secret put FIREBASE_SERVICE_ACCOUNT --config wrangler.ai.toml
+wrangler secret put WORKER_SHARED_SECRET --config wrangler.ai.toml
 ```
 
-These never go through GitHub â€” they live in Cloudflare's secret store and
-are visible to the worker at runtime as `env.FB_DB_URL`, etc.
+These never go through GitHub — they live in Cloudflare's secret store and
+are visible to each worker at runtime as `env.FB_DB_URL`, etc. See
+CLAUDE.md's "Worker Secrets And Runtime Config" for the full per-worker list.
 
 ---
 

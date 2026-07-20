@@ -199,6 +199,33 @@ export default {
   },
   async fetch(req, env) {
     const url = new URL(req.url);
+    if (url.pathname === '/config') {
+      // Public status probe (same convention as every other worker): reports
+      // reachability + the newest snapshot's METADATA (key/time/size) so
+      // tool/backup_drill.mjs can verify backups actually happen. Never
+      // exposes snapshot contents or secrets.
+      let latest = null;
+      let snapshots = 0;
+      try {
+        const list = await env.BACKUPS.list({ prefix: 'rtdb/' });
+        snapshots = list.objects.length;
+        const newest = [...list.objects].sort((a, b) => String(b.key).localeCompare(String(a.key)))[0];
+        if (newest) {
+          latest = {
+            key: newest.key,
+            uploaded: newest.uploaded ? new Date(newest.uploaded).toISOString() : null,
+            size: newest.size ?? null,
+          };
+        }
+      } catch (_) { /* missing binding → latest stays null, still a 200 probe */ }
+      return Response.json({
+        ok: true,
+        worker: 'alertsys-backup',
+        configured: !!(env.FB_DB_URL && env.FIREBASE_SERVICE_ACCOUNT),
+        snapshots,
+        latest,
+      });
+    }
     if (url.pathname === '/backup') {
       // Fail closed: the manual trigger exports the whole RTDB to R2 with the
       // service account. Without a configured secret the route is denied, so an

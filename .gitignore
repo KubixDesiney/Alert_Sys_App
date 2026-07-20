@@ -72,3 +72,9 @@ backups/
 # never commit; see tool/provision_instance.mjs and docs/PROVISIONING.md
 deploy/tenants/
 *.env.tenant
+
+# Generated quote PDFs/sidecars (customer data) — see tool/generate_quote.mjs
+quotes/
+
+# On-disk gateway retry queue (see gateway/)
+gateway/queue/

@@ -28,6 +28,75 @@ SIAS - Smart Industrial Alert System is an enterprise industrial alert and opera
 - **Shifts, presence, collaboration & escalation** — coordinate who responds, when, and how alerts escalate.
 - **Bilingual** — full English/French with instant runtime switching.
 
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+  subgraph Plant["Plant floor"]
+    PLC["PLCs / SCADA / historians<br/>OPC-UA · Modbus · S7 · MQTT"]
+    GW["sias-gateway<br/>(edge, push-only, disk queue)"]
+    MCU["ESP32 / Arduino kits"]
+    SUP["Supervisors<br/>(mobile, voice claim)"]
+    PLC --> GW
+  end
+
+  subgraph Instance["Dedicated customer instance"]
+    ING["Ingest worker"]
+    AI["AI worker<br/>dispatch · escalation · security agent"]
+    NTF["Notify worker<br/>FCM fan-out"]
+    RTDB[("Firebase RTDB<br/>+ Auth (MFA/SCIM)")]
+    BKP["Backup worker<br/>daily → R2"]
+    MON["Monitor · SCIM · GitHub proxy"]
+    CONSOLE["SuperAdmin console<br/>+ PM dashboard (forecaster)"]
+  end
+
+  subgraph Commercial["Commercial front door (no product data)"]
+    STORE["sias-store<br/>landing · quotes · Kubix chat"]
+    N8N["n8n workflows<br/>intake · copilot runtime"]
+    STORE --> N8N
+  end
+
+  GW -->|"HTTPS + ingest key"| ING
+  MCU --> ING
+  ING --> RTDB
+  AI <--> RTDB
+  NTF --> SUP
+  RTDB <--> CONSOLE
+  RTDB --> BKP
+  AI --> NTF
+  MON -.-> Instance
+```
+
+One customer = one isolated instance (own database, auth realm, edge
+services). The storefront and Kubix pre-sales chat hold **no** customer
+instance credentials.
+
+## Quickstart by audience
+
+**Developer** — build and test everything:
+
+```bash
+npm install && npm test                      # 8 Cloudflare workers + tools (Jest)
+flutter pub get && flutter test              # Flutter app
+node gateway/bin/sias-gateway.mjs --sim 3 --dry-run   # edge gateway, offline demo
+```
+
+Engineering source of truth: [`CLAUDE.md`](CLAUDE.md). Docs index:
+[`docs/README.md`](docs/README.md).
+
+**IT buyer / security reviewer** — start with the
+[Security whitepaper](docs/SECURITY_WHITEPAPER.md), then the
+[threat model](docs/security/THREAT_MODEL.md), the
+[RFP answer bank](docs/sales/RFP_ANSWER_BANK.md), and the
+[SCADA integration contract](docs/integrations/SCADA_INTEGRATION.md). Verify,
+don't trust: the security rules, worker auth, and CSP are all covered by
+automated tests in this repository.
+
+**Sales / demo** — run the [25-minute demo script](docs/sales/DEMO_SCRIPT.md)
+(the plant simulator does the work: `--sim 6 --fault-every 90s`), send
+[AFTER_YOU_BUY](docs/sales/AFTER_YOU_BUY.md) with every quote, and generate
+branded quote PDFs with `npm run quote`.
+
 ## Integration modes
 
 SIAS sits alongside your existing automation estate and ingests events through cloud-pull and edge-push connectors:

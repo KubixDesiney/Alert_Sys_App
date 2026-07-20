@@ -11,10 +11,18 @@ compatibility_date = "2024-11-01"
 #   N8N_WEBHOOK_AUTH        optional bearer token sent to the n8n webhook
 #   N8N_CHAT_WEBHOOK_URL    n8n WF2 "Kubix Copilot" chat webhook URL (server-side only,
 #                           proxied by POST /api/kubix — never exposed to the browser)
+#   N8N_FEEDBACK_WEBHOOK_URL n8n "Kubix feedback" webhook URL (receives thumbs up/down
+#                           verdicts from POST /api/kubix-feedback; same optional bearer)
 
 [vars]
 SALES_EMAIL = "chefbriotemendez@gmail.com"
 STORE_RATE_LIMIT = "10"
+# Sales motion: "quote" = invoice-led (default; /buy submits a quote request,
+# card rails stay parked), "card" = self-serve Stripe/ClicToPay checkout.
+SALES_MODE = "quote"
+# Legal pages gate: /legal routes 404 until counsel signs off the drafts in
+# docs/legal/ and this is flipped to "true" (see tool/legal_lint.mjs).
+LEGAL_PUBLISH = "false"
 # ClicToPay REST base. Use "https://test.clictopay.com/payment/rest" while testing.
 CLICTOPAY_BASE = "https://ipay.clictopay.com/payment/rest"
 # TND minor-unit exponent (3 = millimes). Verify with a small test payment before go-live.

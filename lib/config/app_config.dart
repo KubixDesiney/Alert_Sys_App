@@ -41,6 +41,15 @@ class AppConfig {
     defaultValue: 'https://alertsys-ingest.aziz-nagati01.workers.dev',
   );
 
+  /// Kubix Copilot chat page (served by the sias-store worker). Per-tenant
+  /// builds override this with a URL that carries the instance's tenant
+  /// context (e.g. `.../copilot?tenant=NSW%237K2F&company=...`); the SuperAdmin
+  /// console's Kubix card appends `lang=fr` when the console runs in French.
+  static const String copilotUrl = String.fromEnvironment(
+    'ALERTSYS_COPILOT_URL',
+    defaultValue: 'https://sias-store.aziz-nagati01.workers.dev/copilot',
+  );
+
   /// Deprecated alias for old call sites. New code should choose aiWorkerBase
   /// or notifyWorkerBase explicitly.
   static const String workerBaseUrl = aiWorkerBase;

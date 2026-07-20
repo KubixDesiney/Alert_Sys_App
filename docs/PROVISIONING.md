@@ -154,3 +154,41 @@ buyer opens the link, sets their own password, enables MFA on first login
         ▼
 buyer lands on their SuperAdmin console — instance is live
 ```
+
+## Lifecycle tooling (2026-07-20)
+
+Provisioning is now verifiable, reversible, and CI-capable:
+
+- **Verification** — `npm run verify:instance -- --tenant <slug>`
+  (`tool/verify_instance.mjs`): probes every tenant worker's `GET /config`,
+  confirms the RTDB REST endpoint responds, and proves rules are deployed (an
+  unauthenticated read of `/users.json` MUST be denied — a 200 there is a
+  critical red). Prints a green/red table; exit code reflects health. It runs
+  automatically as the final step of `provision:instance --execute` (step 9,
+  `--skip verify` to opt out) and marks the tenant `verified` /
+  `failed-verification` in the registry.
+- **Teardown** — `npm run teardown:instance -- --tenant <slug> [--execute]`
+  (`tool/teardown_instance.mjs`): DRY-RUN BY DEFAULT. With `--execute` it
+  deletes the tenant workers (`wrangler delete` per generated config), archives
+  `deploy/tenants/<tenant>/` to `deploy/tenants/_archived/<tenant>-<date>/`,
+  and marks the registry entry `deleted`. It **never** deletes the Firebase
+  project or R2 backups — both are manual, deliberate steps it prints loudly.
+- **Registry** — `deploy/tenants/registry.json` (git-ignored), maintained by
+  provision/teardown via `tool/tenant_registry.mjs`; `npm run tenants`
+  (`tool/list_tenants.mjs`) prints it as a table.
+- **Backup drill** — `npm run backup:drill -- --tenant <slug>`
+  (`tool/backup_drill.mjs`): fetches the tenant backup worker's `GET /config`
+  (newest R2 snapshot metadata; endpoint added to
+  `cloudflare_backup_worker.js`) and fails unless the newest snapshot is
+  < 36h old. This is the "are backups actually happening" check.
+- **CI provisioning** — `.github/workflows/provision-tenant.yml`:
+  `workflow_dispatch` with tenant/project-id/subdomain inputs, gated behind
+  the **`provisioning` GitHub environment** (configure required reviewers so a
+  stray click cannot create infra). The environment supplies
+  `TENANT_ENV_FILE` (the filled `.env.tenant`), Cloudflare and Firebase
+  credentials; the run executes provision + verify and uploads the summary.
+
+`provision-summary.json` now records `workersSubdomain` + `workerUrls` so
+verification and the backup drill can find the tenant workers. Pure helpers
+are covered by `worker_test/verify_instance.test.js` and
+`worker_test/tenant_registry.test.js` (no live network in tests).

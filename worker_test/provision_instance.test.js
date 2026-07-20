@@ -180,12 +180,12 @@ describe('buildEnvTemplate / parseEnvFile / missingSecretKeys', () => {
 });
 
 describe('buildStepPlan', () => {
-  test('returns the 8 steps in order, numbered from 1', () => {
+  test('returns the 9 steps in order, numbered from 1', () => {
     const plan = buildStepPlan(new Set());
-    expect(plan).toHaveLength(8);
-    expect(plan.map((s) => s.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(plan).toHaveLength(9);
+    expect(plan.map((s) => s.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(plan[0].id).toBe('preflight');
-    expect(plan.at(-1).id).toBe('summary');
+    expect(plan.at(-1).id).toBe('verify'); // provisioning now proves itself
     expect(plan.every((s) => s.skip === false)).toBe(true);
   });
 
@@ -196,7 +196,7 @@ describe('buildStepPlan', () => {
     expect(byId.deploy).toBe(true);
     expect(byId.preflight).toBe(false);
     expect(plan.map((s) => s.id)).toEqual([
-      'preflight', 'firebase-project', 'rules', 'worker-configs', 'secrets', 'deploy', 'seed-owner', 'summary',
+      'preflight', 'firebase-project', 'rules', 'worker-configs', 'secrets', 'deploy', 'seed-owner', 'summary', 'verify',
     ]);
   });
 });

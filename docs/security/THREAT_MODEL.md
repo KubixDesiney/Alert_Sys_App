@@ -75,6 +75,31 @@ service-account credentials, (3) GitHub repo write access via the Guardian pipel
 | Info disclosure | Model provider logs sensitive prompts | M × M | Provider keys per-instance; prompts carry operational text only, no secrets; provider is configurable/disable-able per agent. |
 | Elevation | Leaked GitHub token grants repo write | L × H | Fine-grained PAT (least scope) recommended in `docs/security/ASVS_CHECKLIST.md`; token stored superadmin-only in `ai_agent_secrets`. |
 
+### Boundary 5 — Internet ↔ Store worker (`sias-store`) & n8n webhooks
+
+The storefront is deliberately **outside the product data plane**: it holds no
+customer instance credentials and cannot reach any customer Firebase project.
+
+| STRIDE | Threat | L × I | Mitigation |
+|---|---|---|---|
+| Spoofing | Forged Stripe webhook triggers provisioning | M × H | HMAC signature verification (`verifyStripeSignature`, constant-time compare, 5-min timestamp tolerance); unsigned events rejected 400. |
+| Spoofing | Replayed ClicToPay return URL double-provisions | M × M | Server-side `getOrderStatusExtended.do` re-verification per hit; n8n dedupes on `eventId` (`ctp_<orderId>`). |
+| Tampering | XSS via chat replies or intake fields | M × H | Escape-first markdown renderer on /copilot; strict CSP (nonce'd scripts, no `unsafe-inline` script-src); all intake clipped + validated server-side. |
+| Info disclosure | n8n webhook URLs / bearer leak to the browser | L × M | `N8N_*` URLs are worker secrets; the browser only ever talks to `/api/kubix*` and `/api/quote` same-origin proxies. |
+| Info disclosure | Quote/checkout intake PII exposure | L × M | No storefront datastore — intake rides Stripe metadata / n8n payloads only; `quotes/` output dir git-ignored; security.txt published for reports. |
+| DoS | Checkout/chat/feedback flooding | M × L | Per-IP sliding-window rate limits on `/api/checkout`, `/api/quote`, `/api/kubix` (20/min), `/api/kubix-feedback` (20/min); Stripe/n8n are the real backstops. |
+| Elevation | Legal drafts published prematurely | L × M | `/legal` routes hard-404 unless `LEGAL_PUBLISH="true"`; `npm run legal:lint` blocks forbidden claims from ever entering the drafts. |
+
+### Boundary 6 — Plant estate ↔ Ingest worker & edge gateway
+
+| STRIDE | Threat | L × I | Mitigation |
+|---|---|---|---|
+| Spoofing | Forged telemetry creates fake alerts | M × M | Per-connector ingest key (`x-alertsys-ingest`, constant-time compare); disabled connectors rejected 403; unknown connectors 404. |
+| Tampering | Malicious payload shapes poison alert data | M × M | `normalizeTelemetry` sanitizes/clips every field, drops rows without location context; alert-shape validation before RTDB write. |
+| Info disclosure | Connector credentials replayed to attacker hosts | L × H | Credential host-binding (`credentialsAllowedForUrl`) — secrets only travel to the connector's registered host. |
+| DoS | Telemetry flood | M × M | Per-connector rate limit, 100-item batch cap, body-size cap, dedup window drops repeats. |
+| Elevation | Gateway host compromise pivots to SIAS | L × M | Gateway is push-only with a single scoped ingest key; it holds no Firebase credentials; SIAS never opens connections into the plant (edge-push model). |
+
 ## 3. Top residual risks & decisions
 
 1. **Historical leaked dev credential (accepted).** A development Firebase key was
