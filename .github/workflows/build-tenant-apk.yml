@@ -1,0 +1,149 @@
+name: Build tenant APK
+
+# Per-tenant Android build. The web app is delivered per tenant at RUNTIME (the
+# shared sias-app worker injects each tenant's Firebase config), but Android
+# binds google-services.json at BUILD time, so every customer needs their own
+# APK. We build it here and publish it to that tenant's own subdomain:
+#   https://<tenant>.kubixdesiney.com/app/sias-<tenant>.apk
+#
+# Manual-only + gated behind the "provisioning" GitHub environment (required
+# reviewers), same as provision-tenant.yml.
+#
+# BEFORE running: set the "provisioning" environment secret GOOGLE_SERVICES_JSON_B64
+# to `base64 -w0 google-services.json` for THIS tenant (download it from the
+# tenant's Firebase console → Project settings → Android app). It stays out of
+# git and is masked in logs. Set `project_id` to have the build assert the JSON
+# belongs to the right project (guards against a stale secret from another tenant).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tenant:
+        description: "Tenant slug (lowercase, dashes — e.g. nagati)"
+        required: true
+        type: string
+      workers_subdomain:
+        description: "Cloudflare workers.dev subdomain (to derive worker URLs)"
+        required: true
+        type: string
+      project_id:
+        description: "Firebase project id (asserted against google-services.json; optional)"
+        required: false
+        type: string
+      company_name:
+        description: "Display name baked into the app (optional)"
+        required: false
+        type: string
+      copilot_url:
+        description: "Kubix Copilot URL (optional; defaults to the shared storefront)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apk-${{ inputs.tenant }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.41.6"
+  APP_DOMAIN: "kubixdesiney.com"
+  APK_BUCKET: "sias-app-apks"
+
+jobs:
+  build:
+    name: Build + publish APK for ${{ inputs.tenant }}
+    runs-on: ubuntu-latest
+    environment: provisioning
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tenant slug
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${{ inputs.tenant }}" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'; then
+            echo "::error::tenant '${{ inputs.tenant }}' must be a lowercase slug (a-z, 0-9, dashes)."
+            exit 1
+          fi
+
+      - name: Materialize google-services.json (masked, never committed)
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_SERVICES_JSON_B64:-}" ]; then
+            echo "::error::The 'provisioning' environment must define GOOGLE_SERVICES_JSON_B64 (base64 of this tenant's google-services.json)."
+            exit 1
+          fi
+          echo "::add-mask::$GOOGLE_SERVICES_JSON_B64"
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > android/app/google-services.json
+          # Assert it is valid JSON and (optionally) belongs to the expected project.
+          PROJECT_IN_FILE="$(python3 -c 'import json,sys;print(json.load(open("android/app/google-services.json"))["project_info"]["project_id"])')"
+          echo "google-services.json project_id: $PROJECT_IN_FILE"
+          if [ -n "${{ inputs.project_id }}" ] && [ "$PROJECT_IN_FILE" != "${{ inputs.project_id }}" ]; then
+            echo "::error::google-services.json is for project '$PROJECT_IN_FILE' but input project_id is '${{ inputs.project_id }}'. Wrong GOOGLE_SERVICES_JSON_B64 secret?"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        env:
+          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+        run: |
+          set -euo pipefail
+          T="${{ inputs.tenant }}"
+          SUB="${{ inputs.workers_subdomain }}"
+          AI_URL="https://alert-notifier-$T.$SUB.workers.dev"
+          NOTIFY_URL="https://alertsys-$T.$SUB.workers.dev"
+          INGEST_URL="https://alertsys-ingest-$T.$SUB.workers.dev"
+          COPILOT_URL="${{ inputs.copilot_url }}"
+          if [ -z "$COPILOT_URL" ]; then COPILOT_URL="https://sias.${APP_DOMAIN}/copilot"; fi
+          COMPANY_NAME="${{ inputs.company_name }}"
+          if [ -z "$COMPANY_NAME" ]; then COMPANY_NAME="SIAS - Smart Industrial Alert System"; fi
+          flutter build apk --release \
+            --dart-define=ALERTSYS_WORKER_SHARED_SECRET="${WORKER_SHARED_SECRET:-}" \
+            --dart-define=ALERTSYS_AI_WORKER_URL="$AI_URL" \
+            --dart-define=ALERTSYS_NOTIFY_WORKER_URL="$NOTIFY_URL" \
+            --dart-define=ALERTSYS_INGEST_WORKER_URL="$INGEST_URL" \
+            --dart-define=ALERTSYS_COPILOT_URL="$COPILOT_URL" \
+            --dart-define=COMPANY_ID="$T" \
+            --dart-define=COMPANY_NAME="$COMPANY_NAME" \
+            --dart-define=COMPANY_FIREBASE_PROJECT="${{ inputs.project_id }}"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/sias-$T.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sias-${{ inputs.tenant }}-apk
+          path: dist/sias-${{ inputs.tenant }}.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish APK to R2 (served at <tenant>.kubixdesiney.com/app)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          T="${{ inputs.tenant }}"
+          npx --yes wrangler@4 r2 object put "${APK_BUCKET}/$T/sias-$T.apk" \
+            --file "dist/sias-$T.apk" \
+            --content-type "application/vnd.android.package-archive" \
+            --remote
+          echo "Published: https://$T.${APP_DOMAIN}/app/sias-$T.apk"

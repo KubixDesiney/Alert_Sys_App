@@ -70,6 +70,22 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # The shared sias-app worker serves this build/web bundle to every tenant
+      # at <tenant>.kubixdesiney.com (see CLAUDE.md "Per-Tenant App Delivery").
+      # It deploys HERE (not the worker job) because the assets directory must
+      # exist. Gated behind the ENABLE_APP_WORKER_DEPLOY repo variable so CI
+      # stays green until the TENANTS KV id (wrangler.app.toml) and the
+      # *.kubixdesiney.com DNS wildcard are in place.
+      - name: Deploy sias-app worker (protected main pushes, once configured)
+        if: >
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          vars.ENABLE_APP_WORKER_DEPLOY == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy --config wrangler.app.toml
+
   worker:
     name: Cloudflare Workers (Jest + deploy)
     runs-on: ubuntu-latest

@@ -57,6 +57,15 @@ describe('buildProbePlan', () => {
   test('empty summary yields an empty plan', () => {
     expect(buildProbePlan({})).toEqual([]);
   });
+
+  test('adds an app:config probe (needsBody) when the summary has an appUrl', () => {
+    const plan = buildProbePlan({ ...SUMMARY, appUrl: 'https://nsw-7k2f.kubixdesiney.com' });
+    const app = plan.find((p) => p.id === 'app:config');
+    expect(app).toBeTruthy();
+    expect(app.url).toBe('https://nsw-7k2f.kubixdesiney.com/__config');
+    expect(app.needsBody).toBe(true);
+    expect(app.expectedTenant).toBe('nsw-7k2f');
+  });
 });
 
 describe('classifyProbe', () => {
@@ -79,6 +88,23 @@ describe('classifyProbe', () => {
     const open = classifyProbe({ kind: 'rules-denial' }, { status: 200 });
     expect(open.ok).toBe(false);
     expect(open.detail).toContain('RULES NOT DEPLOYED');
+  });
+
+  test('app config: 200 + hasConfig true passes; hasConfig false / non-200 fail readably', () => {
+    const ok = classifyProbe({ kind: 'app-config' }, { status: 200, body: '{"ok":true,"tenant":"nsw","hasConfig":true}' });
+    expect(ok.ok).toBe(true);
+    expect(ok.detail).toContain('nsw');
+    const noKv = classifyProbe({ kind: 'app-config' }, { status: 200, body: '{"ok":true,"tenant":"nsw","hasConfig":false}' });
+    expect(noKv.ok).toBe(false);
+    expect(noKv.detail).toContain('TENANTS KV entry missing');
+    const wrongTenant = classifyProbe(
+      { kind: 'app-config', expectedTenant: 'expected' },
+      { status: 200, body: '{"ok":true,"tenant":"other","hasConfig":true}' },
+    );
+    expect(wrongTenant.ok).toBe(false);
+    expect(wrongTenant.detail).toContain('expected expected');
+    expect(classifyProbe({ kind: 'app-config' }, { status: 500, body: '' }).ok).toBe(false);
+    expect(classifyProbe({ kind: 'app-config' }, { status: 200, body: 'not json' }).ok).toBe(false);
   });
 });
 

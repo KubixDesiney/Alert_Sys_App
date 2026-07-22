@@ -16,7 +16,7 @@ class PredictiveRepository {
   final FirebaseDatabase _db;
   final http.Client _client;
 
-  static String get workerBase => AppConfig.aiWorkerBase;
+  static String get workerBase => AppConfig.resolvedAiWorkerBase;
   static const Duration requestTimeout = AppConfig.defaultRequestTimeout;
   static const Duration cacheTtl = Duration(minutes: 5);
 

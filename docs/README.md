@@ -8,7 +8,7 @@ and `../README.md` (product front door).
 | Doc | Purpose |
 |---|---|
 | [SECURITY_WHITEPAPER.md](SECURITY_WHITEPAPER.md) | Buyer-facing security overview: isolation, auth matrix, data flows, encryption, backups, roadmap-honest assurance status |
-| [PROVISIONING.md](PROVISIONING.md) | Per-customer dedicated-instance runbook + lifecycle tooling (provision, verify, teardown, registry, backup drill) |
+| [PROVISIONING.md](PROVISIONING.md) | Per-customer dedicated-instance runbook + shared tenant web delivery, Android APK delivery, lifecycle tooling (provision, verify, teardown, registry, backup drill) |
 | [BRANCH_PROTECTION.md](BRANCH_PROTECTION.md) | Required branch-protection settings for `main` |
 | [DEPENDENCY_AUDIT.md](DEPENDENCY_AUDIT.md) | Dependency posture and audit policy |
 | [PENTEST_SCOPE.md](PENTEST_SCOPE.md) | Scope prepared for the first external penetration test |
@@ -86,3 +86,7 @@ gateway (OPC-UA / Modbus / S7 / MQTT / Sparkplug B + plant simulator).
 
 `CLAUDE_CODE_TASK_PROMPTS.md` and `CLAUDE_CODE_MAXOUT_PROMPTS.md` are internal
 engineering-agent work orders, not product docs.
+
+Per-tenant app delivery is documented in [PROVISIONING.md](PROVISIONING.md): one
+`sias-app` Worker serves the Flutter web bundle, injects each tenant's public
+Firebase config from KV, and exposes the gated Android APK download flow.

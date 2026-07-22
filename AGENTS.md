@@ -1,6 +1,6 @@
 # SIAS - Smart Industrial Alert System App Handoff Notes
 
-Last verified: 2026-07-21 from the local repository.
+Last verified: 2026-07-04 from the local repository.
 
 This file is the working context for future coding agents. Keep it updated when the
 app structure, worker deployment, Firebase schema, or CI behavior changes.
@@ -34,9 +34,8 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 ## Repository Map
 
 - `lib/`: Flutter application code. There are currently 212 Dart files (recounted 2026-07-04).
-- `lib/main.dart`: Firebase init, service init, providers, localization, auth gate, role router, offline account fallback, and per-tenant runtime config.
-- `lib/config/app_config.dart`: Single source for worker URLs, Dart defines, runtime tenant overrides, worker endpoints, and request timeouts.
-- `lib/config/runtime_firebase_config.dart`: Web runtime parser for the public Firebase/worker config injected by `sias-app`, with native/test stubs.
+- `lib/main.dart`: Firebase init, service init, providers, localization, auth gate, role router, offline account fallback.
+- `lib/config/app_config.dart`: Single source for worker URLs, Dart defines, worker endpoints, and request timeouts.
 - `lib/models/`: Alert, user, collaboration, hierarchy, factory map, shift, and predictive data models.
 - `lib/providers/alert_provider.dart`: Main app state facade for alert streams, per-supervisor alert buckets, actions, comments, critical flags, help, and assistance.
 - `lib/services/`: Firebase, alerts, auth, FCM, voice, AI, predictions, shifts, hierarchy, location, offline, PDF, and worker queue services.
@@ -48,13 +47,11 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 - `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, AI Agents, Production Managers, Overview Monitor, Hardware tabs). The `monitor/` subfolder holds the Overview Monitor war-room (replaced the old Logs tab on 2026-06-19).
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
 - `android/app/src/main/kotlin/com/example/alertsysapp/`: Native Android method channels and lock-screen voice capture.
-- `cloudflare_app_worker.js`, `wrangler.app.toml`: Shared `sias-app` Flutter web/APK delivery worker and its Assets/KV/R2 bindings.
-- `web/firebase-messaging-sw.js`: Web push service worker; fetches the current tenant's messaging config from `/__swconfig`.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
 - `worker_test/`: Jest worker test suite. There are currently 39 worker test files (recounted 2026-07-04).
 - `test/`: Flutter unit/widget tests. There are currently 39 Dart test files (recounted 2026-07-04).
-- `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Claude fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, optional worker deploy, `bugs/agent` RTDB run records, and GitHub issue escalation on rejection.
+- `tool/autonomous_bugfix_agent.mjs`: Autonomous bug-fix runner for UI/worker/log/RTDB health checks, Codex fix generation, OpenAI review gating, direct `main` push, Firebase Hosting deploy, optional worker deploy, `bugs/agent` RTDB run records, and GitHub issue escalation on rejection.
 - `functions/`: Firebase Cloud Functions. AI assignment retry triggers (the legacy third-party push function was removed 2026-06-14).
 - `database.rules.json`: Realtime Database security rules and validation.
 - `.github/workflows/ci.yml`: Flutter analysis/tests/build plus Worker Jest/deploy.
@@ -110,7 +107,7 @@ The VM modules warning from Node is expected.
 
 ## Active Worker Split
 
-SIAS - Smart Industrial Alert System runs **nine** active Cloudflare Workers. The core split keeps notification delivery from competing with AI/security work inside one invocation; the rest carve out ingestion, identity, observability, backups, the shared tenant app shell, and the commercial storefront:
+SIAS - Smart Industrial Alert System runs **eight** active Cloudflare Workers. The core split keeps notification delivery from competing with AI/security work inside one invocation; the rest carve out ingestion, identity, observability, backups, and the commercial storefront:
 
 | Worker | Config | Main file | Cron | Role |
 |---|---|---|---|---|
@@ -122,42 +119,8 @@ SIAS - Smart Industrial Alert System runs **nine** active Cloudflare Workers. Th
 | `alertsys-monitor` | `wrangler.monitor.toml` | `cloudflare_monitor_worker.js` | every 5 min | Synthetic probes + SLO/error-budget alerting |
 | `alertsys-backup` | `wrangler.backup.toml` | `cloudflare_backup_worker.js` | daily 02:00 UTC | RTDB → R2 snapshots + **alert retention policy** |
 | `sias-store` | `wrangler.store.toml` | `cloudflare_store_worker.js` | — | B2B storefront: landing/pricing, Stripe Checkout, purchase webhook → n8n intake |
-| `sias-app` | `wrangler.app.toml` | `cloudflare_app_worker.js` | — | Shared Flutter web shell, per-tenant runtime Firebase config, APK download/QR |
 
-The eight data-plane/store workers deploy from CI on protected `main` pushes and via `npm run deploy:workers`; `sias-app` deploys after the web build and is gated by `ENABLE_APP_WORKER_DEPLOY` until the TENANTS KV id and wildcard DNS are configured. Do not hand-deploy a subset — that is how config drift happens.
-
-### Per-Tenant App Delivery (2026-07-21)
-
-`sias-app` is one shared Worker, not one Worker per customer. It serves the Flutter
-`build/web` bundle through the `ASSETS` binding for every one-level tenant host:
-`https://<tenant>.kubixdesiney.com`. The Worker resolves the slug from `Host`, reads
-the tenant's public Firebase web config from the `TENANTS` KV namespace, and injects
-`window.__SIAS_CONFIG__` into `index.html` before `flutter_bootstrap.js`. The Flutter
-web runtime (`lib/config/runtime_firebase_config.dart`) uses that blob for Firebase
-initialization and worker URLs; native builds continue using `firebase_options.dart`
-and dart-defines.
-
-The app worker never reads customer data. Firebase client config is public; isolation
-comes from each customer's Firebase Auth realm and RTDB rules. `GET /__config` is a
-safe probe returning only `{ok, tenant, hasConfig}`, while `/__swconfig` returns the
-minimal messaging config used by `web/firebase-messaging-sw.js`.
-
-Provisioning writes the KV value `{tenantCode, company, firebase, workers}` to the
-shared namespace and records `appUrl` plus `ingestHost` in
-`deploy/tenants/<tenant>/provision-summary.json`. The generated tenant ingest config
-contains the more-specific `<tenant>-ingest.kubixdesiney.com/*` route block. DNS and
-route activation are deliberate operator steps: create a proxied wildcard record
-`*.kubixdesiney.com`, route the wildcard to `sias-app`, keep the more-specific
-`sias.kubixdesiney.com/*` route on `sias-store`, and confirm Universal SSL covers one
-subdomain level. The app worker returns a branded 404 for the apex, `www`, reserved
-labels, and unprovisioned tenant slugs.
-
-Android remains build-time per tenant because FCM consumes `google-services.json`.
-The manual `Build tenant APK` workflow takes the base64 file from the protected
-`provisioning` environment, publishes a GitHub artifact and uploads
-`<tenant>/sias-<tenant>.apk` to the app worker's R2 bucket. The tenant's `/app` page
-renders a dependency-free QR code and direct download link; the web PWA is available
-immediately without an install.
+All eight deploy from CI on protected `main` pushes (`.github/workflows/ci.yml`) and via `npm run deploy:workers` (per-worker `deploy:ai` … `deploy:store` scripts exist too). Do not hand-deploy a subset — that is how config drift happens.
 
 ### Store Worker (2026-07-13)
 
@@ -377,7 +340,7 @@ The Guardian agent lives inside the SuperAdmin **AI Agents** fleet tab (`lib/scr
 The Control subtab's headline is a genuinely live, GitHub-driven pipeline — not a canned animation:
 
 - **`GuardianLiveTracker`** (a `ChangeNotifier`) polls the proxy worker (4s while a run is in progress, ~13s idle). It **latches onto the real workflow run**: after the Simulate button fires the drill it calls `expectDrill()` to grab the next `repository_dispatch`/guardian run; with no simulation it watches the newest run, so an **actual** CI / autonomous-bugfix run lights the schema with zero clicks. It turns the run's jobs+steps into a **proportional frontier** (as real steps complete, stages advance; the first failing step pins the red stage) plus a live terminal feed, and exposes a per-node `PipeStatus` map via `computePipelineNodes(...)` (shared by the offline preview).
-- **`GuardianPipeline`** renders the operator's flow-chart (UI checks · Log watcher · CF+cron → Agent orchestrator → Source/Errors/DB → Anthropic Claude API → Test suite · AI review → Fix approved? → Alert human / GitHub PR → CI checks → Auto-merge + deploy) as 3D glass node cards (depth shadow + glow + pulse) wired by a `CustomPainter` that draws bezier connectors with flowing energy particles. Each node glows **amber** while active, **green** when its stage passes, **blood-red** the instant a stage fails (lighting the *Alert human* branch + retry edge); when GitHub is **not connected** the whole schema is desaturated grey behind a "Connect GitHub" veil. Human-review mode shows the PR/CI green but leaves *deploy* awaiting a person.
+- **`GuardianPipeline`** renders the operator's flow-chart (UI checks · Log watcher · CF+cron → Agent orchestrator → Source/Errors/DB → Anthropic Codex API → Test suite · AI review → Fix approved? → Alert human / GitHub PR → CI checks → Auto-merge + deploy) as 3D glass node cards (depth shadow + glow + pulse) wired by a `CustomPainter` that draws bezier connectors with flowing energy particles. Each node glows **amber** while active, **green** when its stage passes, **blood-red** the instant a stage fails (lighting the *Alert human* branch + retry edge); when GitHub is **not connected** the whole schema is desaturated grey behind a "Connect GitHub" veil. Human-review mode shows the PR/CI green but leaves *deploy* awaiting a person.
 - **`GuardianTerminal`** shows the real run: a per-job/step checklist (✓/✗/▶ glyphs, colored) followed by the actual stdout tail from `/job-logs` (`$ npm test`, build output, `##[error]`/warning highlighting), auto-scrolled. Offline it falls back to the staged textual preview the Simulate button writes to `ai_agents/guardian/activeRun`.
 - **Actions**: `GuardianActionsView` (`lib/screens/superadmin/guardian_github_view.dart`) — a GitHub Actions-faithful live list (own GitHub-dark `GhTheme` palette, deliberately decoupled from the app's `Sa.*` SuperAdmin theme). Event/Status/Branch/Actor filters, status glyphs, branch pills, relative time; tapping a run lazily fetches `runJobs()` and expands to jobs/steps. Polls every 12s while mounted.
 - **Pull Requests**: `GuardianPullsView` (same file) — Open/Closed segmented tabs with live counts, search, PR state icons (open/merged/closed), branch pills, draft/bot tags. Polls every 12s while mounted.
@@ -921,7 +884,7 @@ Current verified results (2026-07-20, after the commercial/integration max-out p
 `.github/workflows/ci.yml` (runs on pushes to `main`, pull requests to `main`, and manual dispatch; `FLUTTER_VERSION: 3.41.6`, `NODE_VERSION: 22`):
 
 - **`flutter` job**: checkout, Java 17, Flutter (pub-cache keyed on `pubspec.lock`), `flutter pub get`, `flutter analyze --no-fatal-infos --no-fatal-warnings`, `flutter test --reporter expanded`, then `flutter build apk --debug` + `flutter build web --release --no-wasm-dry-run` (both with the split worker URLs baked in via `--dart-define`), uploads `build/web` as the `web-build` artifact (7-day retention). The AI auto-fix flow described in older notes lives in the separate `autonomous-bugfix-agent.yml` workflow, not in `ci.yml` — `ci.yml` itself has no auto-fix step; a failing Flutter test simply fails the job.
-- **`worker` job**: Node 20, `npm ci`, `npm test` (the full Jest suite — all 8 data-plane/store workers, `sias-app`, `tool/`, and `gateway/`), then on direct pushes to `main` only (when `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` are set): deploys the 8 data-plane/store workers via their explicit configs (never a subset — that is how config drift happens) and idempotently pushes the `alertsys-github` worker's bootstrap secrets. The Flutter job deploys `sias-app` after building `build/web` when `ENABLE_APP_WORKER_DEPLOY=true`.
+- **`worker` job**: Node 20, `npm ci`, `npm test` (the full Jest suite — all 8 workers, `tool/`, `gateway/`), then on direct pushes to `main` only (when `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` are set): deploys **all 8 workers** via `wrangler deploy --config wrangler.*.toml` (never a subset — that is how config drift happens) and idempotently pushes the `alertsys-github` worker's bootstrap secrets.
 - **`legal-lint` job** (2026-07-20, non-blocking — `continue-on-error: true`): `node tool/legal_lint.mjs` over `docs/legal/*.md`. Surfaces naming/forbidden-claim violations and counts `[[PLACEHOLDER]]` markers loudly without ever gating a deploy (counsel resolution is ongoing work, not a CI blocker).
 
 `.github/workflows/security.yml` (push/PR/weekly cron): `secret-scan` (gitleaks, blocking on the current tree; full-history scan is warning-only pending the documented history purge), `dependency-audit` (`npm audit --omit=dev --audit-level=high` across root/`functions`/`codebasedelta`), and `sbom` (2026-07-20 — `npm sbom --sbom-format cyclonedx --omit dev`, uploaded as the `sbom-cyclonedx` artifact for buyer due-diligence).
@@ -938,8 +901,8 @@ Current verified results (2026-07-20, after the commercial/integration max-out p
 
 - Runs hourly and by manual dispatch.
 - Probes deployed UI, Cloudflare worker config/security endpoints, recent logs, RTDB worker health, and configured detection commands.
-- Builds structured context from `CLAUDE.md`, source files, logs, DB state, and worker responses.
-- Sends the fix request to Claude using `CLAUDE_FIX_MODEL` (default `claude-opus-4-8`), applies safe text-file updates, then validates with Jest, Flutter analysis, and Flutter tests.
+- Builds structured context from `AGENTS.md`, source files, logs, DB state, and worker responses.
+- Sends the fix request to Codex using `CLAUDE_FIX_MODEL` (default `Codex-opus-4-8`), applies safe text-file updates, then validates with Jest, Flutter analysis, and Flutter tests.
 - Sends the resulting diff to the OpenAI review gate using `OPENAI_REVIEW_MODEL` (default `o3`).
 - Retries up to three times with validation/review feedback.
 - If approved, commits on `main`, pushes `HEAD:main`, builds Flutter web, and deploys Firebase Hosting directly.
@@ -1296,11 +1259,11 @@ Two CLIs automate the dedicated-instance runbook (full doc: `docs/PROVISIONING.m
 - `npm run provision:owner -- --email <e> --name "F L" --company <c> --tenant <T#XXXX> [--db-url <rtdb>] [--dry-run]`
   (`tool/provision_owner.mjs`): seeds the customer's Owner seat — creates the Firebase Auth user (random password, never printed), writes `users/{uid}` (role SuperAdmin, NO email — PII split) + `users_private/{uid}` (email), and emits the ONE-TIME activation link via `generatePasswordResetLink()` (single-use, ~1h expiry — passwords are never emailed). Optional POST of the summary to `N8N_ACTIVATION_WEBHOOK_URL`. Auth via `FIREBASE_SERVICE_ACCOUNT` env or application-default credentials. Admin SDK bypasses RTDB rules; no rules changes involved.
 - `npm run provision:instance -- --tenant <slug> --project-id <gcp-id> [--execute]`
-  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Creates/links the Firebase project, deploys rules, templates per-tenant wrangler configs under `deploy/tenants/<tenant>/` (root `wrangler.*.toml` are never modified), pushes secrets from a git-ignored `.env.tenant`, deploys the tenant workers, chains `provision_owner`, writes the tenant's public web config to the shared `TENANTS` KV namespace, and records `appUrl`/`ingestHost` in `provision-summary.json`. It prints the wildcard app-route, branded ingest-route, DNS, Firebase web-config, and Android APK TODOs. **Step 10 (`verify`)** runs `tool/verify_instance.mjs` automatically and now probes `<appUrl>/__config`, requiring `hasConfig: true`, alongside worker health and RTDB rules checks.
+  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Creates/links the Firebase project, deploys rules, templates per-tenant wrangler configs under `deploy/tenants/<tenant>/` (root `wrangler.*.toml` are never modified), pushes secrets from a git-ignored `.env.tenant`, deploys the tenant workers, chains `provision_owner`, and writes `provision-summary.json` (now including `workersSubdomain`/`workerUrls`) + the manual-console TODO list (Blaze billing, auth provider, Android app/FCM). **Step 9 (`verify`)** runs `tool/verify_instance.mjs` automatically and marks the tenant `verified`/`failed-verification` in the local registry.
 
 ### Provisioning lifecycle tooling (2026-07-20)
 
-- `npm run verify:instance -- --tenant <slug> [--db-url <url>]` (`tool/verify_instance.mjs`): probes every tenant worker's `GET /config` (want 200), the shared app URL's `GET /__config` (want 200 JSON with `hasConfig: true`), the RTDB REST endpoint's reachability (any HTTP status counts — 401 means "reachable and correctly locked"), and proves rules are deployed (an **unauthenticated** read of `/users.json` must be denied — a 200 there is the critical failure: `RULES NOT DEPLOYED`). Prints a green/red table (`renderProbeTable`); exit code reflects health.
+- `npm run verify:instance -- --tenant <slug> [--db-url <url>]` (`tool/verify_instance.mjs`): probes every tenant worker's `GET /config` (want 200), the RTDB REST endpoint's reachability (any HTTP status counts — 401 means "reachable and correctly locked"), and proves rules are deployed (an **unauthenticated** read of `/users.json` must be denied — a 200 there is the critical failure: `RULES NOT DEPLOYED`). Prints a green/red table (`renderProbeTable`); exit code reflects health.
 - `npm run teardown:instance -- --tenant <slug> [--execute]` (`tool/teardown_instance.mjs`): DRY-RUN BY DEFAULT. With `--execute`: deletes the tenant's Cloudflare workers (`wrangler delete` per generated config), archives `deploy/tenants/<tenant>/` → `deploy/tenants/_archived/<tenant>-<date>/`, marks the registry `deleted`. **Never** deletes the Firebase project or R2 backups — both are manual/deliberate and printed loudly as TODOs (Firebase project deletion is irreversible).
 - **Tenant registry** (`tool/tenant_registry.mjs`): `deploy/tenants/registry.json` (git-ignored), maintained by provision/teardown (`upsertTenant`/`markStatus`). `npm run tenants` (`tool/list_tenants.mjs`) prints it as a table.
 - `npm run backup:drill -- --tenant <slug> [--max-age-hours 36]` (`tool/backup_drill.mjs`): fetches the tenant's backup worker `GET /config` (new endpoint on `cloudflare_backup_worker.js` — reports `snapshots` count + `latest` R2 object metadata) and fails if the newest snapshot is stale. This is the "are backups actually happening" check.
@@ -1312,3 +1275,5 @@ Both ship pure-helper Jest suites (`worker_test/provision_owner.test.js`, `worke
 ## Legal Documents (2026-07-17)
 
 `docs/legal/` holds DRAFT v1 of EULA, MSA, DPA (GDPR; sub-processors Google/Cloudflare/Supabase/Brevo/n8n), SLA (Enterprise 99.9%) and PRIVACY. Every file is bannered "requires review by qualified counsel"; jurisdiction-dependent choices are marked `[[PLACEHOLDER: ...]]`. They deliberately claim no certifications (SOC 2 / ISO 27001 = roadmap only). Do not link them from the storefront until counsel signs off — enforced in code, not just by convention: see "Legal pack gate (2026-07-20)" under Store Worker above (`LEGAL_PUBLISH` flag + `npm run legal:lint`). `docs/legal/COUNSEL_BRIEF.md` is the one-page handoff for the reviewing lawyer.
+
+## Imported Claude Cowork project instructions

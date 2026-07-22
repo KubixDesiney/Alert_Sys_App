@@ -53,6 +53,19 @@ export function buildProbePlan(summary, { dbUrl } = {}) {
   for (const [key, base] of Object.entries(urls)) {
     probes.push({ id: `worker:${key}`, kind: 'worker-config', url: `${String(base).replace(/\/$/, '')}/config` });
   }
+  // Shared sias-app worker: the tenant's app URL must resolve AND find its KV
+  // config (so the runtime Firebase config gets injected). /__config returns
+  // { ok, tenant, hasConfig } — needsBody so classifyProbe can read hasConfig.
+  const appUrl = String(summary?.appUrl || '').replace(/\/$/, '');
+  if (appUrl) {
+    probes.push({
+      id: 'app:config',
+      kind: 'app-config',
+      url: `${appUrl}/__config`,
+      needsBody: true,
+      expectedTenant: summary?.tenant || null,
+    });
+  }
   const db = String(dbUrl || summary?.dbUrl || '').replace(/\/$/, '');
   if (db) {
     probes.push({ id: 'rtdb:reachable', kind: 'rtdb-reachable', url: `${db}/.json?shallow=true` });
@@ -72,6 +85,22 @@ export function classifyProbe(probe, res) {
       return status === 200
         ? { ok: true, detail: 'HTTP 200 /config' }
         : { ok: false, detail: `HTTP ${status} (expected 200)` };
+    case 'app-config': {
+      if (status !== 200) return { ok: false, detail: `HTTP ${status} (expected 200)` };
+      let body = null;
+      try { body = JSON.parse(res?.body ?? ''); } catch { /* handled below */ }
+      if (body && body.ok === true && body.hasConfig === true &&
+          (!probe.expectedTenant || body.tenant === probe.expectedTenant)) {
+        return { ok: true, detail: `HTTP 200 — config injected (tenant ${body.tenant})` };
+      }
+      if (body && body.ok === true && body.hasConfig === true && probe.expectedTenant) {
+        return { ok: false, detail: `HTTP 200 but tenant=${body.tenant || 'missing'} (expected ${probe.expectedTenant})` };
+      }
+      if (body && body.hasConfig === false) {
+        return { ok: false, detail: 'HTTP 200 but hasConfig=false — TENANTS KV entry missing' };
+      }
+      return { ok: false, detail: 'HTTP 200 but /__config body unreadable' };
+    }
     case 'rtdb-reachable':
       // Any HTTP answer proves the database instance exists and is reachable;
       // 401 is the healthy answer once rules deny anonymous root reads.
@@ -119,7 +148,11 @@ async function probeOnce(probe, { fetchImpl = fetch, timeoutMs = 10000 } = {}) {
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(probe.url, { signal: controller.signal });
-    return { status: res.status };
+    const out = { status: res.status };
+    if (probe.needsBody) {
+      try { out.body = await res.text(); } catch { out.body = ''; }
+    }
+    return out;
   } catch (e) {
     return { error: e?.name === 'AbortError' ? 'timeout' : (e?.cause?.code || e?.message || 'fetch failed') };
   } finally {

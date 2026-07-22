@@ -187,6 +187,7 @@ const STEP_ORDER = [
   ['secrets', 'Push per-tenant secrets from .env.tenant via wrangler secret put'],
   ['deploy', 'Deploy the 8 tenant workers'],
   ['seed-owner', "Seed the customer's Owner (SuperAdmin) account via tool/provision_owner.mjs"],
+  ['app-delivery', 'Publish the tenant app config to the TENANTS KV namespace + wire the branded ingest host'],
   ['summary', 'Write provision-summary.json and print remaining manual TODOs'],
   ['verify', 'Post-provision verification — probe workers /config, RTDB reachability, rules denial'],
 ];
@@ -226,6 +227,115 @@ export function workerUrlsForTenant(written, subdomain) {
   return out;
 }
 
+// ── Per-tenant app delivery (shared sias-app worker + TENANTS KV) ─────────────
+// See CLAUDE.md "Per-Tenant App Delivery". These are all pure + unit-tested.
+
+/** The customer-facing domain every tenant subdomain lives under. */
+export const APP_DOMAIN = 'kubixdesiney.com';
+
+/** The tenant's SIAS web app URL, e.g. https://nagati.kubixdesiney.com. */
+export function tenantAppUrl(tenant, domain = APP_DOMAIN) {
+  return `https://${tenant}.${domain}`;
+}
+
+/** The tenant's branded ingest host plant IT whitelists in their firewall. */
+export function tenantIngestHost(tenant, domain = APP_DOMAIN) {
+  return `${tenant}-ingest.${domain}`;
+}
+
+/** The app-worker route pattern that serves this tenant's web hostname. */
+export function tenantAppRoute(tenant, domain = APP_DOMAIN) {
+  return `${tenant}.${domain}/*`;
+}
+
+/** The ingest-worker route pattern for this tenant's branded ingest hostname. */
+export function tenantIngestRoute(tenant, domain = APP_DOMAIN) {
+  return `${tenantIngestHost(tenant, domain)}/*`;
+}
+
+/** The buyer's Kubix Copilot deep link, carrying tenant/company context. */
+export function tenantCopilotUrl(tenantCode, company, storefront = `https://sias.${APP_DOMAIN}`) {
+  const p = new URLSearchParams();
+  if (tenantCode) p.set('tenant', tenantCode);
+  if (company) p.set('company', company);
+  const q = p.toString();
+  return `${storefront}/copilot${q ? `?${q}` : ''}`;
+}
+
+/** The exact JSON value written into the TENANTS KV namespace for a tenant. */
+export function buildTenantKvValue({ tenantCode, company, firebase, workerUrls, copilotUrl }) {
+  return {
+    tenantCode: tenantCode || null,
+    company: company || null,
+    firebase: firebase || {},
+    workers: {
+      ai: workerUrls?.ai || null,
+      notify: workerUrls?.notify || null,
+      ingest: workerUrls?.ingest || null,
+      copilotUrl: copilotUrl || null,
+    },
+  };
+}
+
+/** Extracts the TENANTS KV namespace id from wrangler.app.toml (either key order). */
+export function parseTenantsKvId(tomlContent) {
+  const s = String(tomlContent || '');
+  const a = s.match(/binding\s*=\s*"TENANTS"[\s\S]{0,200}?id\s*=\s*"([^"]+)"/);
+  if (a) return a[1];
+  const b = s.match(/id\s*=\s*"([^"]+)"[\s\S]{0,200}?binding\s*=\s*"TENANTS"/);
+  return b ? b[1] : null;
+}
+
+export function isPlaceholderKvId(id) {
+  return !id || /^replace/i.test(String(id));
+}
+
+/** A commented [[routes]] block for the tenant's branded ingest host. */
+export function ingestRouteBlock(tenant, domain = APP_DOMAIN) {
+  return [
+    '',
+    `# --- Branded ingest host (activate once the *.${domain} DNS wildcard exists) ---`,
+    '# A stable hostname plant IT can whitelist. MORE specific than the sias-app',
+    '# wildcard route, so it wins for this host. Uncomment after DNS is in place.',
+    '# routes = [',
+    `#   { pattern = "${tenantIngestRoute(tenant, domain)}", zone_name = "${domain}" }`,
+    '# ]',
+    '',
+  ].join('\n');
+}
+
+/** Idempotently appends the branded ingest route to a tenant ingest config. */
+export function appendIngestRoute(tomlContent, tenant, domain = APP_DOMAIN) {
+  const content = String(tomlContent || '');
+  if (content.includes(tenantIngestHost(tenant, domain))) return content;
+  return content.replace(/\s*$/, '\n') + ingestRouteBlock(tenant, domain);
+}
+
+/** Template dropped for the operator to paste the tenant's Firebase WEB config. */
+export function firebaseWebConfigTemplate() {
+  return JSON.stringify(
+    {
+      apiKey: PLACEHOLDER,
+      authDomain: PLACEHOLDER,
+      projectId: PLACEHOLDER,
+      storageBucket: PLACEHOLDER,
+      messagingSenderId: PLACEHOLDER,
+      appId: PLACEHOLDER,
+      databaseURL: PLACEHOLDER,
+    },
+    null,
+    2,
+  ) + '\n';
+}
+
+/** True until the operator fills the required Firebase web-config identity fields. */
+export function isPlaceholderWebConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return true;
+  return ['apiKey', 'appId', 'messagingSenderId', 'projectId'].some(
+    (k) => !cfg[k] || cfg[k] === PLACEHOLDER,
+  );
+}
+
 // ── CLI (not exercised by tests — only the pure helpers above are) ───────────
 
 function runCmd(cmd, args, opts = {}) {
@@ -245,7 +355,8 @@ async function main() {
     console.error(
       'Usage: node tool/provision_instance.mjs --tenant <slug> --project-id <id> ' +
       '[--region europe-west1] [--execute] [--skip step,step] ' +
-      '[--workers-subdomain <sub>] [--owner-email <e>] [--owner-name "First Last"] [--owner-company <co>]'
+      '[--workers-subdomain <sub>] [--owner-email <e>] [--owner-name "First Last"] ' +
+      '[--owner-company <co>] [--tenant-code <T#CODE>]'
     );
     process.exit(1);
     return;
@@ -361,7 +472,10 @@ async function main() {
           continue;
         }
         const content = readFileSync(src, 'utf8');
-        const { content: out, workerName } = templateTenantConfig({ content, tenant, dbUrl, notifyUrl });
+        let { content: out, workerName } = templateTenantConfig({ content, tenant, dbUrl, notifyUrl });
+        // Give the ingest worker its branded <tenant>-ingest host (commented
+        // until DNS exists; see appendIngestRoute).
+        if (key === 'ingest') out = appendIngestRoute(out, tenant, APP_DOMAIN);
         const outName = tenantConfigFileName(key, tenant);
         writeFileSync(join(tenantDir, outName), out);
         written.push({ key, file: outName, workerName });
@@ -447,8 +561,83 @@ async function main() {
       continue;
     }
 
+    if (step.id === 'app-delivery') {
+      const appUrl = tenantAppUrl(tenant, APP_DOMAIN);
+      const ingestHost = tenantIngestHost(tenant, APP_DOMAIN);
+      step._appUrl = appUrl;
+      step._ingestHost = ingestHost;
+
+      // Build the KV value from the tenant's worker URLs + Firebase WEB config.
+      const written = (plan.find((s) => s.id === 'worker-configs') || {})._written || [];
+      const workersSubdomain =
+        flags['workers-subdomain'] || process.env.CLOUDFLARE_WORKERS_SUBDOMAIN || null;
+      const workerUrls = workerUrlsForTenant(written, workersSubdomain);
+      const ownerSummary = (plan.find((s) => s.id === 'seed-owner') || {})._ownerSummary || {};
+      const tenantCode = flags['tenant-code'] || ownerSummary.tenantCode || null;
+      const company = flags['owner-company'] || ownerSummary.company || null;
+
+      const webCfgPath = join(tenantDir, 'firebase-web-config.json');
+      let webCfg = null;
+      if (existsSync(webCfgPath)) {
+        try { webCfg = JSON.parse(readFileSync(webCfgPath, 'utf8')); } catch { webCfg = null; }
+      }
+
+      const kvValue = buildTenantKvValue({
+        tenantCode,
+        company,
+        firebase: webCfg || {},
+        workerUrls,
+        copilotUrl: tenantCopilotUrl(tenantCode, company),
+      });
+      const kvValuePath = join(tenantDir, 'tenant-kv.json');
+      mkdirSync(tenantDir, { recursive: true });
+      writeFileSync(kvValuePath, JSON.stringify(kvValue, null, 2) + '\n');
+      step._kvValue = kvValue;
+
+      const appTomlPath = join(REPO_ROOT, 'wrangler.app.toml');
+      const kvId = existsSync(appTomlPath) ? parseTenantsKvId(readFileSync(appTomlPath, 'utf8')) : null;
+      const kvCmd = `wrangler kv key put ${tenant} --namespace-id <TENANTS_KV_ID> --path deploy/tenants/${tenant}/tenant-kv.json`;
+
+      if (isPlaceholderKvId(kvId)) {
+        console.log(`[TODO]    ${step.n}. ${step.label}`);
+        console.log('  wrangler.app.toml has no real TENANTS KV id yet — create it + write this tenant:');
+        console.log(`    npx wrangler kv namespace create TENANTS   # paste the id into wrangler.app.toml`);
+        console.log(`    npx ${kvCmd}`);
+        manualTodos.push('Create the TENANTS KV namespace, paste its id into wrangler.app.toml, then write this tenant (see command above).');
+      } else if (isPlaceholderWebConfig(webCfg)) {
+        if (!existsSync(webCfgPath)) writeFileSync(webCfgPath, firebaseWebConfigTemplate());
+        console.log(`[TODO]    ${step.n}. ${step.label}`);
+        console.log(`  Fill deploy/tenants/${tenant}/firebase-web-config.json with the tenant's Firebase`);
+        console.log('  WEB app config (console → Project settings → SDK setup → Config), then re-run, or:');
+        console.log(`    npx wrangler kv key put ${tenant} --namespace-id ${kvId} --path deploy/tenants/${tenant}/tenant-kv.json`);
+        manualTodos.push("Add the tenant's Firebase WEB app config (deploy/tenants/<tenant>/firebase-web-config.json) and write the KV entry.");
+      } else {
+        const r = runCmd('wrangler', ['kv', 'key', 'put', tenant, '--namespace-id', kvId, '--path', kvValuePath]);
+        if (r.status !== 0) {
+          console.warn(`  WARN: KV write failed: ${(r.stderr || r.stdout || '').slice(0, 300)}`);
+          manualTodos.push(`Retry the TENANTS KV write for ${tenant} (see deploy/tenants/${tenant}/tenant-kv.json).`);
+        }
+        console.log(`[DONE]    ${step.n}. ${step.label} → ${appUrl}`);
+      }
+      manualTodos.push(
+        `Route ${tenantAppRoute(tenant, APP_DOMAIN)} to sias-app (the app worker's wildcard route ` +
+        `covers it; keep the more-specific sias.${APP_DOMAIN}/* storefront route).`,
+      );
+      manualTodos.push(
+        `Add DNS + route for the branded ingest host ${ingestHost} (uncomment the route in ` +
+        `the generated ingest config once *.${APP_DOMAIN} DNS exists).`,
+      );
+      manualTodos.push(
+        `Build this tenant's Android APK: run the "Build tenant APK" GitHub workflow ` +
+        `(.github/workflows/build-tenant-apk.yml) with tenant="${tenant}" — it publishes ` +
+        `${appUrl}/app/sias-${tenant}.apk. The web PWA already works with no install.`,
+      );
+      continue;
+    }
+
     if (step.id === 'summary') {
       const written = (plan.find((s) => s.id === 'worker-configs') || {})._written || [];
+      const appStep = plan.find((s) => s.id === 'app-delivery') || {};
       const workersSubdomain =
         flags['workers-subdomain'] || process.env.CLOUDFLARE_WORKERS_SUBDOMAIN || null;
       const summary = {
@@ -457,6 +646,8 @@ async function main() {
         region,
         dbUrl,
         workersSubdomain,
+        appUrl: appStep._appUrl || tenantAppUrl(tenant, APP_DOMAIN),
+        ingestHost: appStep._ingestHost || tenantIngestHost(tenant, APP_DOMAIN),
         workerUrls: workerUrlsForTenant(written, workersSubdomain),
         workerConfigs: written,
         owner: (plan.find((s) => s.id === 'seed-owner') || {})._ownerSummary || null,
@@ -469,6 +660,7 @@ async function main() {
         tenant,
         projectId,
         status: 'provisioned',
+        appUrl: summary.appUrl,
         workerUrls: summary.workerUrls,
         workerConfigs: written.map((w) => w.file),
       }));

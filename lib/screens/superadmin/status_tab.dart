@@ -479,8 +479,9 @@ class _KubixCopilotCard extends StatelessWidget {
 
   Future<void> _open(BuildContext context) async {
     // Per-tenant builds bake the tenant context into ALERTSYS_COPILOT_URL;
+    // web tenants get it from window.__SIAS_CONFIG__ (resolvedCopilotUrl);
     // here we only append the console's active language.
-    const base = AppConfig.copilotUrl;
+    final base = AppConfig.resolvedCopilotUrl;
     final sep = base.contains('?') ? '&' : '?';
     final url = context.isFrench ? '$base${sep}lang=fr' : base;
     try {
@@ -732,7 +733,7 @@ class _StatusController extends ChangeNotifier {
     notifyListeners();
     try {
       final res = await http
-          .get(Uri.parse('${AppConfig.ingestWorkerBase}/config'))
+          .get(Uri.parse('${AppConfig.resolvedIngestWorkerBase}/config'))
           .timeout(const Duration(seconds: 6));
       ingestState = (res.statusCode >= 200 && res.statusCode < 300)
           ? LiveState.online

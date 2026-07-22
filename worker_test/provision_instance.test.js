@@ -19,6 +19,19 @@ import {
   extractJsonSummary,
   dbUrlForProject,
   notifyWorkerUrl,
+  APP_DOMAIN,
+  tenantAppUrl,
+  tenantIngestHost,
+  tenantAppRoute,
+  tenantIngestRoute,
+  tenantCopilotUrl,
+  buildTenantKvValue,
+  parseTenantsKvId,
+  isPlaceholderKvId,
+  ingestRouteBlock,
+  appendIngestRoute,
+  firebaseWebConfigTemplate,
+  isPlaceholderWebConfig,
 } from '../tool/provision_instance.mjs';
 
 describe('parseArgs / validateFlags', () => {
@@ -180,23 +193,24 @@ describe('buildEnvTemplate / parseEnvFile / missingSecretKeys', () => {
 });
 
 describe('buildStepPlan', () => {
-  test('returns the 9 steps in order, numbered from 1', () => {
+  test('returns the 10 steps in order, numbered from 1', () => {
     const plan = buildStepPlan(new Set());
-    expect(plan).toHaveLength(9);
-    expect(plan.map((s) => s.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(plan).toHaveLength(10);
+    expect(plan.map((s) => s.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(plan[0].id).toBe('preflight');
     expect(plan.at(-1).id).toBe('verify'); // provisioning now proves itself
     expect(plan.every((s) => s.skip === false)).toBe(true);
   });
 
-  test('marks skipped steps without reordering', () => {
+  test('marks skipped steps without reordering (app-delivery sits before summary)', () => {
     const plan = buildStepPlan(new Set(['rules', 'deploy']));
     const byId = Object.fromEntries(plan.map((s) => [s.id, s.skip]));
     expect(byId.rules).toBe(true);
     expect(byId.deploy).toBe(true);
     expect(byId.preflight).toBe(false);
     expect(plan.map((s) => s.id)).toEqual([
-      'preflight', 'firebase-project', 'rules', 'worker-configs', 'secrets', 'deploy', 'seed-owner', 'summary', 'verify',
+      'preflight', 'firebase-project', 'rules', 'worker-configs', 'secrets', 'deploy',
+      'seed-owner', 'app-delivery', 'summary', 'verify',
     ]);
   });
 });
@@ -220,5 +234,68 @@ describe('dbUrlForProject / notifyWorkerUrl', () => {
   test('builds the tenant notify worker URL, falling back to a placeholder subdomain', () => {
     expect(notifyWorkerUrl('nsw-7k2f', 'aziz-nagati01')).toBe('https://alertsys-nsw-7k2f.aziz-nagati01.workers.dev/notify');
     expect(notifyWorkerUrl('nsw-7k2f')).toBe('https://alertsys-nsw-7k2f.REPLACE-workers-subdomain.workers.dev/notify');
+  });
+});
+
+describe('per-tenant app delivery helpers', () => {
+  test('app + ingest hostnames are one level under the app domain', () => {
+    expect(APP_DOMAIN).toBe('kubixdesiney.com');
+    expect(tenantAppUrl('nagati')).toBe('https://nagati.kubixdesiney.com');
+    expect(tenantIngestHost('nagati')).toBe('nagati-ingest.kubixdesiney.com');
+    expect(tenantAppRoute('nagati')).toBe('nagati.kubixdesiney.com/*');
+    expect(tenantIngestRoute('nagati')).toBe('nagati-ingest.kubixdesiney.com/*');
+  });
+
+  test('copilot deep link carries encoded tenant + company context', () => {
+    const url = tenantCopilotUrl('NSW#7K2F', 'Nagati Steel');
+    expect(url).toContain('/copilot?');
+    expect(url).toContain('tenant=NSW%237K2F');
+    expect(url).toContain('company=Nagati+Steel');
+    expect(tenantCopilotUrl(null, null)).toBe('https://sias.kubixdesiney.com/copilot');
+  });
+
+  test('buildTenantKvValue shapes exactly the KV contract the app worker reads', () => {
+    const v = buildTenantKvValue({
+      tenantCode: 'NSW#7K2F', company: 'Nagati',
+      firebase: { projectId: 'p' },
+      workerUrls: { ai: 'https://ai', notify: 'https://n', ingest: 'https://ing' },
+      copilotUrl: 'https://c',
+    });
+    expect(v).toEqual({
+      tenantCode: 'NSW#7K2F', company: 'Nagati', firebase: { projectId: 'p' },
+      workers: { ai: 'https://ai', notify: 'https://n', ingest: 'https://ing', copilotUrl: 'https://c' },
+    });
+  });
+
+  test('missing pieces fall back to null, never undefined', () => {
+    const v = buildTenantKvValue({});
+    expect(v.tenantCode).toBeNull();
+    expect(v.workers.ai).toBeNull();
+    expect(v.firebase).toEqual({});
+  });
+
+  test('parseTenantsKvId reads the id from either key order; placeholders are detected', () => {
+    expect(parseTenantsKvId('[[kv_namespaces]]\nbinding = "TENANTS"\nid = "abc123"\n')).toBe('abc123');
+    expect(parseTenantsKvId('[[kv_namespaces]]\nid = "xyz"\nbinding = "TENANTS"\n')).toBe('xyz');
+    expect(parseTenantsKvId('binding = "OTHER"\nid = "nope"\n')).toBeNull();
+    expect(isPlaceholderKvId('REPLACE_WITH_TENANTS_KV_ID')).toBe(true);
+    expect(isPlaceholderKvId('abc123')).toBe(false);
+    expect(isPlaceholderKvId(null)).toBe(true);
+  });
+
+  test('appendIngestRoute adds a commented branded-host route, idempotently', () => {
+    const toml = 'name = "alertsys-ingest-nagati"\ncompatibility_date = "2025-01-01"\n';
+    const once = appendIngestRoute(toml, 'nagati');
+    expect(once).toContain('nagati-ingest.kubixdesiney.com/*');
+    expect(once).toContain('# routes = ['); // commented until DNS exists
+    expect(appendIngestRoute(once, 'nagati')).toBe(once); // idempotent
+    expect(ingestRouteBlock('nagati')).toContain('zone_name = "kubixdesiney.com"');
+  });
+
+  test('isPlaceholderWebConfig gates on the required Firebase identity fields', () => {
+    expect(isPlaceholderWebConfig(null)).toBe(true);
+    expect(isPlaceholderWebConfig(JSON.parse(firebaseWebConfigTemplate()))).toBe(true);
+    expect(isPlaceholderWebConfig({ apiKey: 'k', appId: 'a', messagingSenderId: 'm', projectId: 'p' })).toBe(false);
+    expect(isPlaceholderWebConfig({ apiKey: 'k' })).toBe(true); // missing appId/sender/project
   });
 });
