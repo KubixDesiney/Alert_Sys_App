@@ -43,7 +43,7 @@
     "wrangler": "^4.100.0"
   },
   "dependencies": {
-    "firebase-admin": "^13.10.0"
+    "firebase-admin": "^14.2.0"
   },
   "overrides": {
     "brace-expansion": "5.0.8",
