@@ -19,6 +19,7 @@ import {
   extractJsonSummary,
   dbUrlForProject,
   notifyWorkerUrl,
+  aiWorkerUrl,
   APP_DOMAIN,
   tenantAppUrl,
   tenantIngestHost,
@@ -75,10 +76,10 @@ describe('parseSkipList', () => {
 });
 
 describe('WORKER_TEMPLATES / SECRET_SPECS', () => {
-  test('covers exactly the 8 root worker configs', () => {
-    expect(WORKER_TEMPLATES).toHaveLength(8);
+  test('covers exactly the 7 tenant data-plane worker configs', () => {
+    expect(WORKER_TEMPLATES).toHaveLength(7);
     expect(WORKER_TEMPLATES.map((w) => w.key).sort()).toEqual(
-      ['ai', 'backup', 'github', 'ingest', 'monitor', 'notify', 'scim', 'store'].sort()
+      ['ai', 'backup', 'github', 'ingest', 'monitor', 'notify', 'scim'].sort()
     );
   });
   test('every template has a matching secret spec (possibly empty optional list)', () => {
@@ -86,6 +87,9 @@ describe('WORKER_TEMPLATES / SECRET_SPECS', () => {
       expect(Array.isArray(SECRET_SPECS[key])).toBe(true);
       expect(Array.isArray(OPTIONAL_SECRET_SPECS[key])).toBe(true);
     }
+  });
+  test('monitor can authenticate its notify-worker delivery', () => {
+    expect(SECRET_SPECS.monitor).toContain('WORKER_SHARED_SECRET');
   });
 });
 
@@ -143,11 +147,14 @@ describe('templateTenantConfig', () => {
       tenant: 'nsw-7k2f',
       dbUrl: 'https://nsw-7k2f-alerts-default-rtdb.firebaseio.com',
       notifyUrl: 'https://alertsys-nsw-7k2f.acct.workers.dev/notify',
+      aiUrl: 'https://alert-notifier-nsw-7k2f.acct.workers.dev',
     });
     expect(workerName).toBe('alertsys-nsw-7k2f');
     expect(out).toContain('name = "alertsys-nsw-7k2f"');
+    expect(out).toContain('main = "../../../cloudflare_notify_worker.js"');
     expect(out).toContain('FB_DB_URL = "https://nsw-7k2f-alerts-default-rtdb.firebaseio.com"');
     expect(out).toContain('NOTIFY_WORKER_URL = "https://alertsys-nsw-7k2f.acct.workers.dev/notify"');
+    expect(out).toContain('AI_WORKER_URL = "https://alert-notifier-nsw-7k2f.acct.workers.dev"');
   });
 
   test('namespaces the shared backup R2 bucket name per tenant', () => {
@@ -167,7 +174,7 @@ describe('buildEnvTemplate / parseEnvFile / missingSecretKeys', () => {
   test('template lists every required secret with a placeholder', () => {
     const tpl = buildEnvTemplate('nsw-7k2f');
     expect(tpl).toContain('FIREBASE_SERVICE_ACCOUNT=REPLACE_ME');
-    expect(tpl).toContain('N8N_CHAT_WEBHOOK_URL=REPLACE_ME');
+    expect(tpl).toContain('ALERT_WEBHOOK_URL=REPLACE_ME');
     expect(tpl).toContain('nsw-7k2f');
   });
 
@@ -180,7 +187,7 @@ describe('buildEnvTemplate / parseEnvFile / missingSecretKeys', () => {
     const env = parseEnvFile(buildEnvTemplate('nsw-7k2f'));
     const missing = missingSecretKeys(env);
     expect(missing).toContain('FIREBASE_SERVICE_ACCOUNT');
-    expect(missing).toContain('N8N_CHAT_WEBHOOK_URL');
+    expect(missing).toContain('ALERT_WEBHOOK_URL');
     expect(missing.length).toBeGreaterThan(0);
   });
 
@@ -193,12 +200,12 @@ describe('buildEnvTemplate / parseEnvFile / missingSecretKeys', () => {
 });
 
 describe('buildStepPlan', () => {
-  test('returns the 10 steps in order, numbered from 1', () => {
+  test('returns the 11 steps in order, numbered from 1', () => {
     const plan = buildStepPlan(new Set());
-    expect(plan).toHaveLength(10);
-    expect(plan.map((s) => s.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(plan).toHaveLength(11);
+    expect(plan.map((s) => s.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     expect(plan[0].id).toBe('preflight');
-    expect(plan.at(-1).id).toBe('verify'); // provisioning now proves itself
+    expect(plan.at(-1).id).toBe('seed-seats'); // credentials go out only after verification
     expect(plan.every((s) => s.skip === false)).toBe(true);
   });
 
@@ -210,7 +217,7 @@ describe('buildStepPlan', () => {
     expect(byId.preflight).toBe(false);
     expect(plan.map((s) => s.id)).toEqual([
       'preflight', 'firebase-project', 'rules', 'worker-configs', 'secrets', 'deploy',
-      'seed-owner', 'app-delivery', 'summary', 'verify',
+      'seed-data', 'app-delivery', 'summary', 'verify', 'seed-seats',
     ]);
   });
 });
@@ -230,10 +237,14 @@ describe('extractJsonSummary', () => {
 describe('dbUrlForProject / notifyWorkerUrl', () => {
   test('builds the default RTDB URL from a project id', () => {
     expect(dbUrlForProject('nsw-7k2f-alerts')).toBe('https://nsw-7k2f-alerts-default-rtdb.firebaseio.com');
+    expect(dbUrlForProject('nsw-7k2f-alerts', 'europe-west1'))
+      .toBe('https://nsw-7k2f-alerts-default-rtdb.europe-west1.firebasedatabase.app');
   });
   test('builds the tenant notify worker URL, falling back to a placeholder subdomain', () => {
     expect(notifyWorkerUrl('nsw-7k2f', 'aziz-nagati01')).toBe('https://alertsys-nsw-7k2f.aziz-nagati01.workers.dev/notify');
     expect(notifyWorkerUrl('nsw-7k2f')).toBe('https://alertsys-nsw-7k2f.REPLACE-workers-subdomain.workers.dev/notify');
+    expect(aiWorkerUrl('nsw-7k2f', 'aziz-nagati01'))
+      .toBe('https://alert-notifier-nsw-7k2f.aziz-nagati01.workers.dev');
   });
 });
 

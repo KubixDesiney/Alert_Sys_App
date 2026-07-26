@@ -55,7 +55,8 @@ export function parseSkipList(value) {
   return new Set(String(value).split(',').map((s) => s.trim()).filter(Boolean));
 }
 
-/** The 8 worker configs every dedicated instance needs — never edit the source files. */
+/** The 7 data-plane workers every dedicated instance needs.
+ * sias-store and sias-app are shared control-plane/front-door workers. */
 export const WORKER_TEMPLATES = [
   { key: 'ai', file: 'wrangler.ai.toml' },
   { key: 'notify', file: 'wrangler.notify.toml' },
@@ -64,7 +65,6 @@ export const WORKER_TEMPLATES = [
   { key: 'scim', file: 'wrangler.scim.toml' },
   { key: 'monitor', file: 'wrangler.monitor.toml' },
   { key: 'backup', file: 'wrangler.backup.toml' },
-  { key: 'store', file: 'wrangler.store.toml' },
 ];
 
 // Mirrors CLAUDE.md's "Worker Secrets And Runtime Config" + per-worker wrangler.*.toml
@@ -76,9 +76,8 @@ export const SECRET_SPECS = {
   github: ['GITHUB_TOKEN', 'WORKER_SHARED_SECRET'],
   ingest: ['FIREBASE_SERVICE_ACCOUNT', 'WORKER_SHARED_SECRET'],
   scim: ['FIREBASE_SERVICE_ACCOUNT', 'SCIM_TOKEN'],
-  monitor: ['FIREBASE_SERVICE_ACCOUNT', 'ALERT_WEBHOOK_URL'],
+  monitor: ['FIREBASE_SERVICE_ACCOUNT', 'ALERT_WEBHOOK_URL', 'WORKER_SHARED_SECRET'],
   backup: ['FIREBASE_SERVICE_ACCOUNT'],
-  store: ['N8N_CHAT_WEBHOOK_URL'],
 };
 
 export const OPTIONAL_SECRET_SPECS = {
@@ -89,7 +88,6 @@ export const OPTIONAL_SECRET_SPECS = {
   scim: ['SCIM_DEFAULT_ROLE', 'SCIM_GRANTABLE_ROLES', 'SCIM_DEFAULT_FACTORY'],
   monitor: [],
   backup: ['WORKER_SHARED_SECRET'],
-  store: ['N8N_WEBHOOK_AUTH'],
 };
 
 export function tenantWorkerName(originalName, tenant) {
@@ -126,13 +124,24 @@ export function injectVars(tomlContent, vars) {
  * worker name with "-<tenant>", namespaces the backup R2 bucket, and injects the
  * instance's FB_DB_URL / NOTIFY_WORKER_URL vars. Never mutates the input.
  */
-export function templateTenantConfig({ content, tenant, dbUrl, notifyUrl }) {
+export function templateTenantConfig({ content, tenant, dbUrl, notifyUrl, aiUrl }) {
   const nameMatch = content.match(/^name\s*=\s*"([^"]+)"/m);
   const originalName = nameMatch ? nameMatch[1] : null;
   const workerName = originalName ? tenantWorkerName(originalName, tenant) : null;
   let out = workerName ? renameWorker(content, workerName) : content;
+  // Generated configs live three directories below the repository root.
+  // Wrangler resolves `main` relative to the config file, so point back to the
+  // real source instead of producing a config whose entrypoint does not exist.
+  out = out.replace(/^main\s*=\s*"([^"]+)"/m, (_line, entrypoint) => {
+    const clean = String(entrypoint).replace(/^\.\//, '');
+    return `main = "../../../${clean}"`;
+  });
   out = out.replace(/alertsys-backups/g, `${tenant}-alertsys-backups`);
-  out = injectVars(out, { FB_DB_URL: dbUrl, NOTIFY_WORKER_URL: notifyUrl });
+  out = injectVars(out, {
+    FB_DB_URL: dbUrl,
+    NOTIFY_WORKER_URL: notifyUrl,
+    AI_WORKER_URL: aiUrl,
+  });
   return { content: out, workerName };
 }
 
@@ -183,13 +192,14 @@ const STEP_ORDER = [
   ['preflight', 'Preflight — firebase-tools/wrangler on PATH, login status'],
   ['firebase-project', 'Create (or reuse) the Firebase project + default RTDB instance'],
   ['rules', 'Deploy database.rules.json to the new project'],
-  ['worker-configs', 'Generate the 8 per-tenant wrangler configs under deploy/tenants/<tenant>/'],
+  ['worker-configs', 'Generate the 7 per-tenant data-plane worker configs under deploy/tenants/<tenant>/'],
   ['secrets', 'Push per-tenant secrets from .env.tenant via wrangler secret put'],
-  ['deploy', 'Deploy the 8 tenant workers'],
-  ['seed-owner', "Seed the customer's Owner (SuperAdmin) account via tool/provision_owner.mjs"],
+  ['deploy', 'Deploy the 7 tenant data-plane workers'],
+  ['seed-data', 'Seed the tenant RTDB hierarchy, assets, alert vocabulary, escalation defaults, and plan entitlements'],
   ['app-delivery', 'Publish the tenant app config to the TENANTS KV namespace + wire the branded ingest host'],
   ['summary', 'Write provision-summary.json and print remaining manual TODOs'],
   ['verify', 'Post-provision verification — probe workers /config, RTDB reachability, rules denial'],
+  ['seed-seats', 'Create the Production Manager + Supervisor accounts and deliver activation emails after verification'],
 ];
 
 /** Numbers the runbook and marks which steps --skip excludes. Pure — no execution. */
@@ -197,11 +207,13 @@ export function buildStepPlan(skipSet = new Set()) {
   return STEP_ORDER.map(([id, label], i) => ({ id, n: i + 1, label, skip: skipSet.has(id) }));
 }
 
-/** Pulls the JSON block provision_owner.mjs prints after its "Summary:" line. */
+/** Pulls the safe JSON block a provisioning child tool prints. */
 export function extractJsonSummary(stdout) {
-  const idx = String(stdout || '').indexOf('Summary:');
+  const text = String(stdout || '');
+  const marker = text.includes('Delivery summary:') ? 'Delivery summary:' : 'Summary:';
+  const idx = text.indexOf(marker);
   if (idx === -1) return null;
-  const jsonText = stdout.slice(idx + 'Summary:'.length).trim();
+  const jsonText = text.slice(idx + marker.length).trim();
   try {
     return JSON.parse(jsonText);
   } catch {
@@ -209,12 +221,19 @@ export function extractJsonSummary(stdout) {
   }
 }
 
-export function dbUrlForProject(projectId) {
-  return `https://${projectId}-default-rtdb.firebaseio.com`;
+export function dbUrlForProject(projectId, region = 'us-central1') {
+  const databaseId = `${projectId}-default-rtdb`;
+  return region === 'us-central1'
+    ? `https://${databaseId}.firebaseio.com`
+    : `https://${databaseId}.${region}.firebasedatabase.app`;
 }
 
 export function notifyWorkerUrl(tenant, subdomain) {
   return `https://alertsys-${tenant}.${subdomain || 'REPLACE-workers-subdomain'}.workers.dev/notify`;
+}
+
+export function aiWorkerUrl(tenant, subdomain) {
+  return `https://alert-notifier-${tenant}.${subdomain || 'REPLACE-workers-subdomain'}.workers.dev`;
 }
 
 /** Per-tenant worker base URLs, keyed like WORKER_TEMPLATES. Pure. */
@@ -355,8 +374,9 @@ async function main() {
     console.error(
       'Usage: node tool/provision_instance.mjs --tenant <slug> --project-id <id> ' +
       '[--region europe-west1] [--execute] [--skip step,step] ' +
-      '[--workers-subdomain <sub>] [--owner-email <e>] [--owner-name "First Last"] ' +
-      '[--owner-company <co>] [--tenant-code <T#CODE>]'
+      '[--workers-subdomain <sub>] --company <co> --plan <starter|growth> ' +
+      '--pm-email <e> --pm-name "First Last" --supervisor-email <e> ' +
+      '--supervisor-name "First Last" [--tenant-code <T#CODE>] [--usine "Usine A"]'
     );
     process.exit(1);
     return;
@@ -376,8 +396,11 @@ async function main() {
   const skipSet = parseSkipList(flags.skip);
   const plan = buildStepPlan(skipSet);
   const tenantDir = join(REPO_ROOT, 'deploy', 'tenants', tenant);
-  const dbUrl = dbUrlForProject(projectId);
-  const notifyUrl = notifyWorkerUrl(tenant, flags['workers-subdomain'] || process.env.CLOUDFLARE_WORKERS_SUBDOMAIN);
+  const dbUrl = dbUrlForProject(projectId, region);
+  const workersSubdomain =
+    flags['workers-subdomain'] || process.env.CLOUDFLARE_WORKERS_SUBDOMAIN;
+  const notifyUrl = notifyWorkerUrl(tenant, workersSubdomain);
+  const aiUrl = aiWorkerUrl(tenant, workersSubdomain);
   const manualTodos = [];
 
   console.log(`SIAS instance provisioning — tenant "${tenant}"`);
@@ -411,12 +434,16 @@ async function main() {
         process.exit(1);
         return;
       }
-      const login = runCmd('firebase', ['login:list']);
-      if (login.status !== 0 || /no authorized accounts/i.test(login.stdout || '')) {
-        console.error(`[FAIL]    ${step.n}. ${step.label}`);
-        console.error('  Not logged in to Firebase. Run: firebase login');
-        process.exit(1);
-        return;
+      const nonInteractiveFirebaseAuth =
+        !!process.env.GOOGLE_APPLICATION_CREDENTIALS || !!process.env.FIREBASE_TOKEN;
+      if (!nonInteractiveFirebaseAuth) {
+        const login = runCmd('firebase', ['login:list']);
+        if (login.status !== 0 || /no authorized accounts/i.test(login.stdout || '')) {
+          console.error(`[FAIL]    ${step.n}. ${step.label}`);
+          console.error('  No Firebase credential. Run firebase login or set GOOGLE_APPLICATION_CREDENTIALS.');
+          process.exit(1);
+          return;
+        }
       }
       const whoami = runCmd('wrangler', ['whoami']);
       if (whoami.status !== 0) {
@@ -438,10 +465,19 @@ async function main() {
         process.exit(1);
         return;
       }
-      runCmd('firebase', [
+      const database = runCmd('firebase', [
         'database:instances:create', `${projectId}-default-rtdb`,
         '--project', projectId, '--location', region,
       ]);
+      const dbReused = /already exists|already in use/i.test(
+        `${database.stderr || ''}${database.stdout || ''}`,
+      );
+      if (database.status !== 0 && !dbReused) {
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(database.stderr || database.stdout);
+        process.exit(1);
+        return;
+      }
       console.log(`[${reused ? 'DONE (reused)' : 'DONE'}]    ${step.n}. ${step.label}`);
       manualTodos.push('Enable Blaze billing on the project (console → Usage & billing).');
       manualTodos.push('Enable the Email/Password sign-in provider (console → Authentication → Sign-in method).');
@@ -468,11 +504,19 @@ async function main() {
       for (const { key, file } of WORKER_TEMPLATES) {
         const src = join(REPO_ROOT, file);
         if (!existsSync(src)) {
-          console.warn(`  WARN: ${file} not found — skipping ${key}.`);
-          continue;
+          console.error(`[FAIL]    ${step.n}. ${step.label}`);
+          console.error(`  Required worker template ${file} is missing (${key}).`);
+          process.exit(1);
+          return;
         }
         const content = readFileSync(src, 'utf8');
-        let { content: out, workerName } = templateTenantConfig({ content, tenant, dbUrl, notifyUrl });
+        let { content: out, workerName } = templateTenantConfig({
+          content,
+          tenant,
+          dbUrl,
+          notifyUrl,
+          aiUrl,
+        });
         // Give the ingest worker its branded <tenant>-ingest host (commented
         // until DNS exists; see appendIngestRoute).
         if (key === 'ingest') out = appendIngestRoute(out, tenant, APP_DOMAIN);
@@ -510,7 +554,13 @@ async function main() {
         for (const name of names) {
           const value = envMap[name];
           if (!value) continue;
-          runCmd('wrangler', ['secret', 'put', name, '--config', cfgPath], { input: value });
+          const result = runCmd('wrangler', ['secret', 'put', name, '--config', cfgPath], { input: value });
+          if (result.status !== 0) {
+            console.error(`[FAIL]    ${step.n}. ${step.label}`);
+            console.error(`  Could not set ${name} for ${key}: ${result.stderr || result.stdout || ''}`);
+            process.exit(1);
+            return;
+          }
         }
       }
       console.log(`[DONE]    ${step.n}. ${step.label}`);
@@ -518,45 +568,106 @@ async function main() {
     }
 
     if (step.id === 'deploy') {
+      const bucketName = `${tenant}-alertsys-backups`;
+      const bucket = runCmd('wrangler', ['r2', 'bucket', 'create', bucketName]);
+      const bucketReused = /already exists|already been taken|code\s*10004/i.test(
+        `${bucket.stderr || ''}${bucket.stdout || ''}`,
+      );
+      if (bucket.status !== 0 && !bucketReused) {
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(`  Could not create R2 bucket ${bucketName}: ${bucket.stderr || bucket.stdout || ''}`);
+        process.exit(1);
+        return;
+      }
       for (const { key } of WORKER_TEMPLATES) {
         const cfgPath = join(tenantDir, tenantConfigFileName(key, tenant));
         if (!existsSync(cfgPath)) continue;
         const r = runCmd('wrangler', ['deploy', '--config', cfgPath]);
         if (r.status !== 0) {
-          console.error(`  WARN: deploy failed for ${key}: ${(r.stderr || r.stdout || '').slice(0, 300)}`);
+          console.error(`[FAIL]    ${step.n}. ${step.label}`);
+          console.error(`  Deploy failed for ${key}: ${(r.stderr || r.stdout || '').slice(0, 500)}`);
+          process.exit(1);
+          return;
         }
       }
       console.log(`[DONE]    ${step.n}. ${step.label}`);
       continue;
     }
 
-    if (step.id === 'seed-owner') {
-      if (!flags['owner-email'] || !flags['owner-name'] || !flags['owner-company']) {
-        console.log(`[TODO]    ${step.n}. ${step.label}`);
-        console.log('  Pass --owner-email/--owner-name/--owner-company to run this automatically, or later:');
-        console.log(
-          `    node tool/provision_owner.mjs --email <email> --name "First Last" ` +
-          `--company <company> --tenant ${tenant} --db-url ${dbUrl}`
-        );
-        manualTodos.push('Seed the Owner account with tool/provision_owner.mjs (see command above).');
-        continue;
-      }
-      const r = runCmd('node', [
-        join(REPO_ROOT, 'tool', 'provision_owner.mjs'),
-        '--email', flags['owner-email'],
-        '--name', flags['owner-name'],
-        '--company', flags['owner-company'],
-        '--tenant', tenant,
-        '--db-url', dbUrl,
-      ]);
-      if (r.stdout) console.log(r.stdout);
-      if (r.status !== 0) {
+    if (step.id === 'seed-data') {
+      const company = flags.company || flags['owner-company'];
+      const tenantCode = flags['tenant-code'];
+      if (!company || !tenantCode || !['starter', 'growth'].includes(flags.plan)) {
         console.error(`[FAIL]    ${step.n}. ${step.label}`);
-        console.error(r.stderr || '');
+        console.error('  --company, --tenant-code, and --plan <starter|growth> are required.');
         process.exit(1);
         return;
       }
-      step._ownerSummary = extractJsonSummary(r.stdout || '');
+      const args = [
+        join(REPO_ROOT, 'tool', 'seed_tenant.mjs'),
+        '--tenant', tenantCode,
+        '--company', company,
+        '--plan', flags.plan,
+        '--usine', flags.usine || 'Usine A',
+        '--db-url', dbUrl,
+        '--execute',
+      ];
+      const result = runCmd('node', args);
+      if (result.stdout) console.log(result.stdout);
+      if (result.status !== 0) {
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(result.stderr || '');
+        process.exit(1);
+        return;
+      }
+      console.log(`[DONE]    ${step.n}. ${step.label}`);
+      continue;
+    }
+
+    if (step.id === 'seed-seats') {
+      const company = flags.company || flags['owner-company'];
+      const required = ['pm-email', 'pm-name', 'supervisor-email', 'supervisor-name', 'tenant-code'];
+      const missingSeatFlags = required.filter((key) => !flags[key]);
+      if (!company || missingSeatFlags.length) {
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(
+          `  Missing delivery data: ${[
+            ...(!company ? ['company'] : []),
+            ...missingSeatFlags,
+          ].join(', ')}`,
+        );
+        process.exit(1);
+        return;
+      }
+      const result = runCmd('node', [
+        join(REPO_ROOT, 'tool', 'provision_seats.mjs'),
+        '--tenant', flags['tenant-code'],
+        '--company', company,
+        '--pm-email', flags['pm-email'],
+        '--pm-name', flags['pm-name'],
+        '--supervisor-email', flags['supervisor-email'],
+        '--supervisor-name', flags['supervisor-name'],
+        '--usine', flags.usine || 'Usine A',
+        '--db-url', dbUrl,
+        '--console-url', tenantAppUrl(tenant, APP_DOMAIN),
+        '--require-delivery-pair',
+        '--execute',
+      ]);
+      if (result.stdout) console.log(result.stdout);
+      if (result.status !== 0) {
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(result.stderr || '');
+        process.exit(1);
+        return;
+      }
+      step._seatSummary = extractJsonSummary(result.stdout || '');
+      const summaryPath = join(tenantDir, 'provision-summary.json');
+      if (existsSync(summaryPath)) {
+        const summary = JSON.parse(readFileSync(summaryPath, 'utf8'));
+        summary.seats = step._seatSummary;
+        summary.deliveryCompletedAt = new Date().toISOString();
+        writeFileSync(summaryPath, JSON.stringify(summary, null, 2) + '\n');
+      }
       console.log(`[DONE]    ${step.n}. ${step.label}`);
       continue;
     }
@@ -572,9 +683,9 @@ async function main() {
       const workersSubdomain =
         flags['workers-subdomain'] || process.env.CLOUDFLARE_WORKERS_SUBDOMAIN || null;
       const workerUrls = workerUrlsForTenant(written, workersSubdomain);
-      const ownerSummary = (plan.find((s) => s.id === 'seed-owner') || {})._ownerSummary || {};
-      const tenantCode = flags['tenant-code'] || ownerSummary.tenantCode || null;
-      const company = flags['owner-company'] || ownerSummary.company || null;
+      const seatSummary = (plan.find((s) => s.id === 'seed-seats') || {})._seatSummary || {};
+      const tenantCode = flags['tenant-code'] || seatSummary.tenantCode || null;
+      const company = flags.company || flags['owner-company'] || seatSummary.company || null;
 
       const webCfgPath = join(tenantDir, 'firebase-web-config.json');
       let webCfg = null;
@@ -596,26 +707,25 @@ async function main() {
 
       const appTomlPath = join(REPO_ROOT, 'wrangler.app.toml');
       const kvId = existsSync(appTomlPath) ? parseTenantsKvId(readFileSync(appTomlPath, 'utf8')) : null;
-      const kvCmd = `wrangler kv key put ${tenant} --namespace-id <TENANTS_KV_ID> --path deploy/tenants/${tenant}/tenant-kv.json`;
 
       if (isPlaceholderKvId(kvId)) {
-        console.log(`[TODO]    ${step.n}. ${step.label}`);
-        console.log('  wrangler.app.toml has no real TENANTS KV id yet — create it + write this tenant:');
-        console.log(`    npx wrangler kv namespace create TENANTS   # paste the id into wrangler.app.toml`);
-        console.log(`    npx ${kvCmd}`);
-        manualTodos.push('Create the TENANTS KV namespace, paste its id into wrangler.app.toml, then write this tenant (see command above).');
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error('  wrangler.app.toml has no real TENANTS KV id.');
+        process.exit(1);
+        return;
       } else if (isPlaceholderWebConfig(webCfg)) {
         if (!existsSync(webCfgPath)) writeFileSync(webCfgPath, firebaseWebConfigTemplate());
-        console.log(`[TODO]    ${step.n}. ${step.label}`);
-        console.log(`  Fill deploy/tenants/${tenant}/firebase-web-config.json with the tenant's Firebase`);
-        console.log('  WEB app config (console → Project settings → SDK setup → Config), then re-run, or:');
-        console.log(`    npx wrangler kv key put ${tenant} --namespace-id ${kvId} --path deploy/tenants/${tenant}/tenant-kv.json`);
-        manualTodos.push("Add the tenant's Firebase WEB app config (deploy/tenants/<tenant>/firebase-web-config.json) and write the KV entry.");
+        console.error(`[FAIL]    ${step.n}. ${step.label}`);
+        console.error(`  deploy/tenants/${tenant}/firebase-web-config.json is missing or incomplete.`);
+        process.exit(1);
+        return;
       } else {
         const r = runCmd('wrangler', ['kv', 'key', 'put', tenant, '--namespace-id', kvId, '--path', kvValuePath]);
         if (r.status !== 0) {
-          console.warn(`  WARN: KV write failed: ${(r.stderr || r.stdout || '').slice(0, 300)}`);
-          manualTodos.push(`Retry the TENANTS KV write for ${tenant} (see deploy/tenants/${tenant}/tenant-kv.json).`);
+          console.error(`[FAIL]    ${step.n}. ${step.label}`);
+          console.error(`  KV write failed: ${(r.stderr || r.stdout || '').slice(0, 500)}`);
+          process.exit(1);
+          return;
         }
         console.log(`[DONE]    ${step.n}. ${step.label} → ${appUrl}`);
       }
@@ -650,7 +760,7 @@ async function main() {
         ingestHost: appStep._ingestHost || tenantIngestHost(tenant, APP_DOMAIN),
         workerUrls: workerUrlsForTenant(written, workersSubdomain),
         workerConfigs: written,
-        owner: (plan.find((s) => s.id === 'seed-owner') || {})._ownerSummary || null,
+        seats: (plan.find((s) => s.id === 'seed-seats') || {})._seatSummary || null,
         generatedAt: new Date().toISOString(),
       };
       mkdirSync(tenantDir, { recursive: true });

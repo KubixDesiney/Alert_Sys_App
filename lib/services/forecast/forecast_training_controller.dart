@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../models/alert_type.dart';
 import '../alert_type_registry.dart';
 import '../app_logger.dart';
 import 'alert_record_parser.dart';
@@ -14,6 +15,67 @@ import 'forecast_model_store.dart';
 import 'forecast_trainer.dart';
 import 'forecast_types.dart';
 import 'gradient_boost.dart';
+
+const List<String> _adaptivePalette = [
+  '#7C3AED',
+  '#EA580C',
+  '#0891B2',
+  '#4F46E5',
+  '#DB2777',
+  '#0F766E',
+  '#9333EA',
+  '#B45309',
+];
+
+/// Converts previously unseen type buckets from uploaded buyer history into
+/// real tenant alert definitions. The parser has already normalized labels to
+/// safe snake_case; limits prevent accidental high-cardinality columns from
+/// exploding the per-type ensemble.
+List<AlertTypeDef> inferAdaptiveAlertTypeDefs({
+  required List<AlertTypeDef> existing,
+  required Map<String, int> typeCounts,
+  int maxNewTypes = 24,
+}) {
+  final existingCodes = existing.map((type) => type.code).toSet();
+  final candidates = typeCounts.entries
+      .where(
+        (entry) =>
+            entry.value > 0 &&
+            entry.key != 'unknown' &&
+            !existingCodes.contains(entry.key) &&
+            RegExp(r'^[a-z][a-z0-9_]{0,63}$').hasMatch(entry.key),
+      )
+      .toList()
+    ..sort((a, b) {
+      final byCount = b.value.compareTo(a.value);
+      return byCount != 0 ? byCount : a.key.compareTo(b.key);
+    });
+  final firstOrder = existing.isEmpty
+      ? 0
+      : existing
+              .map((type) => type.order)
+              .reduce((left, right) => left > right ? left : right) +
+          1;
+  return [
+    for (final indexed in candidates.take(maxNewTypes).indexed)
+      AlertTypeDef(
+        code: indexed.$2.key,
+        label: indexed.$2.key
+            .split('_')
+            .where((part) => part.isNotEmpty)
+            .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+            .join(' '),
+        colorHex: _adaptivePalette[indexed.$1 % _adaptivePalette.length],
+        icon: 'sensors',
+        synonyms: [indexed.$2.key.replaceAll('_', ' ')],
+        severityDefault:
+            RegExp(r'critical|emergency|safety|fire').hasMatch(indexed.$2.key)
+                ? 'critical'
+                : 'normal',
+        order: firstOrder + indexed.$1,
+      ),
+  ];
+}
 
 /// App-global owner of the forecast-model training lifecycle.
 ///
@@ -133,13 +195,33 @@ class ForecastTrainingController extends ChangeNotifier {
 
     try {
       _trainTypes = _activeTypes();
-      final parsed = await AlertRecordParser.parse(
+      var parsed = await AlertRecordParser.parse(
         fileName: fileName,
         bytes: bytes,
         types: AlertTypeRegistry.instance.types,
       );
-      final rows = ForecastFeatureEngineer.buildDailyRows(parsed.records,
-          types: _trainTypes);
+      if (await _adaptiveSchemaEnabled()) {
+        final inferred = inferAdaptiveAlertTypeDefs(
+          existing: AlertTypeRegistry.instance.types,
+          typeCounts: parsed.summary.typeCounts,
+        );
+        if (inferred.isNotEmpty) {
+          await AlertTypeRegistry.instance.saveMissing(inferred);
+          _trainTypes = [..._trainTypes, ...inferred.map((type) => type.code)];
+          parsed = ParsedDataset(
+            records: parsed.records,
+            warnings: [
+              ...parsed.warnings,
+              'Adaptive schema added ${inferred.length} ${inferred.length == 1 ? 'alert type' : 'alert types'} from this dataset.',
+            ],
+            summary: parsed.summary,
+          );
+        }
+      }
+      final rows = ForecastFeatureEngineer.buildDailyRows(
+        parsed.records,
+        types: _trainTypes,
+      );
       final samples = ForecastFeatureEngineer.buildSamples(rows);
       _dataset = parsed;
       _samples = samples;
@@ -152,6 +234,19 @@ class ForecastTrainingController extends ChangeNotifier {
       _parsing = false;
       _error = e is FormatException ? e.message : e.toString();
       notifyListeners();
+    }
+  }
+
+  Future<bool> _adaptiveSchemaEnabled() async {
+    try {
+      final snapshot = await FirebaseDatabase.instance
+          .ref('app_config/entitlements/adaptiveAlertSchema')
+          .get();
+      return snapshot.value == true;
+    } catch (_) {
+      // Entitlements fail closed: a Starter/offline client must never expand
+      // the tenant schema merely because a file was selected.
+      return false;
     }
   }
 
@@ -209,16 +304,20 @@ class ForecastTrainingController extends ChangeNotifier {
     notifyListeners();
 
     final datasetName = _dataset?.summary.sourceName ?? 'dataset';
-    unawaited(_store.writeTrainingStatus(
-      status: 'running',
-      progress: resumeStats.isEmpty
-          ? 0
-          : (resumeStats.last.round / _config.rounds).clamp(0.0, 1.0).toDouble(),
-      message: startRound > 1
-          ? 'Resumed from checkpoint at round ${startRound - 1} ($datasetName)'
-          : 'Training started on $datasetName',
-      rounds: resumeStats,
-    ));
+    unawaited(
+      _store.writeTrainingStatus(
+        status: 'running',
+        progress: resumeStats.isEmpty
+            ? 0
+            : (resumeStats.last.round / _config.rounds)
+                .clamp(0.0, 1.0)
+                .toDouble(),
+        message: startRound > 1
+            ? 'Resumed from checkpoint at round ${startRound - 1} ($datasetName)'
+            : 'Training started on $datasetName',
+        rounds: resumeStats,
+      ),
+    );
 
     try {
       await for (final update in _trainer.train(
@@ -260,12 +359,14 @@ class ForecastTrainingController extends ChangeNotifier {
       }
       notifyListeners();
 
-      unawaited(_store.writeTrainingStatus(
-        status: result == null ? 'failed' : (stopped ? 'stopped' : 'done'),
-        progress: 1,
-        message: _lastUpdate?.message ?? 'finished',
-        rounds: _lastUpdate?.rounds ?? const [],
-      ));
+      unawaited(
+        _store.writeTrainingStatus(
+          status: result == null ? 'failed' : (stopped ? 'stopped' : 'done'),
+          progress: 1,
+          message: _lastUpdate?.message ?? 'finished',
+          rounds: _lastUpdate?.rounds ?? const [],
+        ),
+      );
       // Final checkpoint: a finished-but-undeployed model survives a closed
       // tab and is offered for deployment on the next console session.
       if (result != null) {
@@ -284,11 +385,13 @@ class ForecastTrainingController extends ChangeNotifier {
       _training = false;
       _error = 'Training failed: $e';
       notifyListeners();
-      unawaited(_store.writeTrainingStatus(
-        status: 'failed',
-        progress: 0,
-        message: '$e',
-      ));
+      unawaited(
+        _store.writeTrainingStatus(
+          status: 'failed',
+          progress: 0,
+          message: '$e',
+        ),
+      );
       unawaited(_safeClearCheckpoint());
     }
   }
@@ -297,12 +400,14 @@ class ForecastTrainingController extends ChangeNotifier {
     final now = DateTime.now();
     if (now.difference(_lastTelemetryAt).inMilliseconds < 2000) return;
     _lastTelemetryAt = now;
-    unawaited(_store.writeTrainingStatus(
-      status: 'running',
-      progress: update.progress,
-      message: update.message,
-      rounds: update.rounds,
-    ));
+    unawaited(
+      _store.writeTrainingStatus(
+        status: 'running',
+        progress: update.progress,
+        message: update.message,
+        rounds: update.rounds,
+      ),
+    );
   }
 
   void _maybeCheckpoint(ForecastTrainingUpdate update, String datasetName) {
@@ -311,14 +416,16 @@ class ForecastTrainingController extends ChangeNotifier {
     _lastCheckpointAt = now;
     final model = _trainer.liveModel;
     if (model == null) return;
-    unawaited(_writeCheckpoint(
-      status: 'running',
-      model: model,
-      bestRound: _trainer.liveBestRound,
-      rounds: update.rounds,
-      isLearning: update.isLearning,
-      datasetName: datasetName,
-    ));
+    unawaited(
+      _writeCheckpoint(
+        status: 'running',
+        model: model,
+        bestRound: _trainer.liveBestRound,
+        rounds: update.rounds,
+        isLearning: update.isLearning,
+        datasetName: datasetName,
+      ),
+    );
   }
 
   Future<void> _writeCheckpoint({
@@ -380,7 +487,8 @@ class ForecastTrainingController extends ChangeNotifier {
         final snap = await FirebaseDatabase.instance.ref('alerts').get();
         if (snap.value is Map) {
           final records = ForecastEngine.recordsFromAlertMaps(
-              (snap.value as Map).values.whereType<Map>());
+            (snap.value as Map).values.whereType<Map>(),
+          );
           if (records.isNotEmpty) {
             live = ForecastEngine.computeForecasts(
               TrainedForecastModel(model: result.model),
@@ -424,8 +532,7 @@ class ForecastTrainingController extends ChangeNotifier {
       }
       final status = (cp['status'] ?? '').toString();
       if (status == 'running') {
-        final updatedAt =
-            DateTime.tryParse((cp['updatedAt'] ?? '').toString());
+        final updatedAt = DateTime.tryParse((cp['updatedAt'] ?? '').toString());
         final fresh = updatedAt != null &&
             DateTime.now().toUtc().difference(updatedAt.toUtc()).inSeconds <
                 120;
@@ -468,8 +575,10 @@ class ForecastTrainingController extends ChangeNotifier {
         warnings: const [],
       );
       _trainTypes = _activeTypes();
-      final rows = ForecastFeatureEngineer.buildDailyRows(records,
-          types: _trainTypes);
+      final rows = ForecastFeatureEngineer.buildDailyRows(
+        records,
+        types: _trainTypes,
+      );
       _dataset = parsed;
       _samples = ForecastFeatureEngineer.buildSamples(rows);
       _config = ForecastTrainingConfig.auto(_samples.length);
@@ -494,8 +603,10 @@ class ForecastTrainingController extends ChangeNotifier {
         }();
     _trainTypes = List<String>.of(types);
     if (!same && _dataset != null) {
-      final rows = ForecastFeatureEngineer.buildDailyRows(_dataset!.records,
-          types: _trainTypes);
+      final rows = ForecastFeatureEngineer.buildDailyRows(
+        _dataset!.records,
+        types: _trainTypes,
+      );
       _samples = ForecastFeatureEngineer.buildSamples(rows);
     }
   }
@@ -520,12 +631,11 @@ class ForecastTrainingController extends ChangeNotifier {
       _adoptTrainTypes(model.types);
       _resumedRun = true;
       _log.info(
-          'Resuming interrupted forecast run from round $round/${_config.rounds}');
-      unawaited(_run(
-        resumeModel: model,
-        startRound: round + 1,
-        resumeStats: stats,
-      ));
+        'Resuming interrupted forecast run from round $round/${_config.rounds}',
+      );
+      unawaited(
+        _run(resumeModel: model, startRound: round + 1, resumeStats: stats),
+      );
     } catch (e) {
       _log.warning('Forecast checkpoint resume failed: $e');
     }
@@ -638,10 +748,12 @@ class ForecastTrainingController extends ChangeNotifier {
         _remoteActive = false;
         if (wasActive && (status == 'done' || status == 'stopped')) {
           // The remote run finished — pull its result for deployment here.
-          unawaited(_store.loadCheckpoint().then((cp) {
-            if (cp != null) return _restoreFinished(cp);
-            return null;
-          }));
+          unawaited(
+            _store.loadCheckpoint().then((cp) {
+              if (cp != null) return _restoreFinished(cp);
+              return null;
+            }),
+          );
         }
       }
       notifyListeners();
@@ -652,8 +764,7 @@ class ForecastTrainingController extends ChangeNotifier {
     _takeoverTimer = Timer.periodic(const Duration(seconds: 45), (_) async {
       if (_training || !_remoteActive) return;
       final seen = _remoteSeenAt;
-      if (seen != null &&
-          DateTime.now().difference(seen).inSeconds < 150) {
+      if (seen != null && DateTime.now().difference(seen).inSeconds < 150) {
         return;
       }
       final cp = await _store.loadCheckpoint();
@@ -718,21 +829,28 @@ class ForecastTrainingController extends ChangeNotifier {
       final ti = (row[1] as num?)?.toInt() ?? -1;
       final ui = (row[2] as num?)?.toInt() ?? -1;
       if (sec == null || ti < 0 || ti >= types.length) continue;
-      records.add(AlertRecord(
-        timestamp:
-            DateTime.fromMillisecondsSinceEpoch(sec * 1000, isUtc: true),
-        type: types[ti],
-        usine: ui >= 0 && ui < usines.length ? usines[ui] : '',
-        convoyeur: (row[3] as num?)?.toInt() ?? 0,
-        poste: (row[4] as num?)?.toInt() ?? 0,
-        isCritical: row[5] == 1,
-      ));
+      records.add(
+        AlertRecord(
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            sec * 1000,
+            isUtc: true,
+          ),
+          type: types[ti],
+          usine: ui >= 0 && ui < usines.length ? usines[ui] : '',
+          convoyeur: (row[3] as num?)?.toInt() ?? 0,
+          poste: (row[4] as num?)?.toInt() ?? 0,
+          isCritical: row[5] == 1,
+        ),
+      );
     }
     return records;
   }
 
   static DatasetSummary _summarize(
-      String name, String kind, List<AlertRecord> records) {
+    String name,
+    String kind,
+    List<AlertRecord> records,
+  ) {
     final typeCounts = <String, int>{};
     final factoryCounts = <String, int>{};
     final machines = <String>{};
@@ -766,13 +884,15 @@ class ForecastTrainingController extends ChangeNotifier {
     final stats = <RoundStat>[];
     for (final e in raw) {
       if (e is! Map) continue;
-      stats.add(RoundStat(
-        round: (e['round'] as num?)?.toInt() ?? stats.length,
-        trainLoss: (e['trainLoss'] as num?)?.toDouble() ?? 0,
-        valLoss: (e['valLoss'] as num?)?.toDouble() ?? 0,
-        valAccuracy: (e['valAccuracy'] as num?)?.toDouble() ?? 0,
-        valF1: (e['valF1'] as num?)?.toDouble() ?? 0,
-      ));
+      stats.add(
+        RoundStat(
+          round: (e['round'] as num?)?.toInt() ?? stats.length,
+          trainLoss: (e['trainLoss'] as num?)?.toDouble() ?? 0,
+          valLoss: (e['valLoss'] as num?)?.toDouble() ?? 0,
+          valAccuracy: (e['valAccuracy'] as num?)?.toDouble() ?? 0,
+          valF1: (e['valF1'] as num?)?.toDouble() ?? 0,
+        ),
+      );
     }
     return stats;
   }

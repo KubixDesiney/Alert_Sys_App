@@ -98,15 +98,16 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
   ForecastTrainingConfig _configFromFields() {
     return _controller.config.copyWith(
       rounds: int.tryParse(_roundsCtrl.text)?.clamp(10, 800),
-      learningRate:
-          double.tryParse(_lrCtrl.text)?.clamp(0.005, 0.5).toDouble(),
+      learningRate: double.tryParse(_lrCtrl.text)?.clamp(0.005, 0.5).toDouble(),
       maxDepth: int.tryParse(_depthCtrl.text)?.clamp(2, 8),
       minSamplesLeaf: int.tryParse(_leafCtrl.text)?.clamp(2, 200),
-      subsample:
-          double.tryParse(_subsampleCtrl.text)?.clamp(0.3, 1.0).toDouble(),
+      subsample: double.tryParse(
+        _subsampleCtrl.text,
+      )?.clamp(0.3, 1.0).toDouble(),
       l2: double.tryParse(_l2Ctrl.text)?.clamp(0.0, 50.0).toDouble(),
-      posWeightCap:
-          double.tryParse(_posWeightCapCtrl.text)?.clamp(1.0, 200.0).toDouble(),
+      posWeightCap: double.tryParse(
+        _posWeightCapCtrl.text,
+      )?.clamp(1.0, 200.0).toDouble(),
     );
   }
 
@@ -114,7 +115,15 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
     final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: [
-        'csv', 'tsv', 'txt', 'json', 'xlsx', 'xls', 'sql', 'dump', 'pdf',
+        'csv',
+        'tsv',
+        'txt',
+        'json',
+        'xlsx',
+        'xls',
+        'sql',
+        'dump',
+        'pdf',
       ],
       withData: true,
     );
@@ -127,6 +136,8 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
 
   @override
   Widget build(BuildContext context) {
+    // This tab is also embedded in entitled Production Manager dashboards.
+    Sa.setDark(Theme.of(context).brightness == Brightness.dark);
     final c = _controller;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -174,13 +185,23 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             icon: Icons.hub_outlined,
             title: context.tr('DEPLOYED FORECAST MODEL'),
             subtitle: m == null
-                ? context.tr('No model deployed yet — every dashboard is waiting for its first model.')
-                : context.tr('Gradient-boosted trees serving live next-24h forecasts on all Production Manager dashboards.'),
+                ? context.tr(
+                    'No model deployed yet — every dashboard is waiting for its first model.',
+                  )
+                : context.tr(
+                    'Gradient-boosted trees serving live next-24h forecasts on all Production Manager dashboards.',
+                  ),
             accent: m == null ? Sa.amber : Sa.green,
             trailing: m == null
-                ? GlowChip(label: context.tr('OFFLINE'), color: Sa.amber, icon: Icons.cloud_off)
+                ? GlowChip(
+                    label: context.tr('OFFLINE'),
+                    color: Sa.amber,
+                    icon: Icons.cloud_off,
+                  )
                 : GlowChip(
-                    label: m.learning ? context.tr('LEARNING VERIFIED') : context.tr('DEPLOYED'),
+                    label: m.learning
+                        ? context.tr('LEARNING VERIFIED')
+                        : context.tr('DEPLOYED'),
                     color: m.learning ? Sa.green : Sa.cyan,
                     pulse: true,
                   ),
@@ -242,7 +263,9 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
   /// forecasts against what actually happened and keeps boosting new trees
   /// on fresh production data.
   Widget _buildContinuousLearningStrip(
-      TrainedForecastModel m, ForecastAccuracy? acc) {
+    TrainedForecastModel m,
+    ForecastAccuracy? acc,
+  ) {
     final graded = acc != null && acc.gradedPairs > 0;
     return Container(
       width: double.infinity,
@@ -259,8 +282,10 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             children: [
               Icon(Icons.all_inclusive, size: 16, color: Sa.cyan),
               const SizedBox(width: 8),
-              Text(context.tr('CONTINUOUS LEARNING'),
-                  style: Sa.heading(size: 12.5, color: Sa.cyan)),
+              Text(
+                context.tr('CONTINUOUS LEARNING'),
+                style: Sa.heading(size: 12.5, color: Sa.cyan),
+              ),
               const Spacer(),
               GlowChip(
                 label: m.model.adaptedRounds > 0
@@ -286,8 +311,9 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               ),
               SaStatTile(
                 label: context.tr('live precision'),
-                value:
-                    graded ? '${(acc.precision * 100).toStringAsFixed(0)}%' : '—',
+                value: graded
+                    ? '${(acc.precision * 100).toStringAsFixed(0)}%'
+                    : '—',
                 icon: Icons.gps_fixed,
                 color: Sa.green,
               ),
@@ -391,17 +417,23 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
                       width: 30,
                       height: 30,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2.5, color: Sa.violet),
+                        strokeWidth: 2.5,
+                        color: Sa.violet,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                        c.restoring
-                            ? context.tr('Restoring previous session…')
-                            : context.tr('Parsing and engineering features…'),
-                        style: Sa.body(color: Sa.textDim)),
+                      c.restoring
+                          ? context.tr('Restoring previous session…')
+                          : context.tr('Parsing and engineering features…'),
+                      style: Sa.body(color: Sa.textDim),
+                    ),
                   ] else ...[
-                    Icon(Icons.cloud_upload_outlined,
-                        size: 34, color: Sa.violet),
+                    Icon(
+                      Icons.cloud_upload_outlined,
+                      size: 34,
+                      color: Sa.violet,
+                    ),
                     const SizedBox(height: 10),
                     Text(
                       c.dataset == null
@@ -421,7 +453,11 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           ),
           if (c.error != null) ...[
             const SizedBox(height: 12),
-            _InlineNotice(color: Sa.red, icon: Icons.error_outline, text: c.error!),
+            _InlineNotice(
+              color: Sa.red,
+              icon: Icons.error_outline,
+              text: c.error!,
+            ),
           ],
           if (c.dataset != null) ...[
             const SizedBox(height: 16),
@@ -465,11 +501,16 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             ),
             const SizedBox(height: 14),
             _TypeDistribution(
-                typeCounts: summary.typeCounts, total: summary.parsedRows),
+              typeCounts: summary.typeCounts,
+              total: summary.parsedRows,
+            ),
             for (final w in c.dataset!.warnings) ...[
               const SizedBox(height: 10),
               _InlineNotice(
-                  color: Sa.amber, icon: Icons.warning_amber_outlined, text: w),
+                color: Sa.amber,
+                icon: Icons.warning_amber_outlined,
+                text: w,
+              ),
             ],
           ],
         ],
@@ -498,41 +539,70 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
                   ? null
                   : () {
                       c.setConfig(
-                          ForecastTrainingConfig.auto(c.samples.length));
+                        ForecastTrainingConfig.auto(c.samples.length),
+                      );
                     },
               icon: Icon(Icons.auto_fix_high, size: 15, color: Sa.violet),
-              label:
-                  Text(context.tr('AUTO-TUNE'), style: Sa.mono(size: 10.5, color: Sa.violet)),
+              label: Text(
+                context.tr('AUTO-TUNE'),
+                style: Sa.mono(size: 10.5, color: Sa.violet),
+              ),
             ),
           ),
           const SizedBox(height: 16),
-          LayoutBuilder(builder: (context, constraints) {
-            final narrow = constraints.maxWidth < 760;
-            final fields = [
-              _paramField(context.tr('BOOSTING ROUNDS'), _roundsCtrl,
-                  context.tr('Trees grown per alert type')),
-              _paramField(context.tr('LEARNING RATE'), _lrCtrl,
-                  context.tr('Shrinkage per tree')),
-              _paramField(context.tr('MAX TREE DEPTH'), _depthCtrl,
-                  context.tr('Interaction depth per tree')),
-              _paramField(context.tr('MIN LEAF SAMPLES'), _leafCtrl,
-                  context.tr('Smallest allowed leaf')),
-              _paramField(context.tr('SUBSAMPLE'), _subsampleCtrl,
-                  context.tr('Row fraction per tree (0.3–1)')),
-              _paramField(context.tr('L2 REGULARIZATION'), _l2Ctrl,
-                  context.tr('Leaf-weight damping (λ)')),
-              _paramField(context.tr('POS-CLASS WEIGHT CAP'), _posWeightCapCtrl,
-                  context.tr('Max miss-vs-false-alarm penalty ratio (1–200)')),
-            ];
-            return Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final f in fields)
-                  SizedBox(width: narrow ? constraints.maxWidth : 280, child: f),
-              ],
-            );
-          }),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow = constraints.maxWidth < 760;
+              final fields = [
+                _paramField(
+                  context.tr('BOOSTING ROUNDS'),
+                  _roundsCtrl,
+                  context.tr('Trees grown per alert type'),
+                ),
+                _paramField(
+                  context.tr('LEARNING RATE'),
+                  _lrCtrl,
+                  context.tr('Shrinkage per tree'),
+                ),
+                _paramField(
+                  context.tr('MAX TREE DEPTH'),
+                  _depthCtrl,
+                  context.tr('Interaction depth per tree'),
+                ),
+                _paramField(
+                  context.tr('MIN LEAF SAMPLES'),
+                  _leafCtrl,
+                  context.tr('Smallest allowed leaf'),
+                ),
+                _paramField(
+                  context.tr('SUBSAMPLE'),
+                  _subsampleCtrl,
+                  context.tr('Row fraction per tree (0.3–1)'),
+                ),
+                _paramField(
+                  context.tr('L2 REGULARIZATION'),
+                  _l2Ctrl,
+                  context.tr('Leaf-weight damping (λ)'),
+                ),
+                _paramField(
+                  context.tr('POS-CLASS WEIGHT CAP'),
+                  _posWeightCapCtrl,
+                  context.tr('Max miss-vs-false-alarm penalty ratio (1–200)'),
+                ),
+              ];
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final f in fields)
+                    SizedBox(
+                      width: narrow ? constraints.maxWidth : 280,
+                      child: f,
+                    ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 8),
           Text(
             context.tr(
@@ -601,8 +671,10 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             helperStyle: Sa.body(size: 10, color: Sa.muted),
             filled: true,
             fillColor: Sa.bgRaised.withValues(alpha: 0.7),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 11,
+            ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide(color: Sa.border),
@@ -647,14 +719,16 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               children: [
                 if (c.remoteActive)
                   GlowChip(
-                      label: context.tr('LIVE · ANOTHER SESSION'),
-                      color: Sa.blue,
-                      pulse: true)
+                    label: context.tr('LIVE · ANOTHER SESSION'),
+                    color: Sa.blue,
+                    pulse: true,
+                  )
                 else if (c.resumedRun)
                   GlowChip(
-                      label: context.tr('RESUMED FROM CHECKPOINT'),
-                      color: Sa.violet,
-                      icon: Icons.restore),
+                    label: context.tr('RESUMED FROM CHECKPOINT'),
+                    color: Sa.violet,
+                    icon: Icons.restore,
+                  ),
                 GlowChip(
                   label: running
                       ? (learning
@@ -684,43 +758,47 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
                       }),
                 style: Sa.mono(size: 10.5, color: Sa.textDim),
               ),
-              Text('${(progress * 100).toStringAsFixed(0)}%',
-                  style: Sa.mono(size: 10.5, color: Sa.cyan)),
+              Text(
+                '${(progress * 100).toStringAsFixed(0)}%',
+                style: Sa.mono(size: 10.5, color: Sa.cyan),
+              ),
             ],
           ),
           if (rounds.isNotEmpty) ...[
             const SizedBox(height: 18),
-            LayoutBuilder(builder: (context, constraints) {
-              final narrow = constraints.maxWidth < 860;
-              final lossChart = _ChartCard(
-                title: context.tr('LOSS CURVES'),
-                legend: [
-                  (label: context.tr('train'), color: Sa.cyan),
-                  (label: context.tr('validation'), color: Sa.violet),
-                ],
-                child: _lossChart(rounds),
-              );
-              final accChart = _ChartCard(
-                title: context.tr('VALIDATION ACCURACY / F1'),
-                legend: [
-                  (label: context.tr('accuracy'), color: Sa.green),
-                  (label: context.tr('macro-F1'), color: Sa.amber),
-                ],
-                child: _accuracyChart(rounds),
-              );
-              if (narrow) {
-                return Column(children: [
-                  lossChart,
-                  const SizedBox(height: 12),
-                  accChart,
-                ]);
-              }
-              return Row(children: [
-                Expanded(child: lossChart),
-                const SizedBox(width: 12),
-                Expanded(child: accChart),
-              ]);
-            }),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 860;
+                final lossChart = _ChartCard(
+                  title: context.tr('LOSS CURVES'),
+                  legend: [
+                    (label: context.tr('train'), color: Sa.cyan),
+                    (label: context.tr('validation'), color: Sa.violet),
+                  ],
+                  child: _lossChart(rounds),
+                );
+                final accChart = _ChartCard(
+                  title: context.tr('VALIDATION ACCURACY / F1'),
+                  legend: [
+                    (label: context.tr('accuracy'), color: Sa.green),
+                    (label: context.tr('macro-F1'), color: Sa.amber),
+                  ],
+                  child: _accuracyChart(rounds),
+                );
+                if (narrow) {
+                  return Column(
+                    children: [lossChart, const SizedBox(height: 12), accChart],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: lossChart),
+                    const SizedBox(width: 12),
+                    Expanded(child: accChart),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 10,
@@ -754,7 +832,9 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
               ],
             ),
           ],
-          if (!running && c.result != null && !c.result!.isLearning &&
+          if (!running &&
+              c.result != null &&
+              !c.result!.isLearning &&
               c.diagnostics.isNotEmpty) ...[
             const SizedBox(height: 16),
             _DiagnosisPanel(reasons: c.diagnostics),
@@ -795,14 +875,12 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         borderData: FlBorderData(show: false),
         lineTouchData: const LineTouchData(enabled: false),
         lineBarsData: [
-          line(
-            [for (final e in rounds) FlSpot(e.round.toDouble(), e.trainLoss)],
-            Sa.cyan,
-          ),
-          line(
-            [for (final e in rounds) FlSpot(e.round.toDouble(), e.valLoss)],
-            Sa.violet,
-          ),
+          line([
+            for (final e in rounds) FlSpot(e.round.toDouble(), e.trainLoss),
+          ], Sa.cyan),
+          line([
+            for (final e in rounds) FlSpot(e.round.toDouble(), e.valLoss),
+          ], Sa.violet),
         ],
       ),
       duration: const Duration(milliseconds: 250),
@@ -834,17 +912,12 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
         borderData: FlBorderData(show: false),
         lineTouchData: const LineTouchData(enabled: false),
         lineBarsData: [
-          line(
-            [
-              for (final e in rounds)
-                FlSpot(e.round.toDouble(), e.valAccuracy)
-            ],
-            Sa.green,
-          ),
-          line(
-            [for (final e in rounds) FlSpot(e.round.toDouble(), e.valF1)],
-            Sa.amber,
-          ),
+          line([
+            for (final e in rounds) FlSpot(e.round.toDouble(), e.valAccuracy),
+          ], Sa.green),
+          line([
+            for (final e in rounds) FlSpot(e.round.toDouble(), e.valF1),
+          ], Sa.amber),
         ],
       ),
       duration: const Duration(milliseconds: 250),
@@ -861,8 +934,10 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
             reservedSize: 22,
             getTitlesWidget: (v, _) => Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(v.toInt().toString(),
-                  style: Sa.mono(size: 8.5, color: Sa.muted)),
+              child: Text(
+                v.toInt().toString(),
+                style: Sa.mono(size: 8.5, color: Sa.muted),
+              ),
             ),
           ),
         ),
@@ -909,8 +984,10 @@ class _AiTrainingTabState extends State<AiTrainingTab> {
           ),
           const SizedBox(height: 14),
           if (top.isEmpty)
-            Text(context.tr('No machines with enough history to forecast.'),
-                style: Sa.body(color: Sa.textDim))
+            Text(
+              context.tr('No machines with enough history to forecast.'),
+              style: Sa.body(color: Sa.textDim),
+            )
           else
             ...top.map((f) => _ForecastRow(forecast: f)),
           const SizedBox(height: 16),
@@ -971,8 +1048,10 @@ class _DiagnosisPanel extends StatelessWidget {
             children: [
               Icon(Icons.troubleshoot_outlined, size: 16, color: Sa.amber),
               const SizedBox(width: 8),
-              Text(context.tr("WHY THE MODEL DIDN'T LEARN"),
-                  style: Sa.heading(size: 13, color: Sa.amber)),
+              Text(
+                context.tr("WHY THE MODEL DIDN'T LEARN"),
+                style: Sa.heading(size: 13, color: Sa.amber),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1017,8 +1096,11 @@ class _InlineNotice extends StatelessWidget {
   final Color color;
   final IconData icon;
   final String text;
-  const _InlineNotice(
-      {required this.color, required this.icon, required this.text});
+  const _InlineNotice({
+    required this.color,
+    required this.icon,
+    required this.text,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1033,7 +1115,9 @@ class _InlineNotice extends StatelessWidget {
         children: [
           Icon(icon, size: 15, color: color),
           const SizedBox(width: 10),
-          Expanded(child: Text(text, style: Sa.body(size: 12, color: color))),
+          Expanded(
+            child: Text(text, style: Sa.body(size: 12, color: color)),
+          ),
         ],
       ),
     );
@@ -1060,8 +1144,10 @@ class _TypeDistribution extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(context.tr('TYPE DISTRIBUTION'),
-            style: Sa.mono(size: 10, color: Sa.textDim)),
+        Text(
+          context.tr('TYPE DISTRIBUTION'),
+          style: Sa.mono(size: 10, color: Sa.textDim),
+        ),
         const SizedBox(height: 8),
         for (final e in entries.take(6))
           Padding(
@@ -1070,10 +1156,12 @@ class _TypeDistribution extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 150,
-                  child: Text(e.key,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Sa.mono(size: 10.5, color: Sa.text)),
+                  child: Text(
+                    e.key,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Sa.mono(size: 10.5, color: Sa.text),
+                  ),
                 ),
                 Expanded(
                   child: ClipRRect(
@@ -1089,9 +1177,11 @@ class _TypeDistribution extends StatelessWidget {
                 const SizedBox(width: 10),
                 SizedBox(
                   width: 48,
-                  child: Text('${e.value}',
-                      textAlign: TextAlign.right,
-                      style: Sa.mono(size: 10.5, color: Sa.textDim)),
+                  child: Text(
+                    '${e.value}',
+                    textAlign: TextAlign.right,
+                    style: Sa.mono(size: 10.5, color: Sa.textDim),
+                  ),
                 ),
               ],
             ),
@@ -1120,14 +1210,13 @@ class _GradientProgressBar extends StatelessWidget {
             child: Container(
               height: 10,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Sa.cyan, Sa.violet, Sa.pink],
-                ),
+                gradient: LinearGradient(colors: [Sa.cyan, Sa.violet, Sa.pink]),
                 boxShadow: active
                     ? [
                         BoxShadow(
-                            color: Sa.cyan.withValues(alpha: 0.5),
-                            blurRadius: 10)
+                          color: Sa.cyan.withValues(alpha: 0.5),
+                          blurRadius: 10,
+                        ),
                       ]
                     : null,
               ),
@@ -1165,14 +1254,16 @@ class _ChartCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                  child:
-                      Text(title, style: Sa.mono(size: 10, color: Sa.textDim))),
+                child: Text(title, style: Sa.mono(size: 10, color: Sa.textDim)),
+              ),
               for (final l in legend) ...[
                 Container(
                   width: 8,
                   height: 8,
-                  decoration:
-                      BoxDecoration(color: l.color, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: l.color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 4),
                 Text(l.label, style: Sa.mono(size: 9, color: Sa.muted)),
@@ -1222,10 +1313,18 @@ class _ForecastRow extends StatelessWidget {
             width: 54,
             child: Column(
               children: [
-                Text('${(any * 100).toStringAsFixed(0)}%',
-                    style: Sa.mono(
-                        size: 15, color: riskColor, weight: FontWeight.w700)),
-                Text(context.tr('RISK'), style: Sa.mono(size: 7.5, color: Sa.muted)),
+                Text(
+                  '${(any * 100).toStringAsFixed(0)}%',
+                  style: Sa.mono(
+                    size: 15,
+                    color: riskColor,
+                    weight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  context.tr('RISK'),
+                  style: Sa.mono(size: 7.5, color: Sa.muted),
+                ),
               ],
             ),
           ),
@@ -1235,7 +1334,8 @@ class _ForecastRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  context.tr('{usine} · Conveyor {convoyeur} · Station {poste}', {
+                  context
+                      .tr('{usine} · Conveyor {convoyeur} · Station {poste}', {
                     'usine': forecast.usine,
                     'convoyeur': '${forecast.convoyeur}',
                     'poste': '${forecast.poste}',
@@ -1259,8 +1359,9 @@ class _ForecastRow extends StatelessWidget {
                               child: LinearProgressIndicator(
                                 value: entry.value,
                                 minHeight: 5,
-                                backgroundColor:
-                                    Sa.border.withValues(alpha: 0.4),
+                                backgroundColor: Sa.border.withValues(
+                                  alpha: 0.4,
+                                ),
                                 color: typeColors[entry.key] ?? Sa.blue,
                               ),
                             ),

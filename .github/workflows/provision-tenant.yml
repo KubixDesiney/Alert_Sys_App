@@ -26,6 +26,35 @@ on:
         required: false
         default: "europe-west1"
         type: string
+      tenant_code:
+        description: "Commercial tenant code (e.g. NSW#7K2F)"
+        required: true
+        type: string
+      company:
+        description: "Buyer company"
+        required: true
+        type: string
+      plan:
+        description: "starter or growth"
+        required: true
+        type: choice
+        options: [starter, growth]
+      pm_name:
+        description: "Production Manager full name"
+        required: true
+        type: string
+      pm_email:
+        description: "Production Manager email"
+        required: true
+        type: string
+      supervisor_name:
+        description: "Supervisor full name"
+        required: true
+        type: string
+      supervisor_email:
+        description: "Supervisor email"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -51,7 +80,7 @@ jobs:
       - name: Install packages + CLIs
         run: |
           npm ci
-          npm install -g firebase-tools wrangler
+          npm install -g firebase-tools@15.24.0 wrangler@4.114.0
 
       - name: Materialize tenant secrets (.env.tenant)
         env:
@@ -71,6 +100,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          N8N_ACTIVATION_WEBHOOK_URL: ${{ secrets.N8N_ACTIVATION_WEBHOOK_URL }}
+          N8N_ACTIVATION_WEBHOOK_AUTH: ${{ secrets.N8N_ACTIVATION_WEBHOOK_AUTH }}
           CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ inputs.workers_subdomain }}
         run: |
           node tool/provision_instance.mjs \
@@ -78,6 +109,13 @@ jobs:
             --project-id "${{ inputs.project_id }}" \
             --region "${{ inputs.region }}" \
             --workers-subdomain "${{ inputs.workers_subdomain }}" \
+            --tenant-code "${{ inputs.tenant_code }}" \
+            --company "${{ inputs.company }}" \
+            --plan "${{ inputs.plan }}" \
+            --pm-name "${{ inputs.pm_name }}" \
+            --pm-email "${{ inputs.pm_email }}" \
+            --supervisor-name "${{ inputs.supervisor_name }}" \
+            --supervisor-email "${{ inputs.supervisor_email }}" \
             --execute
 
       - name: Verify instance (standalone re-run)

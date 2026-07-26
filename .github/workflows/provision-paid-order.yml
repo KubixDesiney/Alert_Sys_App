@@ -1,0 +1,82 @@
+name: Provision paid SIAS order
+
+# The authenticated superadmin Paid action is the business approval gate.
+# sias-store sends only orderId + tenantCode; this job fetches all PII directly
+# from the private Supabase control plane.
+on:
+  repository_dispatch:
+    types: [sias_order_paid]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paid-sias-${{ github.event.client_payload.tenantCode }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Build and deliver dedicated SIAS instance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install pinned provisioning tools
+        run: |
+          npm ci
+          npm install --global firebase-tools@15.24.0 wrangler@4.114.0
+
+      - name: Provision, verify, and deliver
+        env:
+          PATH: ${{ github.workspace }}/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+          SIAS_ORDER_ID: ${{ github.event.client_payload.orderId }}
+          SIAS_TENANT_CODE: ${{ github.event.client_payload.tenantCode }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          FIREBASE_PROVISIONER_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_PROVISIONER_SERVICE_ACCOUNT }}
+          GOOGLE_BILLING_ACCOUNT: ${{ secrets.GOOGLE_BILLING_ACCOUNT }}
+          GOOGLE_RESOURCE_PARENT: ${{ secrets.GOOGLE_RESOURCE_PARENT }}
+          FIREBASE_DATABASE_REGION: ${{ vars.FIREBASE_DATABASE_REGION || 'europe-west1' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN }}
+          SIAS_GITHUB_TOKEN: ${{ secrets.SIAS_GITHUB_TOKEN }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          N8N_ACTIVATION_WEBHOOK_URL: ${{ secrets.N8N_ACTIVATION_WEBHOOK_URL }}
+          N8N_ACTIVATION_WEBHOOK_AUTH: ${{ secrets.N8N_ACTIVATION_WEBHOOK_AUTH }}
+        run: node tool/provision_paid_order.mjs
+
+      - name: Notify provisioning failure
+        if: failure()
+        continue-on-error: true
+        env:
+          FAILURE_WEBHOOK: ${{ secrets.N8N_PROVISIONING_ALERT_WEBHOOK_URL }}
+          FAILURE_AUTH: ${{ secrets.N8N_PROVISIONING_ALERT_WEBHOOK_AUTH }}
+          ORDER_ID: ${{ github.event.client_payload.orderId }}
+          TENANT_CODE: ${{ github.event.client_payload.tenantCode }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          node -e "if(!process.env.FAILURE_WEBHOOK)process.exit(0);
+          fetch(process.env.FAILURE_WEBHOOK,{method:'POST',headers:{
+          'Content-Type':'application/json',
+          ...(process.env.FAILURE_AUTH?{Authorization:'Bearer '+process.env.FAILURE_AUTH}:{})
+          },body:JSON.stringify({type:'sias_provisioning_failed',
+          orderId:process.env.ORDER_ID,tenantCode:process.env.TENANT_CODE,
+          runUrl:process.env.RUN_URL})}).then(r=>{if(!r.ok)process.exit(1)})"
+
+      - name: Upload non-secret provisioning evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sias-provision-${{ github.event.client_payload.tenantCode }}-${{ github.run_id }}
+          path: |
+            deploy/tenants/*/provision-summary.json
+            deploy/tenants/*/bootstrap-summary.json
+          if-no-files-found: ignore
+          retention-days: 30

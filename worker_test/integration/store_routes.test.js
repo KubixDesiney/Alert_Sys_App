@@ -71,6 +71,14 @@ describe('/.well-known/security.txt', () => {
 describe('checkout error paths (card mode)', () => {
   const env = { SALES_MODE: 'card' };
 
+  test('the B2B order form always has a durable success state', async () => {
+    const res = await get('/buy?plan=growth&billing=annual', env);
+    const body = await res.text();
+    expect(body).toContain('id="quote-ok"');
+    expect(body).toContain('name="pmEmail"');
+    expect(body).toContain('name="supervisorEmail"');
+  });
+
   test('503 when Stripe is unconfigured', async () => {
     const res = await post('/api/checkout', {
       name: 'Amine Ben Salah', email: 'a@b.example', company: 'Nagati Steel Works',
@@ -109,6 +117,15 @@ describe('checkout error paths (card mode)', () => {
 });
 
 describe('misc routes', () => {
+  test('/config never treats the legacy approved webhook as Accept/Paid-ready', async () => {
+    const res = await get('/config', {
+      N8N_APPROVED_WEBHOOK_URL: 'https://legacy.example/hook',
+    });
+    const body = await res.json();
+    expect(body.hasConfirmedWebhook).toBe(false);
+    expect(body.hasPaidWebhook).toBe(false);
+  });
+
   test('/cancel redirects to pricing; OPTIONS answers CORS preflight', async () => {
     const res = await get('/cancel');
     expect(res.status).toBe(302);

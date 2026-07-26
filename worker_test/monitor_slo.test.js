@@ -1,4 +1,13 @@
-import { crashFreeBreach } from '../cloudflare_monitor_worker.js';
+import { configProbeUrl, crashFreeBreach } from '../cloudflare_monitor_worker.js';
+
+describe('tenant worker probe URL', () => {
+  test('replaces delivery paths instead of appending /config to them', () => {
+    expect(configProbeUrl('https://alertsys-tenant.example.workers.dev/notify'))
+      .toBe('https://alertsys-tenant.example.workers.dev/config');
+    expect(configProbeUrl('https://alert-notifier-tenant.example.workers.dev'))
+      .toBe('https://alert-notifier-tenant.example.workers.dev/config');
+  });
+});
 
 describe('crashFreeBreach (app error-budget SLO)', () => {
   test('no breach below the minimum session count', () => {

@@ -33,6 +33,7 @@ import '../utils/alert_meta.dart';
 import 'overview_tab.dart';
 import 'supervisors_tab.dart';
 import 'admin/shifts_tab.dart';
+import 'superadmin/ai_training_tab.dart';
 
 part 'admin_dashboard_screen_header.dart';
 
@@ -71,10 +72,12 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _tab =
-      0; // 0=Overview  1=Supervisors  2=Shifts  3=Alerts  4=Escalations  5=Hierarchy
+      0; // 0=Overview 1=Supervisors 2=Shifts 3=Alerts 4=Escalations 5=Hierarchy 6=AI Training
   List<UserModel> _supervisors = [];
   List<AlertModel> _alerts = [];
   bool _loading = true;
+  bool _aiTrainingEnabled = false;
+  StreamSubscription<DatabaseEvent>? _entitlementsSub;
 
   late final FirebaseDatabase _db;
   late final AuthService _auth;
@@ -108,6 +111,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _loadSavedFilters();
     _loadSupervisors();
     _loadAlerts();
+    _listenAiTrainingEntitlement();
+  }
+
+  void _listenAiTrainingEntitlement() {
+    _entitlementsSub =
+        _db.ref('app_config/entitlements/aiTraining').onValue.listen(
+      (event) {
+        if (!mounted) return;
+        final enabled = event.snapshot.value == true;
+        setState(() {
+          _aiTrainingEnabled = enabled;
+          if (!enabled && _tab == 6) _tab = 0;
+        });
+      },
+      onError: (_) {
+        if (mounted) setState(() => _aiTrainingEnabled = false);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_entitlementsSub?.cancel());
+    super.dispose();
   }
 
   Future<void> _loadSavedFilters() async {
@@ -133,10 +160,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final now = DateTime.now();
     final filtered = _alerts.where((a) {
       bool timeOk = switch (_timeRange) {
-        'today' =>
-          a.timestamp.year == now.year &&
-              a.timestamp.month == now.month &&
-              a.timestamp.day == now.day,
+        'today' => a.timestamp.year == now.year &&
+            a.timestamp.month == now.month &&
+            a.timestamp.day == now.day,
         'week' =>
           a.timestamp.isAfter(now.subtract(Duration(days: now.weekday - 1))) &&
               a.timestamp.isBefore(
@@ -147,18 +173,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         'month' =>
           a.timestamp.year == now.year && a.timestamp.month == now.month,
         'year' => a.timestamp.year == now.year,
-        'custom' =>
-          (_customStartDate != null && _customEndDate != null)
-              ? a.timestamp.isAfter(_customStartDate!) &&
-                    a.timestamp.isBefore(_customEndDate!)
-              : true,
+        'custom' => (_customStartDate != null && _customEndDate != null)
+            ? a.timestamp.isAfter(_customStartDate!) &&
+                a.timestamp.isBefore(_customEndDate!)
+            : true,
         _ => true,
       };
       if (!timeOk) return false;
       if (_selectedUsine != 'all' && a.usine != _selectedUsine) return false;
       if (_filterConvoyeur != 'all' &&
-          a.convoyeur.toString() != _filterConvoyeur)
-        return false;
+          a.convoyeur.toString() != _filterConvoyeur) return false;
       if (_filterPoste != 'all' && a.poste.toString() != _filterPoste)
         return false;
       if (_filterType != 'all' && a.type != _filterType) return false;
@@ -189,16 +213,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return;
       }
       final map = Map<String, dynamic>.from(data as Map);
-      final list =
-          map.entries
-              .map(
-                (e) => AlertModel.fromMap(
-                  e.key,
-                  Map<String, dynamic>.from(e.value as Map),
-                ),
-              )
-              .toList()
-            ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      final list = map.entries
+          .map(
+            (e) => AlertModel.fromMap(
+              e.key,
+              Map<String, dynamic>.from(e.value as Map),
+            ),
+          )
+          .toList()
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
       setState(() => _alerts = list);
       _applyFilters();
     });
@@ -218,25 +241,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       alert.status == 'validee' || alert.status == 'cancelled';
 
   String get _timeRangeLabel => switch (_timeRange) {
-    'today' => context.tr('Today'),
-    'week' => context.tr('Last Week'),
-    'month' => context.tr('This Month'),
-    'year' => context.tr('This Year'),
-    'custom' =>
-      _customStartDate != null && _customEndDate != null
-          ? '${_customStartDate!.day}/${_customStartDate!.month} – '
+        'today' => context.tr('Today'),
+        'week' => context.tr('Last Week'),
+        'month' => context.tr('This Month'),
+        'year' => context.tr('This Year'),
+        'custom' => _customStartDate != null && _customEndDate != null
+            ? '${_customStartDate!.day}/${_customStartDate!.month} – '
                 '${_customEndDate!.day}/${_customEndDate!.month}'
-          : context.tr('Custom'),
-    _ => context.tr('All time'),
-  };
+            : context.tr('Custom'),
+        _ => context.tr('All time'),
+      };
 
   String get _timeRangeSubtitle => switch (_timeRange) {
-    'today' => context.tr('Showing today\'s data'),
-    'week' => context.tr('Showing last 7 days'),
-    'month' => context.tr('Showing this month'),
-    'year' => context.tr('Showing this year'),
-    _ => context.tr('Filtered view'),
-  };
+        'today' => context.tr('Showing today\'s data'),
+        'week' => context.tr('Showing last 7 days'),
+        'month' => context.tr('Showing this month'),
+        'year' => context.tr('Showing this year'),
+        _ => context.tr('Filtered view'),
+      };
 
   Future<void> _logout() async {
     await _auth.logout();
@@ -276,7 +298,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(context.tr('Failed: {error}', {'error': e.toString()})),
+            content: Text(
+              context.tr('Failed: {error}', {'error': e.toString()}),
+            ),
             backgroundColor: _red,
           ),
         );
@@ -501,8 +525,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
       initialDateRange: DateTimeRange(
-        start:
-            _customStartDate ??
+        start: _customStartDate ??
             DateTime.now().subtract(const Duration(days: 7)),
         end: _customEndDate ?? DateTime.now(),
       ),
@@ -562,8 +585,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(context.tr('Assigned to {name}',
-                        {'name': filtered[i].fullName})),
+                    content: Text(
+                      context.tr('Assigned to {name}', {
+                        'name': filtered[i].fullName,
+                      }),
+                    ),
                     backgroundColor: _green,
                   ),
                 );
@@ -625,8 +651,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      context.tr('Assigned {name} as assistant',
-                          {'name': filtered[i].fullName}),
+                      context.tr('Assigned {name} as assistant', {
+                        'name': filtered[i].fullName,
+                      }),
                     ),
                     backgroundColor: _green,
                   ),
@@ -717,8 +744,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           return AlertDialog(
             title: Row(
               children: [
-                const Icon(Icons.notification_important,
-                    size: 20, color: Colors.red),
+                const Icon(
+                  Icons.notification_important,
+                  size: 20,
+                  color: Colors.red,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   context.tr('Simulate Custom Alert'),
@@ -775,9 +805,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     onChanged: (val) {
                       setState(() {
                         selectedFactoryName = val;
-                        selectedFactoryId = factories
-                            .firstWhere((f) => f.name == val)
-                            .id;
+                        selectedFactoryId =
+                            factories.firstWhere((f) => f.name == val).id;
                         selectedConveyorId = null;
                         selectedStationId = null;
                         updateConveyors();
@@ -801,8 +830,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         .map(
                           (c) => DropdownMenuItem(
                             value: 'Conveyor ${c.number}',
-                            child: Text(context
-                                .tr('Conveyor {n}', {'n': '${c.number}'})),
+                            child: Text(
+                              context.tr('Conveyor {n}', {'n': '${c.number}'}),
+                            ),
                           ),
                         )
                         .toList(),
@@ -867,8 +897,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   TextField(
                     onChanged: (val) => description = val,
                     decoration: InputDecoration(
-                      hintText:
-                          context.tr('e.g., Motor overheating (optional)'),
+                      hintText: context.tr(
+                        'e.g., Motor overheating (optional)',
+                      ),
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -904,7 +935,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       SnackBar(
                         content: Text(
                           context.tr(
-                              'Please select factory, conveyor, and workstation'),
+                            'Please select factory, conveyor, and workstation',
+                          ),
                         ),
                         backgroundColor: Colors.red,
                       ),
@@ -1003,11 +1035,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         color: _navyLt,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(
-                        Icons.person_add,
-                        color: _navy,
-                        size: 20,
-                      ),
+                      child: Icon(Icons.person_add, color: _navy, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -1148,27 +1176,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   confirmPass,
                                 ].any((c) => c.text.trim().isEmpty)) {
                                   setS(
-                                    () => error = context
-                                        .tr('All fields are required.'),
+                                    () => error = context.tr(
+                                      'All fields are required.',
+                                    ),
                                   );
                                   return;
                                 }
                                 if (pass.text != confirmPass.text) {
-                                  setS(() => error =
-                                      context.tr('Passwords do not match.'));
+                                  setS(
+                                    () => error = context.tr(
+                                      'Passwords do not match.',
+                                    ),
+                                  );
                                   return;
                                 }
                                 if (pass.text.length < 6) {
                                   setS(
                                     () => error = context.tr(
-                                        'Password must be at least 6 characters.'),
+                                      'Password must be at least 6 characters.',
+                                    ),
                                   );
                                   return;
                                 }
                                 if (usine.isEmpty) {
                                   setS(
-                                    () => error =
-                                        context.tr('Please select a factory.'),
+                                    () => error = context.tr(
+                                      'Please select a factory.',
+                                    ),
                                   );
                                   return;
                                 }
@@ -1198,7 +1232,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                            context.tr('Supervisor created')),
+                                          context.tr('Supervisor created'),
+                                        ),
                                         backgroundColor: _green,
                                       ),
                                     );
@@ -1319,13 +1354,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               tab: _tab,
               onSelect: (i) => setState(() => _tab = i),
               badgeCounts: {4: _escalatedOpen},
+              showAiTraining: _aiTrainingEnabled,
             ),
             Expanded(
               child: _loading
                   ? Center(child: CircularProgressIndicator(color: _navy))
                   : widget.enableLiveData
-                  ? _buildContent()
-                  : const SizedBox.shrink(),
+                      ? _buildContent()
+                      : const SizedBox.shrink(),
             ),
           ],
         ),
@@ -1414,6 +1450,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return const AdminEscalationScreen();
       case 5:
         return const HierarchyScreen();
+      case 6:
+        return _aiTrainingEnabled
+            ? const AiTrainingTab()
+            : const SizedBox.shrink();
       default:
         return const SizedBox.shrink();
     }

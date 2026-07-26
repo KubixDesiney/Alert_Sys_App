@@ -70,6 +70,8 @@ gateway (OPC-UA / Modbus / S7 / MQTT / Sparkplug B + plant simulator).
 | Doc | Purpose |
 |---|---|
 | [ops/RUNBOOK.md](ops/RUNBOOK.md) | Operational runbook |
+| [ops/AUTOMATIC_ORDER_PROVISIONING.md](ops/AUTOMATIC_ORDER_PROVISIONING.md) | Authoritative Accept/Paid state machine, automatic Firebase/Worker provisioning, PM + supervisor delivery, retries, and Growth adaptive-AI contract |
+| [ops/sias_orders_schema.sql](ops/sias_orders_schema.sql) | Private Supabase order control-plane schema and legacy-status migration |
 | [ops/SLO.md](ops/SLO.md) | Service-level objectives + error budgets |
 | [ops/OBSERVABILITY.md](ops/OBSERVABILITY.md) | Monitoring/telemetry surfaces |
 | [ops/MUTATION_TESTING.md](ops/MUTATION_TESTING.md) | Mutation-testing setup |

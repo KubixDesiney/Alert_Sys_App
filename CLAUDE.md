@@ -171,6 +171,8 @@ immediately without an install.
 
 **Kubix feedback + i18n + onboarding (2026-07-20):** `POST /api/kubix-feedback` (`validateFeedbackRequest`: sessionId, `messageIndex` 0-999, `verdict` up/down) forwards thumbs-up/down verdicts to secret `N8N_FEEDBACK_WEBHOOK_URL` (same optional-bearer pattern as the other n8n forwards); the copilot page persists verdicts into the local transcript and shows a "thanks" state. `GET /copilot?lang=fr` renders French page chrome via the `COPILOT_I18N` dictionary (`copilotLang(url)` picks `fr` only for that exact query value) — Kubix itself already answers in the user's language, this only localizes labels/placeholders/errors. `GET /welcome` is the buyer-facing "what happens after you buy" onboarding page (four milestones: activation email, first 30 minutes, first integration, meet Kubix), linked from `/success`. Flutter: `AppConfig.copilotUrl` (`ALERTSYS_COPILOT_URL` dart-define) plus a "Kubix Copilot" card on the SuperAdmin **Status** tab (`lib/screens/superadmin/status_tab.dart`, `_KubixCopilotCard`) that deep-links to `/copilot` with `lang=fr` appended when the console runs in French. `tool/kubix_chat_report.mjs` is a pure-Node CSV analytics report (sessions/day, escalation rate, top question words EN+FR-stopword-filtered, median reply length) over a `sias_chats` data-table export.
 
+**Controlled B2B orders dashboard (2026-07-26):** Payment remains offline/manual. Buyer submission creates a private Supabase order in `under_review` and requires the buyer, PM, supervisor, and payment-method fields. The founder dashboard offers two distinct, CSRF-protected actions: **Accept** (`under_review → confirmed`, sends the “we will contact you shortly about payment” event) and **Paid** (`under_review|confirmed|provisioning_failed → provisioning_queued`, including direct virement). Paid repository-dispatches only `orderId` + `tenantCode`; the private GitHub job fetches the rest, provisions and verifies the dedicated Firebase/Cloudflare instance, then creates exactly one `admin` PM and one `supervisor` account and sends single-use activation emails. Legacy `POST /admin/approve` is permanently `410 Gone`. See `docs/ops/AUTOMATIC_ORDER_PROVISIONING.md` and `docs/ops/sias_orders_schema.sql`.
+
 **Legal pack gate (2026-07-20):** `GET /legal`, `/legal/privacy`, `/legal/terms` render the embedded legal markdown (generated copy in `store_legal_content.js` via `npm run legal:embed` from `docs/legal/*.md` — regenerate whenever a draft changes) through a small server-side renderer (`renderMarkdownDoc`, escape-first). The routes hard-404 unless `LEGAL_PUBLISH === "true"` in `wrangler.store.toml` `[vars]` (default `"false"`); footer links appear only when enabled. `npm run legal:lint` (`tool/legal_lint.mjs`) checks the drafts for unresolved `[[PLACEHOLDER]]` markers (reported as a warning count, never blocking), naming consistency (only "KubixDesiney" / "SIAS — Smart Industrial Alert System" allowed), forbidden claims (SOC 2/ISO 27001 certification, bare "guarantee" outside SLA/money-back contexts), and MSA→DPA/SLA cross-references; wired as a non-blocking `legal-lint` job in `ci.yml`. See `docs/legal/COUNSEL_BRIEF.md` for the counsel handoff.
 
 **Security headers (2026-07-20):** every `html()` response now carries a strict nonce-based CSP (`contentSecurityPolicy(nonce)` — `script-src 'self' 'nonce-<random>'`, no `unsafe-inline` script; every `<script>` tag is stamped with the response's nonce), HSTS, and a locked-down `Permissions-Policy`. All inline `onclick=`/`onchange=` handlers across the landing/buy pages were refactored to `addEventListener`. `GET /.well-known/security.txt` (RFC 9116) is public, 1-year expiry, contact = `SALES_EMAIL`.
@@ -1269,7 +1271,8 @@ retrieve another's documents — verified by SQL: filtering as a different tenan
 zero rows. **When adding a retrieval tool, always set the tenant metadata filter** — an
 unfiltered tool would read every customer's private docs.
 
-| WF3 Owner Activation Email | `71muihOAczOl4u2k` | `sias-activation` | Receives the `provision_owner` summary → looks up the customer → sends the one-time activation link email (never a password) → flips status to `active` → confirms to founder |
+| WF3 Seat Activation Email | `71muihOAczOl4u2k` | `sias-activation` | Receives one PM or supervisor activation payload, sends the single-use activation link (never a password), and confirms delivery to the founder |
+| WF5 Orders & Payment | `AnP16vyft2AwqegB` | order/confirmed/paid endpoints | Sends order-received, Accept/payment-contact, and Paid/provisioning-started messages; infrastructure provisioning belongs exclusively to the GitHub workflow |
 | WF4 Kubix Feedback Intake | `9l2JzN5rvLbquDFP` | `kubix-feedback` | Logs thumbs up/down to `sias_chat_feedback`; a downvote pulls the transcript and emails the founder so bad answers get fixed in the knowledge base |
 
 Wiring (secrets on `sias-store`, plus one env var on the provisioning CLI):
@@ -1277,9 +1280,11 @@ Wiring (secrets on `sias-store`, plus one env var on the provisioning CLI):
 - `N8N_INTAKE_WEBHOOK_URL` → `.../webhook/sias-purchase-intake` (WF1)
 - `N8N_CHAT_WEBHOOK_URL` → `.../webhook/kubix-copilot-chat` (WF2)
 - `N8N_FEEDBACK_WEBHOOK_URL` → `.../webhook/kubix-feedback` (WF4)
-- `N8N_ACTIVATION_WEBHOOK_URL` (env for `npm run provision:owner`) → `.../webhook/sias-activation` (WF3)
+- `N8N_ACTIVATION_WEBHOOK_URL` (env for `npm run provision:seats`) → `.../webhook/sias-activation` (WF3)
 - `N8N_WEBHOOK_AUTH` — optional shared bearer; set it as a store-worker secret AND as
   Header Auth on each n8n webhook before taking real customers.
+
+**Manual-payment B2B state machine (2026-07-26):** Orders live in private Supabase `public.sias_orders` (RLS on; Store Worker service role only). Buyer submission creates `under_review`. **Accept** is `under_review → confirmed` and emits `order_confirmed` so the buyer is told KubixDesiney will contact them shortly about payment. **Paid** may run from either review (direct virement flow) or confirmed and transitions through `provisioning_queued → provisioning`; it repository-dispatches only `orderId` + `tenantCode`. `.github/workflows/provision-paid-order.yml` fetches the private order, creates and verifies the dedicated instance, delivers PM + supervisor activation emails, then marks it `active`; failures become `provisioning_failed` and are retryable from the dashboard. Store secrets: `N8N_ORDER_WEBHOOK_URL`, `N8N_CONFIRMED_WEBHOOK_URL`, `N8N_PAID_WEBHOOK_URL`, `PROVISIONING_GITHUB_TOKEN`, `PROVISIONING_GITHUB_REPOSITORY`. Full runbook: `docs/ops/AUTOMATIC_ORDER_PROVISIONING.md`; schema migration: `docs/ops/sias_orders_schema.sql`.
 
 n8n data tables: `sias_customers` (`ExqQw7LlJUTeFaNj`), `sias_chats`
 (`ZDmZevIqzlKOBTU0`), `sias_chat_feedback` (`XbAfPUKF3horkC2v`). Lead/customer
@@ -1289,14 +1294,17 @@ status lifecycle: `quote_requested` → `provisioning` → `active` (quotes prog
 Gemini runs on a FREE-TIER key today (`models/gemini-2.5-flash`, 20 requests/day) —
 enable paid billing and bump the WF2 model node before real customers.
 
-## Per-Customer Provisioning (2026-07-17)
+## Per-Customer Provisioning (updated 2026-07-26)
 
-Two CLIs automate the dedicated-instance runbook (full doc: `docs/PROVISIONING.md`):
+The production Paid flow is `tool/provision_paid_order.mjs` via
+`.github/workflows/provision-paid-order.yml`. Lower-level/recovery CLIs:
 
 - `npm run provision:owner -- --email <e> --name "F L" --company <c> --tenant <T#XXXX> [--db-url <rtdb>] [--dry-run]`
   (`tool/provision_owner.mjs`): seeds the customer's Owner seat — creates the Firebase Auth user (random password, never printed), writes `users/{uid}` (role SuperAdmin, NO email — PII split) + `users_private/{uid}` (email), and emits the ONE-TIME activation link via `generatePasswordResetLink()` (single-use, ~1h expiry — passwords are never emailed). Optional POST of the summary to `N8N_ACTIVATION_WEBHOOK_URL`. Auth via `FIREBASE_SERVICE_ACCOUNT` env or application-default credentials. Admin SDK bypasses RTDB rules; no rules changes involved.
 - `npm run provision:instance -- --tenant <slug> --project-id <gcp-id> [--execute]`
-  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Creates/links the Firebase project, deploys rules, templates per-tenant wrangler configs under `deploy/tenants/<tenant>/` (root `wrangler.*.toml` are never modified), pushes secrets from a git-ignored `.env.tenant`, deploys the tenant workers, chains `provision_owner`, writes the tenant's public web config to the shared `TENANTS` KV namespace, and records `appUrl`/`ingestHost` in `provision-summary.json`. It prints the wildcard app-route, branded ingest-route, DNS, Firebase web-config, and Android APK TODOs. **Step 10 (`verify`)** runs `tool/verify_instance.mjs` automatically and now probes `<appUrl>/__config`, requiring `hasConfig: true`, alongside worker health and RTDB rules checks.
+  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Deploys rules and the seven tenant data-plane Workers (store/app remain shared), seeds the day-one RTDB with `tool/seed_tenant.mjs`, publishes TENANTS KV, writes a secret-free summary, verifies Worker/app/RTDB/rules health, then invokes `tool/provision_seats.mjs --require-delivery-pair` so PM/supervisor links are emailed only after the instance is healthy. All deploy, secret, KV, notification, and verification failures are fatal/retryable.
+- `npm run provision:seats` defaults to dry-run, enforces the exact PM (`admin`) + supervisor (`supervisor`) delivery pair for commercial automation, rejects duplicate emails, applies the `users`/`users_private` PII split, retries authenticated activation delivery, and redacts links/emails from artifacts.
+- `npm run provision:seed` defaults to dry-run and only fills missing RTDB leaves, preserving buyer edits on retries.
 
 ### Provisioning lifecycle tooling (2026-07-20)
 
@@ -1305,6 +1313,10 @@ Two CLIs automate the dedicated-instance runbook (full doc: `docs/PROVISIONING.m
 - **Tenant registry** (`tool/tenant_registry.mjs`): `deploy/tenants/registry.json` (git-ignored), maintained by provision/teardown (`upsertTenant`/`markStatus`). `npm run tenants` (`tool/list_tenants.mjs`) prints it as a table.
 - `npm run backup:drill -- --tenant <slug> [--max-age-hours 36]` (`tool/backup_drill.mjs`): fetches the tenant's backup worker `GET /config` (new endpoint on `cloudflare_backup_worker.js` — reports `snapshots` count + `latest` R2 object metadata) and fails if the newest snapshot is stale. This is the "are backups actually happening" check.
 - `.github/workflows/provision-tenant.yml`: `workflow_dispatch` (tenant/project-id/workers-subdomain inputs) gated behind the **`provisioning` GitHub environment** — configure required reviewers there so a stray click can never create infrastructure. Runs provision `--execute` then a standalone `verify_instance` re-check, uploads the summary as an artifact.
+- `.github/workflows/provision-paid-order.yml`: automatic `repository_dispatch`
+  path used by the authenticated Paid button. It has per-tenant concurrency,
+  patches Supabase to `active`/`provisioning_failed`, alerts on failure, and
+  uploads only non-secret bootstrap/provision evidence.
 - Tests: `worker_test/verify_instance.test.js`, `worker_test/tenant_registry.test.js` (no live network — probe classification and table rendering are pure functions).
 
 Both ship pure-helper Jest suites (`worker_test/provision_owner.test.js`, `worker_test/provision_instance.test.js`). `deploy/tenants/` and `*.env.tenant` are git-ignored.

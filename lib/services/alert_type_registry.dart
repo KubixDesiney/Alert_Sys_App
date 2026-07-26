@@ -7,8 +7,9 @@ import '../models/alert_type.dart';
 
 /// App-global source of truth for the deployment's alert-type vocabulary.
 ///
-/// Streams `app_config/alertTypes` (SuperAdmin-writable, `auth != null`
-/// readable) and exposes the active ordered list plus lookup-by-code. Mirrors
+/// Streams `app_config/alertTypes` (SuperAdmin-writable, plus entitled
+/// Production Manager adaptive additions; `auth != null` readable) and exposes
+/// the active ordered list plus lookup-by-code. Mirrors
 /// the `context.tr` null-safe pattern: before the stream resolves — and in
 /// provider-less widget tests that never call [start] — it synchronously
 /// serves [kDefaultAlertTypeDefs], which equals the historical standard set.
@@ -56,21 +57,24 @@ class AlertTypeRegistry extends ChangeNotifier {
     } catch (_) {
       return; // Firebase unavailable (e.g. pure unit test) — defaults stand.
     }
-    _sub = _ref!.onValue.listen((event) {
-      final parsed = _parse(event.snapshot.value);
-      if (parsed.isEmpty) {
-        // Empty node: keep defaults in memory and attempt a one-time seed.
-        _types = List<AlertTypeDef>.of(kDefaultAlertTypeDefs);
-        _loadedFromRemote = false;
-        unawaited(_seedIfEmpty());
-      } else {
-        _types = parsed;
-        _loadedFromRemote = true;
-      }
-      notifyListeners();
-    }, onError: (_) {
-      // Rules hiccup / offline: defaults continue to serve.
-    });
+    _sub = _ref!.onValue.listen(
+      (event) {
+        final parsed = _parse(event.snapshot.value);
+        if (parsed.isEmpty) {
+          // Empty node: keep defaults in memory and attempt a one-time seed.
+          _types = List<AlertTypeDef>.of(kDefaultAlertTypeDefs);
+          _loadedFromRemote = false;
+          unawaited(_seedIfEmpty());
+        } else {
+          _types = parsed;
+          _loadedFromRemote = true;
+        }
+        notifyListeners();
+      },
+      onError: (_) {
+        // Rules hiccup / offline: defaults continue to serve.
+      },
+    );
   }
 
   static List<AlertTypeDef> _parse(Object? value) {
@@ -122,10 +126,17 @@ class AlertTypeRegistry extends ChangeNotifier {
   /// keys so lookups are cheap and reorders are diff-friendly.
   Future<void> saveAll(List<AlertTypeDef> defs) async {
     final ref = _ref ?? FirebaseDatabase.instance.ref(nodePath);
-    final payload = <String, dynamic>{
-      for (final d in defs) d.code: d.toMap(),
-    };
+    final payload = <String, dynamic>{for (final d in defs) d.code: d.toMap()};
     await ref.set(payload);
+  }
+
+  /// Adds inferred dataset types without rewriting existing operator choices.
+  /// RTDB rules allow this to an `admin` only when the paid tenant entitlement
+  /// `adaptiveAlertSchema` is true.
+  Future<void> saveMissing(List<AlertTypeDef> defs) async {
+    if (defs.isEmpty) return;
+    final ref = _ref ?? FirebaseDatabase.instance.ref(nodePath);
+    await ref.update({for (final def in defs) def.code: def.toMap()});
   }
 
   @override

@@ -1209,11 +1209,11 @@ fully offline.
   end-to-end in `docs/integrations/SCADA_INTEGRATION.md`'s "Reference edge
   gateway" section and used as the demo engine in `docs/sales/DEMO_SCRIPT.md`.
 
-## n8n Commercial Workflows (2026-07-20)
+## n8n Commercial Workflows (2026-07-26)
 
-The commercial/onboarding automation lives in n8n Cloud (`kubixdesiney.app.n8n.cloud`),
+The commercial/onboarding automation lives in the n8n workspace at `n8n.kubixdesiney.com`,
 NOT in the repo — the workers only forward verified events to it. All published and
-tested end to end. Base: `https://kubixdesiney.app.n8n.cloud/webhook/`.
+tested end to end. Base: `https://n8n.kubixdesiney.com/webhook/`.
 
 | Workflow | ID | Webhook path | Purpose |
 |---|---|---|---|
@@ -1232,7 +1232,8 @@ retrieve another's documents — verified by SQL: filtering as a different tenan
 zero rows. **When adding a retrieval tool, always set the tenant metadata filter** — an
 unfiltered tool would read every customer's private docs.
 
-| WF3 Owner Activation Email | `71muihOAczOl4u2k` | `sias-activation` | Receives the `provision_owner` summary → looks up the customer → sends the one-time activation link email (never a password) → flips status to `active` → confirms to founder |
+| WF5 Orders & Payment Approval | `VHmmV0qoQD5oTHKf` | `sias-order-placed`, `sias-order-confirmed`, `sias-payment-paid` | Sends the under-review receipt, Accept payment-details email, Paid acknowledgement, and founder provisioning notice |
+| WF3 Seat Activation Email | `XyxybpainPBIGGNj` | `sias-activation` | Receives one PM or supervisor activation payload and sends the single-use activation link (never a password) |
 | WF4 Kubix Feedback Intake | `9l2JzN5rvLbquDFP` | `kubix-feedback` | Logs thumbs up/down to `sias_chat_feedback`; a downvote pulls the transcript and emails the founder so bad answers get fixed in the knowledge base |
 
 Wiring (secrets on `sias-store`, plus one env var on the provisioning CLI):
@@ -1240,7 +1241,7 @@ Wiring (secrets on `sias-store`, plus one env var on the provisioning CLI):
 - `N8N_INTAKE_WEBHOOK_URL` → `.../webhook/sias-purchase-intake` (WF1)
 - `N8N_CHAT_WEBHOOK_URL` → `.../webhook/kubix-copilot-chat` (WF2)
 - `N8N_FEEDBACK_WEBHOOK_URL` → `.../webhook/kubix-feedback` (WF4)
-- `N8N_ACTIVATION_WEBHOOK_URL` (env for `npm run provision:owner`) → `.../webhook/sias-activation` (WF3)
+- `N8N_ACTIVATION_WEBHOOK_URL` (env for `npm run provision:seats`) → `.../webhook/sias-activation` (WF3)
 - `N8N_WEBHOOK_AUTH` — optional shared bearer; set it as a store-worker secret AND as
   Header Auth on each n8n webhook before taking real customers.
 
@@ -1254,12 +1255,12 @@ enable paid billing and bump the WF2 model node before real customers.
 
 ## Per-Customer Provisioning (2026-07-17)
 
-Two CLIs automate the dedicated-instance runbook (full doc: `docs/PROVISIONING.md`):
+The dedicated-instance CLIs are documented in `docs/PROVISIONING.md`:
 
 - `npm run provision:owner -- --email <e> --name "F L" --company <c> --tenant <T#XXXX> [--db-url <rtdb>] [--dry-run]`
   (`tool/provision_owner.mjs`): seeds the customer's Owner seat — creates the Firebase Auth user (random password, never printed), writes `users/{uid}` (role SuperAdmin, NO email — PII split) + `users_private/{uid}` (email), and emits the ONE-TIME activation link via `generatePasswordResetLink()` (single-use, ~1h expiry — passwords are never emailed). Optional POST of the summary to `N8N_ACTIVATION_WEBHOOK_URL`. Auth via `FIREBASE_SERVICE_ACCOUNT` env or application-default credentials. Admin SDK bypasses RTDB rules; no rules changes involved.
-- `npm run provision:instance -- --tenant <slug> --project-id <gcp-id> [--execute]`
-  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Creates/links the Firebase project, deploys rules, templates per-tenant wrangler configs under `deploy/tenants/<tenant>/` (root `wrangler.*.toml` are never modified), pushes secrets from a git-ignored `.env.tenant`, deploys the tenant workers, chains `provision_owner`, and writes `provision-summary.json` (now including `workersSubdomain`/`workerUrls`) + the manual-console TODO list (Blaze billing, auth provider, Android app/FCM). **Step 9 (`verify`)** runs `tool/verify_instance.mjs` automatically and marks the tenant `verified`/`failed-verification` in the local registry.
+- `npm run provision:instance -- --tenant <slug> --project-id <gcp-id> --pm-email <e> --pm-name <n> --supervisor-email <e> --supervisor-name <n> [--execute]`
+  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Deploys rules and seven tenant data-plane workers, writes the tenant Firebase/app configuration, seeds the dedicated RTDB, publishes the shared-app tenant mapping, verifies the instance, and only then creates the exact PM (`admin`) + supervisor accounts. The automatic Paid workflow first runs `tool/bootstrap_firebase_project.mjs` and `tool/build_tenant_env.mjs`, then invokes this runner non-interactively.
 
 ### Provisioning lifecycle tooling (2026-07-20)
 
@@ -1275,5 +1276,48 @@ Both ship pure-helper Jest suites (`worker_test/provision_owner.test.js`, `worke
 ## Legal Documents (2026-07-17)
 
 `docs/legal/` holds DRAFT v1 of EULA, MSA, DPA (GDPR; sub-processors Google/Cloudflare/Supabase/Brevo/n8n), SLA (Enterprise 99.9%) and PRIVACY. Every file is bannered "requires review by qualified counsel"; jurisdiction-dependent choices are marked `[[PLACEHOLDER: ...]]`. They deliberately claim no certifications (SOC 2 / ISO 27001 = roadmap only). Do not link them from the storefront until counsel signs off — enforced in code, not just by convention: see "Legal pack gate (2026-07-20)" under Store Worker above (`LEGAL_PUBLISH` flag + `npm run legal:lint`). `docs/legal/COUNSEL_BRIEF.md` is the one-page handoff for the reviewing lawyer.
+
+## Automatic B2B Accept/Paid Provisioning (2026-07-26)
+
+Authoritative runbook:
+`docs/ops/AUTOMATIC_ORDER_PROVISIONING.md`.
+
+- `cloudflare_store_worker.js` now owns the durable commercial state machine:
+  `under_review → confirmed → provisioning_queued → provisioning → active`,
+  with `provisioning_failed` as the explicit retry state. **Accept** confirms
+  and emits `order_confirmed`; **Paid** may run directly from review (virement)
+  or from confirmed and dispatches `sias_order_paid`.
+- GitHub repository-dispatch payloads contain only `orderId` + `tenantCode`.
+  `.github/workflows/provision-paid-order.yml` fetches buyer/seat PII directly
+  from the private Supabase table and runs `tool/provision_paid_order.mjs`.
+- Run `docs/ops/sias_orders_schema.sql` before deploying the new Store Worker.
+  Browser roles have no table access; the service-role control plane is the
+  only caller.
+- Automatic Firebase bootstrap is
+  `tool/bootstrap_firebase_project.mjs`: project/billing/APIs/Firebase/RTDB/
+  Email-Password/Web app plus a tenant-scoped `sias-runtime` identity. Runtime
+  private keys and `.env.tenant` are deleted after the job; never add them to
+  artifacts.
+- Dedicated instances have **seven data-plane Workers** (`ai`, `notify`,
+  `github`, `ingest`, `scim`, `monitor`, `backup`). `sias-store` and `sias-app`
+  are shared and must never be templated per tenant.
+- `tool/seed_tenant.mjs` is the idempotent day-one RTDB seed. It only writes
+  missing leaves and creates the standard alert types, escalation defaults,
+  `Usine A / Conveyor 1 / Station 1`, `MACH-001`, counters, tenant metadata,
+  and plan entitlements.
+- Commercial delivery is exactly a Production Manager (`role: admin`) plus one
+  supervisor (`role: supervisor`). `tool/provision_seats.mjs
+  --require-delivery-pair` rejects half-seats and duplicate emails, keeps email
+  under `users_private/{uid}`, retries authenticated activation delivery, and
+  never logs/persists activation links.
+- Seat emails run after `verify_instance.mjs` proves every Worker, shared app
+  config, RTDB reachability, and anonymous rules denial. Do not move delivery
+  earlier in the plan.
+- Growth is the full package. Its seed enables `aiTraining` and
+  `adaptiveAlertSchema`; the PM dashboard reveals AI Training only when
+  entitled. Uploaded custom alert buckets expand the tenant schema (bounded to
+  24 safe types per upload) before feature engineering, and deployed model
+  metadata preserves the type/feature schema. RTDB rules gate PM writes to both
+  `ai_forecast` and `app_config/alertTypes` on those entitlements.
 
 ## Imported Claude Cowork project instructions

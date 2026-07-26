@@ -1,37 +1,26 @@
 // =============================================================================
-// SIAS Store Worker — B2B storefront, Stripe checkout, purchase intake webhook
+// SIAS Store Worker — B2B storefront and controlled provisioning entry point
 // =============================================================================
-// The commercial front door of SIAS. Serves the marketing/landing site, runs
-// Stripe Checkout for self-serve purchases, and forwards verified purchase
-// events to the n8n "purchase intake" workflow (WF1) which provisions the
-// customer's dedicated instance, creates their Kubix Copilot agent, and sends
-// the Brevo activation email.
+// The commercial front door of SIAS. The active B2B flow records private orders
+// in Supabase, lets the founder Accept or mark them Paid, and dispatches a
+// fail-closed GitHub provisioning job after payment. Legacy card/quote routes
+// remain available behind SALES_MODE for compatibility.
 //
 // Routes:
 //   GET  /                    landing page (product, pricing, FAQ)
 //   GET  /buy?plan=&billing=  intake form + order summary
-//   POST /api/checkout        validate intake -> create Stripe Checkout Session
+//   POST /api/order           create an under-review B2B order
 //   GET  /api/session?id=     minimal session status for the success page
-//   GET  /success             post-payment confirmation (fetches /api/session)
-//   GET  /cancel              redirect back to /#pricing
-//   POST /api/stripe-webhook  signature-verified Stripe events -> n8n WF1
+//   GET  /admin               private Accept/Paid orders dashboard
+//   POST /admin/accept        under_review -> confirmed
+//   POST /admin/paid          confirmed/review -> automatic provisioning
 //   GET  /config              status probe (never exposes secret values)
 //
 // Secrets (wrangler secret put --config wrangler.store.toml):
-//   STRIPE_SECRET_KEY       sk_live_/sk_test_ key used server-side only
-//   STRIPE_WEBHOOK_SECRET   whsec_ signing secret for /api/stripe-webhook
-//   N8N_INTAKE_WEBHOOK_URL  n8n WF1 webhook that receives purchase events
-//   N8N_WEBHOOK_AUTH        optional bearer token sent to the n8n webhook
-// Vars: SALES_EMAIL, STORE_RATE_LIMIT
-//
-// Design notes:
-//   - No customer data is stored in this worker; Stripe session metadata is the
-//     source of truth until n8n persists the record.
-//   - The tenant code (e.g. "NSW#7K2F") is generated at checkout time and rides
-//     Stripe metadata end-to-end, so the buyer's Kubix Copilot identity is
-//     stable from the very first receipt.
-//   - Webhook forward failures return 500 so Stripe retries with backoff; n8n
-//     must dedupe on eventId.
+//   SUPABASE_URL / SUPABASE_SERVICE_KEY
+//   FOUNDER_PASSWORD / SESSION_SECRET
+//   N8N_ORDER_WEBHOOK_URL / N8N_CONFIRMED_WEBHOOK_URL / N8N_PAID_WEBHOOK_URL
+//   PROVISIONING_GITHUB_TOKEN / PROVISIONING_GITHUB_REPOSITORY
 // =============================================================================
 
 import { PLAN_CATALOG, planPrice, TND_CURRENCY_CODE, tndMinorUnits, listPrice } from './pricing.mjs';
@@ -151,7 +140,13 @@ export function tenantInitials(company) {
   return ini || 'SIAS';
 }
 
-export function makeTenantCode(company, rand = Math.random) {
+function secureRandom() {
+  const value = new Uint32Array(1);
+  crypto.getRandomValues(value);
+  return value[0] / 0x1_0000_0000;
+}
+
+export function makeTenantCode(company, rand = secureRandom) {
   let code = '';
   for (let i = 0; i < 4; i++) {
     code += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length) % CODE_ALPHABET.length];
@@ -427,6 +422,305 @@ export function validateFeedbackRequest(body) {
 }
 
 
+// --- Order intake (manual-approval sales mode) ----------------------------------
+// The store records both delivery seats up front so Paid can provision the
+// tenant without a second round trip or operator copy/paste.
+export function validateOrderIntake(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const errors = [];
+  const clean = {
+    name: clip(src.name, 80),
+    email: clip(src.email, 120).toLowerCase(),
+    company: clip(src.company, 80),
+    country: clip(src.country, 56),
+    factories: clip(src.factories, 8),
+    plan: clip(src.plan, 12),
+    billing: clip(src.billing, 8),
+    phone: clip(src.phone, 32),
+    notes: clip(src.notes, 200),
+    pmName: clip(src.pmName || src.name, 80),
+    pmEmail: clip(src.pmEmail || src.email, 120).toLowerCase(),
+    supervisorName: clip(src.supervisorName, 80),
+    supervisorEmail: clip(src.supervisorEmail, 120).toLowerCase(),
+    paymentMethod: clip(src.paymentMethod, 24) || 'bank_transfer',
+  };
+  const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
+  if (clean.name.length < 2) errors.push('Enter your full name.');
+  if (!validEmail(clean.email)) errors.push('Enter a valid work email.');
+  if (clean.company.length < 2) errors.push('Enter your company name.');
+  if (!PLAN_CATALOG[clean.plan]) errors.push('Pick a plan.');
+  if (!['monthly', 'annual'].includes(clean.billing)) errors.push('Pick a billing cycle.');
+  if (clean.pmName.length < 2) errors.push('Enter the Production Manager name.');
+  if (!validEmail(clean.pmEmail)) errors.push('Enter a valid Production Manager email.');
+  if (clean.supervisorName.length < 2) errors.push('Enter the supervisor name.');
+  if (!validEmail(clean.supervisorEmail)) errors.push('Enter a valid supervisor email.');
+  if (clean.pmEmail && clean.pmEmail === clean.supervisorEmail) {
+    errors.push('Production Manager and supervisor must use different email addresses.');
+  }
+  if (!['bank_transfer', 'manual'].includes(clean.paymentMethod)) {
+    errors.push('Pick a valid payment method.');
+  }
+  if (!FACTORY_BUCKETS.includes(clean.factories)) clean.factories = '1';
+  return { ok: errors.length === 0, errors, clean };
+}
+
+/** Shapes the order_placed event forwarded to n8n WF5. */
+export function orderPlacedPayload(clean, tenantCode, nowMs = Date.now()) {
+  const def = PLAN_CATALOG[clean.plan];
+  const price = listPrice(clean.plan, clean.billing, 'USD');
+  return {
+    source: 'sias-store',
+    eventId: `ord_${tenantCode.replace('#', '_')}`,
+    type: 'order_placed',
+    occurredAt: new Date(nowMs).toISOString(),
+    tenantCode,
+    company: clean.company,
+    name: clean.name,
+    email: clean.email,
+    planName: def?.name || clean.plan,
+    billing: clean.billing,
+    amountDisplay: price ? `$${price}/month` : 'custom',
+    paymentInstructions: 'Your order is under review. We will contact you after it is accepted.',
+    country: clean.country,
+    factories: clean.factories,
+    phone: clean.phone,
+    notes: clean.notes,
+    paymentMethod: clean.paymentMethod,
+    seats: {
+      productionManager: { name: clean.pmName, email: clean.pmEmail },
+      supervisor: { name: clean.supervisorName, email: clean.supervisorEmail },
+    },
+  };
+}
+
+/** Shapes the order_confirmed event sent when the founder presses Accept. */
+export function orderConfirmedPayload(order, nowMs = Date.now()) {
+  const def = PLAN_CATALOG[order.plan];
+  const price = listPrice(order.plan, order.billing, 'USD');
+  return {
+    source: 'sias-store',
+    eventId: `confirmed_${order.id || order.tenant_code?.replace('#', '_')}`,
+    type: 'order_confirmed',
+    occurredAt: new Date(nowMs).toISOString(),
+    tenantCode: order.tenant_code,
+    company: order.company,
+    name: order.contact_name,
+    email: order.email,
+    planName: def?.name || order.plan,
+    billing: order.billing,
+    amountDisplay: price ? `$${price}/month` : 'custom',
+    country: order.country,
+    factories: order.factories,
+    phone: order.phone,
+    notes: order.notes,
+    paymentMethod: order.payment_method || 'bank_transfer',
+    message: 'Your SIAS order is confirmed. KubixDesiney will contact you shortly to discuss payment details.',
+  };
+}
+
+/** Shapes the payment_paid event sent after a durable provisioning dispatch. */
+export function paymentPaidPayload(order, nowMs = Date.now()) {
+  return {
+    ...orderConfirmedPayload(order, nowMs),
+    eventId: `paid_${order.id || order.tenant_code?.replace('#', '_')}`,
+    type: 'payment_paid',
+    message: 'Payment is confirmed. Your dedicated SIAS instance and two activation emails are being prepared now.',
+  };
+}
+
+// Compatibility export for integrations migrating from the first dashboard.
+export const paymentApprovedPayload = paymentPaidPayload;
+
+// --- Session cookie signing and verification -----------------------------------
+const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
+
+function bytesToBase64Url(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+}
+
+function base64UrlToBytes(value) {
+  const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function hmacHex(secret, value) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(value));
+  return [...new Uint8Array(sig)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Constant-time text comparison after hashing both values to equal length. */
+export async function timingSafeEqualText(left, right) {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(String(left || ''))),
+    crypto.subtle.digest('SHA-256', enc.encode(String(right || ''))),
+  ]);
+  const av = new Uint8Array(a);
+  const bv = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < av.length; i += 1) diff |= av[i] ^ bv[i];
+  return diff === 0;
+}
+
+/** Signs a short-lived, nonce-bearing admin session token. */
+export async function signSessionCookie(secret, nowMs = Date.now(), ttlMs = ADMIN_SESSION_MS) {
+  const payload = { iat: nowMs, exp: nowMs + ttlMs, nonce: crypto.randomUUID() };
+  const encoded = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+  return `${encoded}.${await hmacHex(secret, encoded)}`;
+}
+
+/** Verifies signature and explicit expiry; no deterministic daily token reuse. */
+export async function verifySessionCookie(token, secret, nowMs = Date.now()) {
+  if (!token || typeof token !== 'string' || !secret) return false;
+  const [encoded, signature, extra] = token.split('.');
+  if (!encoded || !signature || extra) return false;
+  if (!await timingSafeEqualText(signature, await hmacHex(secret, encoded))) return false;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(encoded)));
+    if (!Number.isFinite(payload.iat) || !Number.isFinite(payload.exp)) return false;
+    if (payload.iat > nowMs + 60_000 || payload.exp <= nowMs) return false;
+    if (payload.exp - payload.iat > ADMIN_SESSION_MS) return false;
+    return typeof payload.nonce === 'string' && payload.nonce.length >= 16;
+  } catch {
+    return false;
+  }
+}
+
+// --- Supabase order operations --------------------------------------------------
+export const ORDER_STATUSES = Object.freeze([
+  'awaiting_payment',
+  'under_review',
+  'confirmed',
+  'provisioning_queued',
+  'provisioning',
+  'active',
+  'provisioning_failed',
+  'rejected',
+]);
+
+/** Builds the request body to insert an order into Supabase sias_orders table. */
+export function supabaseInsertOrderBody(clean, tenantCode) {
+  return {
+    tenant_code: tenantCode,
+    company: clean.company,
+    contact_name: clean.name,
+    email: clean.email,
+    phone: clean.phone || null,
+    country: clean.country || null,
+    factories: clean.factories,
+    plan: clean.plan,
+    billing: clean.billing,
+    currency: 'USD',
+    amount_display: PLAN_CATALOG[clean.plan] ? `$${listPrice(clean.plan, clean.billing, 'USD')}` : 'custom',
+    notes: clean.notes || null,
+    pm_name: clean.pmName,
+    pm_email: clean.pmEmail,
+    supervisor_name: clean.supervisorName,
+    supervisor_email: clean.supervisorEmail,
+    payment_method: clean.paymentMethod,
+    full_package: clean.plan === 'growth',
+    status: 'under_review',
+  };
+}
+
+/** Fetches orders from Supabase (for the admin dashboard). */
+export async function supabaseGetOrders(supabaseUrl, supabaseServiceKey) {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/sias_orders?order=created_at.desc&limit=100`,
+    {
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+      },
+    },
+  );
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+export async function supabaseGetOrderById(supabaseUrl, supabaseServiceKey, orderId) {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/sias_orders?id=eq.${encodeURIComponent(orderId)}&limit=1`,
+    {
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+      },
+    },
+  );
+  if (!res.ok) return null;
+  const rows = await res.json().catch(() => []);
+  return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+/** Compare-and-set transition. Returning zero rows means another request won. */
+export async function supabaseTransitionOrder(
+  supabaseUrl,
+  supabaseServiceKey,
+  orderId,
+  fromStatuses,
+  status,
+  extraPatch = {},
+) {
+  if (!ORDER_STATUSES.includes(status)) return { ok: false, reason: 'invalid_status' };
+  const allowed = fromStatuses.filter((value) => ORDER_STATUSES.includes(value));
+  if (!allowed.length) return { ok: false, reason: 'invalid_transition' };
+  const patch = { ...extraPatch, status, updated_at: new Date().toISOString() };
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/sias_orders?id=eq.${encodeURIComponent(orderId)}&status=in.(${allowed.join(',')})&select=*`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!res.ok) return { ok: false, reason: 'upstream_error', status: res.status };
+  const rows = await res.json().catch(() => []);
+  if (!Array.isArray(rows) || rows.length !== 1) return { ok: false, reason: 'conflict' };
+  return { ok: true, order: rows[0] };
+}
+
+/** Dispatches a paid order without putting buyer PII in GitHub event metadata. */
+export async function dispatchPaidProvisioning(env, order) {
+  const repository = String(env.PROVISIONING_GITHUB_REPOSITORY || '').trim();
+  const token = String(env.PROVISIONING_GITHUB_TOKEN || '').trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !token) {
+    return { ok: false, error: 'Provisioning dispatcher is not configured.' };
+  }
+  const response = await fetch(`https://api.github.com/repos/${repository}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'sias-store-provisioner',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify({
+      event_type: 'sias_order_paid',
+      client_payload: {
+        orderId: String(order.id),
+        tenantCode: String(order.tenant_code),
+      },
+    }),
+  });
+  return response.ok
+    ? { ok: true }
+    : { ok: false, error: `Provisioning dispatch failed (${response.status}).` };
+}
+
 // --- Tiny in-memory rate limit (per isolate; Stripe is the real gate) -----------
 const _hits = new Map();
 export function rateLimited(key, limit = 10, nowMs = Date.now(), windowMs = 60000) {
@@ -441,8 +735,21 @@ export function rateLimited(key, limit = 10, nowMs = Date.now(), windowMs = 6000
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS },
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...CORS,
+    },
   });
+}
+
+export function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 /** Builds the strict CSP for a page response. Scripts run only with the
@@ -464,7 +771,7 @@ export function contentSecurityPolicy(nonce) {
   ].join('; ');
 }
 
-function html(markup, status = 200) {
+function html(markup, status = 200, { privatePage = false } = {}) {
   // One nonce per response, stamped onto every <script> tag we emit. The CSP
   // header and the body are cached together, so they always agree.
   const nonce = crypto.randomUUID().replace(/-/g, '');
@@ -472,7 +779,7 @@ function html(markup, status = 200) {
     status,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
+      'Cache-Control': privatePage ? 'no-store, private' : 'public, max-age=300',
       'Content-Security-Policy': contentSecurityPolicy(nonce),
       'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
       'X-Frame-Options': 'DENY',
@@ -846,6 +1153,254 @@ async function handleStripeWebhook(request, env) {
   return json({ received: true, forwarded: true });
 }
 
+// Manual-approval order intake ------------------------------------------------
+async function handleOrderIntake(request, env, url) {
+  const ip = request.headers.get('cf-connecting-ip') || 'anon';
+  const limit = Number(env.STORE_RATE_LIMIT || 10);
+  if (rateLimited(`ord:${ip}`, limit)) {
+    return json({ ok: false, error: 'Too many attempts — try again in a minute.' }, 429);
+  }
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
+    return json({ ok: false, error: 'Order system is not configured yet. Email us and we will set you up directly.' }, 503);
+  }
+  let raw;
+  try { raw = await request.json(); } catch { return json({ ok: false, error: 'Invalid request body.' }, 400); }
+  const v = validateOrderIntake(raw);
+  if (!v.ok) return json({ ok: false, error: v.errors.join(' ') }, 400);
+  const tenantCode = makeTenantCode(v.clean.company);
+  const orderBody = supabaseInsertOrderBody(v.clean, tenantCode);
+  let insertRes;
+  try {
+    insertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/sias_orders`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        apikey: env.SUPABASE_SERVICE_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(orderBody),
+    });
+  } catch {
+    return json({ ok: false, error: 'Could not save your order. Please try again.' }, 502);
+  }
+  if (!insertRes.ok) {
+    const errorMsg = insertRes.status === 409
+      ? 'This tenant code already exists. Please contact us.'
+      : 'Could not save your order. Please try again.';
+    return json({ ok: false, error: errorMsg }, 502);
+  }
+  // The order is already durable, so a notification outage must not invite a
+  // duplicate browser retry. Return success with an operator-visible warning.
+  const notification = env.N8N_ORDER_WEBHOOK_URL
+    ? await sendOrderWebhook(env, env.N8N_ORDER_WEBHOOK_URL, orderPlacedPayload(v.clean, tenantCode))
+    : { ok: false, error: 'Order-received email webhook is not configured.' };
+  return json({
+    ok: true,
+    tenantCode,
+    message: 'Order received. Your SIAS request is under review and your tenant code is reserved.',
+    warning: notification.ok ? undefined : notification.error,
+    kubixChatUrl: `${url.origin}/copilot?tenant=${tenantCode}&company=${encodeURIComponent(v.clean.company)}&name=${encodeURIComponent(v.clean.name)}&plan=${v.clean.plan}`,
+  });
+}
+
+// Founder orders dashboard ---------------------------------------------------
+function adminCookie(request) {
+  const raw = request.headers.get('cookie') || '';
+  const pair = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('__admin='));
+  return pair ? pair.slice('__admin='.length) : '';
+}
+
+async function adminAuthorized(request, env) {
+  return !!env.SESSION_SECRET
+    && !!adminCookie(request)
+    && await verifySessionCookie(adminCookie(request), env.SESSION_SECRET);
+}
+
+function validAdminMutation(request) {
+  const origin = request.headers.get('origin');
+  const customHeader = request.headers.get('x-sias-admin-action');
+  return origin === new URL(request.url).origin && customHeader === '1';
+}
+
+async function sendOrderWebhook(env, webhookUrl, payload) {
+  if (!webhookUrl) return { ok: false, error: 'Order email webhook is not configured.' };
+  const headers = { 'Content-Type': 'application/json' };
+  if (env.N8N_WEBHOOK_AUTH) headers.Authorization = `Bearer ${env.N8N_WEBHOOK_AUTH}`;
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok
+      ? { ok: true }
+      : { ok: false, error: `Order email webhook failed (${response.status}).` };
+  } catch {
+    return { ok: false, error: 'Order email webhook could not be reached.' };
+  }
+}
+
+async function handleAdminLogin(request, env, url) {
+  if (request.method === 'GET') {
+    // GET /admin with valid cookie → dashboard
+    if (await adminAuthorized(request, env)) {
+      const orders = await supabaseGetOrders(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+      return html(ordersDashboard(orders || [], env, url.origin), 200, { privatePage: true });
+    }
+    // GET /admin without cookie → login form
+    return html(adminLoginPage(), 200, { privatePage: true });
+  }
+  // POST /admin (login attempt)
+  const ip = request.headers.get('cf-connecting-ip') || 'anon';
+  if (rateLimited(`login:${ip}`, 5)) {
+    return json({ ok: false, error: 'Too many login attempts. Try again in a minute.' }, 429);
+  }
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: 'Invalid request.' }, 400); }
+  const password = String(body?.password || '').trim();
+  if (!password || !env.FOUNDER_PASSWORD || !env.SESSION_SECRET
+      || !await timingSafeEqualText(password, env.FOUNDER_PASSWORD)) {
+    return json({ ok: false, error: 'Invalid password.' }, 401);
+  }
+  const token = await signSessionCookie(env.SESSION_SECRET);
+  const response = json({ ok: true, message: 'Logged in.' });
+  response.headers.set('Set-Cookie', `__admin=${token}; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=${ADMIN_SESSION_MS / 1000}`);
+  return response;
+}
+
+async function readAdminOrderAction(request, env) {
+  if (!await adminAuthorized(request, env)) {
+    return { response: json({ ok: false, error: 'Unauthorized.' }, 401) };
+  }
+  if (!validAdminMutation(request)) {
+    return { response: json({ ok: false, error: 'Invalid admin action origin.' }, 403) };
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return { response: json({ ok: false, error: 'Invalid request.' }, 400) };
+  }
+  const orderId = String(body?.orderId || '').trim();
+  if (!/^[A-Za-z0-9-]{1,80}$/.test(orderId)) {
+    return { response: json({ ok: false, error: 'Missing or invalid orderId.' }, 400) };
+  }
+  const order = await supabaseGetOrderById(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, orderId);
+  if (!order) return { response: json({ ok: false, error: 'Order not found.' }, 404) };
+  return { order };
+}
+
+async function handleAdminAccept(request, env) {
+  const action = await readAdminOrderAction(request, env);
+  if (action.response) return action.response;
+  let { order } = action;
+  // Never fall back to the legacy "approved" workflow: it used payment copy
+  // and could make an Accept action look like money was received.
+  const webhookUrl = env.N8N_CONFIRMED_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return json({ ok: false, error: 'Confirmation email webhook is not configured.' }, 503);
+  }
+  if (['provisioning_queued', 'provisioning', 'active'].includes(order.status)) {
+    return json({ ok: true, message: 'This order has already moved beyond confirmation.' });
+  }
+  if (order.status !== 'confirmed') {
+    const transition = await supabaseTransitionOrder(
+      env.SUPABASE_URL,
+      env.SUPABASE_SERVICE_KEY,
+      order.id,
+      ['awaiting_payment', 'under_review'],
+      'confirmed',
+      { confirmed_at: new Date().toISOString() },
+    );
+    if (!transition.ok) {
+      const status = transition.reason === 'conflict' ? 409 : 502;
+      return json({ ok: false, error: 'Order status changed; refresh and try again.' }, status);
+    }
+    order = transition.order;
+  }
+  const notification = await sendOrderWebhook(env, webhookUrl, orderConfirmedPayload(order));
+  if (!notification.ok) return json({ ok: false, error: notification.error }, 502);
+  return json({ ok: true, message: 'Order confirmed and confirmation email sent.' });
+}
+
+async function handleAdminPaid(request, env) {
+  const action = await readAdminOrderAction(request, env);
+  if (action.response) return action.response;
+  let { order } = action;
+  if (['provisioning_queued', 'provisioning', 'active'].includes(order.status)) {
+    return json({ ok: true, message: 'Payment is already recorded and provisioning is in progress.' });
+  }
+  const queued = await supabaseTransitionOrder(
+    env.SUPABASE_URL,
+    env.SUPABASE_SERVICE_KEY,
+    order.id,
+    ['awaiting_payment', 'under_review', 'confirmed', 'provisioning_failed'],
+    'provisioning_queued',
+    {
+      paid_at: new Date().toISOString(),
+      provisioning_error: null,
+    },
+  );
+  if (!queued.ok) {
+    const status = queued.reason === 'conflict' ? 409 : 502;
+    return json({ ok: false, error: 'Order status changed; refresh and try again.' }, status);
+  }
+  order = queued.order;
+  let dispatched;
+  try {
+    dispatched = await dispatchPaidProvisioning(env, order);
+  } catch {
+    dispatched = { ok: false, error: 'Provisioning dispatch could not be reached.' };
+  }
+  if (!dispatched.ok) {
+    await supabaseTransitionOrder(
+      env.SUPABASE_URL,
+      env.SUPABASE_SERVICE_KEY,
+      order.id,
+      ['provisioning_queued'],
+      'provisioning_failed',
+      { provisioning_error: clip(dispatched.error, 500) },
+    );
+    return json({ ok: false, error: `${dispatched.error} The order is safe to retry.` }, 502);
+  }
+  const started = await supabaseTransitionOrder(
+    env.SUPABASE_URL,
+    env.SUPABASE_SERVICE_KEY,
+    order.id,
+    ['provisioning_queued'],
+    'provisioning',
+    { provisioning_started_at: new Date().toISOString() },
+  );
+  if (started.ok) order = started.order;
+
+  const webhookUrl = env.N8N_PAID_WEBHOOK_URL;
+  const notification = webhookUrl
+    ? await sendOrderWebhook(env, webhookUrl, paymentPaidPayload(order))
+    : { ok: false, error: 'Payment email webhook is not configured.' };
+  return json({
+    ok: true,
+    message: 'Payment recorded. Automatic provisioning has started.',
+    warning: notification.ok ? undefined : notification.error,
+  });
+}
+
+async function handleAdminApprove(request, env) {
+  // Backward-compatible endpoint: old dashboard clients map Approve to Accept,
+  // never directly to Paid/provisioning.
+  if (!await adminAuthorized(request, env)) {
+    return json({ ok: false, error: 'Unauthorized.' }, 401);
+  }
+  return json({ ok: false, error: 'This endpoint was replaced by Accept and Paid. Refresh the dashboard.' }, 410);
+}
+
+async function handleAdminLogout(request, env) {
+  const response = json({ ok: true, message: 'Logged out.' });
+  response.headers.set('Set-Cookie', '__admin=; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=0');
+  return response;
+}
+
 // --- Router -----------------------------------------------------------------------
 export default {
   async fetch(request, env) {
@@ -864,6 +1419,12 @@ export default {
           n8nIntake: !!env.N8N_INTAKE_WEBHOOK_URL,
           kubixChat: !!env.N8N_CHAT_WEBHOOK_URL,
           kubixFeedback: !!env.N8N_FEEDBACK_WEBHOOK_URL,
+          hasSupabase: !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY),
+          hasFounderAuth: !!env.FOUNDER_PASSWORD && !!env.SESSION_SECRET,
+          hasOrderWebhook: !!env.N8N_ORDER_WEBHOOK_URL,
+          hasConfirmedWebhook: !!env.N8N_CONFIRMED_WEBHOOK_URL,
+          hasPaidWebhook: !!env.N8N_PAID_WEBHOOK_URL,
+          hasProvisioningDispatcher: !!env.PROVISIONING_GITHUB_TOKEN && !!env.PROVISIONING_GITHUB_REPOSITORY,
         });
       }
       if (pathname === '/.well-known/security.txt') {
@@ -878,6 +1439,12 @@ export default {
       if (pathname === '/api/kubix' && request.method === 'POST') return handleKubixChat(request, env);
       if (pathname === '/api/kubix-feedback' && request.method === 'POST') return handleKubixFeedback(request, env);
       if (pathname === '/api/stripe-webhook' && request.method === 'POST') return handleStripeWebhook(request, env);
+      if (pathname === '/api/order' && request.method === 'POST') return handleOrderIntake(request, env, url);
+      if (pathname === '/admin' && (request.method === 'GET' || request.method === 'POST')) return handleAdminLogin(request, env, url);
+      if (pathname === '/admin/accept' && request.method === 'POST') return handleAdminAccept(request, env);
+      if (pathname === '/admin/paid' && request.method === 'POST') return handleAdminPaid(request, env);
+      if (pathname === '/admin/approve' && request.method === 'POST') return handleAdminApprove(request, env);
+      if (pathname === '/admin/logout' && request.method === 'POST') return handleAdminLogout(request, env);
       if (pathname === '/clictopay/return') return handleClictopayReturn(url, env);
       if (pathname === '/legal' || pathname.startsWith('/legal/')) return handleLegal(pathname, env);
       if (pathname === '/buy') return html(buyPage(url, env));
@@ -1229,6 +1796,15 @@ function buyBody(plan, billing, env, mode = 'card') {
           <select id="f-currency" name="currency">
             <option value="USD">USD &middot; US Dollar</option><option value="TND">TND &middot; Tunisian Dinar</option><option value="EUR">EUR &middot; Euro</option>
           </select></div>` : ''}
+        <div class="field"><label for="f-pm-name">Production Manager name</label><input id="f-pm-name" name="pmName" required maxlength="80" placeholder="Sonia Trabelsi" autocomplete="name"></div>
+        <div class="field"><label for="f-pm-email">Production Manager email</label><input id="f-pm-email" name="pmEmail" type="email" required maxlength="120" placeholder="production@company.com" autocomplete="email"></div>
+        <div class="field"><label for="f-supervisor-name">Supervisor name</label><input id="f-supervisor-name" name="supervisorName" required maxlength="80" placeholder="Karim Aloui" autocomplete="name"></div>
+        <div class="field"><label for="f-supervisor-email">Supervisor email</label><input id="f-supervisor-email" name="supervisorEmail" type="email" required maxlength="120" placeholder="supervisor@company.com" autocomplete="email"></div>
+        <div class="field"><label for="f-payment-method">Expected payment method</label>
+          <select id="f-payment-method" name="paymentMethod">
+            <option value="bank_transfer">Virement / bank transfer</option>
+            <option value="manual">Other manual payment</option>
+          </select></div>
         <div class="field"><label for="f-factories">Number of factories</label>
           <select id="f-factories" name="factories">
             <option value="1">1</option><option value="2-3">2&ndash;3</option><option value="4-10">4&ndash;10</option><option value="10+">More than 10</option>
@@ -1241,13 +1817,12 @@ function buyBody(plan, billing, env, mode = 'card') {
         ? 'No card needed. We invoice by bank transfer in USD, TND or EUR on net-15 terms. Questions first? <a href="mailto:' + mail + '?subject=SIAS%20quote%20question">Email us</a>.'
         : 'Payments handled by Stripe (international) or ClicToPay / SMT (Tunisia) &mdash; card details never touch our servers. Prefer an invoice? <a href="mailto:' + mail + '?subject=SIAS%20invoice%20request">Email us</a>.'}</p>
     </form>
-${quote ? `
     <div class="card okquote" id="quote-ok" hidden style="text-align:center;padding:38px 30px;margin-top:6px">
       <div style="font-size:44px;color:var(--ok,#34D399)">&#10003;</div>
-      <h3 style="margin:14px 0 8px">Quote request received</h3>
-      <p class="mut" id="qk-line" style="max-width:34em;margin:0 auto 24px">Your tailored quote lands in your inbox within 1 business day.</p>
+      <h3 style="margin:14px 0 8px">Order under review</h3>
+      <p class="mut" id="qk-line" style="max-width:34em;margin:0 auto 24px">Your SIAS tenant code is reserved. We will email you when the order is confirmed.</p>
       <a class="btn btn-amber" id="qk-chat" href="/copilot">Chat with Kubix while you wait &rarr;</a>
-    </div>` : ''}
+    </div>
   </div>
 
   <div class="card sumcard">
@@ -1312,7 +1887,10 @@ function render() {
 }
 function submitIntake(ev) {
   ev.preventDefault();
-  var isQuote = MODE === 'quote';
+  // Manual-approval sales: every submission is an ORDER (no card rails).
+  // -> POST /api/order, which records the order in Supabase and fires the
+  //    'order received + payment instructions' email via n8n WF5. The founder
+  //    then uses Accept or Paid in the /admin Orders dashboard.
   var btn = document.getElementById('paybtn');
   var err = document.getElementById('err');
   err.style.display = 'none';
@@ -1327,27 +1905,28 @@ function submitIntake(ev) {
     notes: document.getElementById('f-notes').value,
     plan: state.plan,
     billing: state.billing,
+    phone: (document.getElementById('f-phone') || {}).value || '',
+    currency: state.currency || 'USD',
+    pmName: document.getElementById('f-pm-name').value,
+    pmEmail: document.getElementById('f-pm-email').value,
+    supervisorName: document.getElementById('f-supervisor-name').value,
+    supervisorEmail: document.getElementById('f-supervisor-email').value,
+    paymentMethod: document.getElementById('f-payment-method').value,
   };
-  if (isQuote) {
-    body.phone = (document.getElementById('f-phone') || {}).value || '';
-    body.currency = state.currency;
-  } else {
-    body.method = state.method;
-  }
-  fetch(isQuote ? '/api/quote' : '/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  fetch('/api/order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
-      if (!isQuote && d.ok && d.url) { window.location.href = d.url; return; }
-      if (isQuote && d.ok) {
+      if (d.ok) {
         document.getElementById('intake').hidden = true;
         var ok = document.getElementById('quote-ok');
         ok.hidden = false;
+        if (d.warning) window.alert(d.warning);
         if (d.tenantCode) {
           document.getElementById('qk-line').textContent =
-            'Your tailored quote for instance ' + d.tenantCode + ' lands in your inbox within 1 business day.';
+            'Order received — your instance ' + d.tenantCode + ' is reserved and under review. We will contact you as soon as it is accepted.';
           var chat = document.getElementById('qk-chat');
           chat.href = '/copilot?tenant=' + encodeURIComponent(d.tenantCode) +
-            '&company=' + encodeURIComponent(body.company) + '&name=' + encodeURIComponent(body.name);
+            '&company=' + encodeURIComponent(body.company) + '&name=' + encodeURIComponent(body.name) + '&plan=' + encodeURIComponent(body.plan);
         }
         ok.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
@@ -1389,7 +1968,7 @@ function successBody(env) {
   <p class="mut" id="ok-line">Your dedicated SIAS instance is being provisioned.</p>
   <div class="nextsteps">
     <div class="card"><div class="n">1</div><div><b>Your Stripe receipt</b><br><span class="mut" style="font-size:14px">Already on its way to your inbox.</span></div></div>
-    <div class="card"><div class="n">2</div><div><b>Activation email &mdash; within 1 business day</b><br><span class="mut" style="font-size:14px">A one-time link to claim your Owner console: you set your password and MFA. We never send passwords by email.</span></div></div>
+    <div class="card"><div class="n">2</div><div><b>Two activation emails &mdash; within 1 business day</b><br><span class="mut" style="font-size:14px">You receive separate one-time links for the Production Manager and Supervisor accounts. You set each password and MFA; we never send passwords by email.</span></div></div>
     <div class="card"><div class="n">3</div><div><b>Kubix Copilot introduces itself</b><br><span class="mut" style="font-size:14px" id="ok-kubix">Your named AI engineer will guide activation, team invites and your first integration.</span></div></div>
   </div>
   <a class="btn btn-amber" id="ok-chat" style="display:none;margin-top:30px" href="/copilot">Chat with Kubix now &rarr;</a>
@@ -1767,6 +2346,185 @@ const COPILOT_CLIENT_JS = `
   });
 })();
 `;
+
+function adminLoginPage() {
+  return page(
+    'Orders Dashboard — SIAS',
+    'Founder orders dashboard for SIAS',
+    `
+<header class="nav"><div class="wrap">
+  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+</div></header>
+<main class="wrap" style="max-width:420px;padding:120px 24px">
+  <div class="card" style="padding:40px 32px">
+    <h1 style="font-size:24px;margin-bottom:8px">Orders Dashboard</h1>
+    <p style="color:var(--ink3);margin-bottom:32px;font-size:15px">Enter your password to manage orders</p>
+    <form id="loginForm" style="display:flex;flex-direction:column;gap:16px">
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="Enter password" style="font-size:16px">
+      </div>
+      <button type="submit" class="btn btn-amber" style="width:100%;margin-top:12px">Sign In</button>
+    </form>
+    <div id="error" class="err" style="margin-top:16px"></div>
+  </div>
+</main>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const password = new FormData(e.target).get('password');
+  const res = await fetch('/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+  const data = await res.json();
+  if (data.ok) {
+    window.location.href = '/admin';
+  } else {
+    document.getElementById('error').textContent = data.error || 'Login failed';
+    document.getElementById('error').style.display = 'block';
+  }
+});
+</script>
+    `,
+  );
+}
+
+function ordersDashboard(orders, env, origin) {
+  const statusLabel = {
+    awaiting_payment: 'Legacy review',
+    under_review: 'Under review',
+    confirmed: 'Confirmed',
+    provisioning_queued: 'Queued',
+    provisioning: 'Provisioning',
+    active: 'Active',
+    provisioning_failed: 'Needs retry',
+    rejected: 'Rejected',
+  };
+
+  const actionButtons = (order) => {
+    const id = escapeHtml(order.id);
+    if (order.status === 'under_review' || order.status === 'awaiting_payment') {
+      return `
+        <button class="btn btn-sm btn-ghost" data-order-action="accept" data-order-id="${id}">Accept</button>
+        <button class="btn btn-sm btn-amber" data-order-action="paid" data-order-id="${id}">Paid</button>`;
+    }
+    if (order.status === 'confirmed') {
+      return `
+        <button class="btn btn-sm btn-ghost" data-order-action="accept" data-order-id="${id}">Resend email</button>
+        <button class="btn btn-sm btn-amber" data-order-action="paid" data-order-id="${id}">Paid</button>`;
+    }
+    if (order.status === 'provisioning_failed') {
+      return `<button class="btn btn-sm btn-amber" data-order-action="paid" data-order-id="${id}">Retry provisioning</button>`;
+    }
+    return '<span class="dim">—</span>';
+  };
+
+  const renderOrder = (order) => {
+    const price = PLAN_CATALOG[order.plan];
+    const amountDisplay = order.amount_display
+      || (price ? `$${listPrice(order.plan, order.billing, 'USD')}` : 'custom');
+    const parsedDate = new Date(order.created_at);
+    const createdAt = Number.isNaN(parsedDate.getTime()) ? '—' : parsedDate.toLocaleString();
+    const fullPackage = order.full_package || order.plan === 'growth';
+    return `
+    <tr>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px">
+        <div style="font-weight:600;color:var(--ink)">${escapeHtml(order.company)}</div>
+        <div style="font-size:12px;color:var(--ink3);margin-top:2px">${escapeHtml(order.contact_name)} • ${escapeHtml(order.email)}</div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:4px">PM: ${escapeHtml(order.pm_email || order.email)} · Supervisor: ${escapeHtml(order.supervisor_email || 'missing')}</div>
+      </td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink2)">${escapeHtml(order.tenant_code)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink2)">${escapeHtml(price?.name || order.plan)}${fullPackage ? '<div style="font-size:11px;color:var(--cyan)">Adaptive AI</div>' : ''}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink2)">${escapeHtml(amountDisplay)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink3)">${escapeHtml(order.payment_method || 'bank_transfer')}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:12px">${escapeHtml(createdAt)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line)">
+        <span class="chip ${order.status === 'provisioning_failed' ? 'crit' : order.status === 'active' ? 'ok' : 'ai'}" style="font-size:11px;margin:0">${escapeHtml(statusLabel[order.status] || order.status)}</span>
+        ${order.provisioning_error ? `<div style="max-width:220px;margin-top:5px;font-size:11px;color:var(--red)">${escapeHtml(order.provisioning_error)}</div>` : ''}
+      </td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap">
+        ${actionButtons(order)}
+      </td>
+    </tr>`;
+  };
+
+  const renderSection = (title, sectionOrders, color) => sectionOrders.length ? `
+    <section style="margin-bottom:36px">
+      <h2 style="font-size:16px;font-weight:700;margin-bottom:16px;color:${color}">${escapeHtml(title)} (${sectionOrders.length})</h2>
+      <div class="card" style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:1050px">
+          <thead><tr style="background:rgba(148,163,184,.06)">
+            ${['Company & seats', 'Tenant', 'Plan', 'Amount', 'Payment', 'Created', 'Status', 'Action'].map((heading) => `<th style="padding:12px 16px;text-align:${heading === 'Action' ? 'right' : 'left'};font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">${heading}</th>`).join('')}
+          </tr></thead>
+          <tbody>${sectionOrders.map(renderOrder).join('')}</tbody>
+        </table>
+      </div>
+    </section>` : '';
+
+  const review = orders.filter((order) => ['awaiting_payment', 'under_review'].includes(order.status));
+  const confirmed = orders.filter((order) => order.status === 'confirmed');
+  const provisioning = orders.filter((order) => ['provisioning_queued', 'provisioning'].includes(order.status));
+  const attention = orders.filter((order) => order.status === 'provisioning_failed');
+  const active = orders.filter((order) => order.status === 'active');
+  const other = orders.filter((order) => ![
+    'awaiting_payment', 'under_review', 'confirmed', 'provisioning_queued',
+    'provisioning', 'provisioning_failed', 'active',
+  ].includes(order.status));
+
+  return page(
+    'Orders Dashboard — SIAS',
+    'Manage customer orders and approvals',
+    `
+<header class="nav"><div class="wrap">
+  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <nav class="navlinks"><button id="logout" class="btn btn-ghost btn-sm">Logout</button></nav>
+</div></header>
+<main class="wrap" style="padding:80px 24px 60px">
+  <div style="margin-bottom:48px">
+    <h1 style="font-size:28px;margin-bottom:8px">Orders</h1>
+    <p style="color:var(--ink2);font-size:15px"><strong>Accept</strong> confirms the order and emails the buyer. <strong>Paid</strong> immediately launches the dedicated SIAS instance, PM account, supervisor account, and delivery emails.</p>
+  </div>
+
+  ${renderSection('Under review', review, 'var(--amber2)')}
+  ${renderSection('Confirmed — awaiting payment', confirmed, 'var(--cyan)')}
+  ${renderSection('Provisioning', provisioning, 'var(--cyan)')}
+  ${renderSection('Needs attention', attention, 'var(--red)')}
+  ${renderSection('Active instances', active, 'var(--green)')}
+  ${renderSection('Other', other, 'var(--ink3)')}
+  ${orders.length === 0 ? '<div class="card" style="padding:32px;text-align:center;color:var(--ink2)">No orders yet.</div>' : ''}
+</main>
+<script>
+async function runOrderAction(btn) {
+  const action = btn.getAttribute('data-order-action');
+  const orderId = btn.getAttribute('data-order-id');
+  if (action === 'paid' && !window.confirm('Confirm payment and launch this buyer\\'s dedicated SIAS instance now?')) return;
+  btn.disabled = true;
+  const previous = btn.textContent;
+  btn.textContent = action === 'paid' ? 'Launching…' : 'Sending…';
+  const res = await fetch('/admin/' + action, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-SIAS-Admin-Action': '1' },
+    body: JSON.stringify({ orderId: orderId })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    if (data.warning) window.alert(data.warning);
+    window.location.reload();
+  } else {
+    window.alert('Error: ' + (data.error || 'action failed'));
+    btn.disabled = false;
+    btn.textContent = previous;
+  }
+}
+document.querySelectorAll('[data-order-action]').forEach(function (button) {
+  button.addEventListener('click', function () { runOrderAction(button); });
+});
+document.getElementById('logout').addEventListener('click', async function () {
+  await fetch('/admin/logout', { method: 'POST' });
+  window.location.href = '/';
+});
+</script>
+    `,
+  );
+}
 
 const BASE_CSS = `
 :root{

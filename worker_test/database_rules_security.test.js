@@ -43,10 +43,12 @@ describe('security database rules', () => {
     expect(bugs.client.$bugId['.write']).toBe('auth != null');
   });
 
-  test('ai_forecast model is world-readable for inference and privileged-write', () => {
+  test('ai_forecast is app-readable and PM-write only with the paid AI entitlement', () => {
     const forecast = rules.ai_forecast;
     expect(forecast['.read']).toBe('auth != null');
     expect(forecast['.write']).toContain("'superadmin'");
+    expect(forecast['.write']).toContain("child('role').val() === 'admin'");
+    expect(forecast['.write']).toContain("child('aiTraining').val() === true");
   });
 
   test('ai_agents fleet controls are app-readable but superadmin/service-token write only', () => {
@@ -159,15 +161,18 @@ describe('security database rules', () => {
     expect(rules.pm_actions.$userId.$actionId['.write']).toContain('!data.exists()');
   });
 
-  test('configurable alert-type registry is app-readable, superadmin-write only', () => {
+  test('configurable alert types allow adaptive PM writes only for entitled tenants', () => {
     const node = rules.app_config.alertTypes;
-    // Every authed client (PM dashboards, supervisors, the forecaster) reads
-    // the vocabulary; only the SuperAdmin console may change it.
+    // Every authed client reads the vocabulary. SuperAdmin controls it; a PM
+    // can add inferred types only for the paid adaptive schema entitlement.
     expect(node['.read']).toBe('auth != null');
     expect(node['.write']).toContain("'superadmin'");
     expect(node['.write']).toContain("'SuperAdmin'");
-    // Plain app-admin role must not be able to rewrite the type set.
-    expect(node['.write']).not.toContain("child('role').val() === 'admin'");
+    expect(node['.write']).toContain("child('role').val() === 'admin'");
+    expect(node['.write']).toContain("child('adaptiveAlertSchema').val() === true");
+    expect(rules.app_config.entitlements['.write']).not.toContain(
+      "child('role').val() === 'admin'",
+    );
     expect(node['.indexOn']).toEqual(['order']);
     // A type entry validates its identifying fields.
     expect(node.$code.code['.validate']).toContain('isString');

@@ -349,7 +349,7 @@
 
     "ai_forecast": {
       ".read": "auth != null",
-      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || root.child('users').child(auth.uid).child('role').val() === 'admin' || auth.token.role === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin' || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('app_config').child('entitlements').child('aiTraining').val() === true))",
       "model": {
         "weights": { ".validate": "newData.isString()" },
         "algo": { ".validate": "!newData.exists() || newData.isString()" },
@@ -450,9 +450,15 @@
     },
 
     "app_config": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')",
+      "entitlements": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin')"
+      },
       "alertTypes": {
         ".read": "auth != null",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin')",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'superadmin' || root.child('users').child(auth.uid).child('role').val() === 'SuperAdmin' || auth.token.role === 'admin' || (root.child('users').child(auth.uid).child('role').val() === 'admin' && root.child('app_config').child('entitlements').child('adaptiveAlertSchema').val() === true))",
         ".indexOn": ["order"],
         "$code": {
           "code": { ".validate": "newData.isString() && newData.val().length <= 64" },

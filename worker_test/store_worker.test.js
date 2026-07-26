@@ -8,6 +8,7 @@ import {
   tenantInitials,
   makeTenantCode,
   validateIntake,
+  validateOrderIntake,
   checkoutParams,
   parseStripeSigHeader,
   timingSafeEqualHex,
@@ -23,6 +24,17 @@ import {
   clipText,
   validateChatRequest,
   buildForwardPayload,
+  orderPlacedPayload,
+  orderConfirmedPayload,
+  paymentPaidPayload,
+  paymentApprovedPayload,
+  signSessionCookie,
+  verifySessionCookie,
+  timingSafeEqualText,
+  supabaseInsertOrderBody,
+  supabaseTransitionOrder,
+  dispatchPaidProvisioning,
+  escapeHtml,
 } from '../cloudflare_store_worker.js';
 
 const intake = (over = {}) => ({
@@ -34,6 +46,11 @@ const intake = (over = {}) => ({
   plan: 'growth',
   billing: 'annual',
   notes: 'Siemens S7 estate',
+  pmName: 'Sonia Trabelsi',
+  pmEmail: 'production@nagati.example',
+  supervisorName: 'Karim Aloui',
+  supervisorEmail: 'supervisor@nagati.example',
+  paymentMethod: 'bank_transfer',
   ...over,
 });
 
@@ -420,5 +437,197 @@ describe('buildForwardPayload', () => {
       message: 'hi', sessionId: 's1', tenantCode: 't', company: 'c', userName: 'u', plan: 'p',
     };
     expect(buildForwardPayload(value)).toEqual(value);
+  });
+});
+
+describe('manual-approval order intake', () => {
+  test('accepts a complete order intake', () => {
+    const v = validateOrderIntake(intake({ plan: 'starter' }));
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+    expect(v.clean.email).toBe('a.bensalah@nagati.example');
+    expect(v.clean.plan).toBe('starter');
+  });
+
+  test('rejects missing required fields', () => {
+    expect(validateOrderIntake(intake({ name: '' })).ok).toBe(false);
+    expect(validateOrderIntake(intake({ email: 'invalid' })).ok).toBe(false);
+    expect(validateOrderIntake(intake({ company: 'X' })).ok).toBe(false);
+    expect(validateOrderIntake(intake({ plan: 'platinum' })).ok).toBe(false);
+    expect(validateOrderIntake(intake({ billing: 'weekly' })).ok).toBe(false);
+  });
+
+  test('accepts optional phone and notes', () => {
+    const v = validateOrderIntake(intake({ phone: '+216 21 234 567', notes: 'Custom integration needed' }));
+    expect(v.ok).toBe(true);
+    expect(v.clean.phone).toBe('+216 21 234 567');
+    expect(v.clean.notes).toBe('Custom integration needed');
+  });
+
+  test('requires exactly one PM and one distinct supervisor account', () => {
+    const buyerAsPm = validateOrderIntake(intake({ pmName: '', pmEmail: '' }));
+    expect(buyerAsPm.ok).toBe(true);
+    expect(buyerAsPm.clean.pmEmail).toBe('a.bensalah@nagati.example');
+    expect(validateOrderIntake(intake({ supervisorName: '' })).ok).toBe(false);
+    expect(validateOrderIntake(intake({ supervisorEmail: 'bad' })).ok).toBe(false);
+    expect(validateOrderIntake(intake({ supervisorEmail: 'production@nagati.example' })).ok).toBe(false);
+  });
+
+  test('orderPlacedPayload shapes the correct n8n event', () => {
+    const v = validateOrderIntake(intake({ plan: 'starter' }));
+    const payload = orderPlacedPayload(v.clean, 'NSW#7K2F');
+    expect(payload.type).toBe('order_placed');
+    expect(payload.tenantCode).toBe('NSW#7K2F');
+    expect(payload.planName).toBe('Starter');
+    expect(payload.billing).toBe('annual');
+    expect(payload.company).toBe('Nagati Steel Works');
+  });
+
+  test('confirmation and paid payloads are stable, distinct n8n events', () => {
+    const order = {
+      id: 1,
+      tenant_code: 'NSW#7K2F',
+      company: 'Nagati',
+      contact_name: 'Amine',
+      email: 'a@n.com',
+      plan: 'growth',
+      billing: 'annual',
+      country: 'Tunisia',
+      factories: '2-3',
+      phone: '+216',
+      notes: 'test',
+    };
+    const confirmed = orderConfirmedPayload(order);
+    const paid = paymentPaidPayload(order);
+    expect(confirmed.type).toBe('order_confirmed');
+    expect(paid.type).toBe('payment_paid');
+    expect(confirmed.eventId).not.toBe(paid.eventId);
+    expect(paid.tenantCode).toBe('NSW#7K2F');
+    expect(paid.planName).toBe('Growth');
+    expect(paymentApprovedPayload(order).type).toBe('payment_paid');
+  });
+
+  test('supabaseInsertOrderBody formats order for Supabase table', () => {
+    const v = validateOrderIntake(intake({ plan: 'starter' }));
+    const body = supabaseInsertOrderBody(v.clean, 'NSW#7K2F');
+    expect(body.tenant_code).toBe('NSW#7K2F');
+    expect(body.status).toBe('under_review');
+    expect(body.company).toBe('Nagati Steel Works');
+    expect(body.plan).toBe('starter');
+    expect(body.pm_email).toBe('production@nagati.example');
+    expect(body.supervisor_email).toBe('supervisor@nagati.example');
+    expect(body.full_package).toBe(false);
+  });
+});
+
+describe('session cookie signing and verification', () => {
+  test('signs and verifies a valid session cookie', async () => {
+    const secret = 'test-secret-key-12345';
+    const token = await signSessionCookie(secret);
+    expect(typeof token).toBe('string');
+    expect(token.split('.')).toHaveLength(2);
+    const valid = await verifySessionCookie(token, secret);
+    expect(valid).toBe(true);
+  });
+
+  test('rejects an invalid token', async () => {
+    const secret = 'test-secret-key-12345';
+    const valid = await verifySessionCookie('invalid-token-here', secret);
+    expect(valid).toBe(false);
+  });
+
+  test('rejects a token signed with a different secret', async () => {
+    const secret1 = 'secret-one';
+    const secret2 = 'secret-two';
+    const token = await signSessionCookie(secret1);
+    const valid = await verifySessionCookie(token, secret2);
+    expect(valid).toBe(false);
+  });
+
+  test('accepts a token inside its eight-hour lifetime', async () => {
+    const secret = 'test-secret-key-12345';
+    const nowMs = Date.now();
+    const token = await signSessionCookie(secret, nowMs - 60_000);
+    const valid = await verifySessionCookie(token, secret, nowMs);
+    expect(valid).toBe(true);
+  });
+
+  test('rejects expired tokens', async () => {
+    const secret = 'test-secret-key-12345';
+    const nowMs = Date.now();
+    const token = await signSessionCookie(secret, nowMs - 9 * 60 * 60 * 1000);
+    const valid = await verifySessionCookie(token, secret, nowMs);
+    expect(valid).toBe(false);
+  });
+
+  test('uses constant-time normalized text comparison', async () => {
+    await expect(timingSafeEqualText('same', 'same')).resolves.toBe(true);
+    await expect(timingSafeEqualText('same', 'different')).resolves.toBe(false);
+  });
+});
+
+describe('admin dashboard output safety', () => {
+  test('escapes untrusted order fields before rendering', () => {
+    expect(escapeHtml('<img src=x onerror=alert(1)>')).toBe('&lt;img src=x onerror=alert(1)&gt;');
+    expect(escapeHtml('"quoted" & company')).toBe('&quot;quoted&quot; &amp; company');
+  });
+});
+
+describe('durable paid-order dispatch', () => {
+  test('uses a compare-and-set Supabase transition', async () => {
+    const previousFetch = global.fetch;
+    const calls = [];
+    global.fetch = async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ id: 42, status: 'confirmed' }],
+      };
+    };
+    try {
+      const result = await supabaseTransitionOrder(
+        'https://db.example',
+        'service-key',
+        '42',
+        ['under_review'],
+        'confirmed',
+        { confirmed_at: '2026-07-26T00:00:00.000Z' },
+      );
+      expect(result.ok).toBe(true);
+      expect(calls[0].url).toContain('id=eq.42');
+      expect(calls[0].url).toContain('status=in.(under_review)');
+      expect(calls[0].init.headers.Prefer).toBe('return=representation');
+    } finally {
+      global.fetch = previousFetch;
+    }
+  });
+
+  test('repository dispatch contains identifiers only, never buyer PII', async () => {
+    const previousFetch = global.fetch;
+    let sent;
+    global.fetch = async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return { ok: true, status: 204 };
+    };
+    try {
+      const result = await dispatchPaidProvisioning({
+        PROVISIONING_GITHUB_REPOSITORY: 'kubix/sias',
+        PROVISIONING_GITHUB_TOKEN: 'token',
+      }, {
+        id: 42,
+        tenant_code: 'NSW#7K2F',
+        email: 'buyer@example.com',
+        pm_email: 'pm@example.com',
+      });
+      expect(result.ok).toBe(true);
+      expect(sent).toEqual({
+        event_type: 'sias_order_paid',
+        client_payload: { orderId: '42', tenantCode: 'NSW#7K2F' },
+      });
+      expect(JSON.stringify(sent)).not.toContain('@');
+    } finally {
+      global.fetch = previousFetch;
+    }
   });
 });
