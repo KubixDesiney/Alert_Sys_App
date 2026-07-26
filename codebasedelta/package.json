@@ -19,5 +19,8 @@
   "devDependencies": {
     "firebase-functions-test": "^3.4.1"
   },
+  "overrides": {
+    "websocket-driver": "^0.7.5"
+  },
   "private": true
 }

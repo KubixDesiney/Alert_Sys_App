@@ -26,7 +26,7 @@ jobs:
         run: flutter pub get
 
       - name: Build web preview
-        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_WORKER_SHARED_SECRET=${{ secrets.WORKER_SHARED_SECRET }} --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev --dart-define=ALERTSYS_GITHUB_WORKER_URL=https://alertsys-guardian-proxy.pages.dev/github-proxy
+        run: flutter build web --release --no-wasm-dry-run --dart-define=ALERTSYS_AI_WORKER_URL=https://alert-notifier.aziz-nagati01.workers.dev --dart-define=ALERTSYS_NOTIFY_WORKER_URL=https://alertsys.aziz-nagati01.workers.dev --dart-define=ALERTSYS_GITHUB_WORKER_URL=https://alertsys-guardian-proxy.pages.dev/github-proxy
 
       - name: Deploy Firebase Hosting preview
         if: ${{ env.FIREBASE_SERVICE_ACCOUNT_PRESENT == 'true' }}
