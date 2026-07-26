@@ -1,38 +1,34 @@
 // =============================================================================
-// SIAS Store Worker — B2B storefront, Stripe checkout, purchase intake webhook
+// SIAS Store Worker — B2B storefront and controlled provisioning entry point
 // =============================================================================
-// The commercial front door of SIAS. Serves the marketing/landing site, runs
-// Stripe Checkout for self-serve purchases, and forwards verified purchase
-// events to the n8n "purchase intake" workflow (WF1) which provisions the
-// customer's dedicated instance, creates their Kubix Copilot agent, and sends
-// the Brevo activation email.
+// The commercial front door of SIAS. The active B2B flow records private orders
+// in Supabase, lets the founder Accept or mark them Paid, and dispatches a
+// fail-closed GitHub provisioning job after payment. Legacy card/quote routes
+// remain available behind SALES_MODE for compatibility.
 //
 // Routes:
 //   GET  /                    landing page (product, pricing, FAQ)
 //   GET  /buy?plan=&billing=  intake form + order summary
-//   POST /api/checkout        validate intake -> create Stripe Checkout Session
+//   POST /api/order           create an under-review B2B order
 //   GET  /api/session?id=     minimal session status for the success page
-//   GET  /success             post-payment confirmation (fetches /api/session)
-//   GET  /cancel              redirect back to /#pricing
-//   POST /api/stripe-webhook  signature-verified Stripe events -> n8n WF1
+//   GET  /admin               private Accept/Paid orders dashboard
+//   POST /admin/accept        under_review -> confirmed
+//   POST /admin/paid          confirmed/review -> automatic provisioning
 //   GET  /config              status probe (never exposes secret values)
 //
 // Secrets (wrangler secret put --config wrangler.store.toml):
-//   STRIPE_SECRET_KEY       sk_live_/sk_test_ key used server-side only
-//   STRIPE_WEBHOOK_SECRET   whsec_ signing secret for /api/stripe-webhook
-//   N8N_INTAKE_WEBHOOK_URL  n8n WF1 webhook that receives purchase events
-//   N8N_WEBHOOK_AUTH        optional bearer token sent to the n8n webhook
-// Vars: SALES_EMAIL, STORE_RATE_LIMIT
-//
-// Design notes:
-//   - No customer data is stored in this worker; Stripe session metadata is the
-//     source of truth until n8n persists the record.
-//   - The tenant code (e.g. "NSW#7K2F") is generated at checkout time and rides
-//     Stripe metadata end-to-end, so the buyer's Kubix Copilot identity is
-//     stable from the very first receipt.
-//   - Webhook forward failures return 500 so Stripe retries with backoff; n8n
-//     must dedupe on eventId.
+//   SUPABASE_URL / SUPABASE_SERVICE_KEY
+//   FOUNDER_PASSWORD / SESSION_SECRET
+//   N8N_ORDER_WEBHOOK_URL / N8N_CONFIRMED_WEBHOOK_URL / N8N_PAID_WEBHOOK_URL
+//   PROVISIONING_GITHUB_TOKEN / PROVISIONING_GITHUB_REPOSITORY
 // =============================================================================
+
+import { PLAN_CATALOG, planPrice, TND_CURRENCY_CODE, tndMinorUnits, listPrice } from './pricing.mjs';
+import { LEGAL_DOCS } from './store_legal_content.js';
+
+// Prices live in pricing.mjs (shared with tool/generate_quote.mjs); re-exported
+// here so worker tests and any other importer keep a single entry point.
+export { PLAN_CATALOG, planPrice, TND_CURRENCY_CODE, tndMinorUnits, listPrice };
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -40,55 +36,20 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// --- Plan catalog (single source of truth; amounts in USD cents) -------------
-export const PLAN_CATALOG = Object.freeze({
-  starter: Object.freeze({
-    id: 'starter',
-    name: 'Starter',
-    tagline: 'One plant, the full platform',
-    monthly: 59000, // $590/mo
-    annual: 588000, // $5,880/yr == $490/mo
-    tndMonthly: 1790, // TND, informational
-    tndAnnual: 17880, // TND, ClicToPay annual prepay
-    factories: '1 factory',
-    seats: 'Up to 10 supervisor seats',
-    features: Object.freeze([
-      'Dedicated isolated instance',
-      'Real-time alert lifecycle + mobile apps',
-      'AI dispatch & escalations',
-      'Voice claiming (lock-screen)',
-      'Kubix Copilot included',
-      'Email support',
-    ]),
-  }),
-  growth: Object.freeze({
-    id: 'growth',
-    name: 'Growth',
-    tagline: 'Multi-site operations on autopilot',
-    monthly: 119000, // $1,190/mo
-    annual: 1188000, // $11,880/yr == $990/mo
-    tndMonthly: 3590, // TND, informational
-    tndAnnual: 35880, // TND, ClicToPay annual prepay
-    factories: 'Up to 3 factories',
-    seats: 'Up to 30 supervisor seats',
-    features: Object.freeze([
-      'Everything in Starter',
-      'SCADA / PLC / MQTT / historian connectors',
-      'AI failure forecaster + morning briefings',
-      'AI shift commander + handovers',
-      'Hardware lab (ESP32/Arduino bindings)',
-      'Priority support',
-    ]),
-  }),
-});
+// --- Sales mode ----------------------------------------------------------------
+// "quote" (default): the storefront is invoice-led — /buy collects the same
+// intake but submits a quote request; card rails (Stripe/ClicToPay) stay
+// deployed-but-parked. "card" restores the original self-serve checkout.
+export function salesMode(env) {
+  return String(env?.SALES_MODE || 'quote').toLowerCase() === 'card' ? 'card' : 'quote';
+}
 
-export function planPrice(plan, billing) {
-  const def = PLAN_CATALOG[plan];
-  if (!def) return null;
-  if (billing === 'annual') {
-    return { unitAmount: def.annual, interval: 'year', perMonth: def.annual / 1200 };
-  }
-  return { unitAmount: def.monthly, interval: 'month', perMonth: def.monthly / 100 };
+// --- Legal publishing gate -------------------------------------------------------
+// The /legal routes serve the embedded legal documents ONLY once counsel has
+// signed off and LEGAL_PUBLISH is flipped to "true" — publishing becomes a
+// one-var change instead of a code change. Until then: 404, no footer links.
+export function legalPublishEnabled(env) {
+  return String(env?.LEGAL_PUBLISH || '') === 'true';
 }
 
 // --- ClicToPay (SMT, Tunisia) ---------------------------------------------------
@@ -98,11 +59,6 @@ export function planPrice(plan, billing) {
 // CLICTOPAY_AMOUNT_EXPONENT because gateway contracts vary; verify with a small
 // test payment before go-live). ClicToPay has no native subscriptions, so it is
 // offered as annual prepay only; monthly billing requires Stripe.
-export const TND_CURRENCY_CODE = '788';
-
-export function tndMinorUnits(dinars, exponent = 3) {
-  return Math.round(Number(dinars) * Math.pow(10, Number(exponent)));
-}
 
 export function clictopayRegisterParams(clean, tenantCode, origin, env = {}, nowMs = Date.now()) {
   const def = PLAN_CATALOG[clean.plan];
@@ -184,7 +140,13 @@ export function tenantInitials(company) {
   return ini || 'SIAS';
 }
 
-export function makeTenantCode(company, rand = Math.random) {
+function secureRandom() {
+  const value = new Uint32Array(1);
+  crypto.getRandomValues(value);
+  return value[0] / 0x1_0000_0000;
+}
+
+export function makeTenantCode(company, rand = secureRandom) {
   let code = '';
   for (let i = 0; i < 4; i++) {
     code += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length) % CODE_ALPHABET.length];
@@ -219,6 +181,54 @@ export function validateIntake(raw) {
   if (clean.method === 'clictopay') clean.billing = 'annual'; // no recurring on ClicToPay
   if (!FACTORY_BUCKETS.includes(clean.factories)) clean.factories = '1';
   return { ok: errors.length === 0, errors, clean };
+}
+
+// --- Quote intake (invoice-led sales mode) --------------------------------------
+// Same shape as the checkout intake plus an optional phone and a preferred
+// currency; no payment method — nothing here ever collects money.
+const QUOTE_CURRENCIES = ['USD', 'TND', 'EUR'];
+
+export function validateQuoteIntake(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const base = validateIntake({ ...src, method: 'stripe' }); // method is checkout-only
+  const clean = { ...base.clean };
+  delete clean.method;
+  clean.billing = ['monthly', 'annual'].includes(clip(src.billing, 8)) ? clip(src.billing, 8) : clean.billing;
+  clean.phone = clip(src.phone, 32);
+  const cur = clip(src.currency, 3).toUpperCase();
+  clean.currency = QUOTE_CURRENCIES.includes(cur) ? cur : 'USD';
+  return { ok: base.errors.length === 0, errors: base.errors, clean };
+}
+
+/** Shapes the quote_requested event forwarded to n8n WF1. The customer block is
+ *  identical to purchase_completed's so WF1 can convert a quote into a customer
+ *  record with the same downstream mapping. n8n dedupes on eventId. */
+export function quoteEventPayload(clean, tenantCode, eventId, nowMs = Date.now()) {
+  const price = planPrice(clean.plan, clean.billing);
+  return {
+    source: 'sias-store',
+    eventId,
+    type: 'quote_requested',
+    occurredAt: new Date(nowMs).toISOString(),
+    tenantCode,
+    plan: clean.plan,
+    billing: clean.billing,
+    requestedCurrency: clean.currency,
+    // Indicative list prices only — the actual quote is prepared by sales.
+    listPrice: {
+      usdCents: price ? price.unitAmount : null,
+      tnd: listPrice(clean.plan, clean.billing, 'TND'),
+    },
+    customer: {
+      name: clean.name,
+      email: clean.email,
+      company: clean.company,
+      country: clean.country,
+      factories: clean.factories,
+      notes: clean.notes,
+      phone: clean.phone,
+    },
+  };
 }
 
 // --- Stripe Checkout Session params (pure, testable) ---------------------------
@@ -394,6 +404,322 @@ export function buildForwardPayload(value) {
   };
 }
 
+/** Validates a /api/kubix-feedback body: per-reply thumbs up/down verdicts. */
+export function validateFeedbackRequest(body) {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'Invalid request body.' };
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+  if (!sessionId || sessionId.length > MAX_SESSION_ID_LEN || !SESSION_ID_RE.test(sessionId)) {
+    return { ok: false, error: 'sessionId must be 1-80 chars of letters, digits, dot, underscore, or dash.' };
+  }
+  const idx = Number(body.messageIndex);
+  if (!Number.isInteger(idx) || idx < 0 || idx > 999) {
+    return { ok: false, error: 'messageIndex must be an integer between 0 and 999.' };
+  }
+  if (body.verdict !== 'up' && body.verdict !== 'down') {
+    return { ok: false, error: "verdict must be 'up' or 'down'." };
+  }
+  return { ok: true, value: { sessionId, messageIndex: idx, verdict: body.verdict } };
+}
+
+
+// --- Order intake (manual-approval sales mode) ----------------------------------
+// The store records both delivery seats up front so Paid can provision the
+// tenant without a second round trip or operator copy/paste.
+export function validateOrderIntake(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const errors = [];
+  const clean = {
+    name: clip(src.name, 80),
+    email: clip(src.email, 120).toLowerCase(),
+    company: clip(src.company, 80),
+    country: clip(src.country, 56),
+    factories: clip(src.factories, 8),
+    plan: clip(src.plan, 12),
+    billing: clip(src.billing, 8),
+    phone: clip(src.phone, 32),
+    notes: clip(src.notes, 200),
+    pmName: clip(src.pmName || src.name, 80),
+    pmEmail: clip(src.pmEmail || src.email, 120).toLowerCase(),
+    supervisorName: clip(src.supervisorName, 80),
+    supervisorEmail: clip(src.supervisorEmail, 120).toLowerCase(),
+    paymentMethod: clip(src.paymentMethod, 24) || 'bank_transfer',
+  };
+  const validEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
+  if (clean.name.length < 2) errors.push('Enter your full name.');
+  if (!validEmail(clean.email)) errors.push('Enter a valid work email.');
+  if (clean.company.length < 2) errors.push('Enter your company name.');
+  if (!PLAN_CATALOG[clean.plan]) errors.push('Pick a plan.');
+  if (!['monthly', 'annual'].includes(clean.billing)) errors.push('Pick a billing cycle.');
+  if (clean.pmName.length < 2) errors.push('Enter the Production Manager name.');
+  if (!validEmail(clean.pmEmail)) errors.push('Enter a valid Production Manager email.');
+  if (clean.supervisorName.length < 2) errors.push('Enter the supervisor name.');
+  if (!validEmail(clean.supervisorEmail)) errors.push('Enter a valid supervisor email.');
+  if (clean.pmEmail && clean.pmEmail === clean.supervisorEmail) {
+    errors.push('Production Manager and supervisor must use different email addresses.');
+  }
+  if (!['bank_transfer', 'manual'].includes(clean.paymentMethod)) {
+    errors.push('Pick a valid payment method.');
+  }
+  if (!FACTORY_BUCKETS.includes(clean.factories)) clean.factories = '1';
+  return { ok: errors.length === 0, errors, clean };
+}
+
+/** Shapes the order_placed event forwarded to n8n WF5. */
+export function orderPlacedPayload(clean, tenantCode, nowMs = Date.now()) {
+  const def = PLAN_CATALOG[clean.plan];
+  const price = listPrice(clean.plan, clean.billing, 'USD');
+  return {
+    source: 'sias-store',
+    eventId: `ord_${tenantCode.replace('#', '_')}`,
+    type: 'order_placed',
+    occurredAt: new Date(nowMs).toISOString(),
+    tenantCode,
+    company: clean.company,
+    name: clean.name,
+    email: clean.email,
+    planName: def?.name || clean.plan,
+    billing: clean.billing,
+    amountDisplay: price ? `$${price}/month` : 'custom',
+    paymentInstructions: 'Your order is under review. We will contact you after it is accepted.',
+    country: clean.country,
+    factories: clean.factories,
+    phone: clean.phone,
+    notes: clean.notes,
+    paymentMethod: clean.paymentMethod,
+    seats: {
+      productionManager: { name: clean.pmName, email: clean.pmEmail },
+      supervisor: { name: clean.supervisorName, email: clean.supervisorEmail },
+    },
+  };
+}
+
+/** Shapes the order_confirmed event sent when the founder presses Accept. */
+export function orderConfirmedPayload(order, nowMs = Date.now()) {
+  const def = PLAN_CATALOG[order.plan];
+  const price = listPrice(order.plan, order.billing, 'USD');
+  return {
+    source: 'sias-store',
+    eventId: `confirmed_${order.id || order.tenant_code?.replace('#', '_')}`,
+    type: 'order_confirmed',
+    occurredAt: new Date(nowMs).toISOString(),
+    tenantCode: order.tenant_code,
+    company: order.company,
+    name: order.contact_name,
+    email: order.email,
+    planName: def?.name || order.plan,
+    billing: order.billing,
+    amountDisplay: price ? `$${price}/month` : 'custom',
+    country: order.country,
+    factories: order.factories,
+    phone: order.phone,
+    notes: order.notes,
+    paymentMethod: order.payment_method || 'bank_transfer',
+    message: 'Your SIAS order is confirmed. KubixDesiney will contact you shortly to discuss payment details.',
+  };
+}
+
+/** Shapes the payment_paid event sent after a durable provisioning dispatch. */
+export function paymentPaidPayload(order, nowMs = Date.now()) {
+  return {
+    ...orderConfirmedPayload(order, nowMs),
+    eventId: `paid_${order.id || order.tenant_code?.replace('#', '_')}`,
+    type: 'payment_paid',
+    message: 'Payment is confirmed. Your dedicated SIAS instance and two activation emails are being prepared now.',
+  };
+}
+
+// Compatibility export for integrations migrating from the first dashboard.
+export const paymentApprovedPayload = paymentPaidPayload;
+
+// --- Session cookie signing and verification -----------------------------------
+const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
+
+function bytesToBase64Url(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+}
+
+function base64UrlToBytes(value) {
+  const padded = value.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - value.length % 4) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+async function hmacHex(secret, value) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(value));
+  return [...new Uint8Array(sig)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Constant-time text comparison after hashing both values to equal length. */
+export async function timingSafeEqualText(left, right) {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(String(left || ''))),
+    crypto.subtle.digest('SHA-256', enc.encode(String(right || ''))),
+  ]);
+  const av = new Uint8Array(a);
+  const bv = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < av.length; i += 1) diff |= av[i] ^ bv[i];
+  return diff === 0;
+}
+
+/** Signs a short-lived, nonce-bearing admin session token. */
+export async function signSessionCookie(secret, nowMs = Date.now(), ttlMs = ADMIN_SESSION_MS) {
+  const payload = { iat: nowMs, exp: nowMs + ttlMs, nonce: crypto.randomUUID() };
+  const encoded = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+  return `${encoded}.${await hmacHex(secret, encoded)}`;
+}
+
+/** Verifies signature and explicit expiry; no deterministic daily token reuse. */
+export async function verifySessionCookie(token, secret, nowMs = Date.now()) {
+  if (!token || typeof token !== 'string' || !secret) return false;
+  const [encoded, signature, extra] = token.split('.');
+  if (!encoded || !signature || extra) return false;
+  if (!await timingSafeEqualText(signature, await hmacHex(secret, encoded))) return false;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(encoded)));
+    if (!Number.isFinite(payload.iat) || !Number.isFinite(payload.exp)) return false;
+    if (payload.iat > nowMs + 60_000 || payload.exp <= nowMs) return false;
+    if (payload.exp - payload.iat > ADMIN_SESSION_MS) return false;
+    return typeof payload.nonce === 'string' && payload.nonce.length >= 16;
+  } catch {
+    return false;
+  }
+}
+
+// --- Supabase order operations --------------------------------------------------
+export const ORDER_STATUSES = Object.freeze([
+  'awaiting_payment',
+  'under_review',
+  'confirmed',
+  'provisioning_queued',
+  'provisioning',
+  'active',
+  'provisioning_failed',
+  'rejected',
+]);
+
+/** Builds the request body to insert an order into Supabase sias_orders table. */
+export function supabaseInsertOrderBody(clean, tenantCode) {
+  return {
+    tenant_code: tenantCode,
+    company: clean.company,
+    contact_name: clean.name,
+    email: clean.email,
+    phone: clean.phone || null,
+    country: clean.country || null,
+    factories: clean.factories,
+    plan: clean.plan,
+    billing: clean.billing,
+    currency: 'USD',
+    amount_display: PLAN_CATALOG[clean.plan] ? `$${listPrice(clean.plan, clean.billing, 'USD')}` : 'custom',
+    notes: clean.notes || null,
+    pm_name: clean.pmName,
+    pm_email: clean.pmEmail,
+    supervisor_name: clean.supervisorName,
+    supervisor_email: clean.supervisorEmail,
+    payment_method: clean.paymentMethod,
+    full_package: clean.plan === 'growth',
+    status: 'under_review',
+  };
+}
+
+/** Fetches orders from Supabase (for the admin dashboard). */
+export async function supabaseGetOrders(supabaseUrl, supabaseServiceKey) {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/sias_orders?order=created_at.desc&limit=100`,
+    {
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+      },
+    },
+  );
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+export async function supabaseGetOrderById(supabaseUrl, supabaseServiceKey, orderId) {
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/sias_orders?id=eq.${encodeURIComponent(orderId)}&limit=1`,
+    {
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+      },
+    },
+  );
+  if (!res.ok) return null;
+  const rows = await res.json().catch(() => []);
+  return Array.isArray(rows) ? rows[0] || null : null;
+}
+
+/** Compare-and-set transition. Returning zero rows means another request won. */
+export async function supabaseTransitionOrder(
+  supabaseUrl,
+  supabaseServiceKey,
+  orderId,
+  fromStatuses,
+  status,
+  extraPatch = {},
+) {
+  if (!ORDER_STATUSES.includes(status)) return { ok: false, reason: 'invalid_status' };
+  const allowed = fromStatuses.filter((value) => ORDER_STATUSES.includes(value));
+  if (!allowed.length) return { ok: false, reason: 'invalid_transition' };
+  const patch = { ...extraPatch, status, updated_at: new Date().toISOString() };
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/sias_orders?id=eq.${encodeURIComponent(orderId)}&status=in.(${allowed.join(',')})&select=*`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        apikey: supabaseServiceKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(patch),
+    },
+  );
+  if (!res.ok) return { ok: false, reason: 'upstream_error', status: res.status };
+  const rows = await res.json().catch(() => []);
+  if (!Array.isArray(rows) || rows.length !== 1) return { ok: false, reason: 'conflict' };
+  return { ok: true, order: rows[0] };
+}
+
+/** Dispatches a paid order without putting buyer PII in GitHub event metadata. */
+export async function dispatchPaidProvisioning(env, order) {
+  const repository = String(env.PROVISIONING_GITHUB_REPOSITORY || '').trim();
+  const token = String(env.PROVISIONING_GITHUB_TOKEN || '').trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !token) {
+    return { ok: false, error: 'Provisioning dispatcher is not configured.' };
+  }
+  const response = await fetch(`https://api.github.com/repos/${repository}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'sias-store-provisioner',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify({
+      event_type: 'sias_order_paid',
+      client_payload: {
+        orderId: String(order.id),
+        tenantCode: String(order.tenant_code),
+      },
+    }),
+  });
+  return response.ok
+    ? { ok: true }
+    : { ok: false, error: `Provisioning dispatch failed (${response.status}).` };
+}
 
 // --- Tiny in-memory rate limit (per isolate; Stripe is the real gate) -----------
 const _hits = new Map();
@@ -409,21 +735,144 @@ export function rateLimited(key, limit = 10, nowMs = Date.now(), windowMs = 6000
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS },
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...CORS,
+    },
   });
 }
 
-function html(markup, status = 200) {
-  return new Response(markup, {
+export function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+/** Builds the strict CSP for a page response. Scripts run only with the
+ *  per-response nonce (no 'unsafe-inline' for script-src — every inline event
+ *  handler was refactored to addEventListener); styles allow inline + Google
+ *  Fonts; everything else is same-origin. */
+export function contentSecurityPolicy(nonce) {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}'`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    'font-src https://fonts.gstatic.com',
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+}
+
+function html(markup, status = 200, { privatePage = false } = {}) {
+  // One nonce per response, stamped onto every <script> tag we emit. The CSP
+  // header and the body are cached together, so they always agree.
+  const nonce = crypto.randomUUID().replace(/-/g, '');
+  return new Response(markup.replaceAll('<script>', `<script nonce="${nonce}">`), {
     status,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
+      'Cache-Control': privatePage ? 'no-store, private' : 'public, max-age=300',
+      'Content-Security-Policy': contentSecurityPolicy(nonce),
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
       'X-Frame-Options': 'DENY',
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
     },
   });
+}
+
+// --- RFC 9116 security.txt --------------------------------------------------------
+export function securityTxt(env, nowMs = Date.now()) {
+  const expires = new Date(nowMs + 365 * 86400000).toISOString();
+  return [
+    `Contact: mailto:${salesEmail(env)}`,
+    `Expires: ${expires}`,
+    'Preferred-Languages: en, fr',
+    'Canonical: https://sias-store.aziz-nagati01.workers.dev/.well-known/security.txt',
+  ].join('\n') + '\n';
+}
+
+// --- Server-side markdown renderer (legal documents) -----------------------------
+// Escape-first, same philosophy as the copilot chat renderer: the source is
+// trusted repo markdown, but rendering stays injection-safe by construction.
+export function renderMarkdownDoc(raw) {
+  let text = String(raw ?? '').replace(/\r\n/g, '\n').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+  text = text.replace(/```([\s\S]*?)```/g, (_, code) => `\n<pre class="ldoc-code"><code>${code.replace(/^\n/, '')}</code></pre>\n`);
+  text = text.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  text = text.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+  text = text.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+  text = text.replace(/^ *---+ *$/gm, '<hr>');
+  text = text.replace(/(^|\n)((?:&gt; ?.*(?:\n|$))+)/g, (_, pre, block) => {
+    const inner = block.trim().split('\n').map((l) => l.replace(/^&gt; ?/, '')).join('<br>');
+    return `${pre}<blockquote>${inner}</blockquote>\n`;
+  });
+  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/(^|\n)((?:\d+\. .*(?:\n|$))+)/g, (_, pre, block) => {
+    const items = block.trim().split('\n').map((l) => l.replace(/^\d+\.\s*/, ''));
+    return `${pre}<ol>${items.map((i) => `<li>${i}</li>`).join('')}</ol>\n`;
+  });
+  text = text.replace(/(^|\n)((?:[-*] .*(?:\n|$))+)/g, (_, pre, block) => {
+    const items = block.trim().split('\n').map((l) => l.replace(/^[-*]\s*/, ''));
+    return `${pre}<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>\n`;
+  });
+  return text
+    .split(/\n{2,}/)
+    .map((block) => {
+      const b = block.trim();
+      if (!b) return '';
+      if (/^<(h[1-6]|ul|ol|pre|blockquote|hr)/.test(b)) return b;
+      return `<p>${b.replace(/\n/g, '<br>')}</p>`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function legalChrome(inner, env) {
+  const mail = salesEmail(env);
+  return `
+<header class="nav"><div class="wrap">
+  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <nav class="navlinks"><a href="/legal">Legal</a><a href="/#pricing">Pricing</a></nav>
+</div></header>
+<main class="wrap ldocwrap">${inner}</main>
+<footer><div class="wrap">
+  <span><b style="color:var(--ink2)">SIAS</b> &mdash; Smart Industrial Alert System &middot; by KubixDesiney</span>
+  <span><a href="/legal/privacy">Privacy</a> &middot; <a href="/legal/terms">Terms</a> &middot; <a href="mailto:${mail}">${mail}</a></span>
+  <span>&copy; 2026 KubixDesiney. All rights reserved.</span>
+</div></footer>`;
+}
+
+function handleLegal(pathname, env) {
+  if (!legalPublishEnabled(env)) return new Response('Not found', { status: 404 });
+  if (pathname === '/legal' || pathname === '/legal/') {
+    const list = Object.entries(LEGAL_DOCS)
+      .map(([slug, d]) => `<li class="card" style="padding:18px 22px;margin-bottom:12px;list-style:none"><a href="/legal/${slug}" style="font-weight:600">${d.title}</a></li>`)
+      .join('');
+    return html(page(
+      'Legal — SIAS',
+      'Legal documents for SIAS — Smart Industrial Alert System.',
+      legalChrome(`<span class="eyebrow">Legal</span><h1 style="margin:16px 0 24px">Legal documents</h1><ul style="padding:0">${list}</ul>`, env),
+    ));
+  }
+  const doc = LEGAL_DOCS[pathname.replace(/^\/legal\//, '')];
+  if (!doc) return new Response('Not found', { status: 404 });
+  return html(page(
+    `${doc.title} — SIAS`,
+    `${doc.title} for SIAS — Smart Industrial Alert System.`,
+    legalChrome(`<article class="ldoc">${renderMarkdownDoc(doc.markdown)}</article>`, env),
+  ));
 }
 
 // --- API handlers ---------------------------------------------------------------
@@ -470,6 +919,35 @@ async function handleCheckout(request, env, url) {
     return json({ ok: false, error: msg }, 502);
   }
   return json({ ok: true, url: session.url, tenantCode });
+}
+
+// Invoice-led rail: validates the same intake shape, generates the tenant code,
+// and forwards a quote_requested event to n8n WF1. Never touches money.
+async function handleQuote(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'anon';
+  const limit = Number(env.STORE_RATE_LIMIT || 10);
+  if (rateLimited(`q:${ip}`, limit)) {
+    return json({ ok: false, error: 'Too many attempts — try again in a minute.' }, 429);
+  }
+  let raw;
+  try { raw = await request.json(); } catch { return json({ ok: false, error: 'Invalid request body.' }, 400); }
+  const v = validateQuoteIntake(raw);
+  if (!v.ok) return json({ ok: false, error: v.errors.join(' ') }, 400);
+  if (!env.N8N_INTAKE_WEBHOOK_URL) {
+    return json({ ok: false, error: 'Quote requests are not configured yet — email us and we will send yours directly.' }, 503);
+  }
+  const tenantCode = makeTenantCode(v.clean.company);
+  const payload = quoteEventPayload(v.clean, tenantCode, `qr_${crypto.randomUUID()}`);
+  const headers = { 'Content-Type': 'application/json' };
+  if (env.N8N_WEBHOOK_AUTH) headers.Authorization = `Bearer ${env.N8N_WEBHOOK_AUTH}`;
+  let fwd;
+  try {
+    fwd = await fetch(env.N8N_INTAKE_WEBHOOK_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
+  } catch {
+    return json({ ok: false, error: 'We could not record your request — please retry or email us.' }, 502);
+  }
+  if (!fwd.ok) return json({ ok: false, error: 'We could not record your request — please retry or email us.' }, 502);
+  return json({ ok: true, tenantCode });
 }
 
 async function handleSessionStatus(url, env) {
@@ -611,6 +1089,41 @@ async function handleKubixChat(request, env) {
   return json({ ok: true, reply: data.reply, escalated: !!data.escalated, agent: data.agent });
 }
 
+// Thumbs up/down on Kubix replies — forwarded to the n8n feedback workflow so
+// the agent's answers can be graded and improved. Fire-and-forget quality data;
+// never blocks or alters the chat itself.
+async function handleKubixFeedback(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (rateLimited(`kxf:${ip}`, 20)) {
+    return json({ ok: false, error: 'Too many requests. Please wait a moment.' }, 429);
+  }
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: 'Invalid JSON body.' }, 400); }
+  const validated = validateFeedbackRequest(body);
+  if (!validated.ok) return json({ ok: false, error: validated.error }, 400);
+  if (!env.N8N_FEEDBACK_WEBHOOK_URL) {
+    return json({ ok: false, error: 'Feedback is not configured for this instance yet.' }, 503);
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (env.N8N_WEBHOOK_AUTH) headers.Authorization = `Bearer ${env.N8N_WEBHOOK_AUTH}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  let upstream;
+  try {
+    upstream = await fetch(env.N8N_FEEDBACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ source: 'sias-store', at: new Date().toISOString(), ...validated.value }),
+      signal: controller.signal,
+    });
+  } catch {
+    clearTimeout(timeout);
+    return json({ ok: false, error: 'Could not record feedback right now.' }, 502);
+  }
+  clearTimeout(timeout);
+  if (!upstream.ok) return json({ ok: false, error: 'Could not record feedback right now.' }, 502);
+  return json({ ok: true });
+}
 
 async function handleStripeWebhook(request, env) {
   const payload = await request.text();
@@ -640,6 +1153,254 @@ async function handleStripeWebhook(request, env) {
   return json({ received: true, forwarded: true });
 }
 
+// Manual-approval order intake ------------------------------------------------
+async function handleOrderIntake(request, env, url) {
+  const ip = request.headers.get('cf-connecting-ip') || 'anon';
+  const limit = Number(env.STORE_RATE_LIMIT || 10);
+  if (rateLimited(`ord:${ip}`, limit)) {
+    return json({ ok: false, error: 'Too many attempts — try again in a minute.' }, 429);
+  }
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
+    return json({ ok: false, error: 'Order system is not configured yet. Email us and we will set you up directly.' }, 503);
+  }
+  let raw;
+  try { raw = await request.json(); } catch { return json({ ok: false, error: 'Invalid request body.' }, 400); }
+  const v = validateOrderIntake(raw);
+  if (!v.ok) return json({ ok: false, error: v.errors.join(' ') }, 400);
+  const tenantCode = makeTenantCode(v.clean.company);
+  const orderBody = supabaseInsertOrderBody(v.clean, tenantCode);
+  let insertRes;
+  try {
+    insertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/sias_orders`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+        apikey: env.SUPABASE_SERVICE_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(orderBody),
+    });
+  } catch {
+    return json({ ok: false, error: 'Could not save your order. Please try again.' }, 502);
+  }
+  if (!insertRes.ok) {
+    const errorMsg = insertRes.status === 409
+      ? 'This tenant code already exists. Please contact us.'
+      : 'Could not save your order. Please try again.';
+    return json({ ok: false, error: errorMsg }, 502);
+  }
+  // The order is already durable, so a notification outage must not invite a
+  // duplicate browser retry. Return success with an operator-visible warning.
+  const notification = env.N8N_ORDER_WEBHOOK_URL
+    ? await sendOrderWebhook(env, env.N8N_ORDER_WEBHOOK_URL, orderPlacedPayload(v.clean, tenantCode))
+    : { ok: false, error: 'Order-received email webhook is not configured.' };
+  return json({
+    ok: true,
+    tenantCode,
+    message: 'Order received. Your SIAS request is under review and your tenant code is reserved.',
+    warning: notification.ok ? undefined : notification.error,
+    kubixChatUrl: `${url.origin}/copilot?tenant=${tenantCode}&company=${encodeURIComponent(v.clean.company)}&name=${encodeURIComponent(v.clean.name)}&plan=${v.clean.plan}`,
+  });
+}
+
+// Founder orders dashboard ---------------------------------------------------
+function adminCookie(request) {
+  const raw = request.headers.get('cookie') || '';
+  const pair = raw.split(';').map((part) => part.trim()).find((part) => part.startsWith('__admin='));
+  return pair ? pair.slice('__admin='.length) : '';
+}
+
+async function adminAuthorized(request, env) {
+  return !!env.SESSION_SECRET
+    && !!adminCookie(request)
+    && await verifySessionCookie(adminCookie(request), env.SESSION_SECRET);
+}
+
+function validAdminMutation(request) {
+  const origin = request.headers.get('origin');
+  const customHeader = request.headers.get('x-sias-admin-action');
+  return origin === new URL(request.url).origin && customHeader === '1';
+}
+
+async function sendOrderWebhook(env, webhookUrl, payload) {
+  if (!webhookUrl) return { ok: false, error: 'Order email webhook is not configured.' };
+  const headers = { 'Content-Type': 'application/json' };
+  if (env.N8N_WEBHOOK_AUTH) headers.Authorization = `Bearer ${env.N8N_WEBHOOK_AUTH}`;
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok
+      ? { ok: true }
+      : { ok: false, error: `Order email webhook failed (${response.status}).` };
+  } catch {
+    return { ok: false, error: 'Order email webhook could not be reached.' };
+  }
+}
+
+async function handleAdminLogin(request, env, url) {
+  if (request.method === 'GET') {
+    // GET /admin with valid cookie → dashboard
+    if (await adminAuthorized(request, env)) {
+      const orders = await supabaseGetOrders(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+      return html(ordersDashboard(orders || [], env, url.origin), 200, { privatePage: true });
+    }
+    // GET /admin without cookie → login form
+    return html(adminLoginPage(), 200, { privatePage: true });
+  }
+  // POST /admin (login attempt)
+  const ip = request.headers.get('cf-connecting-ip') || 'anon';
+  if (rateLimited(`login:${ip}`, 5)) {
+    return json({ ok: false, error: 'Too many login attempts. Try again in a minute.' }, 429);
+  }
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: 'Invalid request.' }, 400); }
+  const password = String(body?.password || '').trim();
+  if (!password || !env.FOUNDER_PASSWORD || !env.SESSION_SECRET
+      || !await timingSafeEqualText(password, env.FOUNDER_PASSWORD)) {
+    return json({ ok: false, error: 'Invalid password.' }, 401);
+  }
+  const token = await signSessionCookie(env.SESSION_SECRET);
+  const response = json({ ok: true, message: 'Logged in.' });
+  response.headers.set('Set-Cookie', `__admin=${token}; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=${ADMIN_SESSION_MS / 1000}`);
+  return response;
+}
+
+async function readAdminOrderAction(request, env) {
+  if (!await adminAuthorized(request, env)) {
+    return { response: json({ ok: false, error: 'Unauthorized.' }, 401) };
+  }
+  if (!validAdminMutation(request)) {
+    return { response: json({ ok: false, error: 'Invalid admin action origin.' }, 403) };
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return { response: json({ ok: false, error: 'Invalid request.' }, 400) };
+  }
+  const orderId = String(body?.orderId || '').trim();
+  if (!/^[A-Za-z0-9-]{1,80}$/.test(orderId)) {
+    return { response: json({ ok: false, error: 'Missing or invalid orderId.' }, 400) };
+  }
+  const order = await supabaseGetOrderById(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, orderId);
+  if (!order) return { response: json({ ok: false, error: 'Order not found.' }, 404) };
+  return { order };
+}
+
+async function handleAdminAccept(request, env) {
+  const action = await readAdminOrderAction(request, env);
+  if (action.response) return action.response;
+  let { order } = action;
+  // Never fall back to the legacy "approved" workflow: it used payment copy
+  // and could make an Accept action look like money was received.
+  const webhookUrl = env.N8N_CONFIRMED_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return json({ ok: false, error: 'Confirmation email webhook is not configured.' }, 503);
+  }
+  if (['provisioning_queued', 'provisioning', 'active'].includes(order.status)) {
+    return json({ ok: true, message: 'This order has already moved beyond confirmation.' });
+  }
+  if (order.status !== 'confirmed') {
+    const transition = await supabaseTransitionOrder(
+      env.SUPABASE_URL,
+      env.SUPABASE_SERVICE_KEY,
+      order.id,
+      ['awaiting_payment', 'under_review'],
+      'confirmed',
+      { confirmed_at: new Date().toISOString() },
+    );
+    if (!transition.ok) {
+      const status = transition.reason === 'conflict' ? 409 : 502;
+      return json({ ok: false, error: 'Order status changed; refresh and try again.' }, status);
+    }
+    order = transition.order;
+  }
+  const notification = await sendOrderWebhook(env, webhookUrl, orderConfirmedPayload(order));
+  if (!notification.ok) return json({ ok: false, error: notification.error }, 502);
+  return json({ ok: true, message: 'Order confirmed and confirmation email sent.' });
+}
+
+async function handleAdminPaid(request, env) {
+  const action = await readAdminOrderAction(request, env);
+  if (action.response) return action.response;
+  let { order } = action;
+  if (['provisioning_queued', 'provisioning', 'active'].includes(order.status)) {
+    return json({ ok: true, message: 'Payment is already recorded and provisioning is in progress.' });
+  }
+  const queued = await supabaseTransitionOrder(
+    env.SUPABASE_URL,
+    env.SUPABASE_SERVICE_KEY,
+    order.id,
+    ['awaiting_payment', 'under_review', 'confirmed', 'provisioning_failed'],
+    'provisioning_queued',
+    {
+      paid_at: new Date().toISOString(),
+      provisioning_error: null,
+    },
+  );
+  if (!queued.ok) {
+    const status = queued.reason === 'conflict' ? 409 : 502;
+    return json({ ok: false, error: 'Order status changed; refresh and try again.' }, status);
+  }
+  order = queued.order;
+  let dispatched;
+  try {
+    dispatched = await dispatchPaidProvisioning(env, order);
+  } catch {
+    dispatched = { ok: false, error: 'Provisioning dispatch could not be reached.' };
+  }
+  if (!dispatched.ok) {
+    await supabaseTransitionOrder(
+      env.SUPABASE_URL,
+      env.SUPABASE_SERVICE_KEY,
+      order.id,
+      ['provisioning_queued'],
+      'provisioning_failed',
+      { provisioning_error: clip(dispatched.error, 500) },
+    );
+    return json({ ok: false, error: `${dispatched.error} The order is safe to retry.` }, 502);
+  }
+  const started = await supabaseTransitionOrder(
+    env.SUPABASE_URL,
+    env.SUPABASE_SERVICE_KEY,
+    order.id,
+    ['provisioning_queued'],
+    'provisioning',
+    { provisioning_started_at: new Date().toISOString() },
+  );
+  if (started.ok) order = started.order;
+
+  const webhookUrl = env.N8N_PAID_WEBHOOK_URL;
+  const notification = webhookUrl
+    ? await sendOrderWebhook(env, webhookUrl, paymentPaidPayload(order))
+    : { ok: false, error: 'Payment email webhook is not configured.' };
+  return json({
+    ok: true,
+    message: 'Payment recorded. Automatic provisioning has started.',
+    warning: notification.ok ? undefined : notification.error,
+  });
+}
+
+async function handleAdminApprove(request, env) {
+  // Backward-compatible endpoint: old dashboard clients map Approve to Accept,
+  // never directly to Paid/provisioning.
+  if (!await adminAuthorized(request, env)) {
+    return json({ ok: false, error: 'Unauthorized.' }, 401);
+  }
+  return json({ ok: false, error: 'This endpoint was replaced by Accept and Paid. Refresh the dashboard.' }, 410);
+}
+
+async function handleAdminLogout(request, env) {
+  const response = json({ ok: true, message: 'Logged out.' });
+  response.headers.set('Set-Cookie', '__admin=; Path=/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=0');
+  return response;
+}
+
 // --- Router -----------------------------------------------------------------------
 export default {
   async fetch(request, env) {
@@ -651,21 +1412,44 @@ export default {
         return json({
           ok: true,
           worker: 'sias-store',
+          salesMode: salesMode(env),
           stripe: !!env.STRIPE_SECRET_KEY,
           webhookSecret: !!env.STRIPE_WEBHOOK_SECRET,
           clictopay: !!(env.CLICTOPAY_USER && env.CLICTOPAY_PASSWORD),
           n8nIntake: !!env.N8N_INTAKE_WEBHOOK_URL,
           kubixChat: !!env.N8N_CHAT_WEBHOOK_URL,
+          kubixFeedback: !!env.N8N_FEEDBACK_WEBHOOK_URL,
+          hasSupabase: !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY),
+          hasFounderAuth: !!env.FOUNDER_PASSWORD && !!env.SESSION_SECRET,
+          hasOrderWebhook: !!env.N8N_ORDER_WEBHOOK_URL,
+          hasConfirmedWebhook: !!env.N8N_CONFIRMED_WEBHOOK_URL,
+          hasPaidWebhook: !!env.N8N_PAID_WEBHOOK_URL,
+          hasProvisioningDispatcher: !!env.PROVISIONING_GITHUB_TOKEN && !!env.PROVISIONING_GITHUB_REPOSITORY,
+        });
+      }
+      if (pathname === '/.well-known/security.txt') {
+        return new Response(securityTxt(env), {
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' },
         });
       }
       if (pathname === '/api/checkout' && request.method === 'POST') return handleCheckout(request, env, url);
+      if (pathname === '/api/quote' && request.method === 'POST') return handleQuote(request, env);
       if (pathname === '/api/session' && request.method === 'GET') return handleSessionStatus(url, env);
       if (pathname === '/api/ctp-order' && request.method === 'GET') return handleCtpOrderStatus(url, env);
       if (pathname === '/api/kubix' && request.method === 'POST') return handleKubixChat(request, env);
+      if (pathname === '/api/kubix-feedback' && request.method === 'POST') return handleKubixFeedback(request, env);
       if (pathname === '/api/stripe-webhook' && request.method === 'POST') return handleStripeWebhook(request, env);
+      if (pathname === '/api/order' && request.method === 'POST') return handleOrderIntake(request, env, url);
+      if (pathname === '/admin' && (request.method === 'GET' || request.method === 'POST')) return handleAdminLogin(request, env, url);
+      if (pathname === '/admin/accept' && request.method === 'POST') return handleAdminAccept(request, env);
+      if (pathname === '/admin/paid' && request.method === 'POST') return handleAdminPaid(request, env);
+      if (pathname === '/admin/approve' && request.method === 'POST') return handleAdminApprove(request, env);
+      if (pathname === '/admin/logout' && request.method === 'POST') return handleAdminLogout(request, env);
       if (pathname === '/clictopay/return') return handleClictopayReturn(url, env);
+      if (pathname === '/legal' || pathname.startsWith('/legal/')) return handleLegal(pathname, env);
       if (pathname === '/buy') return html(buyPage(url, env));
-      if (pathname === '/copilot') return html(copilotPage());
+      if (pathname === '/copilot') return html(copilotPage(url));
+      if (pathname === '/welcome') return html(welcomePage(env));
       if (pathname === '/success') return html(successPage(env));
       if (pathname === '/cancel') return Response.redirect(`${url.origin}/#pricing`, 302);
       return html(landingPage(env));
@@ -711,17 +1495,20 @@ function landingPage(env) {
   return page(
     'SIAS — Smart Industrial Alert System',
     'Real-time factory alert supervision: AI dispatch, voice-first claiming, SCADA/PLC integration and self-grading failure forecasts. Dedicated instance per customer.',
-    landingBody(env),
+    landingBody(env, salesMode(env)),
   );
 }
 
 function buyPage(url, env) {
   const plan = PLAN_CATALOG[url.searchParams.get('plan')] ? url.searchParams.get('plan') : 'growth';
   const billing = url.searchParams.get('billing') === 'annual' ? 'annual' : 'monthly';
+  const mode = salesMode(env);
   return page(
-    'Get SIAS — checkout',
-    'Tell us about your plant and continue to secure checkout.',
-    buyBody(plan, billing, env),
+    mode === 'quote' ? 'Get a SIAS quote' : 'Get SIAS — checkout',
+    mode === 'quote'
+      ? 'Tell us about your plant — your tailored quote lands in your inbox within 1 business day.'
+      : 'Tell us about your plant and continue to secure checkout.',
+    buyBody(plan, billing, env, mode),
   );
 }
 
@@ -733,8 +1520,10 @@ function successPage(env) {
   );
 }
 
-function landingBody(env) {
+function landingBody(env, mode = 'card') {
   const mail = salesEmail(env);
+  const quote = mode === 'quote';
+  const buyCta = quote ? 'Get a quote' : null;
   return `
 <header class="nav"><div class="wrap">
   <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
@@ -860,7 +1649,7 @@ function landingBody(env) {
     <h2 style="margin-top:14px">From card to control room in four steps</h2>
   </div>
   <div class="steps">
-    <div class="card step"><div class="n">STEP 01</div><h3>Buy &amp; tell us about your plant</h3><p>Pick a plan, fill in five fields, pay by card or request an invoice. VAT handled at checkout.</p></div>
+    <div class="card step"><div class="n">STEP 01</div><h3>${quote ? 'Request your quote' : 'Buy &amp; tell us about your plant'}</h3><p>${quote ? 'Pick a plan, fill in five fields &mdash; your tailored quote and invoice terms land in your inbox within 1 business day.' : 'Pick a plan, fill in five fields, pay by card or request an invoice. VAT handled at checkout.'}</p></div>
     <div class="card step"><div class="n">STEP 02</div><h3>We provision your instance</h3><p>A dedicated, isolated SIAS deployment &mdash; database, auth, edge services &mdash; spun up for your company within 1 business day.</p></div>
     <div class="card step"><div class="n">STEP 03</div><h3>Claim your Owner console</h3><p>You receive a one-time activation link (never a password). Set your password + MFA and the instance is yours.</p></div>
     <div class="card step"><div class="n">STEP 04</div><h3>Kubix onboards your team</h3><p>Your copilot introduces itself, invites your Production Managers, and wires your first integration with you.</p></div>
@@ -871,8 +1660,8 @@ function landingBody(env) {
   <div class="shead" style="text-align:center;margin-left:auto;margin-right:auto"><span class="eyebrow">Pricing</span>
     <h2 style="margin-top:14px">One instance. One price. Everything included.</h2>
     <div class="toggle" role="tablist">
-      <button type="button" id="bt-monthly" onclick="setBilling('monthly')">Monthly</button>
-      <button type="button" id="bt-annual" class="on" onclick="setBilling('annual')">Annual <span class="save">&nbsp;save 17%</span></button>
+      <button type="button" id="bt-monthly">Monthly</button>
+      <button type="button" id="bt-annual" class="on">Annual <span class="save">&nbsp;save 17%</span></button>
     </div>
   </div>
   <div class="plans">
@@ -888,7 +1677,7 @@ function landingBody(env) {
         <li><span class="ck">&#10003;</span>Kubix Copilot included</li>
         <li><span class="ck">&#10003;</span>Email support</li>
       </ul>
-      <a class="btn btn-ghost buylink" data-plan="starter" href="/buy?plan=starter&billing=annual">Choose Starter</a>
+      <a class="btn btn-ghost buylink" data-plan="starter" href="/buy?plan=starter&billing=annual">${buyCta || 'Choose Starter'}</a>
     </div>
     <div class="card plan hot">
       <div class="pop">Most popular</div>
@@ -903,7 +1692,7 @@ function landingBody(env) {
         <li><span class="ck">&#10003;</span>AI shift commander + handovers</li>
         <li><span class="ck">&#10003;</span>Priority support</li>
       </ul>
-      <a class="btn btn-amber buylink" data-plan="growth" href="/buy?plan=growth&billing=annual">Choose Growth</a>
+      <a class="btn btn-amber buylink" data-plan="growth" href="/buy?plan=growth&billing=annual">${buyCta || 'Choose Growth'}</a>
     </div>
     <div class="card plan">
       <h3>Enterprise</h3><div class="tag">For groups and regulated estates</div>
@@ -920,7 +1709,9 @@ function landingBody(env) {
       <a class="btn btn-ghost" href="mailto:${mail}?subject=SIAS%20Enterprise%20inquiry">Talk to sales</a>
     </div>
   </div>
-  <p class="dim" style="text-align:center;margin-top:22px;font-size:13px">Prices in USD, excl. VAT (collected at checkout where applicable). Tunisian companies can pay in TND by local card via ClicToPay (annual billing). Every plan runs on its own dedicated instance &mdash; 30-day money-back guarantee on your first payment.</p>
+  <p class="dim" style="text-align:center;margin-top:22px;font-size:13px">${quote
+    ? 'List prices in USD, excl. taxes. We invoice by bank transfer in USD, TND or EUR on net-15 terms &mdash; request a quote and it lands in your inbox within 1 business day. Every plan runs on its own dedicated instance with a 30-day money-back guarantee on your first payment.'
+    : 'Prices in USD, excl. VAT (collected at checkout where applicable). Tunisian companies can pay in TND by local card via ClicToPay (annual billing). Every plan runs on its own dedicated instance &mdash; 30-day money-back guarantee on your first payment.'}</p>
 </div></section>
 
 <section id="faq" style="padding-top:0"><div class="wrap" style="max-width:760px">
@@ -931,46 +1722,55 @@ function landingBody(env) {
   <details><summary>Can our teams use it in French?</summary><div class="a">Yes &mdash; the entire product is bilingual English/French with instant runtime switching, down to notifications and PDF reports.</div></details>
   <details><summary>Does the AI take actions on our machines?</summary><div class="a">Never. SIAS observes and orchestrates people &mdash; it reads from your estate (OPC-UA, Modbus, MQTT, historians) and never writes to control loops. AI decisions are logged with reasons and confidence, and every autonomous capability has an off switch in your console.</div></details>
   <details><summary>What happens if we outgrow our plan?</summary><div class="a">Upgrade in place &mdash; same instance, higher limits, prorated by Stripe. Moving to Enterprise adds SSO/SCIM, an SLA and a dedicated onboarding engineer without migration.</div></details>
-  <details><summary>How can we pay from Tunisia?</summary><div class="a">Two rails: international cards in USD through Stripe (monthly or annual), or Tunisian CB cards in TND through ClicToPay, the national gateway operated by SMT (annual billing). Pick your rail at checkout &mdash; both trigger the same instant provisioning.</div></details>
+  ${quote
+    ? `<details><summary>How does invoicing work?</summary><div class="a">Request a quote and it lands in your inbox within 1 business day. We invoice by bank transfer in USD, TND or EUR on net-15 payment terms &mdash; monthly or annual billing, procurement-friendly paperwork, and your instance is provisioned as soon as the order is confirmed.</div></details>`
+    : `<details><summary>How can we pay from Tunisia?</summary><div class="a">Two rails: international cards in USD through Stripe (monthly or annual), or Tunisian CB cards in TND through ClicToPay, the national gateway operated by SMT (annual billing). Pick your rail at checkout &mdash; both trigger the same instant provisioning.</div></details>`}
 </div></section>
 
 <div class="cta-band"><div class="wrap"><div class="card">
   <h2>Your plant&rsquo;s next alert could be the last one nobody caught.</h2>
-  <p class="mut" style="margin:16px auto 30px;max-width:36em">Buy today, get your activation email tomorrow, and let Kubix walk your team in.</p>
-  <a class="btn btn-amber" href="/buy?plan=growth&billing=annual">Get SIAS now</a>
+  <p class="mut" style="margin:16px auto 30px;max-width:36em">${quote
+    ? 'Request your quote today, sign this week, and let Kubix walk your team in.'
+    : 'Buy today, get your activation email tomorrow, and let Kubix walk your team in.'}</p>
+  <a class="btn btn-amber" href="/buy?plan=growth&billing=annual">${quote ? 'Get a quote' : 'Get SIAS now'}</a>
 </div></div></div>
 </main>
 
 <footer><div class="wrap">
   <span><b style="color:var(--ink2)">SIAS</b> &mdash; Smart Industrial Alert System &middot; by KubixDesiney</span>
-  <span><a href="#pricing">Pricing</a> &middot; <a href="/copilot">Kubix Copilot</a> &middot; <a href="#security">Security</a> &middot; <a href="mailto:${mail}">${mail}</a></span>
+  <span><a href="#pricing">Pricing</a> &middot; <a href="/copilot">Kubix Copilot</a> &middot; <a href="#security">Security</a>${legalPublishEnabled(env) ? ' &middot; <a href="/legal/privacy">Privacy</a> &middot; <a href="/legal/terms">Terms</a>' : ''} &middot; <a href="mailto:${mail}">${mail}</a></span>
   <span>&copy; 2026 KubixDesiney. All rights reserved.</span>
 </div></footer>
 
 <script>
-var billing = 'annual';
-function setBilling(b) {
-  billing = b;
-  document.getElementById('bt-monthly').className = b === 'monthly' ? 'on' : '';
-  document.getElementById('bt-annual').className = b === 'annual' ? 'on' : '';
-  document.querySelectorAll('.price[data-monthly]').forEach(function (el) {
-    el.innerHTML = el.getAttribute('data-' + b) + '<small>/mo</small>';
-  });
-  document.querySelectorAll('.bill[data-monthly]').forEach(function (el) {
-    el.textContent = el.getAttribute('data-' + b);
-  });
-  document.querySelectorAll('.buylink').forEach(function (el) {
-    el.href = '/buy?plan=' + el.getAttribute('data-plan') + '&billing=' + b;
-  });
-}
+(function () {
+  var billing = 'annual';
+  function setBilling(b) {
+    billing = b;
+    document.getElementById('bt-monthly').className = b === 'monthly' ? 'on' : '';
+    document.getElementById('bt-annual').className = b === 'annual' ? 'on' : '';
+    document.querySelectorAll('.price[data-monthly]').forEach(function (el) {
+      el.innerHTML = el.getAttribute('data-' + b) + '<small>/mo</small>';
+    });
+    document.querySelectorAll('.bill[data-monthly]').forEach(function (el) {
+      el.textContent = el.getAttribute('data-' + b);
+    });
+    document.querySelectorAll('.buylink').forEach(function (el) {
+      el.href = '/buy?plan=' + el.getAttribute('data-plan') + '&billing=' + b;
+    });
+  }
+  document.getElementById('bt-monthly').addEventListener('click', function () { setBilling('monthly'); });
+  document.getElementById('bt-annual').addEventListener('click', function () { setBilling('annual'); });
+})();
 </script>`;
 }
 
-function buyBody(plan, billing, env) {
+function buyBody(plan, billing, env, mode = 'card') {
   const mail = salesEmail(env);
+  const quote = mode === 'quote';
   const catalogLite = {};
   for (const [k, v] of Object.entries(PLAN_CATALOG)) {
-    catalogLite[k] = { name: v.name, monthly: v.monthly, annual: v.annual, tndAnnual: v.tndAnnual, factories: v.factories, seats: v.seats };
+    catalogLite[k] = { name: v.name, monthly: v.monthly, annual: v.annual, tndAnnual: v.tndAnnual, tndMonthly: v.tndMonthly, factories: v.factories, seats: v.seats };
   }
   return `
 <header class="nav"><div class="wrap">
@@ -979,16 +1779,32 @@ function buyBody(plan, billing, env) {
 </div></header>
 
 <main class="wrap buywrap">
-  <div>
-    <span class="eyebrow">Secure checkout</span>
+  <div id="intake-col">
+    <span class="eyebrow">${quote ? 'Request a quote' : 'Secure checkout'}</span>
     <h2 style="margin:16px 0 8px">Tell us about your plant</h2>
-    <p class="mut" style="margin-bottom:28px">Five fields. This is what names your instance, your Kubix Copilot, and your activation email.</p>
-    <form id="intake" onsubmit="return submitIntake(event)">
+    <p class="mut" style="margin-bottom:28px">${quote
+      ? 'A few fields. This names your instance, your Kubix Copilot &mdash; and the tailored quote that lands in your inbox within 1 business day.'
+      : 'Five fields. This is what names your instance, your Kubix Copilot, and your activation email.'}</p>
+    <form id="intake">
       <div class="formgrid">
         <div class="field"><label for="f-name">Full name</label><input id="f-name" name="name" required maxlength="80" placeholder="Amine Ben Salah" autocomplete="name"></div>
         <div class="field"><label for="f-email">Work email</label><input id="f-email" name="email" type="email" required maxlength="120" placeholder="a.bensalah@company.com" autocomplete="email"></div>
         <div class="field"><label for="f-company">Company</label><input id="f-company" name="company" required maxlength="80" placeholder="Nagati Steel Works" autocomplete="organization"></div>
-        <div class="field"><label for="f-country">Country</label><input id="f-country" name="country" maxlength="56" placeholder="Tunisia" autocomplete="country-name"></div>
+        <div class="field"><label for="f-country">Country</label><input id="f-country" name="country" maxlength="56" placeholder="Tunisia" autocomplete="country-name"></div>${quote ? `
+        <div class="field"><label for="f-phone">Phone <span class="dim">(optional)</span></label><input id="f-phone" name="phone" maxlength="32" placeholder="+216 12 345 678" autocomplete="tel"></div>
+        <div class="field"><label for="f-currency">Preferred quote currency</label>
+          <select id="f-currency" name="currency">
+            <option value="USD">USD &middot; US Dollar</option><option value="TND">TND &middot; Tunisian Dinar</option><option value="EUR">EUR &middot; Euro</option>
+          </select></div>` : ''}
+        <div class="field"><label for="f-pm-name">Production Manager name</label><input id="f-pm-name" name="pmName" required maxlength="80" placeholder="Sonia Trabelsi" autocomplete="name"></div>
+        <div class="field"><label for="f-pm-email">Production Manager email</label><input id="f-pm-email" name="pmEmail" type="email" required maxlength="120" placeholder="production@company.com" autocomplete="email"></div>
+        <div class="field"><label for="f-supervisor-name">Supervisor name</label><input id="f-supervisor-name" name="supervisorName" required maxlength="80" placeholder="Karim Aloui" autocomplete="name"></div>
+        <div class="field"><label for="f-supervisor-email">Supervisor email</label><input id="f-supervisor-email" name="supervisorEmail" type="email" required maxlength="120" placeholder="supervisor@company.com" autocomplete="email"></div>
+        <div class="field"><label for="f-payment-method">Expected payment method</label>
+          <select id="f-payment-method" name="paymentMethod">
+            <option value="bank_transfer">Virement / bank transfer</option>
+            <option value="manual">Other manual payment</option>
+          </select></div>
         <div class="field"><label for="f-factories">Number of factories</label>
           <select id="f-factories" name="factories">
             <option value="1">1</option><option value="2-3">2&ndash;3</option><option value="4-10">4&ndash;10</option><option value="10+">More than 10</option>
@@ -996,64 +1812,90 @@ function buyBody(plan, billing, env) {
         <div class="field"><label for="f-notes">Anything we should know? <span class="dim">(optional)</span></label><input id="f-notes" name="notes" maxlength="200" placeholder="Existing SCADA, timeline, constraints..."></div>
       </div>
       <div class="err" id="err"></div>
-      <button class="btn btn-amber" type="submit" id="paybtn" style="margin-top:26px;width:100%">Continue to secure checkout &rarr;</button>
-      <p class="dim" style="font-size:12.5px;margin-top:14px;text-align:center">Payments handled by Stripe (international) or ClicToPay / SMT (Tunisia) &mdash; card details never touch our servers. Prefer an invoice? <a href="mailto:${mail}?subject=SIAS%20invoice%20request">Email us</a>.</p>
+      <button class="btn btn-amber" type="submit" id="paybtn" style="margin-top:26px;width:100%">${quote ? 'Request my quote &rarr;' : 'Continue to secure checkout &rarr;'}</button>
+      <p class="dim" style="font-size:12.5px;margin-top:14px;text-align:center">${quote
+        ? 'No card needed. We invoice by bank transfer in USD, TND or EUR on net-15 terms. Questions first? <a href="mailto:' + mail + '?subject=SIAS%20quote%20question">Email us</a>.'
+        : 'Payments handled by Stripe (international) or ClicToPay / SMT (Tunisia) &mdash; card details never touch our servers. Prefer an invoice? <a href="mailto:' + mail + '?subject=SIAS%20invoice%20request">Email us</a>.'}</p>
     </form>
+    <div class="card okquote" id="quote-ok" hidden style="text-align:center;padding:38px 30px;margin-top:6px">
+      <div style="font-size:44px;color:var(--ok,#34D399)">&#10003;</div>
+      <h3 style="margin:14px 0 8px">Order under review</h3>
+      <p class="mut" id="qk-line" style="max-width:34em;margin:0 auto 24px">Your SIAS tenant code is reserved. We will email you when the order is confirmed.</p>
+      <a class="btn btn-amber" id="qk-chat" href="/copilot">Chat with Kubix while you wait &rarr;</a>
+    </div>
   </div>
 
   <div class="card sumcard">
     <h3 id="sum-plan">Growth</h3>
-    <p class="dim" id="sum-tag" style="font-size:13px;margin-top:2px"></p>
+    <p class="dim" id="sum-tag" style="font-size:13px;margin-top:2px"></p>${quote ? '' : `
     <div class="radio2" style="margin-top:16px">
-      <label><input type="radio" name="method" value="stripe" onchange="setMethod('stripe')"><span>&#127758; International card &middot; USD</span></label>
-      <label><input type="radio" name="method" value="clictopay" onchange="setMethod('clictopay')"><span>&#127481;&#127475; Carte tunisienne &middot; TND</span></label>
-    </div>
-    <p class="dim" id="method-note" style="font-size:12px;margin:2px 0 4px"></p>
+      <label><input type="radio" name="method" value="stripe"><span>&#127758; International card &middot; USD</span></label>
+      <label><input type="radio" name="method" value="clictopay"><span>&#127481;&#127475; Carte tunisienne &middot; TND</span></label>
+    </div>`}
+    <p class="dim" id="method-note" style="font-size:12px;margin:${quote ? '14px' : '2px'} 0 4px"></p>
     <div class="radio2">
-      <label id="lbl-monthly"><input type="radio" name="billing" value="monthly" onchange="setBill('monthly')"><span>Monthly</span></label>
-      <label><input type="radio" name="billing" value="annual" onchange="setBill('annual')"><span>Annual &middot; save 17%</span></label>
+      <label id="lbl-monthly"><input type="radio" name="billing" value="monthly"><span>Monthly</span></label>
+      <label><input type="radio" name="billing" value="annual"><span>Annual &middot; save 17%</span></label>
     </div>
     <div class="sumline"><span>Dedicated isolated instance</span><span>included</span></div>
     <div class="sumline"><span>Kubix Copilot</span><span>included</span></div>
     <div class="sumline"><span id="sum-scope"></span><span>&nbsp;</span></div>
-    <div class="sumline total"><span id="sum-cycle">Due today</span><span id="sum-price"></span></div>
-    <p class="dim" style="font-size:12.5px;margin-top:14px">Then your instance is provisioned within 1 business day and your activation email lands in your inbox. 30-day money-back guarantee.</p>
+    <div class="sumline total"><span id="sum-cycle">${quote ? 'Indicative price' : 'Due today'}</span><span id="sum-price"></span></div>
+    <p class="dim" style="font-size:12.5px;margin-top:14px">${quote
+      ? 'List price before your tailored quote &mdash; final pricing may reflect onboarding scope, multi-year terms and local taxes. Invoiced, never charged automatically.'
+      : 'Then your instance is provisioned within 1 business day and your activation email lands in your inbox. 30-day money-back guarantee.'}</p>
   </div>
 </main>
 
 <script>
 var CATALOG = ${JSON.stringify(catalogLite)};
-var state = { plan: '${plan}', billing: '${billing}', method: 'stripe' };
+var MODE = '${mode}';
+var SUBMIT_LABEL = ${JSON.stringify(quote ? 'Request my quote →' : 'Continue to secure checkout →')};
+var SUBMIT_BUSY = ${JSON.stringify(quote ? 'Sending your request…' : 'Preparing secure checkout…')};
+var state = { plan: '${plan}', billing: '${billing}', method: 'stripe', currency: 'USD' };
 function fmt(cents) { return '$' + (cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
 function fmtTnd(d) { return d.toLocaleString('en-US') + ' TND'; }
 function render() {
   var p = CATALOG[state.plan];
-  var ctp = state.method === 'clictopay';
+  var isQuote = MODE === 'quote';
+  var ctp = !isQuote && state.method === 'clictopay';
   if (ctp) state.billing = 'annual';
   document.getElementById('sum-plan').textContent = 'SIAS ' + p.name;
   document.getElementById('sum-tag').textContent = p.factories + ' \\u00b7 ' + p.seats;
   document.getElementById('sum-scope').textContent = p.factories + ', ' + p.seats.toLowerCase();
   var isAnnual = state.billing === 'annual';
-  document.getElementById('sum-cycle').textContent = isAnnual ? 'Due today (12 months)' : 'Due today (first month)';
-  document.getElementById('sum-price').textContent = ctp ? fmtTnd(p.tndAnnual) : (isAnnual ? fmt(p.annual) : fmt(p.monthly));
-  document.getElementById('method-note').textContent = ctp
-    ? 'Tunisian CB cards via ClicToPay (SMT) \\u2014 charged in TND, annual billing only.'
-    : 'Cards worldwide via Stripe \\u2014 monthly or annual, VAT handled at checkout.';
+  if (isQuote) {
+    document.getElementById('sum-cycle').textContent = 'Indicative price' + (isAnnual ? ' (12 months)' : ' (per month)');
+    document.getElementById('sum-price').textContent =
+      state.currency === 'TND' ? fmtTnd(isAnnual ? p.tndAnnual : p.tndMonthly)
+      : state.currency === 'EUR' ? 'Quoted in EUR'
+      : fmt(isAnnual ? p.annual : p.monthly);
+    document.getElementById('method-note').textContent =
+      'Invoice billing \\u00b7 bank transfer \\u00b7 net-15 \\u2014 quoted in ' + state.currency + '.';
+  } else {
+    document.getElementById('sum-cycle').textContent = isAnnual ? 'Due today (12 months)' : 'Due today (first month)';
+    document.getElementById('sum-price').textContent = ctp ? fmtTnd(p.tndAnnual) : (isAnnual ? fmt(p.annual) : fmt(p.monthly));
+    document.getElementById('method-note').textContent = ctp
+      ? 'Tunisian CB cards via ClicToPay (SMT) \\u2014 charged in TND, annual billing only.'
+      : 'Cards worldwide via Stripe \\u2014 monthly or annual, VAT handled at checkout.';
+  }
   var mLbl = document.getElementById('lbl-monthly');
   mLbl.style.opacity = ctp ? '.4' : '1';
   mLbl.style.pointerEvents = ctp ? 'none' : 'auto';
-  document.querySelectorAll('input[name="billing"]').forEach(function (r) { r.checked = r.value === state.billing; });
-  document.querySelectorAll('input[name="method"]').forEach(function (r) { r.checked = r.value === state.method; });
+  document.querySelectorAll('input[name="billing"]').forEach(function (r) { r.checked = r.value === state.billing; });${quote ? '' : `
+  document.querySelectorAll('input[name="method"]').forEach(function (r) { r.checked = r.value === state.method; });`}
 }
-function setBill(b) { state.billing = b; render(); }
-function setMethod(m) { state.method = m; render(); }
 function submitIntake(ev) {
   ev.preventDefault();
+  // Manual-approval sales: every submission is an ORDER (no card rails).
+  // -> POST /api/order, which records the order in Supabase and fires the
+  //    'order received + payment instructions' email via n8n WF5. The founder
+  //    then uses Accept or Paid in the /admin Orders dashboard.
   var btn = document.getElementById('paybtn');
   var err = document.getElementById('err');
   err.style.display = 'none';
   btn.disabled = true;
-  btn.textContent = 'Preparing secure checkout\\u2026';
+  btn.textContent = SUBMIT_BUSY;
   var body = {
     name: document.getElementById('f-name').value,
     email: document.getElementById('f-email').value,
@@ -1063,22 +1905,51 @@ function submitIntake(ev) {
     notes: document.getElementById('f-notes').value,
     plan: state.plan,
     billing: state.billing,
-    method: state.method,
+    phone: (document.getElementById('f-phone') || {}).value || '',
+    currency: state.currency || 'USD',
+    pmName: document.getElementById('f-pm-name').value,
+    pmEmail: document.getElementById('f-pm-email').value,
+    supervisorName: document.getElementById('f-supervisor-name').value,
+    supervisorEmail: document.getElementById('f-supervisor-email').value,
+    paymentMethod: document.getElementById('f-payment-method').value,
   };
-  fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  fetch('/api/order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .then(function (r) { return r.json(); })
     .then(function (d) {
-      if (d.ok && d.url) { window.location.href = d.url; return; }
+      if (d.ok) {
+        document.getElementById('intake').hidden = true;
+        var ok = document.getElementById('quote-ok');
+        ok.hidden = false;
+        if (d.warning) window.alert(d.warning);
+        if (d.tenantCode) {
+          document.getElementById('qk-line').textContent =
+            'Order received — your instance ' + d.tenantCode + ' is reserved and under review. We will contact you as soon as it is accepted.';
+          var chat = document.getElementById('qk-chat');
+          chat.href = '/copilot?tenant=' + encodeURIComponent(d.tenantCode) +
+            '&company=' + encodeURIComponent(body.company) + '&name=' + encodeURIComponent(body.name) + '&plan=' + encodeURIComponent(body.plan);
+        }
+        ok.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       throw new Error(d.error || 'Something went wrong.');
     })
     .catch(function (e) {
       err.textContent = e.message;
       err.style.display = 'block';
       btn.disabled = false;
-      btn.textContent = 'Continue to secure checkout \\u2192';
+      btn.textContent = SUBMIT_LABEL;
     });
   return false;
 }
+document.getElementById('intake').addEventListener('submit', submitIntake);
+document.querySelectorAll('input[name="billing"]').forEach(function (r) {
+  r.addEventListener('change', function () { state.billing = r.value; render(); });
+});${quote ? `
+var curSel = document.getElementById('f-currency');
+curSel.addEventListener('change', function () { state.currency = curSel.value; render(); });` : `
+document.querySelectorAll('input[name="method"]').forEach(function (r) {
+  r.addEventListener('change', function () { state.method = r.value; render(); });
+});`}
 render();
 </script>`;
 }
@@ -1097,11 +1968,12 @@ function successBody(env) {
   <p class="mut" id="ok-line">Your dedicated SIAS instance is being provisioned.</p>
   <div class="nextsteps">
     <div class="card"><div class="n">1</div><div><b>Your Stripe receipt</b><br><span class="mut" style="font-size:14px">Already on its way to your inbox.</span></div></div>
-    <div class="card"><div class="n">2</div><div><b>Activation email &mdash; within 1 business day</b><br><span class="mut" style="font-size:14px">A one-time link to claim your Owner console: you set your password and MFA. We never send passwords by email.</span></div></div>
+    <div class="card"><div class="n">2</div><div><b>Two activation emails &mdash; within 1 business day</b><br><span class="mut" style="font-size:14px">You receive separate one-time links for the Production Manager and Supervisor accounts. You set each password and MFA; we never send passwords by email.</span></div></div>
     <div class="card"><div class="n">3</div><div><b>Kubix Copilot introduces itself</b><br><span class="mut" style="font-size:14px" id="ok-kubix">Your named AI engineer will guide activation, team invites and your first integration.</span></div></div>
   </div>
   <a class="btn btn-amber" id="ok-chat" style="display:none;margin-top:30px" href="/copilot">Chat with Kubix now &rarr;</a>
-  <p class="dim" style="margin-top:30px;font-size:13.5px">Nothing after a day? Check spam, or write to <a href="mailto:${mail}">${mail}</a> &mdash; a human answers.</p>
+  <p style="margin-top:26px"><a class="btn btn-ghost" href="/welcome">See what happens next &rarr;</a></p>
+  <p class="dim" style="margin-top:22px;font-size:13.5px">Nothing after a day? Check spam, or write to <a href="mailto:${mail}">${mail}</a> &mdash; a human answers.</p>
 </main>
 
 <script>
@@ -1128,32 +2000,133 @@ function successBody(env) {
 </script>`;
 }
 
-function copilotPage() {
+function welcomePage(env) {
   return page(
-    'Kubix Copilot \u2014 SIAS',
-    'Chat with your dedicated SIAS engineer: activation, integrations, anything.',
-    copilotBody(),
+    'Welcome to SIAS \u2014 what happens next',
+    'Your step-by-step path from purchase to a live plant floor: activation, first 30 minutes, first integration, and your Kubix Copilot.',
+    welcomeBody(env),
   );
 }
 
-function copilotBody() {
+function welcomeBody(env) {
+  const mail = salesEmail(env);
+  return `
+<header class="nav"><div class="wrap">
+  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <nav class="navlinks"><a href="/copilot">Kubix Copilot</a><a class="btn btn-amber btn-sm" href="/#pricing">Pricing</a></nav>
+</div></header>
+
+<main>
+<section><div class="wrap" style="max-width:860px">
+  <span class="eyebrow">Welcome aboard</span>
+  <h1 style="margin-top:16px">What happens after you buy</h1>
+  <p class="lead" style="margin-top:14px">Four milestones stand between your order and supervisors claiming real alerts. Here is exactly what each one looks like &mdash; and what we need from you (very little).</p>
+
+  <div class="steps" style="margin-top:40px;grid-template-columns:1fr">
+    <div class="card step">
+      <div class="n">MILESTONE 01 &middot; within 1 business day</div>
+      <h3>Your activation email arrives</h3>
+      <p>We provision your dedicated instance &mdash; isolated database, auth realm and edge services &mdash; and email your Owner a <b>one-time activation link</b> (never a password; it expires in about an hour, and we resend on request). Click it, set your password and MFA, and the console is yours.</p>
+      <p class="dim" style="margin-top:10px;font-size:13px">Checklist: pick who your Owner is before the email lands &middot; add our address to your allowlist so it never hits spam.</p>
+    </div>
+    <div class="card step">
+      <div class="n">MILESTONE 02 &middot; your first 30 minutes</div>
+      <h3>Set up the console</h3>
+      <p>From your SuperAdmin console: create your factory hierarchy (plants &rarr; lines &rarr; stations), define your alert types (or keep the standard set), and provision your Production Manager accounts. Supervisors install the mobile app and sign in &mdash; voice enrollment takes each of them under two minutes.</p>
+      <p class="dim" style="margin-top:10px;font-size:13px">Checklist: factory map &middot; alert types &middot; PM accounts &middot; supervisor phones enrolled.</p>
+    </div>
+    <div class="card step">
+      <div class="n">MILESTONE 03 &middot; same week</div>
+      <h3>Wire your first integration</h3>
+      <p>Open Infrastructure &rarr; Connectors and pick your protocol &mdash; OPC-UA, Modbus, MQTT, REST, PI or Ignition. The console generates a ready-to-run gateway snippet with your ingest key baked in, and the <b>Verify link test</b> confirms the handshake live. No hardware? Raise alerts manually or from the mobile app on day one.</p>
+      <p class="dim" style="margin-top:10px;font-size:13px">Checklist: one connector verified &middot; first SCADA-raised alert claimed on a phone.</p>
+    </div>
+    <div class="card step">
+      <div class="n">MILESTONE 04 &middot; continuous</div>
+      <h3>Meet your Kubix Copilot</h3>
+      <p>Kubix already knows your tenant code, plan and integration stack. It walks your team through everything above in English or French, answers the 2am questions, and loops in a human engineer when it should. Once you have a few weeks of alert history, it will nudge you to train the failure forecaster on your own data.</p>
+      <a class="btn btn-amber" style="margin-top:16px" href="/copilot">Chat with Kubix &rarr;</a>
+    </div>
+  </div>
+
+  <p class="dim" style="margin-top:34px;font-size:13.5px">Stuck at any step? Write to <a href="mailto:${mail}">${mail}</a> &mdash; a human answers.</p>
+</div></section>
+</main>
+
+<footer><div class="wrap">
+  <span><b style="color:var(--ink2)">SIAS</b> &mdash; Smart Industrial Alert System &middot; by KubixDesiney</span>
+  <span><a href="/#pricing">Pricing</a> &middot; <a href="/copilot">Kubix Copilot</a> &middot; <a href="mailto:${mail}">${mail}</a></span>
+  <span>&copy; 2026 KubixDesiney. All rights reserved.</span>
+</div></footer>`;
+}
+
+// Copilot page chrome i18n \u2014 Kubix itself already answers in the user's
+// language; this dictionary only localizes the page shell. Deliberately a tiny
+// inline map, not a framework.
+export const COPILOT_I18N = Object.freeze({
+  en: Object.freeze({
+    title: 'Kubix Copilot \u2014 SIAS',
+    desc: 'Chat with your dedicated SIAS engineer: activation, integrations, anything.',
+    name: 'Kubix Copilot',
+    sub: 'Your dedicated SIAS engineer',
+    home: '\u2190 Home',
+    placeholder: 'Ask Kubix anything about your SIAS instance\u2026',
+    send: 'Send',
+    escalated: 'A human engineer has been looped in and will follow up by email.',
+    unreachable: 'Kubix is unreachable right now. Please try again shortly.',
+    generic: 'Something went wrong. Please try again.',
+    thumbUp: 'Helpful',
+    thumbDown: 'Not helpful',
+    thanks: 'Thanks \u2014 noted.',
+  }),
+  fr: Object.freeze({
+    title: 'Kubix Copilot \u2014 SIAS',
+    desc: 'Discutez avec votre ing\u00e9nieur SIAS d\u00e9di\u00e9 : activation, int\u00e9grations, tout.',
+    name: 'Kubix Copilot',
+    sub: 'Votre ing\u00e9nieur SIAS d\u00e9di\u00e9',
+    home: '\u2190 Accueil',
+    placeholder: 'Posez \u00e0 Kubix toute question sur votre instance SIAS\u2026',
+    send: 'Envoyer',
+    escalated: 'Un ing\u00e9nieur humain a \u00e9t\u00e9 sollicit\u00e9 et vous r\u00e9pondra par e-mail.',
+    unreachable: 'Kubix est injoignable pour le moment. Veuillez r\u00e9essayer sous peu.',
+    generic: 'Une erreur est survenue. Veuillez r\u00e9essayer.',
+    thumbUp: 'Utile',
+    thumbDown: 'Pas utile',
+    thanks: 'Merci \u2014 not\u00e9.',
+  }),
+});
+
+export function copilotLang(url) {
+  try {
+    return url && url.searchParams.get('lang') === 'fr' ? 'fr' : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+function copilotPage(url) {
+  const dict = COPILOT_I18N[copilotLang(url)];
+  return page(dict.title, dict.desc, copilotBody(dict));
+}
+
+function copilotBody(dict) {
   return `
 <div class="kx-app">
   <div class="kx-header">
     <div class="kx-avatar">K</div>
     <div class="kx-header-text">
-      <div class="kx-header-name"><span id="kx-agent-name">Kubix Copilot</span><span class="kx-online-dot"></span></div>
-      <div class="kx-header-sub">Your dedicated SIAS engineer</div>
+      <div class="kx-header-name"><span id="kx-agent-name">${dict.name}</span><span class="kx-online-dot"></span></div>
+      <div class="kx-header-sub">${dict.sub}</div>
     </div>
-    <a class="kx-back" href="/">← Home</a>
+    <a class="kx-back" href="/">${dict.home}</a>
   </div>
   <div class="kx-messages" id="kx-messages"></div>
   <form class="kx-input-bar" id="kx-form">
-    <textarea class="kx-input" id="kx-input" rows="1" placeholder="Ask Kubix anything about your SIAS instance…"></textarea>
-    <button class="kx-send" id="kx-send" type="submit">Send</button>
+    <textarea class="kx-input" id="kx-input" rows="1" placeholder="${dict.placeholder}"></textarea>
+    <button class="kx-send" id="kx-send" type="submit">${dict.send}</button>
   </form>
 </div>
-<script>${COPILOT_CLIENT_JS}</script>`;
+<script>var KX_I18N = ${JSON.stringify(dict)};${COPILOT_CLIENT_JS}</script>`;
 }
 
 const COPILOT_CLIENT_JS = `
@@ -1219,6 +2192,48 @@ const COPILOT_CLIENT_JS = `
     return text;
   }
 
+  function sendFeedback(index, verdict, bar) {
+    // Optimistic: the verdict is the user's sentiment — persist it locally and
+    // show the thanks state even if the forward is briefly unreachable.
+    var m = state.transcript[index];
+    if (m) { m.verdict = verdict; saveState(); }
+    markFeedback(bar, verdict);
+    fetch('/api/kubix-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: state.sessionId, messageIndex: index, verdict: verdict }),
+    }).catch(function () {});
+  }
+
+  function markFeedback(bar, verdict) {
+    bar.className = 'kx-feedback kx-fb-done';
+    bar.querySelectorAll('button').forEach(function (b) {
+      b.disabled = true;
+      b.className = b.getAttribute('data-verdict') === verdict ? 'on' : '';
+    });
+    var thanks = bar.querySelector('.kx-fb-thanks');
+    if (thanks) thanks.textContent = KX_I18N.thanks;
+  }
+
+  function feedbackBar(index, verdict) {
+    var bar = document.createElement('div');
+    bar.className = 'kx-feedback';
+    ['up', 'down'].forEach(function (v) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('data-verdict', v);
+      b.title = v === 'up' ? KX_I18N.thumbUp : KX_I18N.thumbDown;
+      b.textContent = v === 'up' ? '\\uD83D\\uDC4D' : '\\uD83D\\uDC4E';
+      b.addEventListener('click', function () { sendFeedback(index, v, bar); });
+      bar.appendChild(b);
+    });
+    var thanks = document.createElement('span');
+    thanks.className = 'kx-fb-thanks';
+    bar.appendChild(thanks);
+    if (verdict) markFeedback(bar, verdict);
+    return bar;
+  }
+
   function addBubble(role, html, opts) {
     opts = opts || {};
     var wrap = document.createElement('div');
@@ -1227,11 +2242,14 @@ const COPILOT_CLIENT_JS = `
     bubble.className = 'kx-bubble';
     bubble.innerHTML = html;
     wrap.appendChild(bubble);
+    if (role === 'bot' && !opts.error && typeof opts.index === 'number') {
+      wrap.appendChild(feedbackBar(opts.index, opts.verdict));
+    }
     els.messages.appendChild(wrap);
     if (opts.escalated) {
       var banner = document.createElement('div');
       banner.className = 'kx-escalated-banner';
-      banner.textContent = 'A human engineer has been looped in and will follow up by email.';
+      banner.textContent = KX_I18N.escalated;
       els.messages.appendChild(banner);
     }
     els.messages.scrollTop = els.messages.scrollHeight;
@@ -1240,8 +2258,13 @@ const COPILOT_CLIENT_JS = `
 
   function renderTranscript() {
     els.messages.innerHTML = '';
-    state.transcript.forEach(function (m) {
-      addBubble(m.role, m.role === 'bot' ? renderMarkdown(m.text) : '<p>' + escapeHtml(m.text) + '</p>', { escalated: m.escalated });
+    state.transcript.forEach(function (m, i) {
+      addBubble(m.role, m.role === 'bot' ? renderMarkdown(m.text) : '<p>' + escapeHtml(m.text) + '</p>', {
+        escalated: m.escalated,
+        error: m.error,
+        index: m.role === 'bot' && !m.error ? i : undefined,
+        verdict: m.verdict,
+      });
     });
   }
   renderTranscript();
@@ -1287,18 +2310,18 @@ const COPILOT_CLIENT_JS = `
     }).then(function (r) {
       hideTyping();
       if (!r.res.ok || !r.data || r.data.ok === false) {
-        var msg = (r.data && r.data.error) || 'Something went wrong. Please try again.';
+        var msg = (r.data && r.data.error) || KX_I18N.generic;
         addBubble('bot', '<p>' + escapeHtml(msg) + '</p>', { error: true });
         state.transcript.push({ role: 'bot', text: msg, error: true });
         saveState();
         return;
       }
-      addBubble('bot', renderMarkdown(r.data.reply || ''), { escalated: !!r.data.escalated });
       state.transcript.push({ role: 'bot', text: r.data.reply || '', escalated: !!r.data.escalated });
       saveState();
+      addBubble('bot', renderMarkdown(r.data.reply || ''), { escalated: !!r.data.escalated, index: state.transcript.length - 1 });
     }).catch(function () {
       hideTyping();
-      addBubble('bot', '<p>Kubix is unreachable right now. Please try again shortly.</p>', { error: true });
+      addBubble('bot', '<p>' + escapeHtml(KX_I18N.unreachable) + '</p>', { error: true });
     }).finally(function () {
       setPending(false);
       els.input.focus();
@@ -1323,6 +2346,185 @@ const COPILOT_CLIENT_JS = `
   });
 })();
 `;
+
+function adminLoginPage() {
+  return page(
+    'Orders Dashboard — SIAS',
+    'Founder orders dashboard for SIAS',
+    `
+<header class="nav"><div class="wrap">
+  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+</div></header>
+<main class="wrap" style="max-width:420px;padding:120px 24px">
+  <div class="card" style="padding:40px 32px">
+    <h1 style="font-size:24px;margin-bottom:8px">Orders Dashboard</h1>
+    <p style="color:var(--ink3);margin-bottom:32px;font-size:15px">Enter your password to manage orders</p>
+    <form id="loginForm" style="display:flex;flex-direction:column;gap:16px">
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="Enter password" style="font-size:16px">
+      </div>
+      <button type="submit" class="btn btn-amber" style="width:100%;margin-top:12px">Sign In</button>
+    </form>
+    <div id="error" class="err" style="margin-top:16px"></div>
+  </div>
+</main>
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const password = new FormData(e.target).get('password');
+  const res = await fetch('/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+  const data = await res.json();
+  if (data.ok) {
+    window.location.href = '/admin';
+  } else {
+    document.getElementById('error').textContent = data.error || 'Login failed';
+    document.getElementById('error').style.display = 'block';
+  }
+});
+</script>
+    `,
+  );
+}
+
+function ordersDashboard(orders, env, origin) {
+  const statusLabel = {
+    awaiting_payment: 'Legacy review',
+    under_review: 'Under review',
+    confirmed: 'Confirmed',
+    provisioning_queued: 'Queued',
+    provisioning: 'Provisioning',
+    active: 'Active',
+    provisioning_failed: 'Needs retry',
+    rejected: 'Rejected',
+  };
+
+  const actionButtons = (order) => {
+    const id = escapeHtml(order.id);
+    if (order.status === 'under_review' || order.status === 'awaiting_payment') {
+      return `
+        <button class="btn btn-sm btn-ghost" data-order-action="accept" data-order-id="${id}">Accept</button>
+        <button class="btn btn-sm btn-amber" data-order-action="paid" data-order-id="${id}">Paid</button>`;
+    }
+    if (order.status === 'confirmed') {
+      return `
+        <button class="btn btn-sm btn-ghost" data-order-action="accept" data-order-id="${id}">Resend email</button>
+        <button class="btn btn-sm btn-amber" data-order-action="paid" data-order-id="${id}">Paid</button>`;
+    }
+    if (order.status === 'provisioning_failed') {
+      return `<button class="btn btn-sm btn-amber" data-order-action="paid" data-order-id="${id}">Retry provisioning</button>`;
+    }
+    return '<span class="dim">—</span>';
+  };
+
+  const renderOrder = (order) => {
+    const price = PLAN_CATALOG[order.plan];
+    const amountDisplay = order.amount_display
+      || (price ? `$${listPrice(order.plan, order.billing, 'USD')}` : 'custom');
+    const parsedDate = new Date(order.created_at);
+    const createdAt = Number.isNaN(parsedDate.getTime()) ? '—' : parsedDate.toLocaleString();
+    const fullPackage = order.full_package || order.plan === 'growth';
+    return `
+    <tr>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px">
+        <div style="font-weight:600;color:var(--ink)">${escapeHtml(order.company)}</div>
+        <div style="font-size:12px;color:var(--ink3);margin-top:2px">${escapeHtml(order.contact_name)} • ${escapeHtml(order.email)}</div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:4px">PM: ${escapeHtml(order.pm_email || order.email)} · Supervisor: ${escapeHtml(order.supervisor_email || 'missing')}</div>
+      </td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink2)">${escapeHtml(order.tenant_code)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink2)">${escapeHtml(price?.name || order.plan)}${fullPackage ? '<div style="font-size:11px;color:var(--cyan)">Adaptive AI</div>' : ''}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink2)">${escapeHtml(amountDisplay)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink3)">${escapeHtml(order.payment_method || 'bank_transfer')}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);font-size:12px">${escapeHtml(createdAt)}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line)">
+        <span class="chip ${order.status === 'provisioning_failed' ? 'crit' : order.status === 'active' ? 'ok' : 'ai'}" style="font-size:11px;margin:0">${escapeHtml(statusLabel[order.status] || order.status)}</span>
+        ${order.provisioning_error ? `<div style="max-width:220px;margin-top:5px;font-size:11px;color:var(--red)">${escapeHtml(order.provisioning_error)}</div>` : ''}
+      </td>
+      <td style="padding:14px 16px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap">
+        ${actionButtons(order)}
+      </td>
+    </tr>`;
+  };
+
+  const renderSection = (title, sectionOrders, color) => sectionOrders.length ? `
+    <section style="margin-bottom:36px">
+      <h2 style="font-size:16px;font-weight:700;margin-bottom:16px;color:${color}">${escapeHtml(title)} (${sectionOrders.length})</h2>
+      <div class="card" style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:1050px">
+          <thead><tr style="background:rgba(148,163,184,.06)">
+            ${['Company & seats', 'Tenant', 'Plan', 'Amount', 'Payment', 'Created', 'Status', 'Action'].map((heading) => `<th style="padding:12px 16px;text-align:${heading === 'Action' ? 'right' : 'left'};font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">${heading}</th>`).join('')}
+          </tr></thead>
+          <tbody>${sectionOrders.map(renderOrder).join('')}</tbody>
+        </table>
+      </div>
+    </section>` : '';
+
+  const review = orders.filter((order) => ['awaiting_payment', 'under_review'].includes(order.status));
+  const confirmed = orders.filter((order) => order.status === 'confirmed');
+  const provisioning = orders.filter((order) => ['provisioning_queued', 'provisioning'].includes(order.status));
+  const attention = orders.filter((order) => order.status === 'provisioning_failed');
+  const active = orders.filter((order) => order.status === 'active');
+  const other = orders.filter((order) => ![
+    'awaiting_payment', 'under_review', 'confirmed', 'provisioning_queued',
+    'provisioning', 'provisioning_failed', 'active',
+  ].includes(order.status));
+
+  return page(
+    'Orders Dashboard — SIAS',
+    'Manage customer orders and approvals',
+    `
+<header class="nav"><div class="wrap">
+  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <nav class="navlinks"><button id="logout" class="btn btn-ghost btn-sm">Logout</button></nav>
+</div></header>
+<main class="wrap" style="padding:80px 24px 60px">
+  <div style="margin-bottom:48px">
+    <h1 style="font-size:28px;margin-bottom:8px">Orders</h1>
+    <p style="color:var(--ink2);font-size:15px"><strong>Accept</strong> confirms the order and emails the buyer. <strong>Paid</strong> immediately launches the dedicated SIAS instance, PM account, supervisor account, and delivery emails.</p>
+  </div>
+
+  ${renderSection('Under review', review, 'var(--amber2)')}
+  ${renderSection('Confirmed — awaiting payment', confirmed, 'var(--cyan)')}
+  ${renderSection('Provisioning', provisioning, 'var(--cyan)')}
+  ${renderSection('Needs attention', attention, 'var(--red)')}
+  ${renderSection('Active instances', active, 'var(--green)')}
+  ${renderSection('Other', other, 'var(--ink3)')}
+  ${orders.length === 0 ? '<div class="card" style="padding:32px;text-align:center;color:var(--ink2)">No orders yet.</div>' : ''}
+</main>
+<script>
+async function runOrderAction(btn) {
+  const action = btn.getAttribute('data-order-action');
+  const orderId = btn.getAttribute('data-order-id');
+  if (action === 'paid' && !window.confirm('Confirm payment and launch this buyer\\'s dedicated SIAS instance now?')) return;
+  btn.disabled = true;
+  const previous = btn.textContent;
+  btn.textContent = action === 'paid' ? 'Launching…' : 'Sending…';
+  const res = await fetch('/admin/' + action, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-SIAS-Admin-Action': '1' },
+    body: JSON.stringify({ orderId: orderId })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    if (data.warning) window.alert(data.warning);
+    window.location.reload();
+  } else {
+    window.alert('Error: ' + (data.error || 'action failed'));
+    btn.disabled = false;
+    btn.textContent = previous;
+  }
+}
+document.querySelectorAll('[data-order-action]').forEach(function (button) {
+  button.addEventListener('click', function () { runOrderAction(button); });
+});
+document.getElementById('logout').addEventListener('click', async function () {
+  await fetch('/admin/logout', { method: 'POST' });
+  window.location.href = '/';
+});
+</script>
+    `,
+  );
+}
 
 const BASE_CSS = `
 :root{
@@ -1506,6 +2708,31 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
   align-self: stretch; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,0.4);
   color: #fcd34d; font-size: 13px; padding: 10px 14px; border-radius: 8px; margin: -2px 0 4px;
 }
+.ldocwrap { max-width: 780px; padding-top: 110px; padding-bottom: 70px; }
+.ldoc h1 { font-size: 30px; margin: 18px 0 14px; }
+.ldoc h2 { font-size: 20px; margin: 28px 0 10px; }
+.ldoc h3 { font-size: 16px; margin: 22px 0 8px; }
+.ldoc p, .ldoc li { color: var(--ink2); font-size: 14.5px; line-height: 1.65; }
+.ldoc p { margin: 0 0 12px; }
+.ldoc ul, .ldoc ol { margin: 4px 0 14px; padding-left: 22px; }
+.ldoc hr { border: none; border-top: 1px solid var(--line); margin: 26px 0; }
+.ldoc blockquote {
+  background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.4); color: #fcd34d;
+  border-radius: 10px; padding: 12px 16px; margin: 0 0 18px; font-size: 13.5px;
+}
+.ldoc code { font-family: 'Space Grotesk',ui-monospace,monospace; background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.ldoc pre.ldoc-code { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0 16px; }
+.kx-feedback { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.kx-feedback button {
+  border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 2px 8px;
+  font-size: 13px; cursor: pointer; opacity: .55; transition: opacity .15s, border-color .15s;
+  filter: grayscale(1);
+}
+.kx-feedback button:hover { opacity: 1; filter: none; }
+.kx-feedback button.on { opacity: 1; filter: none; border-color: var(--amber); background: rgba(245,158,11,.10); }
+.kx-feedback button:disabled { cursor: default; }
+.kx-fb-done button:not(.on) { opacity: .25; }
+.kx-fb-thanks { font-size: 12px; color: var(--ink3); margin-left: 4px; }
 .kx-input-bar { display: flex; gap: 10px; padding: 14px 4px 4px; border-top: 1px solid var(--line); }
 .kx-input {
   flex: 1; resize: none; background: var(--bg2); border: 1px solid var(--line); color: var(--ink);

@@ -9,12 +9,14 @@ class PillTabBar extends StatelessWidget {
   final int tab;
   final void Function(int) onSelect;
   final Map<int, int> badgeCounts;
+  final bool showAiTraining;
 
   const PillTabBar({
     super.key,
     required this.tab,
     required this.onSelect,
     this.badgeCounts = const {},
+    this.showAiTraining = false,
   });
 
   @override
@@ -39,6 +41,8 @@ class PillTabBar extends StatelessWidget {
         'icon': Icons.account_tree,
         'label': l10n?.adminTabHierarchy ?? 'Hierarchy',
       },
+      if (showAiTraining)
+        {'icon': Icons.model_training, 'label': 'AI Training'},
     ];
     final t = context.appTheme;
     return Container(

@@ -1,6 +1,6 @@
 # SIAS - Smart Industrial Alert System App Handoff Notes
 
-Last verified: 2026-07-04 from the local repository.
+Last verified: 2026-07-21 from the local repository.
 
 This file is the working context for future coding agents. Keep it updated when the
 app structure, worker deployment, Firebase schema, or CI behavior changes.
@@ -34,8 +34,9 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 ## Repository Map
 
 - `lib/`: Flutter application code. There are currently 212 Dart files (recounted 2026-07-04).
-- `lib/main.dart`: Firebase init, service init, providers, localization, auth gate, role router, offline account fallback.
-- `lib/config/app_config.dart`: Single source for worker URLs, Dart defines, worker endpoints, and request timeouts.
+- `lib/main.dart`: Firebase init, service init, providers, localization, auth gate, role router, offline account fallback, and per-tenant runtime config.
+- `lib/config/app_config.dart`: Single source for worker URLs, Dart defines, runtime tenant overrides, worker endpoints, and request timeouts.
+- `lib/config/runtime_firebase_config.dart`: Web runtime parser for the public Firebase/worker config injected by `sias-app`, with native/test stubs.
 - `lib/models/`: Alert, user, collaboration, hierarchy, factory map, shift, and predictive data models.
 - `lib/providers/alert_provider.dart`: Main app state facade for alert streams, per-supervisor alert buckets, actions, comments, critical flags, help, and assistance.
 - `lib/services/`: Firebase, alerts, auth, FCM, voice, AI, predictions, shifts, hierarchy, location, offline, PDF, and worker queue services.
@@ -47,6 +48,8 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 - `lib/screens/superadmin/`: SuperAdmin command console (theme, shell, AI Training, AI Agents, Production Managers, Overview Monitor, Hardware tabs). The `monitor/` subfolder holds the Overview Monitor war-room (replaced the old Logs tab on 2026-06-19).
 - `lib/widgets/`: Shared UI widgets for dashboard, overview, shifts, admin header/tabs, loading/empty/offline states, locator painter, voice command button, and AI logs.
 - `android/app/src/main/kotlin/com/example/alertsysapp/`: Native Android method channels and lock-screen voice capture.
+- `cloudflare_app_worker.js`, `wrangler.app.toml`: Shared `sias-app` Flutter web/APK delivery worker and its Assets/KV/R2 bindings.
+- `web/firebase-messaging-sw.js`: Web push service worker; fetches the current tenant's messaging config from `/__swconfig`.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
 - `worker_test/`: Jest worker test suite. There are currently 39 worker test files (recounted 2026-07-04).
@@ -107,7 +110,7 @@ The VM modules warning from Node is expected.
 
 ## Active Worker Split
 
-SIAS - Smart Industrial Alert System runs **eight** active Cloudflare Workers. The core split keeps notification delivery from competing with AI/security work inside one invocation; the rest carve out ingestion, identity, observability, backups, and the commercial storefront:
+SIAS - Smart Industrial Alert System runs **nine** active Cloudflare Workers. The core split keeps notification delivery from competing with AI/security work inside one invocation; the rest carve out ingestion, identity, observability, backups, the shared tenant app shell, and the commercial storefront:
 
 | Worker | Config | Main file | Cron | Role |
 |---|---|---|---|---|
@@ -119,14 +122,60 @@ SIAS - Smart Industrial Alert System runs **eight** active Cloudflare Workers. T
 | `alertsys-monitor` | `wrangler.monitor.toml` | `cloudflare_monitor_worker.js` | every 5 min | Synthetic probes + SLO/error-budget alerting |
 | `alertsys-backup` | `wrangler.backup.toml` | `cloudflare_backup_worker.js` | daily 02:00 UTC | RTDB → R2 snapshots + **alert retention policy** |
 | `sias-store` | `wrangler.store.toml` | `cloudflare_store_worker.js` | — | B2B storefront: landing/pricing, Stripe Checkout, purchase webhook → n8n intake |
+| `sias-app` | `wrangler.app.toml` | `cloudflare_app_worker.js` | — | Shared Flutter web shell, per-tenant runtime Firebase config, APK download/QR |
 
-All eight deploy from CI on protected `main` pushes (`.github/workflows/ci.yml`) and via `npm run deploy:workers` (per-worker `deploy:ai` … `deploy:store` scripts exist too). Do not hand-deploy a subset — that is how config drift happens.
+The eight data-plane/store workers deploy from CI on protected `main` pushes and via `npm run deploy:workers`; `sias-app` deploys after the web build and is gated by `ENABLE_APP_WORKER_DEPLOY` until the TENANTS KV id and wildcard DNS are configured. Do not hand-deploy a subset — that is how config drift happens.
+
+### Per-Tenant App Delivery (2026-07-21)
+
+`sias-app` is one shared Worker, not one Worker per customer. It serves the Flutter
+`build/web` bundle through the `ASSETS` binding for every one-level tenant host:
+`https://<tenant>.kubixdesiney.com`. The Worker resolves the slug from `Host`, reads
+the tenant's public Firebase web config from the `TENANTS` KV namespace, and injects
+`window.__SIAS_CONFIG__` into `index.html` before `flutter_bootstrap.js`. The Flutter
+web runtime (`lib/config/runtime_firebase_config.dart`) uses that blob for Firebase
+initialization and worker URLs; native builds continue using `firebase_options.dart`
+and dart-defines.
+
+The app worker never reads customer data. Firebase client config is public; isolation
+comes from each customer's Firebase Auth realm and RTDB rules. `GET /__config` is a
+safe probe returning only `{ok, tenant, hasConfig}`, while `/__swconfig` returns the
+minimal messaging config used by `web/firebase-messaging-sw.js`.
+
+Provisioning writes the KV value `{tenantCode, company, firebase, workers}` to the
+shared namespace and records `appUrl` plus `ingestHost` in
+`deploy/tenants/<tenant>/provision-summary.json`. The generated tenant ingest config
+contains the more-specific `<tenant>-ingest.kubixdesiney.com/*` route block. DNS and
+route activation are deliberate operator steps: create a proxied wildcard record
+`*.kubixdesiney.com`, route the wildcard to `sias-app`, keep the more-specific
+`sias.kubixdesiney.com/*` route on `sias-store`, and confirm Universal SSL covers one
+subdomain level. The app worker returns a branded 404 for the apex, `www`, reserved
+labels, and unprovisioned tenant slugs.
+
+Android remains build-time per tenant because FCM consumes `google-services.json`.
+The manual `Build tenant APK` workflow takes the base64 file from the protected
+`provisioning` environment, publishes a GitHub artifact and uploads
+`<tenant>/sias-<tenant>.apk` to the app worker's R2 bucket. The tenant's `/app` page
+renders a dependency-free QR code and direct download link; the web PWA is available
+immediately without an install.
 
 ### Store Worker (2026-07-13)
 
 `sias-store` (`cloudflare_store_worker.js`, `wrangler.store.toml`) is the commercial front door — it is NOT part of the product data plane and never touches customer instances or Firebase. Routes: `GET /` landing page, `GET /buy` intake form, `POST /api/checkout` (validates intake, generates the buyer's tenant code e.g. `NSW#7K2F`, creates a Stripe Checkout Session with all intake fields + tenant code in session metadata), `GET /api/session` (success-page status), `GET /success`, `GET /cancel`, `POST /api/stripe-webhook` (HMAC-verified via `STRIPE_WEBHOOK_SECRET`; maps `checkout.session.completed` → `purchase_completed` and `invoice.payment_failed` → `payment_failed`, forwards to `N8N_INTAKE_WEBHOOK_URL` for provisioning/agent-creation/Brevo email; forward failure returns 500 so Stripe retries — n8n must dedupe on `eventId`), `GET /config` status probe. **Dual payment rails (2026-07-13):** international cards go through Stripe (monthly or annual, USD); Tunisian CB cards go through **ClicToPay (SMT)** — BPC-style REST: `/api/checkout` with `method: 'clictopay'` calls `register.do` (amount in TND millimes, currency 788, annual prepay only since ClicToPay has no subscriptions) and redirects to `formUrl`; `GET /clictopay/return` verifies via `getOrderStatusExtended.do` (paid = `orderStatus === 2`), forwards a `purchase_completed` event (`eventId: ctp_<orderId>`, n8n dedupes) and lands on `/success?ctp_order=`; `GET /api/ctp-order` feeds the success page. TND prices live in `PLAN_CATALOG.tnd*` (Starter 17,880 TND/yr; Growth 35,880 TND/yr). Secrets: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `CLICTOPAY_USER`, `CLICTOPAY_PASSWORD`, `N8N_INTAKE_WEBHOOK_URL` (= `https://kubixdesiney.app.n8n.cloud/webhook/sias-purchase-intake`, n8n WF1 `S7PiPrb3DWm2T7GN`), optional `N8N_WEBHOOK_AUTH`; vars: `SALES_EMAIL`, `STORE_RATE_LIMIT`, `CLICTOPAY_BASE` (prod `https://ipay.clictopay.com/payment/rest`, test `https://test.clictopay.com/payment/rest`), `CLICTOPAY_AMOUNT_EXPONENT` (default 3 = millimes — **verify with a small test payment before go-live**). USD pricing in `PLAN_CATALOG` (Starter $590/mo / $5,880/yr; Growth $1,190/mo / $11,880/yr; Enterprise = mailto sales) — inline `price_data`, so no Stripe dashboard products are required. Pure helpers (`makeTenantCode`, `validateIntake`, `checkoutParams`, `verifyStripeSignature`, `purchaseEventPayload`, `clictopayRegisterParams`, `clictopayPaid`, `ctpPurchasePayload`, `rateLimited`) are covered by `worker_test/store_worker.test.js`.
 
 **Kubix Copilot chat (2026-07-17):** `GET /copilot` serves the buyer-facing chat page (localStorage transcript + sessionId, XSS-safe escape-first markdown renderer, escalation banner, context via `?tenant=&company=&name=&plan=` — the `/success` page deep-links it). `POST /api/kubix` is the server-side proxy: validates (`validateChatRequest`, message ≤2000 chars, sessionId `[A-Za-z0-9._-]{1,80}`), rate-limits 20/min/IP, forwards to secret `N8N_CHAT_WEBHOOK_URL` (n8n WF2 `dI4h0nH3bAsjuzGJ`, optional bearer `N8N_WEBHOOK_AUTH`, 25s AbortController timeout) and returns `{ok, reply, escalated, agent}` — the n8n URL never reaches the client. Pure helpers (`clipText`, `validateChatRequest`, `buildForwardPayload`) are covered in `worker_test/store_worker.test.js`.
+
+**Pricing extraction (2026-07-20):** `PLAN_CATALOG`, `planPrice`, `TND_CURRENCY_CODE`, `tndMinorUnits`, and the new `listPrice(plan, billing, currency)` helper moved to root-level `pricing.mjs` — the single source of truth shared by the store worker (re-exported for backward compatibility) and `tool/generate_quote.mjs`. Never duplicate a price figure outside `pricing.mjs`.
+
+**Invoice-led sales mode (2026-07-20):** `SALES_MODE` in `wrangler.store.toml` `[vars]` controls the storefront's commercial motion — `"quote"` (**current default**) makes `/buy` collect the same intake but submit a **quote request** instead of a card checkout; `"card"` restores the original self-serve Stripe/ClicToPay flow byte-for-byte (both code paths are tested in `worker_test/store_quote.test.js`). In quote mode: `POST /api/quote` validates via `validateQuoteIntake` (adds optional `phone` + `currency` USD/TND/EUR, no `method` field), generates the tenant code, and forwards a `quote_requested` event (`quoteEventPayload`, `eventId: qr_<uuid>`, includes indicative `listPrice` in USD cents + TND) to `N8N_INTAKE_WEBHOOK_URL` — n8n dedupes on eventId same as purchases. Landing CTAs/FAQ/pricing footnote and the `/buy` form (currency picker instead of payment-method radios, no monthly/annual-per-ClicToPay coupling) switch server-side on `salesMode(env)` — no client-side flicker. `GET /config` reports `salesMode`. Card rails (Stripe/ClicToPay) stay fully deployed and untouched; flipping back to `"card"` is a one-var change. `tool/generate_quote.mjs` (`npm run quote --`) renders a branded, signature-ready quote PDF (+ JSON sidecar under git-ignored `quotes/`) from the same `pricing.mjs` figures, with discount/validity/currency options.
+
+**Kubix feedback + i18n + onboarding (2026-07-20):** `POST /api/kubix-feedback` (`validateFeedbackRequest`: sessionId, `messageIndex` 0-999, `verdict` up/down) forwards thumbs-up/down verdicts to secret `N8N_FEEDBACK_WEBHOOK_URL` (same optional-bearer pattern as the other n8n forwards); the copilot page persists verdicts into the local transcript and shows a "thanks" state. `GET /copilot?lang=fr` renders French page chrome via the `COPILOT_I18N` dictionary (`copilotLang(url)` picks `fr` only for that exact query value) — Kubix itself already answers in the user's language, this only localizes labels/placeholders/errors. `GET /welcome` is the buyer-facing "what happens after you buy" onboarding page (four milestones: activation email, first 30 minutes, first integration, meet Kubix), linked from `/success`. Flutter: `AppConfig.copilotUrl` (`ALERTSYS_COPILOT_URL` dart-define) plus a "Kubix Copilot" card on the SuperAdmin **Status** tab (`lib/screens/superadmin/status_tab.dart`, `_KubixCopilotCard`) that deep-links to `/copilot` with `lang=fr` appended when the console runs in French. `tool/kubix_chat_report.mjs` is a pure-Node CSV analytics report (sessions/day, escalation rate, top question words EN+FR-stopword-filtered, median reply length) over a `sias_chats` data-table export.
+
+**Controlled B2B orders dashboard (2026-07-26):** Payment remains offline/manual. Buyer submission creates a private Supabase order in `under_review` and requires the buyer, PM, supervisor, and payment-method fields. The founder dashboard offers two distinct, CSRF-protected actions: **Accept** (`under_review → confirmed`, sends the “we will contact you shortly about payment” event) and **Paid** (`under_review|confirmed|provisioning_failed → provisioning_queued`, including direct virement). Paid repository-dispatches only `orderId` + `tenantCode`; the private GitHub job fetches the rest, provisions and verifies the dedicated Firebase/Cloudflare instance, then creates exactly one `admin` PM and one `supervisor` account and sends single-use activation emails. Legacy `POST /admin/approve` is permanently `410 Gone`. See `docs/ops/AUTOMATIC_ORDER_PROVISIONING.md` and `docs/ops/sias_orders_schema.sql`.
+
+**Legal pack gate (2026-07-20):** `GET /legal`, `/legal/privacy`, `/legal/terms` render the embedded legal markdown (generated copy in `store_legal_content.js` via `npm run legal:embed` from `docs/legal/*.md` — regenerate whenever a draft changes) through a small server-side renderer (`renderMarkdownDoc`, escape-first). The routes hard-404 unless `LEGAL_PUBLISH === "true"` in `wrangler.store.toml` `[vars]` (default `"false"`); footer links appear only when enabled. `npm run legal:lint` (`tool/legal_lint.mjs`) checks the drafts for unresolved `[[PLACEHOLDER]]` markers (reported as a warning count, never blocking), naming consistency (only "KubixDesiney" / "SIAS — Smart Industrial Alert System" allowed), forbidden claims (SOC 2/ISO 27001 certification, bare "guarantee" outside SLA/money-back contexts), and MSA→DPA/SLA cross-references; wired as a non-blocking `legal-lint` job in `ci.yml`. See `docs/legal/COUNSEL_BRIEF.md` for the counsel handoff.
+
+**Security headers (2026-07-20):** every `html()` response now carries a strict nonce-based CSP (`contentSecurityPolicy(nonce)` — `script-src 'self' 'nonce-<random>'`, no `unsafe-inline` script; every `<script>` tag is stamped with the response's nonce), HSTS, and a locked-down `Permissions-Policy`. All inline `onclick=`/`onchange=` handlers across the landing/buy pages were refactored to `addEventListener`. `GET /.well-known/security.txt` (RFC 9116) is public, 1-year expiry, contact = `SALES_EMAIL`.
 
 Worker HTTP auth (2026-07-04; enforced 2026-07-09): the AI and notify workers verify callers with the Firebase **ID token** (`Authorization: Bearer …`, validated against Google's JWKS) or the legacy `x-worker-secret`, controlled by `WORKER_AUTH_MODE` in their wrangler `[vars]` (`off`/`log`/`required`, **currently `required`** after the 2026-07-09 security pass). `/config` stays public for status probes. Client side, `lib/services/worker_auth.dart` (`WorkerAuth.headers()`) attaches both credentials; the ingest + monitor worker-to-worker `/notify` triggers now send `x-worker-secret`, so `WORKER_SHARED_SECRET` must be set on the AI/notify/ingest/monitor workers (the per-minute cron is the durable fallback if a trigger 401s). `ALERTSYS_WORKER_SHARED_SECRET` should be dropped from public app builds and rotated if it ever shipped in one. See `SECURITY_REMEDIATION_2026-07-09.md` for the full remediation of the buyer/Codex security scan (worker fail-closed fixes, GitHub proxy SuperAdmin gate, connector credential host-binding, SCIM stale-key cleanup, tightened alert/notification/user RTDB rules, on-prem PocketBase + SSE hardening).
 
@@ -835,61 +884,51 @@ Operational note:
 
 ## Testing Inventory
 
-Worker Jest tests:
+Worker Jest tests (`worker_test/`, 65+ files) — grouped by what they cover:
 
-- `auth_gate.test.js`
-- `briefing_helpers.test.js`
-- `factory_id.test.js`
-- `notification_fanout.test.js`
-- `predictive_model.test.js`
-- `proximity.test.js`
-- `reliability.test.js`
-- `score_supervisor.test.js`
-- `scoring.test.js`
-- `security_prompt_injection.test.js`
-- `validation.test.js`
-- `database_rules_security.test.js` (security/workers/bugs/ai_forecast rule policy)
-- `haversine.test.js`
+- **Modular worker (`worker/*.js`) direct tests**: `alerts_module.test.js`, `escalation_module.test.js`, `auth_module.test.js` (real generated-RSA-key JWT signing, no stub), `utils_module.test.js`, `fcm_module_coverage.test.js`, `ai_handler_routes.test.js`, `briefing_handler.test.js`, `suggest_assignee_handler.test.js` — each imports its `worker/*.js` module directly (`jest.unstable_mockModule` for cross-module deps) rather than the deployed monolith.
+- **AI/security worker (deployed `cloudflare_ai_worker.js`)**: `scoring.test.js`, `score_supervisor.test.js`, `predictive_model.test.js`, `briefing_helpers.test.js`, `security_prompt_injection.test.js`, `security_siem_export.test.js`, `validation.test.js`, `reliability.test.js`, `worker_auth.test.js`, `model_eval.test.js`, `llm_router.test.js`, `shift_weights.test.js`, `agent_control.test.js`.
+- **Notify worker**: `notification_fanout.test.js`.
+- **GitHub proxy worker**: `github_worker.test.js`, `github_e2e.test.js`.
+- **Ingest worker + connectors**: `ingest.test.js`, `ingest_e2e.test.js`, `connectors.test.js`.
+- **Reference edge gateway (`gateway/`)**: `gateway_mapping.test.js`, `gateway_queue.test.js`, `gateway_contract.test.js` (conformance against the real ingest normalizer), plus the pre-existing on-prem `edge_gateway.test.js`.
+- **Store worker (`sias-store`)**: `store_worker.test.js`, `store_quote.test.js` (invoice-led SALES_MODE + pricing.mjs round-trip + quote PDF tool), `kubix_copilot.test.js` (feedback/i18n/welcome/chat-report), `legal_lint.test.js` (legal pack linter + `/legal` gate).
+- **Route-level integration** (`worker_test/integration/`): `ingest_routes.test.js`, `store_routes.test.js` — real `default.fetch` request/response cycles against an in-memory fake RTDB / mocked network, not just pure-helper imports.
+- **RTDB rules**: `database_rules_security.test.js` (incl. adversarial fuzz cases — cross-role self-escalation, foreign-factory claims, credential-vault reads), `firebase_rules_configuration.test.js`.
+- **Provisioning/tenant lifecycle**: `provision_owner.test.js`, `provision_instance.test.js`, `verify_instance.test.js`, `tenant_registry.test.js`.
+- **Guardian/self-heal pipeline**: `guardian_preflight.test.js`, `guardian_providers.test.js`, `guardian_detect.test.js`, `guardian_drill.test.js`, `guardian_ci_watch.test.js`, `joint_fix.test.js`, `mutation_test.test.js`.
+- **SCIM, monitor, retention, on-prem**: `scim.test.js`, `monitor_slo.test.js`, `slo_delivery.test.js`, `retention.test.js`, `onprem_*.test.js` (assignment, changes, escalation, ingest, license, migrate, rbac, retention_backup, retry).
+- **Pure utility**: `factory_id.test.js`, `haversine.test.js`, `proximity.test.js`, `auth_gate.test.js`.
 
-Flutter tests:
+Flutter tests (`test/`, 49 files):
 
-- `theme_test.dart`
-- `voice_command_parser_test.dart`
-- `widget_test.dart`
+- `theme_test.dart` / `theme_brand_test.dart` / `theme_contrast_test.dart` (incl. the WCAG AA contrast regression test), `voice_command_parser_test.dart`, `widget_test.dart`, `accessibility_bottom_nav_test.dart`.
 - Model tests for alert, collaboration, predictive, shift, and user models.
-- Service tests for AI scoring, alert actions, alert stream, collaboration, offline account cache, predictive scope, AI score adjuster, and reinforcement.
+- Service tests for AI scoring (+ parity + score-adjuster/reinforcement), alert actions, alert stream, collaboration, offline account cache, predictive scope, connector service, alert type registry, branding/infra/AI-model config, GitHub service, PDF common, telemetry, worker trigger queue, and the data-layer abstraction (`services/data/*` — Firebase/PocketBase/on-prem-auth backends, alert lifecycle, provider backend widget test).
 - Forecaster tests: `gradient_boost_test.dart` (loss beats the prior baseline on a separable task, learned rules hold, serialization round-trip, truncation, clone), `forecast_feature_engineer_test.dart` (daily rows, tabular samples, lags/trend/recency, padded inference features), `forecast_trainer_test.dart` (end-to-end learning verdict, cancel, small-dataset rejection, checkpoint resume, adaptation boosting), `alert_record_parser_test.dart` (CSV/JSON/SQL/PDF/timestamps/type normalization), `forecast_overview_engine_test.dart` (forecast→PredictiveModel adapter math, bucket decomposition, learning diagnosis, learning-verdict rule).
-- Utility tests for alert metadata and factory ids.
-- Widget tests for admin dashboard, factory location picker, and locator painter.
+- Utility tests for alert metadata, factory ids, notification eligibility, alert-claim-error formatting, and user-friendly error messages.
+- Widget tests for the admin dashboard, factory location picker, locator painter, and the Overview tab's `EliteStatCard` (admin overview stat tile — value/spark-line/trend-badge/critical-badge states, light+dark theme).
+- Hardware Lab: `hw_machines_test.dart`.
 
-Current verified results (2026-06-12, after the AI Agent Fleet console, worker agent control plane, and PM predictive-card fix):
+Current verified results (2026-07-20, after the commercial/integration max-out pass — invoice-led storefront, reference edge gateway, Kubix upgrades, provisioning lifecycle tooling, legal-pack linter, security hardening, and the worker coverage ratchet):
 
-- `npm test`: 15 suites passed, 187 tests passed (new: `agent_control.test.js`).
-- `flutter test`: 278 tests passed.
+- `npm test`: 67 suites passed, 928 tests passed.
+- `npm run test:coverage`: statements 89.4%, branches 70.8%, functions 92.5%, lines 89.4% — `coverageThreshold` raised to `{ statements: 84, branches: 65, functions: 86, lines: 84 }` (from `60/54/62/60`), a few points below the measured baseline for headroom.
+- `flutter test`: 453 tests passed.
 - `flutter analyze --no-fatal-infos --no-fatal-warnings`: clean (style infos only).
 - `flutter build web --release --no-wasm-dry-run`: succeeds.
 
 ## CI And Deploy
 
-`.github/workflows/ci.yml`:
+`.github/workflows/ci.yml` (runs on pushes to `main`, pull requests to `main`, and manual dispatch; `FLUTTER_VERSION: 3.41.6`, `NODE_VERSION: 22`):
 
-- Runs on pushes to `main`, pull requests to `main`, and manual dispatch.
-- Flutter job:
-  - Checkout.
-  - Java 17.
-  - Flutter 3.41.6 stable.
-  - Pub cache.
-  - `flutter pub get`.
-  - `flutter analyze --no-fatal-infos --no-fatal-warnings`.
-  - `flutter test --reporter expanded`.
-  - Optional AI auto-fix flow for failing Flutter tests through `/auto-fix-full`.
-  - Builds Android debug APK and Flutter web release with split worker URLs.
-  - Uploads `build/web`.
-- Worker job:
-  - Node 20.
-  - `npm ci || npm install`.
-  - `npm test`.
-  - On direct non-AI-fix pushes to `main`, deploys both split workers.
+- **`flutter` job**: checkout, Java 17, Flutter (pub-cache keyed on `pubspec.lock`), `flutter pub get`, `flutter analyze --no-fatal-infos --no-fatal-warnings`, `flutter test --reporter expanded`, then `flutter build apk --debug` + `flutter build web --release --no-wasm-dry-run` (both with the split worker URLs baked in via `--dart-define`), uploads `build/web` as the `web-build` artifact (7-day retention). The AI auto-fix flow described in older notes lives in the separate `autonomous-bugfix-agent.yml` workflow, not in `ci.yml` — `ci.yml` itself has no auto-fix step; a failing Flutter test simply fails the job.
+- **`worker` job**: Node 20, `npm ci`, `npm test` (the full Jest suite — all 8 data-plane/store workers, `sias-app`, `tool/`, and `gateway/`), then on direct pushes to `main` only (when `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` are set): deploys the 8 data-plane/store workers via their explicit configs (never a subset — that is how config drift happens) and idempotently pushes the `alertsys-github` worker's bootstrap secrets. The Flutter job deploys `sias-app` after building `build/web` when `ENABLE_APP_WORKER_DEPLOY=true`.
+- **`legal-lint` job** (2026-07-20, non-blocking — `continue-on-error: true`): `node tool/legal_lint.mjs` over `docs/legal/*.md`. Surfaces naming/forbidden-claim violations and counts `[[PLACEHOLDER]]` markers loudly without ever gating a deploy (counsel resolution is ongoing work, not a CI blocker).
+
+`.github/workflows/security.yml` (push/PR/weekly cron): `secret-scan` (gitleaks, blocking on the current tree; full-history scan is warning-only pending the documented history purge), `dependency-audit` (`npm audit --omit=dev --audit-level=high` across root/`functions`/`codebasedelta`), and `sbom` (2026-07-20 — `npm sbom --sbom-format cyclonedx --omit dev`, uploaded as the `sbom-cyclonedx` artifact for buyer due-diligence).
+
+`.github/workflows/provision-tenant.yml` (2026-07-20): `workflow_dispatch` (tenant/project-id/workers-subdomain inputs) gated behind the **`provisioning` GitHub environment** (configure required reviewers there) — runs `provision_instance --execute` then a standalone `verify_instance` check, uploads the summary artifact. See "Provisioning lifecycle tooling" above.
 
 `.github/workflows/deploy.yml`:
 
@@ -927,8 +966,9 @@ Required GitHub Actions secrets:
 - Keep `cloudflare_notify_worker.js` and `worker/alerts.js` behavior aligned when changing notification fan-out.
 - Keep `database.rules.json` validation aligned with any new alert fields written by workers or Flutter.
 - `cloudflare_workerV2.js` was deleted (2026-06-14); its helper test coverage now runs against the deployed `cloudflare_ai_worker.js`. Do not reintroduce a monolithic worker.
-- `README.md` still references older monolithic-worker concepts in places. The active deployment truth is the split worker configs.
-- `TESTING.md` has some stale CI version text. Check `.github/workflows/ci.yml` for current CI versions.
+- `README.md`'s top half is the product front door (architecture Mermaid diagram, audience-scoped quickstarts) as of 2026-07-20; deep implementation detail still lives in this file and `docs/`.
+- `TESTING.md` was refreshed 2026-07-20 to match the current 8-worker/gateway/store-worker test layout and the real `ci.yml` job list (`flutter`, `worker`, `legal-lint`) — trust it again, but re-verify against `.github/workflows/ci.yml` if CI structure changes.
+- `docs/README.md` is the full documentation index (2026-07-20) — link any new doc there, one line per entry.
 - A repo-wide scan on 2026-06-14 found no NUL bytes in any source file. `functions/index.js` previously carried a 767-byte NUL tail (now fixed; `node --check` passes). `cloudflare_ai_worker.js` parses cleanly (0 NUL bytes) but may still contain mojibake in string/comment literals; use `rg -a` if normal search treats it as binary.
 - `lib/screens/overview_tab.dart` may have local uncommitted changes in this workspace; do not revert user changes.
 - Generated Flutter localization files live under `lib/l10n/generated`; update ARB files and regenerate instead of hand-editing generated files when possible.
@@ -1162,17 +1202,125 @@ microcontroller→Firebase path. SIAS sits *on top of* the estate (no control lo
   `test/services/connector_service_test.dart` (model round-trips). See
   `docs/integrations/SCADA_INTEGRATION.md` for the full contract.
 
-## Per-Customer Provisioning (2026-07-17)
+## Reference Edge Gateway (2026-07-20)
 
-Two CLIs automate the dedicated-instance runbook (full doc: `docs/PROVISIONING.md`):
+`gateway/` is a self-contained, packaged Node 20 ESM edge gateway — the
+supported alternative to hand-writing inline connector snippets. It has
+**zero required dependencies**; each protocol library (`node-opcua`,
+`modbus-serial`, `nodes7`, `mqtt`, `sparkplug-payload`) is an optional peer,
+lazy-imported (`gateway/src/lazy.mjs`) with a helpful install message if
+missing. `gateway/bin/sias-gateway.mjs --config gateway.config.json` runs it
+against a real connector; `--sim <N> [--fault-every 90s]` runs the built-in
+**plant simulator** (`gateway/src/sources/sim.mjs` — deterministic seeded
+telemetry with periodic fault injection) as a live demo engine; `--sim <N>
+--dry-run` prints the exact mapped ingest payloads for two ticks and exits,
+fully offline.
+
+- **Sources** (`gateway/src/sources/`): `opcua.mjs` (subscribe to nodeIds),
+  `modbus.mjs` (poll holding/input registers, uint16/int16/uint32/float32
+  decode), `s7.mjs` (poll Siemens S7 DB addresses via `nodes7`), `mqtt.mjs`
+  (topic subscribe + optional Sparkplug B decode via `gateway/src/sparkplug.mjs`),
+  `sim.mjs` (built-in, no deps).
+- **Mapping** (`gateway/src/mapping.mjs`): exact or MQTT-wildcard (`+`/`#`)
+  rules bind a reading key to factory/line/station/machine, unit conversion
+  (`scale`/`offset`), and warn/critical thresholds — output is exactly the
+  SIAS ingest contract (`toIngestReading`). Contract subtlety: a threshold
+  rule's `type` is attached only on an actual breach (`breachesThresholds`) —
+  the ingest worker treats an explicit `type` as forced-alert, so idle
+  telemetry with a typed rule must never flood the alert queue. Event rules
+  (`alert: true`) and threshold-less typed rules keep their type always.
+- **Reliability** (`gateway/src/batcher.mjs`, `queue.mjs`, `forwarder.mjs`):
+  readings batch at ≤20 items / 2s; send failures (network error, 429, 5xx,
+  401/403) land in an on-disk JSONL retry queue (`gateway/queue/`, git-ignored,
+  capped at 10,000 readings, **oldest dropped** with a warning under a long
+  outage) and retry with exponential backoff; other 4xx drop permanently
+  (bad config, not worth retrying forever).
+- **Packaging**: `gateway/Dockerfile` (node:20-slim, non-root `node` user,
+  `PROTOCOL_DEPS` build-arg installs only the peers you need),
+  `gateway/gateway.config.example.json` (one example source per protocol),
+  `gateway/README.md` (60-second quickstart, air-gapped/firewall notes).
+- **Tests**: `worker_test/gateway_mapping.test.js` (mapping/Sparkplug/protocol
+  pure helpers/simulator/batcher/config), `worker_test/gateway_queue.test.js`
+  (disk queue + forwarder retry/backoff, no sockets),
+  `worker_test/gateway_contract.test.js` (**conformance** — runs gateway
+  output through the real deployed `cloudflare_ingest_connectors.js`
+  normalizer, so gateway and cloud cannot silently drift apart). Documented
+  end-to-end in `docs/integrations/SCADA_INTEGRATION.md`'s "Reference edge
+  gateway" section and used as the demo engine in `docs/sales/DEMO_SCRIPT.md`.
+
+## n8n Commercial Workflows (2026-07-20)
+
+The commercial/onboarding automation lives in n8n Cloud (`kubixdesiney.app.n8n.cloud`),
+NOT in the repo — the workers only forward verified events to it. All published and
+tested end to end. Base: `https://kubixdesiney.app.n8n.cloud/webhook/`.
+
+| Workflow | ID | Webhook path | Purpose |
+|---|---|---|---|
+| WF1 Purchase Intake & Provisioning | `S7PiPrb3DWm2T7GN` | `sias-purchase-intake` | Routes `purchase_completed` / `quote_requested` / `payment_failed`; dedupes on `eventId`; records the customer or lead in `sias_customers`; branded Brevo emails to buyer + founder |
+| WF2 Kubix Copilot Chat | `dI4h0nH3bAsjuzGJ` | `kubix-copilot-chat` | Gemini agent + per-session memory + RAG over the `sias_knowledge` Supabase vector store; logs to `sias_chats`; `[ESCALATE]` emails the founder |
+| WF2b Kubix Knowledge Ingest | `fH7jUSm4rP0ga12H` | `sias-knowledge-ingest` | POST `{title, source, content}` → markdown chunking → `gemini-embedding-001` → `sias_knowledge` |
+**Per-tenant knowledge (2026-07-21):** `sias_knowledge` chunks carry a `tenant`
+metadata field. `"global"` = shared product knowledge every customer sees; a tenant
+code (e.g. `NSW#7K2F`) = that customer's private uploads (machine register, SOPs,
+escalation policy, their line naming). WF2b accepts an optional `tenant` on ingest
+(defaults to `"global"`). Kubix (WF2) has TWO retrieval tools: `sias_knowledge_base`
+hard-filtered to `tenant=global`, and `customer_private_knowledge` filtered to the
+caller's `tenantCode` from the chat request. Both filters are enforced server-side in
+the `match_sias_knowledge` RPC (`metadata @> filter`), so one customer can never
+retrieve another's documents — verified by SQL: filtering as a different tenant returns
+zero rows. **When adding a retrieval tool, always set the tenant metadata filter** — an
+unfiltered tool would read every customer's private docs.
+
+| WF3 Seat Activation Email | `71muihOAczOl4u2k` | `sias-activation` | Receives one PM or supervisor activation payload, sends the single-use activation link (never a password), and confirms delivery to the founder |
+| WF5 Orders & Payment | `AnP16vyft2AwqegB` | order/confirmed/paid endpoints | Sends order-received, Accept/payment-contact, and Paid/provisioning-started messages; infrastructure provisioning belongs exclusively to the GitHub workflow |
+| WF4 Kubix Feedback Intake | `9l2JzN5rvLbquDFP` | `kubix-feedback` | Logs thumbs up/down to `sias_chat_feedback`; a downvote pulls the transcript and emails the founder so bad answers get fixed in the knowledge base |
+
+Wiring (secrets on `sias-store`, plus one env var on the provisioning CLI):
+
+- `N8N_INTAKE_WEBHOOK_URL` → `.../webhook/sias-purchase-intake` (WF1)
+- `N8N_CHAT_WEBHOOK_URL` → `.../webhook/kubix-copilot-chat` (WF2)
+- `N8N_FEEDBACK_WEBHOOK_URL` → `.../webhook/kubix-feedback` (WF4)
+- `N8N_ACTIVATION_WEBHOOK_URL` (env for `npm run provision:seats`) → `.../webhook/sias-activation` (WF3)
+- `N8N_WEBHOOK_AUTH` — optional shared bearer; set it as a store-worker secret AND as
+  Header Auth on each n8n webhook before taking real customers.
+
+**Manual-payment B2B state machine (2026-07-26):** Orders live in private Supabase `public.sias_orders` (RLS on; Store Worker service role only). Buyer submission creates `under_review`. **Accept** is `under_review → confirmed` and emits `order_confirmed` so the buyer is told KubixDesiney will contact them shortly about payment. **Paid** may run from either review (direct virement flow) or confirmed and transitions through `provisioning_queued → provisioning`; it repository-dispatches only `orderId` + `tenantCode`. `.github/workflows/provision-paid-order.yml` fetches the private order, creates and verifies the dedicated instance, delivers PM + supervisor activation emails, then marks it `active`; failures become `provisioning_failed` and are retryable from the dashboard. Store secrets: `N8N_ORDER_WEBHOOK_URL`, `N8N_CONFIRMED_WEBHOOK_URL`, `N8N_PAID_WEBHOOK_URL`, `PROVISIONING_GITHUB_TOKEN`, `PROVISIONING_GITHUB_REPOSITORY`. Full runbook: `docs/ops/AUTOMATIC_ORDER_PROVISIONING.md`; schema migration: `docs/ops/sias_orders_schema.sql`.
+
+n8n data tables: `sias_customers` (`ExqQw7LlJUTeFaNj`), `sias_chats`
+(`ZDmZevIqzlKOBTU0`), `sias_chat_feedback` (`XbAfPUKF3horkC2v`). Lead/customer
+status lifecycle: `quote_requested` → `provisioning` → `active` (quotes progress
+`quote_requested` → `quote_sent` → `won`/`lost`, set manually).
+
+Gemini runs on a FREE-TIER key today (`models/gemini-2.5-flash`, 20 requests/day) —
+enable paid billing and bump the WF2 model node before real customers.
+
+## Per-Customer Provisioning (updated 2026-07-26)
+
+The production Paid flow is `tool/provision_paid_order.mjs` via
+`.github/workflows/provision-paid-order.yml`. Lower-level/recovery CLIs:
 
 - `npm run provision:owner -- --email <e> --name "F L" --company <c> --tenant <T#XXXX> [--db-url <rtdb>] [--dry-run]`
   (`tool/provision_owner.mjs`): seeds the customer's Owner seat — creates the Firebase Auth user (random password, never printed), writes `users/{uid}` (role SuperAdmin, NO email — PII split) + `users_private/{uid}` (email), and emits the ONE-TIME activation link via `generatePasswordResetLink()` (single-use, ~1h expiry — passwords are never emailed). Optional POST of the summary to `N8N_ACTIVATION_WEBHOOK_URL`. Auth via `FIREBASE_SERVICE_ACCOUNT` env or application-default credentials. Admin SDK bypasses RTDB rules; no rules changes involved.
 - `npm run provision:instance -- --tenant <slug> --project-id <gcp-id> [--execute]`
-  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Creates/links the Firebase project, deploys rules, templates per-tenant wrangler configs under `deploy/tenants/<tenant>/` (root `wrangler.*.toml` are never modified), pushes secrets from a git-ignored `.env.tenant`, deploys the tenant workers, chains `provision_owner`, and writes `provision-summary.json` + the manual-console TODO list (Blaze billing, auth provider, Android app/FCM).
+  (`tool/provision_instance.mjs`): DRY-RUN BY DEFAULT (`--execute` for real). Deploys rules and the seven tenant data-plane Workers (store/app remain shared), seeds the day-one RTDB with `tool/seed_tenant.mjs`, publishes TENANTS KV, writes a secret-free summary, verifies Worker/app/RTDB/rules health, then invokes `tool/provision_seats.mjs --require-delivery-pair` so PM/supervisor links are emailed only after the instance is healthy. All deploy, secret, KV, notification, and verification failures are fatal/retryable.
+- `npm run provision:seats` defaults to dry-run, enforces the exact PM (`admin`) + supervisor (`supervisor`) delivery pair for commercial automation, rejects duplicate emails, applies the `users`/`users_private` PII split, retries authenticated activation delivery, and redacts links/emails from artifacts.
+- `npm run provision:seed` defaults to dry-run and only fills missing RTDB leaves, preserving buyer edits on retries.
+
+### Provisioning lifecycle tooling (2026-07-20)
+
+- `npm run verify:instance -- --tenant <slug> [--db-url <url>]` (`tool/verify_instance.mjs`): probes every tenant worker's `GET /config` (want 200), the shared app URL's `GET /__config` (want 200 JSON with `hasConfig: true`), the RTDB REST endpoint's reachability (any HTTP status counts — 401 means "reachable and correctly locked"), and proves rules are deployed (an **unauthenticated** read of `/users.json` must be denied — a 200 there is the critical failure: `RULES NOT DEPLOYED`). Prints a green/red table (`renderProbeTable`); exit code reflects health.
+- `npm run teardown:instance -- --tenant <slug> [--execute]` (`tool/teardown_instance.mjs`): DRY-RUN BY DEFAULT. With `--execute`: deletes the tenant's Cloudflare workers (`wrangler delete` per generated config), archives `deploy/tenants/<tenant>/` → `deploy/tenants/_archived/<tenant>-<date>/`, marks the registry `deleted`. **Never** deletes the Firebase project or R2 backups — both are manual/deliberate and printed loudly as TODOs (Firebase project deletion is irreversible).
+- **Tenant registry** (`tool/tenant_registry.mjs`): `deploy/tenants/registry.json` (git-ignored), maintained by provision/teardown (`upsertTenant`/`markStatus`). `npm run tenants` (`tool/list_tenants.mjs`) prints it as a table.
+- `npm run backup:drill -- --tenant <slug> [--max-age-hours 36]` (`tool/backup_drill.mjs`): fetches the tenant's backup worker `GET /config` (new endpoint on `cloudflare_backup_worker.js` — reports `snapshots` count + `latest` R2 object metadata) and fails if the newest snapshot is stale. This is the "are backups actually happening" check.
+- `.github/workflows/provision-tenant.yml`: `workflow_dispatch` (tenant/project-id/workers-subdomain inputs) gated behind the **`provisioning` GitHub environment** — configure required reviewers there so a stray click can never create infrastructure. Runs provision `--execute` then a standalone `verify_instance` re-check, uploads the summary as an artifact.
+- `.github/workflows/provision-paid-order.yml`: automatic `repository_dispatch`
+  path used by the authenticated Paid button. It has per-tenant concurrency,
+  patches Supabase to `active`/`provisioning_failed`, alerts on failure, and
+  uploads only non-secret bootstrap/provision evidence.
+- Tests: `worker_test/verify_instance.test.js`, `worker_test/tenant_registry.test.js` (no live network — probe classification and table rendering are pure functions).
 
 Both ship pure-helper Jest suites (`worker_test/provision_owner.test.js`, `worker_test/provision_instance.test.js`). `deploy/tenants/` and `*.env.tenant` are git-ignored.
 
 ## Legal Documents (2026-07-17)
 
-`docs/legal/` holds DRAFT v1 of EULA, MSA, DPA (GDPR; sub-processors Google/Cloudflare/Supabase/Brevo/n8n), SLA (Enterprise 99.9%) and PRIVACY. Every file is bannered "requires review by qualified counsel"; jurisdiction-dependent choices are marked `[[PLACEHOLDER: ...]]`. They deliberately claim no certifications (SOC 2 / ISO 27001 = roadmap only). Do not link them from the storefront until counsel signs off.
+`docs/legal/` holds DRAFT v1 of EULA, MSA, DPA (GDPR; sub-processors Google/Cloudflare/Supabase/Brevo/n8n), SLA (Enterprise 99.9%) and PRIVACY. Every file is bannered "requires review by qualified counsel"; jurisdiction-dependent choices are marked `[[PLACEHOLDER: ...]]`. They deliberately claim no certifications (SOC 2 / ISO 27001 = roadmap only). Do not link them from the storefront until counsel signs off — enforced in code, not just by convention: see "Legal pack gate (2026-07-20)" under Store Worker above (`LEGAL_PUBLISH` flag + `npm run legal:lint`). `docs/legal/COUNSEL_BRIEF.md` is the one-page handoff for the reviewing lawyer.

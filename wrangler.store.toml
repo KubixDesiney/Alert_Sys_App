@@ -1,21 +1,46 @@
 name = "sias-store"
 main = "cloudflare_store_worker.js"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-07-26"
+
+routes = [
+  { pattern = "sias.kubixdesiney.com/*", zone_name = "kubixdesiney.com" }
+]
 
 # Secrets (wrangler secret put --config wrangler.store.toml):
-#   STRIPE_SECRET_KEY       sk_test_/sk_live_ key — creates Checkout Sessions (server-side only)
-#   STRIPE_WEBHOOK_SECRET   whsec_... — verifies /api/stripe-webhook signatures
-#   CLICTOPAY_USER          ClicToPay (SMT) merchant API login — TND payments
-#   CLICTOPAY_PASSWORD      ClicToPay merchant API password
-#   N8N_INTAKE_WEBHOOK_URL  n8n WF1 "purchase intake" webhook URL (receives verified purchase events)
-#   N8N_WEBHOOK_AUTH        optional bearer token sent to the n8n webhook
-#   N8N_CHAT_WEBHOOK_URL    n8n WF2 "Kubix Copilot" chat webhook URL (server-side only,
-#                           proxied by POST /api/kubix — never exposed to the browser)
+#   STRIPE_SECRET_KEY           sk_test_/sk_live_ key — creates Checkout Sessions (server-side only)
+#   STRIPE_WEBHOOK_SECRET       whsec_... — verifies /api/stripe-webhook signatures
+#   CLICTOPAY_USER              ClicToPay (SMT) merchant API login — TND payments
+#   CLICTOPAY_PASSWORD          ClicToPay merchant API password
+#   N8N_INTAKE_WEBHOOK_URL      n8n WF1 "purchase intake" webhook URL (receives verified purchase events)
+#   N8N_WEBHOOK_AUTH            optional bearer token sent to the n8n webhook
+#   N8N_CHAT_WEBHOOK_URL        n8n WF2 "Kubix Copilot" chat webhook URL (server-side only,
+#                               proxied by POST /api/kubix — never exposed to the browser)
+#   N8N_FEEDBACK_WEBHOOK_URL    n8n "Kubix feedback" webhook URL (receives thumbs up/down
+#                               verdicts from POST /api/kubix-feedback; same optional bearer)
+#   SUPABASE_URL                Supabase project API base URL (e.g., https://PROJECT.supabase.co)
+#   SUPABASE_SERVICE_KEY        Supabase service_role key (bypasses RLS for order inserts)
+#   FOUNDER_PASSWORD            Dashboard login password (for /admin access)
+#   SESSION_SECRET              Random string for signing session cookies (min 32 chars)
+#   N8N_ORDER_WEBHOOK_URL       n8n WF5 order-placed webhook (receives order_placed events)
+#   N8N_CONFIRMED_WEBHOOK_URL   n8n order-confirmed webhook (receives order_confirmed events)
+#   N8N_PAID_WEBHOOK_URL        n8n payment-paid webhook (receives payment_paid events)
+#   PROVISIONING_GITHUB_TOKEN   fine-grained token: Actions repository dispatch only
+#   PROVISIONING_GITHUB_REPOSITORY owner/repository containing provision-paid-order.yml
 
 [vars]
 SALES_EMAIL = "chefbriotemendez@gmail.com"
 STORE_RATE_LIMIT = "10"
+N8N_INTAKE_WEBHOOK_URL = "https://n8n.kubixdesiney.com/webhook/sias-purchase-intake"
+# Sales motion: "quote" = invoice-led (default; /buy submits a quote request,
+# card rails stay parked), "card" = self-serve Stripe/ClicToPay checkout.
+SALES_MODE = "quote"
+# Legal pages gate: /legal routes 404 until counsel signs off the drafts in
+# docs/legal/ and this is flipped to "true" (see tool/legal_lint.mjs).
+LEGAL_PUBLISH = "false"
 # ClicToPay REST base. Use "https://test.clictopay.com/payment/rest" while testing.
 CLICTOPAY_BASE = "https://ipay.clictopay.com/payment/rest"
 # TND minor-unit exponent (3 = millimes). Verify with a small test payment before go-live.
 CLICTOPAY_AMOUNT_EXPONENT = "3"
+
+[observability]
+enabled = true

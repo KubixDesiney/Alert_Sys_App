@@ -1,0 +1,57 @@
+# =============================================================================
+# sias-app — one shared Worker serves the Flutter web app to every tenant at
+# <tenant>.kubixdesiney.com. See CLAUDE.md "Per-Tenant App Delivery".
+#
+# Deploy (build the web bundle FIRST — the assets directory below must exist):
+#   flutter build web --release --no-wasm-dry-run
+#   npx wrangler deploy --config wrangler.app.toml
+# =============================================================================
+name = "sias-app"
+main = "cloudflare_app_worker.js"
+compatibility_date = "2026-07-21"
+
+# The Flutter web build. `run_worker_first = true` makes the Worker run for EVERY
+# request so it can inject window.__SIAS_CONFIG__ into index.html for `/` AND for
+# SPA deep links (a navigation that misses an asset would otherwise be served
+# index.html by not_found_handling WITHOUT invoking the Worker — no injection).
+# The Worker then defers to assets via env.ASSETS.fetch(), which honours
+# not_found_handling = "single-page-application".
+[assets]
+directory = "./build/web"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+# Per-tenant PUBLIC config: key = tenant slug, value = JSON
+#   { tenantCode, company, firebase:{apiKey,authDomain,projectId,storageBucket,
+#     messagingSenderId,appId,databaseURL}, workers:{ai,notify,ingest,copilotUrl} }
+# Create it once and paste the id here (see docs/PROVISIONING.md → DNS setup):
+#   npx wrangler kv namespace create TENANTS
+# tool/provision_instance.mjs writes each tenant's entry into this namespace.
+[[kv_namespaces]]
+binding = "TENANTS"
+id = "ded3bdbb62184d49b349c7c3617af04e"
+
+# Per-tenant release APKs (Prompt 2). Object key: <tenant>/sias-<tenant>.apk.
+# Create it once:  npx wrangler r2 bucket create sias-app-apks
+[[r2_buckets]]
+binding = "APKS"
+bucket_name = "sias-app-apks"
+
+[vars]
+APP_DOMAIN = "kubixdesiney.com"
+STOREFRONT_URL = "https://sias.kubixdesiney.com"
+
+# --- Custom-domain routing (activate AFTER the DNS wildcard is in place) ---------
+# One wildcard route sends every tenant subdomain to this worker. It is LESS
+# specific than the storefront's `sias.kubixdesiney.com/*` route (on sias-store),
+# so `sias` → store and everything else → app, exactly as intended. Per-tenant
+# `<tenant>-ingest.kubixdesiney.com/*` routes on each tenant's ingest worker are
+# MORE specific and win for those hosts.
+#
+# Left commented so `wrangler deploy` succeeds (to sias-app.<subdomain>.workers.dev)
+# before the zone/DNS exist. Uncomment once `*.kubixdesiney.com` is a proxied DNS
+# record in the Cloudflare zone (see docs/PROVISIONING.md → "DNS setup").
+routes = [
+  { pattern = "*.kubixdesiney.com/*", zone_name = "kubixdesiney.com" }
+]

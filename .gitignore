@@ -72,3 +72,23 @@ backups/
 # never commit; see tool/provision_instance.mjs and docs/PROVISIONING.md
 deploy/tenants/
 *.env.tenant
+
+# Generated quote PDFs/sidecars (customer data) — see tool/generate_quote.mjs
+quotes/
+
+# On-disk gateway retry queue (see gateway/)
+gateway/queue/
+
+# Android signing material + built APKs — never commit.
+*.apk
+*.keystore
+*.jks
+android/key.properties
+android/**/keystore.properties
+# The committed android/app/google-services.json is the shared DEMO default the
+# base build needs. Per-tenant google-services.json is injected at build time by
+# .github/workflows/build-tenant-apk.yml (from an environment secret) and must
+# NEVER be committed. Ignoring the path blocks an accidental tenant commit
+# without untracking the already-tracked demo default.
+android/app/google-services.json
+dist/*.apk

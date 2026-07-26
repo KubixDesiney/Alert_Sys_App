@@ -25,16 +25,29 @@
     "bench": "node tool/load_benchmark.mjs",
     "bench:ci": "node tool/load_benchmark.mjs --sups=1000 --alerts=50000 --decisions=2000 --max-p99=5",
     "provision:owner": "node tool/provision_owner.mjs",
-    "provision:instance": "node tool/provision_instance.mjs"
+    "provision:seats": "node tool/provision_seats.mjs",
+    "provision:seed": "node tool/seed_tenant.mjs",
+    "provision:instance": "node tool/provision_instance.mjs",
+    "provision:paid-order": "node tool/provision_paid_order.mjs",
+    "quote": "node tool/generate_quote.mjs",
+    "legal:lint": "node tool/legal_lint.mjs",
+    "legal:embed": "node tool/legal_embed.mjs",
+    "verify:instance": "node tool/verify_instance.mjs",
+    "teardown:instance": "node tool/teardown_instance.mjs",
+    "tenants": "node tool/list_tenants.mjs",
+    "backup:drill": "node tool/backup_drill.mjs"
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "pdfkit": "^0.19.1",
     "wrangler": "^4.100.0"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0"
   },
   "overrides": {
+    "brace-expansion": "5.0.8",
+    "uuid": "11.1.1",
     "websocket-driver": "^0.7.5"
   }
 }

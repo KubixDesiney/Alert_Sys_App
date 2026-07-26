@@ -1,6 +1,7 @@
 import 'package:alertsysapp/models/alert_type.dart';
 import 'package:alertsysapp/services/alert_type_registry.dart';
 import 'package:alertsysapp/services/forecast/alert_record_parser.dart';
+import 'package:alertsysapp/services/forecast/forecast_training_controller.dart';
 import 'package:alertsysapp/theme.dart';
 import 'package:alertsysapp/utils/alert_meta.dart';
 import 'package:flutter/material.dart';
@@ -95,13 +96,60 @@ void main() {
 
     test('parser normalizeType maps onto the custom synonyms', () {
       final defs = AlertTypeRegistry.instance.types;
-      expect(AlertRecordParser.normalizeType('Overheat detected', types: defs),
-          'overheating');
-      expect(AlertRecordParser.normalizeType('bearing vibration', types: defs),
-          'vibration');
+      expect(
+        AlertRecordParser.normalizeType('Overheat detected', types: defs),
+        'overheating',
+      );
+      expect(
+        AlertRecordParser.normalizeType('bearing vibration', types: defs),
+        'vibration',
+      );
       // Unrecognized free text keeps a sanitized bucket.
-      expect(AlertRecordParser.normalizeType('Power loss', types: defs),
-          'power_loss');
+      expect(
+        AlertRecordParser.normalizeType('Power loss', types: defs),
+        'power_loss',
+      );
+    });
+  });
+
+  group('adaptive buyer schema', () {
+    test('turns uploaded custom alert buckets into stable model types', () {
+      final inferred = inferAdaptiveAlertTypeDefs(
+        existing: kDefaultAlertTypeDefs,
+        typeCounts: {
+          'maintenance': 20,
+          'overheating': 12,
+          'bearing_vibration': 7,
+          'unknown': 4,
+          '123_bad': 3,
+        },
+      );
+      expect(inferred.map((type) => type.code), [
+        'overheating',
+        'bearing_vibration',
+      ]);
+      expect(inferred.first.label, 'Overheating');
+      expect(inferred.first.order, 4);
+      expect(inferred.first.synonyms, ['overheating']);
+    });
+
+    test('prioritizes frequent changes and caps high-cardinality datasets', () {
+      final counts = {for (var i = 0; i < 40; i++) 'custom_type_$i': i + 1};
+      final inferred = inferAdaptiveAlertTypeDefs(
+        existing: kDefaultAlertTypeDefs,
+        typeCounts: counts,
+      );
+      expect(inferred, hasLength(24));
+      expect(inferred.first.code, 'custom_type_39');
+      expect(inferred.last.code, 'custom_type_16');
+    });
+
+    test('marks safety-like inferred categories critical by default', () {
+      final inferred = inferAdaptiveAlertTypeDefs(
+        existing: const [],
+        typeCounts: const {'fire_emergency': 5},
+      );
+      expect(inferred.single.criticalByDefault, isTrue);
     });
   });
 }

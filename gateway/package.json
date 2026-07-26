@@ -1,0 +1,32 @@
+{
+  "name": "sias-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SIAS reference edge gateway — bridges OPC-UA / Modbus / S7 / MQTT (incl. Sparkplug B) plant telemetry into a SIAS instance's ingest endpoint. Zero required dependencies; protocol libraries are optional peers, lazy-loaded per source.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "sias-gateway": "bin/sias-gateway.mjs"
+  },
+  "scripts": {
+    "start": "node bin/sias-gateway.mjs --config gateway.config.json",
+    "sim": "node bin/sias-gateway.mjs --sim 6 --fault-every 90s",
+    "dry-run": "node bin/sias-gateway.mjs --sim 3 --dry-run"
+  },
+  "peerDependencies": {
+    "modbus-serial": ">=8",
+    "mqtt": ">=5",
+    "node-opcua": ">=2.120",
+    "nodes7": ">=0.3",
+    "sparkplug-payload": ">=1"
+  },
+  "peerDependenciesMeta": {
+    "modbus-serial": { "optional": true },
+    "mqtt": { "optional": true },
+    "node-opcua": { "optional": true },
+    "nodes7": { "optional": true },
+    "sparkplug-payload": { "optional": true }
+  }
+}

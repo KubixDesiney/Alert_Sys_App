@@ -342,6 +342,11 @@ async function fanOutPendingNotifications(env, ctx, options = {}) {
 // ============ AI Assignment Engine (FULL SCORING) ============
 
 export {
+  _alertNotifId,
+  parseFcmFailure,
+  clearUnregisteredFcmToken,
+  isActiveSupervisorForNotification,
+  engagedSupervisorIds,
   sendFcm,
   sendFcmDetailed,
   getFcmRecipientsForFactory,

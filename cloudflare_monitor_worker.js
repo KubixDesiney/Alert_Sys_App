@@ -132,6 +132,16 @@ export function crashFreeBreach(daily, sloPercent = 99, minSessions = 20) {
   return null;
 }
 
+/** Worker delivery URLs may include an action path such as `/notify`; health
+ * probes always target `/config` at the same origin. */
+export function configProbeUrl(workerUrl) {
+  try {
+    return new URL('/config', workerUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
 async function runChecks(env) {
   const token = await getAccessToken(env);
   const base = env.FB_DB_URL.endsWith('/') ? env.FB_DB_URL : env.FB_DB_URL + '/';
@@ -143,10 +153,10 @@ async function runChecks(env) {
 
   const problems = [];
 
-  if (on('aiWorker') && env.AI_WORKER_URL && !(await reachable(`${env.AI_WORKER_URL}/config`))) {
+  if (on('aiWorker') && env.AI_WORKER_URL && !(await reachable(configProbeUrl(env.AI_WORKER_URL)))) {
     problems.push('AI worker unreachable');
   }
-  if (on('notifyWorker') && env.NOTIFY_WORKER_URL && !(await reachable(`${env.NOTIFY_WORKER_URL}/config`))) {
+  if (on('notifyWorker') && env.NOTIFY_WORKER_URL && !(await reachable(configProbeUrl(env.NOTIFY_WORKER_URL)))) {
     problems.push('Notify worker unreachable');
   }
   if (on('cron')) {

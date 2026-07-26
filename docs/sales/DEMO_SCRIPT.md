@@ -1,4 +1,4 @@
-# SIAS Demo Script (15 minutes, jaw-drop order)
+# SIAS Demo Script (25 minutes: 15-min core + persona deep-dives)
 
 Goal: prove SIAS is faster than their current process, smarter (AI + prediction),
 and uniquely self-healing — then land the pilot. Run on a seeded demo instance.
@@ -8,6 +8,18 @@ and uniquely self-healing — then land the pilot. Run on a seeded demo instance
 - Two phones (or emulators) signed in as supervisors; one as Production Manager.
 - A forecaster model trained on the seeded history (Predictive cards live).
 - The Guardian agent visible in the SuperAdmin console.
+- **Start the plant simulator** against the demo instance's ingest connector —
+  it keeps a believable live plant humming for the whole call and injects a
+  real fault every 90 seconds:
+
+  ```bash
+  SIAS_INGEST_URL=https://<ingest>/ingest/<connectorId> SIAS_INGEST_KEY=<key> \
+    node gateway/bin/sias-gateway.mjs --sim 6 --fault-every 90s
+  ```
+
+  (Rehearsal without a network: `node gateway/bin/sias-gateway.mjs --sim 3 --dry-run`
+  prints the exact payloads.) Time your section 2 so a simulator fault lands
+  the alert for you — nothing beats "we didn't touch anything, the plant did."
 
 ## 1. The hook (1 min)
 "Your SCADA already knows a machine is in trouble. The question is how fast the
@@ -54,7 +66,37 @@ is already done."
 the app, and we measure response-time and downtime deltas together. If the numbers
 aren't there, you walk." → schedule the pilot kickoff.
 
+## Per-persona deep-dives (pick ONE based on who's in the room, ~8 min)
+
+**Plant IT / OT engineer** — go deeper on integration + security:
+- Open `gateway/README.md` live: one config file, exact/wildcard mapping rules,
+  on-disk retry queue ("a network blip loses nothing"), Docker one-liner.
+- Show the connector **Verify link test** handshake in the console.
+- Close with the trust surface: enforced worker auth, server-side security
+  rules with adversarial tests, CSP'd storefront, SBOM in CI, threat model
+  (`docs/SECURITY_WHITEPAPER.md` is their leave-behind).
+- Their fear is a second system to babysit → "the gateway is 300 lines of
+  config-driven Node you can read in one sitting, and SIAS never writes to
+  your PLCs."
+
+**Maintenance manager** — go deeper on the day-2 workflow:
+- Claim → resolve → validate on the phone; comments; help requests;
+  collaboration across factories; escalation timers.
+- Shift view: AI shift commander, presence tracking, handover summaries, the
+  shift PDF report ("your morning meeting, pre-written").
+- Their fear is technician adoption → voice claiming from a locked phone in
+  work gloves is the moment; let THEM claim one.
+
+**Ops leadership** — go deeper on numbers and control:
+- Overview analytics: response-time trends, per-type breakdowns, per-supervisor
+  performance, export.
+- The forecaster's self-graded accuracy ledger ("it tells you when it's wrong").
+- The one real number we cite: an export workflow that took ~30 minutes of
+  manual collation now takes ~1–2 minutes, with 100% of actions logged (AMEC).
+  Everything else we prove live on their own pilot data, not on slides.
+
 ## Objection one-liners
 - *"We have SCADA alarms."* → Those alarm the room; we get the right tech to the machine, with prediction. Feed us from your alarms in an afternoon.
 - *"Rip-and-replace?"* → No. We read your stack, change nothing on the OT network. Start with one line.
 - *"Data residency?"* → Dedicated instance in your own cloud; no shared data plane.
+- *"Are you certified?"* → SOC 2 is on the roadmap, not claimed. What we have today: dedicated instances, enforced auth, tested security rules, daily backups, a published threat model — and the code to audit.

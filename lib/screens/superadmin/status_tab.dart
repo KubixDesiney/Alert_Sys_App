@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_config.dart';
 import '../../l10n/app_strings.dart';
@@ -67,6 +68,8 @@ class _StatusTabState extends State<StatusTab> {
                     _GroupPanel(controller: _c, group: g),
                     const SizedBox(height: 16),
                   ],
+                  const _KubixCopilotCard(),
+                  const SizedBox(height: 16),
                   _FootNote(controller: _c),
                 ],
               ),
@@ -467,6 +470,97 @@ class _UptimeBarPainter extends CustomPainter {
           old.history.last != history.last);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  KUBIX COPILOT — owner-console entry point to the buyer-facing chat
+// ════════════════════════════════════════════════════════════════════════════
+
+class _KubixCopilotCard extends StatelessWidget {
+  const _KubixCopilotCard();
+
+  Future<void> _open(BuildContext context) async {
+    // Per-tenant builds bake the tenant context into ALERTSYS_COPILOT_URL;
+    // web tenants get it from window.__SIAS_CONFIG__ (resolvedCopilotUrl);
+    // here we only append the console's active language.
+    final base = AppConfig.resolvedCopilotUrl;
+    final sep = base.contains('?') ? '&' : '?';
+    final url = context.isFrench ? '$base${sep}lang=fr' : base;
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Best effort — the Status page keeps working if no browser is available.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return HoloPanel(
+      accent: Sa.amber,
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Sa.amber, Sa.amber.withValues(alpha: .55)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Sa.amber.withValues(alpha: .35),
+                  blurRadius: 14,
+                ),
+              ],
+            ),
+            child: Text(
+              'K',
+              style: Sa.mono(
+                size: 19,
+                color: const Color(0xFF14171C),
+                weight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('Kubix Copilot', style: Sa.heading(size: 14)),
+                    const SizedBox(width: 8),
+                    // Sa.* colors are palette getters — never const-capture them.
+                    PulseDot(color: Sa.green, size: 7),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  context.tr(
+                    'Your dedicated SIAS engineer — activation, integrations, '
+                    'anything. It knows this instance and answers in EN or FR.',
+                  ),
+                  style: Sa.body(size: 12, color: Sa.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          SaButton(
+            label: context.tr('OPEN COPILOT CHAT'),
+            icon: Icons.forum_outlined,
+            color: Sa.amber,
+            onPressed: () => _open(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FootNote extends StatelessWidget {
   final _StatusController controller;
   const _FootNote({required this.controller});
@@ -639,7 +733,7 @@ class _StatusController extends ChangeNotifier {
     notifyListeners();
     try {
       final res = await http
-          .get(Uri.parse('${AppConfig.ingestWorkerBase}/config'))
+          .get(Uri.parse('${AppConfig.resolvedIngestWorkerBase}/config'))
           .timeout(const Duration(seconds: 6));
       ingestState = (res.statusCode >= 200 && res.statusCode < 300)
           ? LiveState.online

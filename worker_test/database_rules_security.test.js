@@ -43,10 +43,12 @@ describe('security database rules', () => {
     expect(bugs.client.$bugId['.write']).toBe('auth != null');
   });
 
-  test('ai_forecast model is world-readable for inference and privileged-write', () => {
+  test('ai_forecast is app-readable and PM-write only with the paid AI entitlement', () => {
     const forecast = rules.ai_forecast;
     expect(forecast['.read']).toBe('auth != null');
     expect(forecast['.write']).toContain("'superadmin'");
+    expect(forecast['.write']).toContain("child('role').val() === 'admin'");
+    expect(forecast['.write']).toContain("child('aiTraining').val() === true");
   });
 
   test('ai_agents fleet controls are app-readable but superadmin/service-token write only', () => {
@@ -159,15 +161,18 @@ describe('security database rules', () => {
     expect(rules.pm_actions.$userId.$actionId['.write']).toContain('!data.exists()');
   });
 
-  test('configurable alert-type registry is app-readable, superadmin-write only', () => {
+  test('configurable alert types allow adaptive PM writes only for entitled tenants', () => {
     const node = rules.app_config.alertTypes;
-    // Every authed client (PM dashboards, supervisors, the forecaster) reads
-    // the vocabulary; only the SuperAdmin console may change it.
+    // Every authed client reads the vocabulary. SuperAdmin controls it; a PM
+    // can add inferred types only for the paid adaptive schema entitlement.
     expect(node['.read']).toBe('auth != null');
     expect(node['.write']).toContain("'superadmin'");
     expect(node['.write']).toContain("'SuperAdmin'");
-    // Plain app-admin role must not be able to rewrite the type set.
-    expect(node['.write']).not.toContain("child('role').val() === 'admin'");
+    expect(node['.write']).toContain("child('role').val() === 'admin'");
+    expect(node['.write']).toContain("child('adaptiveAlertSchema').val() === true");
+    expect(rules.app_config.entitlements['.write']).not.toContain(
+      "child('role').val() === 'admin'",
+    );
     expect(node['.indexOn']).toEqual(['order']);
     // A type entry validates its identifying fields.
     expect(node.$code.code['.validate']).toContain('isString');
@@ -241,5 +246,75 @@ describe('security database rules', () => {
       expect(v).toContain("val() === 'admin'");
       expect(v).toContain("auth.token.role === 'admin'");
     }
+  });
+
+  // ── Adversarial fuzz cases (buyer security-scan follow-up) ────────────────
+  // Each case models a concrete attacker with a real role attempting an access
+  // the rules must deny. RTDB rule semantics: an access succeeds only when
+  // some rule on the path (or an ancestor) grants it, so denial = "no branch
+  // of the rule expression can be satisfied by this principal".
+
+  test('ADVERSARIAL: supervisor reading another user\'s users_private record must fail', () => {
+    const priv = rules.users_private;
+    // Root read: privileged roles only — no plain "auth != null", and no
+    // supervisor branch anywhere in the node.
+    expect(priv['.read']).not.toBe('auth != null');
+    expect(priv['.read']).not.toContain("'supervisor'");
+    // Per-user read: strictly self-or-privileged. A supervisor with a stolen
+    // uid list still cannot enumerate colleagues' emails/phones/GPS.
+    const perUser = priv.$userId['.read'];
+    expect(perUser).toContain('auth.uid === $userId');
+    expect(perUser).not.toContain("'supervisor'");
+    expect(JSON.stringify(priv)).not.toContain("'supervisor'");
+  });
+
+  test('ADVERSARIAL: Production Manager (admin) writing hardware_lab must fail', () => {
+    const lab = rules.hardware_lab;
+    // Machinery bindings are SuperAdmin-only in BOTH directions: no app-admin
+    // role branch, no worker service-token branch, no per-child loosening.
+    for (const gate of ['.read', '.write']) {
+      expect(lab[gate]).toContain("'superadmin'");
+      expect(lab[gate]).toContain("'SuperAdmin'");
+      expect(lab[gate]).not.toContain("child('role').val() === 'admin'");
+      expect(lab[gate]).not.toContain('auth.token.role');
+    }
+    expect(JSON.stringify(lab)).not.toContain("child('role').val() === 'admin'");
+  });
+
+  test('ADVERSARIAL: non-superadmin reading connector_secrets must fail at every level', () => {
+    const cs = rules.connector_secrets;
+    // The vault is unreadable by ANY rule-bound principal (the ingest worker
+    // reads it via OAuth, which bypasses rules) — and no child except the
+    // operator-visible ingestKey opens a read back up.
+    expect(cs['.read']).toBe(false);
+    const childReads = Object.entries(cs.$connectorId ?? {})
+      .filter(([k, v]) => k !== 'ingestKey' && v && typeof v === 'object' && '.read' in v);
+    expect(childReads).toEqual([]);
+    expect(cs.$connectorId.ingestKey['.read']).not.toContain("'supervisor'");
+    expect(cs.$connectorId.ingestKey['.read']).not.toBe('auth != null');
+  });
+
+  test('ADVERSARIAL: supervisor self-escalation via a combined profile write must fail', () => {
+    // Writing users/{self} with {role: "admin"} passes the .write gate (self)
+    // but must die on role's .validate: a supervisor writer can only keep the
+    // role unchanged. There must be no branch validating against the NEW value
+    // (which an attacker controls) — only the writer's CURRENT role counts.
+    const v = rules.users.$userId.role['.validate'];
+    expect(v).toContain("root.child('users').child(auth.uid).child('role').val()");
+    expect(v).not.toContain("newData.val() === 'admin' ||");
+    // And the parent users node grants no blanket write that would bypass it
+    // (absent or an explicit false — never a broad grant).
+    expect([undefined, false]).toContain(rules.users['.write']);
+  });
+
+  test('ADVERSARIAL: supervisor claiming an alert from a foreign factory must fail', () => {
+    const write = rules.alerts.$alertId['.write'];
+    // The unassigned-claim branch is guarded by a factory match on BOTH id
+    // schemes; there is no fallback branch that claims without a factory check.
+    const claimBranch = write.slice(write.indexOf("!data.child('superviseurId').exists()"));
+    expect(claimBranch).toContain("child('usine').val()");
+    expect(claimBranch).toContain("child('factoryId').val()");
+    // No branch lets a supervisor delete an alert outright.
+    expect(write).toContain('newData.exists()');
   });
 });

@@ -10,6 +10,9 @@ const Map<String, String> kStringsFr = {
   // Alert source badge (SCADA/ingest origin)
   'from {source}': 'via {source}',
   // ── SuperAdmin Status tab + fleet/overview refresh (2026-06) ──
+  'Your dedicated SIAS engineer — activation, integrations, anything. It knows this instance and answers in EN or FR.':
+      'Votre ingénieur SIAS dédié — activation, intégrations, tout. Il connaît cette instance et répond en FR ou EN.',
+  'OPEN COPILOT CHAT': 'OUVRIR LE CHAT COPILOT',
   'ALL SYSTEMS OPERATIONAL': 'TOUS LES SYSTÈMES OPÉRATIONNELS',
   'MOSTLY OPERATIONAL': 'GLOBALEMENT OPÉRATIONNEL',
   'DEGRADED PERFORMANCE': 'PERFORMANCES DÉGRADÉES',

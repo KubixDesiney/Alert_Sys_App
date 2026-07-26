@@ -122,6 +122,38 @@ curl -sS https://alertsys-ingest.<sub>.workers.dev \
 # => {"ok":true,"created":1,"skipped":0,"alertIds":["-Nx…"]}
 ```
 
+## Reference edge gateway (`gateway/`)
+
+Beyond inline snippets, SIAS ships a **packaged, supported gateway** —
+[`gateway/`](../../gateway/README.md) — a self-contained Node 20 package with
+zero required dependencies that speaks OPC-UA, Modbus TCP, Siemens S7 and MQTT
+(incl. Sparkplug B) and pushes into the ingest endpoint above:
+
+```bash
+cd gateway
+cp gateway.config.example.json gateway.config.json   # ingestUrl + ingestKey + sources
+node bin/sias-gateway.mjs --config gateway.config.json
+```
+
+Highlights (full docs in `gateway/README.md`):
+
+- **Config-driven mapping**: exact or MQTT-wildcard rules bind reading keys to
+  factory/line/station/machine, unit conversion (scale/offset) and
+  warn/critical thresholds. The alert decision stays server-side.
+- **Loss-proof forwarding**: batches (≤20 readings / 2s), on-disk retry queue
+  (capped 10k readings, oldest dropped with a warning), exponential backoff.
+- **Built-in plant simulator** — the demo engine:
+  `node bin/sias-gateway.mjs --sim 6 --fault-every 90s` produces a live,
+  believable plant against any instance; `--sim 3 --dry-run` prints the exact
+  payloads offline.
+- **Protocol libraries are optional peers**, lazy-loaded with a helpful
+  install message; a `Dockerfile` (node:20-slim, non-root) bakes in only the
+  protocols you use.
+- **Contract-tested**: `worker_test/gateway_contract.test.js` runs gateway
+  output through this worker's real normalizer, so gateway and cloud cannot
+  drift apart (`gateway_mapping.test.js` / `gateway_queue.test.js` cover the
+  mapping engine, Sparkplug decode, batching, backoff and queue overflow).
+
 ## Security
 - Inbound auth is a constant-time shared-secret check; rotate via `wrangler secret put`.
 - Per-source sliding-window rate limit (default 240/min) protects against a runaway gateway.

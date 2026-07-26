@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 /// Single source of truth for cross-cutting configuration constants.
 ///
 /// Values are overridable at build time via `--dart-define` (see CI). Keeping
@@ -41,6 +43,15 @@ class AppConfig {
     defaultValue: 'https://alertsys-ingest.aziz-nagati01.workers.dev',
   );
 
+  /// Kubix Copilot chat page (served by the sias-store worker). Per-tenant
+  /// builds override this with a URL that carries the instance's tenant
+  /// context (e.g. `.../copilot?tenant=NSW%237K2F&company=...`); the SuperAdmin
+  /// console's Kubix card appends `lang=fr` when the console runs in French.
+  static const String copilotUrl = String.fromEnvironment(
+    'ALERTSYS_COPILOT_URL',
+    defaultValue: 'https://sias-store.aziz-nagati01.workers.dev/copilot',
+  );
+
   /// Deprecated alias for old call sites. New code should choose aiWorkerBase
   /// or notifyWorkerBase explicitly.
   static const String workerBaseUrl = aiWorkerBase;
@@ -51,24 +62,72 @@ class AppConfig {
     defaultValue: '',
   );
 
+  // ── Runtime overrides (per-tenant web delivery) ─────────────────────────────
+  // On web, the shared `sias-app` worker injects `window.__SIAS_CONFIG__` with
+  // this tenant's worker URLs (see runtime_firebase_config.dart). main.dart
+  // applies them here at startup so ONE web build serves every customer; the
+  // compile-time const defaults above still drive Android/dart-define builds and
+  // remain the fallback whenever no runtime override is present.
+  static String? _rtAiWorker;
+  static String? _rtNotifyWorker;
+  static String? _rtIngestWorker;
+  static String? _rtCopilotUrl;
+
+  /// Applies runtime worker-URL overrides (no-op for null/empty values, so a
+  /// partial injected config never blanks out a good compile-time default).
+  static void applyRuntimeWorkerOverrides({
+    String? aiWorkerBase,
+    String? notifyWorkerBase,
+    String? ingestWorkerBase,
+    String? copilotUrl,
+  }) {
+    if (aiWorkerBase != null && aiWorkerBase.isNotEmpty) _rtAiWorker = aiWorkerBase;
+    if (notifyWorkerBase != null && notifyWorkerBase.isNotEmpty) {
+      _rtNotifyWorker = notifyWorkerBase;
+    }
+    if (ingestWorkerBase != null && ingestWorkerBase.isNotEmpty) {
+      _rtIngestWorker = ingestWorkerBase;
+    }
+    if (copilotUrl != null && copilotUrl.isNotEmpty) _rtCopilotUrl = copilotUrl;
+  }
+
+  /// Runtime-override-aware base URLs. Endpoints below build off these so a
+  /// per-tenant web build talks to that tenant's own workers.
+  static String get resolvedAiWorkerBase => _rtAiWorker ?? aiWorkerBase;
+  static String get resolvedNotifyWorkerBase => _rtNotifyWorker ?? notifyWorkerBase;
+  static String get resolvedIngestWorkerBase => _rtIngestWorker ?? ingestWorkerBase;
+  static String get resolvedCopilotUrl => _rtCopilotUrl ?? copilotUrl;
+
+  @visibleForTesting
+  static void debugResetRuntimeOverrides() {
+    _rtAiWorker = null;
+    _rtNotifyWorker = null;
+    _rtIngestWorker = null;
+    _rtCopilotUrl = null;
+  }
+
   // ── Worker endpoints ────────────────────────────────────────────────────
-  static String get workerRoot => aiWorkerBase;
-  static String get configEndpoint => '$aiWorkerBase/config';
-  static String get aiSuggestEndpoint => '$aiWorkerBase/ai-suggest';
-  static String get shiftAiActionEndpoint => '$aiWorkerBase/shift-ai-action';
-  static String get briefingEndpoint => '$aiWorkerBase/briefing';
-  static String get predictEndpoint => '$aiWorkerBase/predict';
-  static String get suggestAssigneeEndpoint => '$aiWorkerBase/suggest-assignee';
-  static String get notifyEndpoint => '$notifyWorkerBase/notify';
+  static String get workerRoot => resolvedAiWorkerBase;
+  static String get configEndpoint => '$resolvedAiWorkerBase/config';
+  static String get aiSuggestEndpoint => '$resolvedAiWorkerBase/ai-suggest';
+  static String get shiftAiActionEndpoint =>
+      '$resolvedAiWorkerBase/shift-ai-action';
+  static String get briefingEndpoint => '$resolvedAiWorkerBase/briefing';
+  static String get predictEndpoint => '$resolvedAiWorkerBase/predict';
+  static String get suggestAssigneeEndpoint =>
+      '$resolvedAiWorkerBase/suggest-assignee';
+  static String get notifyEndpoint => '$resolvedNotifyWorkerBase/notify';
   static String get notifyTriggerEndpoint => notifyEndpoint;
-  static String get aiRetryEndpoint => '$aiWorkerBase/ai-retry';
-  static String get evalModelEndpoint => '$aiWorkerBase/eval-model';
+  static String get aiRetryEndpoint => '$resolvedAiWorkerBase/ai-retry';
+  static String get evalModelEndpoint => '$resolvedAiWorkerBase/eval-model';
 
   // ── Industrial connector endpoints ────────────────────────────────────────
-  static String get connectorVerifyEndpoint => '$ingestWorkerBase/verify';
-  static String get connectorControlEndpoint => '$ingestWorkerBase/control';
+  static String get connectorVerifyEndpoint =>
+      '$resolvedIngestWorkerBase/verify';
+  static String get connectorControlEndpoint =>
+      '$resolvedIngestWorkerBase/control';
   static String connectorIngestEndpoint(String connectorId) =>
-      '$ingestWorkerBase/ingest/$connectorId';
+      '$resolvedIngestWorkerBase/ingest/$connectorId';
 
   // ── Timeouts ────────────────────────────────────────────────────────────
   static const Duration defaultRequestTimeout = Duration(seconds: 8);

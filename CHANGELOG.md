@@ -10,6 +10,50 @@ plant's existing automation estate. It coordinates alerts and people; it does
 not execute control loops and is not a safety-instrumented system. See
 `RELEASE_NOTES.md` for the scope statement that accompanies each release.
 
+## [Unreleased] - 2026-07-20 — Commercial & Integration Max-Out
+
+### Added
+
+- **Reference edge gateway (`gateway/`).** Self-contained Node 20 package
+  bridging OPC-UA / Modbus TCP / Siemens S7 / MQTT (incl. Sparkplug B) into
+  the ingest worker: config-driven mapping rules (exact + wildcards, scale/
+  offset, warn/critical thresholds), batching (≤20/2s), on-disk retry queue
+  (10k cap, drop-oldest), exponential backoff, built-in **plant simulator**
+  (`--sim 6 --fault-every 90s`, `--dry-run`), Dockerfile (non-root), zero
+  required deps (protocol libraries are lazy-loaded optional peers).
+  Contract-tested against the real ingest normalizer.
+- **Invoice-led storefront (SALES_MODE=quote, default).** `/buy` becomes a
+  quote request (`POST /api/quote` → `quote_requested` → n8n WF1, deduped
+  `qr_` event ids); landing CTAs/FAQ switch to invoicing copy server-side;
+  `SALES_MODE=card` restores checkout exactly. Prices extracted to
+  `pricing.mjs`, shared with `tool/generate_quote.mjs` — a branded quote PDF
+  generator (+ JSON sidecar) with discount/validity handling.
+- **Kubix Copilot upgrades.** Per-reply thumbs feedback (`POST
+  /api/kubix-feedback` → `N8N_FEEDBACK_WEBHOOK_URL`, verdicts persisted in the
+  local transcript), French page chrome (`/copilot?lang=fr`), the `/welcome`
+  onboarding checklist page, a SuperAdmin console "Kubix Copilot" card
+  (`ALERTSYS_COPILOT_URL` dart-define, EN/FR), and
+  `tool/kubix_chat_report.mjs` chat analytics.
+- **Provisioning lifecycle tooling.** `verify_instance` (worker /config +
+  RTDB reachability + rules-denial probes, green/red table, wired as
+  provisioning step 9), `teardown_instance` (dry-run default, archives tenant
+  dir, loud manual steps), tenant registry + `list_tenants`, `backup_drill`
+  (fails if the newest R2 snapshot > 36h; backup worker gained `GET /config`),
+  and a manual-approval `provision-tenant.yml` workflow gated by the
+  `provisioning` environment.
+- **Legal pack tooling.** `npm run legal:lint` (placeholder inventory, naming
+  and forbidden-claim enforcement, MSA cross-references) + non-blocking CI
+  job; store `/legal` routes hard-gated behind `LEGAL_PUBLISH`;
+  `docs/legal/COUNSEL_BRIEF.md` for the reviewing lawyer.
+- **Security hardening.** Strict nonce-based CSP + HSTS + Permissions-Policy
+  on all store pages (inline handlers eliminated), RFC 9116
+  `/.well-known/security.txt`, CycloneDX SBOM job in security CI, adversarial
+  RTDB rules fuzz tests, `docs/SECURITY_WHITEPAPER.md`, threat-model
+  boundaries for the store/n8n and plant-gateway surfaces.
+- **Sales enablement.** Security one-pager, 44-question RFP answer bank,
+  AFTER_YOU_BUY journey doc, demo script v2 (simulator-driven, persona
+  branches), and a full docs index (`docs/README.md`).
+
 ## [1.2.1] - 2026-06-23 — Enterprise Pilot Readiness
 
 This release consolidates the platform into a state suitable for **controlled

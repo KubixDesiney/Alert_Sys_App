@@ -6,6 +6,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'config/company_config.dart';
+import 'config/app_config.dart';
+import 'config/runtime_firebase_config.dart';
 import 'providers/alert_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/locale_provider.dart';
@@ -124,17 +126,30 @@ void main() async {
 }
 
 Future<void> _safeInitFirebase() async {
+  // Per-tenant web delivery (see CLAUDE.md → "Per-Tenant App Delivery"): the
+  // shared sias-app worker injects window.__SIAS_CONFIG__ with this tenant's
+  // PUBLIC Firebase config + worker URLs, so ONE web build serves every
+  // customer. Absent on Android/desktop/local dev → fall back to the
+  // compile-time DefaultFirebaseOptions + dart-defines.
+  final runtime = loadRuntimeSiasConfig();
+  if (runtime != null && runtime.hasWorkerOverrides) {
+    AppConfig.applyRuntimeWorkerOverrides(
+      aiWorkerBase: runtime.aiWorkerBase,
+      notifyWorkerBase: runtime.notifyWorkerBase,
+      ingestWorkerBase: runtime.ingestWorkerBase,
+      copilotUrl: runtime.copilotUrl,
+    );
+  }
+  final options =
+      runtime?.firebaseOptions ?? DefaultFirebaseOptions.currentPlatform;
   try {
     if (Firebase.apps.isNotEmpty) return;
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    await Firebase.initializeApp(options: options);
     // Isolation safety (dedicated-instance model — see PROVISIONING.md): confirm
-    // this build is wired to the company's own Firebase project, so Company A's
-    // app can never come up pointed at Company B's data.
-    final companyMismatch = CompanyConfig.verifyFirebaseProject(
-      DefaultFirebaseOptions.currentPlatform.projectId,
-    );
+    // this build/runtime is wired to the company's own Firebase project, so
+    // Company A's app can never come up pointed at Company B's data.
+    final companyMismatch =
+        CompanyConfig.verifyFirebaseProject(options.projectId);
     if (companyMismatch != null) {
       ServiceLocator.instance.logger.error(companyMismatch);
     }
