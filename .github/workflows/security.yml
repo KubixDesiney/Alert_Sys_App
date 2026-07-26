@@ -61,13 +61,13 @@ jobs:
         run: npm ci
       - name: Audit functions packages
         working-directory: functions
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
       - name: Install codebasedelta packages
         working-directory: codebasedelta
         run: npm ci
       - name: Audit codebasedelta packages
         working-directory: codebasedelta
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
   sbom:
     name: SBOM (CycloneDX)

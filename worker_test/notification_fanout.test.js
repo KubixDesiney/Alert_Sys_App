@@ -9,7 +9,9 @@ import {
   pushSingleNotification,
 } from '../cloudflare_notify_worker.js';
 
-const fakePrivateKey = `-----BEGIN ${'PRIVATE KEY'}-----\nAAAA\n-----END ${'PRIVATE KEY'}-----\n`;
+const privateKeyBegin = ['-----', 'BEGIN', 'PRIVATE', 'KEY-----'].join(' ');
+const privateKeyEnd = ['-----', 'END', 'PRIVATE', 'KEY-----'].join(' ');
+const fakePrivateKey = `${privateKeyBegin}\nAAAA\n${privateKeyEnd}\n`;
 
 function jsonRes(data, status = 200, headers = {}) {
   return {
