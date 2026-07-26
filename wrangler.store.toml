@@ -2,6 +2,10 @@ name = "sias-store"
 main = "cloudflare_store_worker.js"
 compatibility_date = "2026-07-26"
 
+routes = [
+  { pattern = "sias.kubixdesiney.com/*", zone_name = "kubixdesiney.com" }
+]
+
 # Secrets (wrangler secret put --config wrangler.store.toml):
 #   STRIPE_SECRET_KEY           sk_test_/sk_live_ key — creates Checkout Sessions (server-side only)
 #   STRIPE_WEBHOOK_SECRET       whsec_... — verifies /api/stripe-webhook signatures
@@ -26,6 +30,7 @@ compatibility_date = "2026-07-26"
 [vars]
 SALES_EMAIL = "chefbriotemendez@gmail.com"
 STORE_RATE_LIMIT = "10"
+N8N_INTAKE_WEBHOOK_URL = "https://n8n.kubixdesiney.com/webhook/sias-purchase-intake"
 # Sales motion: "quote" = invoice-led (default; /buy submits a quote request,
 # card rails stay parked), "card" = self-serve Stripe/ClicToPay checkout.
 SALES_MODE = "quote"
