@@ -14,6 +14,9 @@ paths = [
   # Browser-only Google Maps key used by the Flutter web shell. Keep this key
   # restricted to the production web origins in Google Cloud Console.
   '''(^|[\\/])web[\\/]index\.html$''',
+  # Test-only Firebase PEM fixture; it contains the literal word PRIVATE KEY
+  # but no usable credential material.
+  '''(^|[\\/])worker_test[\\/]notification_fanout\.test\.js$''',
   '''(^|[\\/])node_modules[\\/]''',
   '''(^|[\\/])build[\\/]''',
   '''(^|[\\/])coverage[\\/]''',
