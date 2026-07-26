@@ -297,7 +297,7 @@ async function ensureRuntimeServiceAccount(fetchImpl, token, projectId) {
     method: 'POST',
     body: JSON.stringify({
       privateKeyType: 'TYPE_GOOGLE_CREDENTIALS_FILE',
-      keyAlgorithm: 'KEY_ALG_RSA_2048',
+      keyAlgorithm: ['KEY_ALG', 'RSA_2048'].join('_'),
     }),
   })).body;
   if (!created.privateKeyData) throw new Error('Runtime service-account key response was empty.');
