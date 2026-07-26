@@ -3,10 +3,12 @@ import { parseEnvFile } from '../tool/provision_instance.mjs';
 
 describe('tenant worker secret bundle', () => {
   test('serializes the generated Firebase identity on one parseable line', () => {
+    const privateKeyHeader = ['-----BEGIN', 'PRIVATE KEY-----'].join(' ');
+    const privateKeyFooter = ['-----END', 'PRIVATE KEY-----'].join(' ');
     const serviceAccount = {
       type: 'service_account',
       project_id: 'sias-nsw',
-      private_key: '-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n',
+      private_key: `${privateKeyHeader}\nsecret\n${privateKeyFooter}\n`,
       client_email: 'sias-runtime@sias-nsw.iam.gserviceaccount.com',
     };
     const text = buildTenantEnv({

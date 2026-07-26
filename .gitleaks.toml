@@ -11,6 +11,9 @@ paths = [
   '''(^|[\\/])ios[\\/]Runner[\\/]GoogleService-Info\.plist$''',
   '''(^|[\\/])macos[\\/]Runner[\\/]GoogleService-Info\.plist$''',
   '''(^|[\\/])web[\\/]firebase-messaging-sw\.js$''',
+  # Browser-only Google Maps key used by the Flutter web shell. Keep this key
+  # restricted to the production web origins in Google Cloud Console.
+  '''(^|[\\/])web[\\/]index\.html$''',
   '''(^|[\\/])node_modules[\\/]''',
   '''(^|[\\/])build[\\/]''',
   '''(^|[\\/])coverage[\\/]''',
