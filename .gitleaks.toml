@@ -17,6 +17,7 @@ paths = [
   # Test-only Firebase PEM fixture; it contains the literal word PRIVATE KEY
   # but no usable credential material.
   '''(^|[\\/])worker_test[\\/]notification_fanout\.test\.js$''',
+  '''(^|[\\/])worker_test[\\/]build_tenant_env\.test\.js$''',
   '''(^|[\\/])node_modules[\\/]''',
   '''(^|[\\/])build[\\/]''',
   '''(^|[\\/])coverage[\\/]''',
