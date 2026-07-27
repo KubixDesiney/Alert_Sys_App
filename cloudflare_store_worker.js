@@ -843,7 +843,7 @@ function legalChrome(inner, env) {
   const mail = salesEmail(env);
   return `
 <header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
   <nav class="navlinks"><a href="/legal">Legal</a><a href="/#pricing">Pricing</a></nav>
 </div></header>
 <main class="wrap ldocwrap">${inner}</main>
@@ -1470,6 +1470,42 @@ function money(cents) {
   return '$' + (cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+const UI_ICON_PATHS = Object.freeze({
+  alert: '<path d="M12 3 2.7 20h18.6L12 3Z"/><path d="M12 9v4.7"/><path d="M12 17.2h.01"/>',
+  arrow: '<path d="M5 12h13"/><path d="m14 7 5 5-5 5"/>',
+  bank: '<path d="m3 9 9-5 9 5"/><path d="M5 10v7M9.5 10v7M14.5 10v7M19 10v7"/><path d="M3 20h18"/>',
+  bolt: '<path d="m13 2-8 12h7l-1 8 8-12h-7l1-8Z"/>',
+  brain: '<path d="M9.5 4.5A3.5 3.5 0 0 0 6 8v.4a3.5 3.5 0 0 0-1 6.7V16a4 4 0 0 0 4 4h1V5.5a1 1 0 0 0-.5-1Z"/><path d="M14.5 4.5A3.5 3.5 0 0 1 18 8v.4a3.5 3.5 0 0 1 1 6.7V16a4 4 0 0 1-4 4h-1V5.5a1 1 0 0 1 .5-1Z"/><path d="M7 10h3M14 10h3M7 15h3M14 15h3"/>',
+  chart: '<path d="M4 19V5"/><path d="M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/><path d="M18 6v4M18 6h-4"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/><path d="M10 10h4v4h-4z"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>',
+  lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>',
+  network: '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="4" width="6" height="5" rx="1"/><rect x="9" y="15" width="6" height="5" rx="1"/><path d="M6 9v3h12V9M12 12v3"/>',
+  pulse: '<path d="M3 12h4l2-5 4 10 2-5h6"/>',
+  radio: '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13"/>',
+  shield: '<path d="M12 3 5 6v5c0 4.7 2.8 8.2 7 10 4.2-1.8 7-5.3 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-5"/>',
+  wrench: '<path d="M14.5 6.5a4 4 0 0 0-5.3 5.3L4 17l3 3 5.2-5.2a4 4 0 0 0 5.3-5.3l-2.7 2.7-3-3 2.7-2.7Z"/>',
+});
+
+function uiIcon(name, className = 'ui-icon') {
+  const paths = UI_ICON_PATHS[name] || UI_ICON_PATHS.pulse;
+  return `<svg class="${className}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
+}
+
+function brandLockup() {
+  return `<span class="brand-mark" aria-hidden="true">
+    <svg viewBox="0 0 40 40" focusable="false">
+      <path class="cube-top" d="m20 3 14 8-14 8-14-8 14-8Z"/>
+      <path class="cube-left" d="m6 11 14 8v17L6 28V11Z"/>
+      <path class="cube-right" d="m34 11-14 8v17l14-8V11Z"/>
+      <path class="cube-signal" d="M10.5 24h4l2.1-4.2 3.2 8.1 2.4-4.4h7.2"/>
+    </svg>
+  </span><span class="brand-word">SIAS</span><span class="brand-by">by Kubix</span>`;
+}
+
 function page(title, description, body, extraHead = '') {
   return `<!doctype html>
 <html lang="en">
@@ -1481,13 +1517,20 @@ function page(title, description, body, extraHead = '') {
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23F59E0B' d='M12 2a7 7 0 0 0-7 7v3.3L3.3 16a1 1 0 0 0 .9 1.5h15.6a1 1 0 0 0 .9-1.5L19 12.3V9a7 7 0 0 0-7-7Zm0 20a3 3 0 0 0 2.8-2H9.2A3 3 0 0 0 12 22Z'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#070A0F">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%23070A0F'/%3E%3Cpath fill='%23F4B942' d='m20 4 13 7.5L20 19 7 11.5 20 4Z'/%3E%3Cpath fill='%23BE7D16' d='m7 11.5 13 7.5v16L7 27.5v-16Z'/%3E%3Cpath fill='%2346D9E8' d='M33 11.5 20 19v16l13-7.5v-16Z'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js');</script>
 <style>${BASE_CSS}</style>${extraHead}
 </head>
-<body>${body}</body>
+<body>
+  <a class="skip-link" href="#site-content">Skip to content</a>
+  <div class="scroll-progress" aria-hidden="true"><span></span></div>
+  <div id="site-content" tabindex="-1">${body}</div>
+  <script>${SHELL_CLIENT_JS}</script>
+</body>
 </html>`;
 }
 
@@ -1525,8 +1568,8 @@ function landingBody(env, mode = 'card') {
   const quote = mode === 'quote';
   const buyCta = quote ? 'Get a quote' : null;
   return `
-<header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+<header class="nav storefront-nav"><div class="wrap">
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
   <nav class="navlinks">
     <a class="hideM" href="#features">Product</a>
     <a class="hideM" href="#integrations">Integrations</a>
@@ -1534,48 +1577,105 @@ function landingBody(env, mode = 'card') {
     <a class="hideM" href="/copilot">Copilot chat</a>
     <a class="hideM" href="#security">Security</a>
     <a href="#pricing">Pricing</a>
-    <a class="btn btn-amber btn-sm" href="/buy?plan=growth&billing=annual">Get SIAS</a>
+    <a class="btn btn-amber btn-sm" data-magnetic href="/buy?plan=growth&billing=annual">Get SIAS ${uiIcon('arrow', 'btn-icon')}</a>
   </nav>
 </div></header>
 
-<main>
+<main class="storefront-main">
+<section class="hero-section" aria-labelledby="hero-title">
 <div class="wrap">
   <div class="hero">
-    <div>
-      <span class="eyebrow">Smart Industrial Alert System</span>
-      <h1>Every factory alert.<br>Caught, claimed, resolved &mdash; and learned from.</h1>
+    <div class="hero-copy" data-reveal="left">
+      <span class="eyebrow">${uiIcon('pulse', 'eyebrow-icon')} Smart Industrial Alert System</span>
+      <h1 id="hero-title">Every factory signal.<br><span class="signal-text">Caught before it becomes downtime.</span></h1>
       <p class="lead">SIAS is the real-time supervision platform for industrial plants: AI-dispatched alerts, voice-first claiming from a locked phone, SCADA-to-shop-floor integration, and a failure forecaster that trains on your own history and grades itself daily.</p>
       <div class="ctas">
-        <a class="btn btn-amber" href="#pricing">Get SIAS &mdash; from $490/mo</a>
-        <a class="btn btn-ghost" href="#how">How buying works</a>
+        <a class="btn btn-amber" data-magnetic href="#pricing">Get SIAS &mdash; from $490/mo ${uiIcon('arrow', 'btn-icon')}</a>
+        <a class="btn btn-ghost" href="#how">${uiIcon('pulse', 'btn-icon')} See the signal path</a>
       </div>
-      <p class="sub">Dedicated isolated instance per customer &middot; live within 1 business day &middot; EN / FR</p>
+      <div class="hero-assurance" aria-label="Deployment assurances">
+        <span>${uiIcon('shield', 'micro-icon')} Dedicated instance</span>
+        <span>${uiIcon('bolt', 'micro-icon')} Live in one business day</span>
+        <span class="mono">EN / FR</span>
+      </div>
     </div>
-    <div class="card console" aria-label="Live alert console preview">
-      <div class="chead"><span class="dotr"></span> LIVE &middot; Plant floor &mdash; Line 3 <span style="margin-left:auto" class="dim">SIAS console</span></div>
-      <div class="alertrow">
-        <div class="sev r">&#9888;</div>
-        <div><div class="t1">Maintenance &mdash; Conveyor B &middot; Station 12</div>
-        <div class="t2">ALT-2841 &middot; raised 14s ago &middot; source: scada:opcua</div>
-        <span class="chip ai">AI &rarr; assigned S. Karim &middot; confidence 0.92</span> <span class="chip crit">CRITICAL</span></div>
+    <div class="signal-stage" data-tilt data-reveal="right" role="img" aria-label="Animated SIAS command console showing a machine signal becoming an assigned, claimed, and resolved alert">
+      <div class="stage-corner stage-corner-a"></div><div class="stage-corner stage-corner-b"></div>
+      <div class="stage-head">
+        <div class="stage-title"><span class="live-pip"></span><span class="mono">PLANT TWIN / LINE 03</span></div>
+        <div class="stage-health"><span>EDGE</span><b>ONLINE</b><span class="stage-time">14:32:08</span></div>
       </div>
-      <div class="alertrow">
-        <div class="sev a">&#9881;</div>
-        <div><div class="t1">Quality drift &mdash; Line 1 &middot; Station 4</div>
-        <div class="t2">ALT-2840 &middot; claimed by voice from lock screen &middot; 2m</div>
-        <span class="chip ai">en cours &middot; M. Bouazizi</span></div>
+      <div class="stage-body">
+        <aside class="stage-rail" aria-hidden="true">
+          <div class="rail-readout"><span>INGEST</span><b>842</b><small>evt/min</small></div>
+          <div class="rail-readout"><span>LATENCY</span><b>1.5</b><small>seconds</small></div>
+          <div class="rail-readout"><span>ASSIGN</span><b>0.92</b><small>confidence</small></div>
+          <div class="rail-spectrum"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </aside>
+        <div class="factory-field">
+          <div class="field-grid" aria-hidden="true"></div>
+          <svg class="factory-schematic" viewBox="0 0 620 390" aria-hidden="true" focusable="false">
+            <defs>
+              <linearGradient id="sias-route" x1="0" x2="1">
+                <stop offset="0" stop-color="#46D9E8" stop-opacity=".2"/>
+                <stop offset=".58" stop-color="#46D9E8"/>
+                <stop offset="1" stop-color="#F4B942"/>
+              </linearGradient>
+              <filter id="sias-soft">
+                <feGaussianBlur stdDeviation="3"/>
+              </filter>
+            </defs>
+            <path class="plant-outline" d="M48 75h165l32 28h128l24-22h168v238H397l-28-24H236l-26 24H48Z"/>
+            <path class="plant-inner" d="M92 114h104v60H92zM92 220h104v60H92zM246 132h117v128H246zM418 112h92v62h-92zM418 221h92v61h-92z"/>
+            <path class="route-base" d="M143 144H248c27 0 20 52 49 52h72c30 0 26-53 57-53h38"/>
+            <path class="route-flow" d="M143 144H248c27 0 20 52 49 52h72c30 0 26-53 57-53h38"/>
+            <path class="route-base secondary" d="M143 250h64c34 0 31-54 67-54"/>
+            <path class="route-flow route-flow-secondary" d="M143 250h64c34 0 31-54 67-54"/>
+            <g class="machine-node node-ok" transform="translate(143 144)">
+              <circle class="node-halo" r="20"/><rect x="-8" y="-8" width="16" height="16"/><path d="M-4 0h8M0-4v8"/>
+            </g>
+            <g class="machine-node node-ok" transform="translate(143 250)">
+              <circle class="node-halo" r="20"/><rect x="-8" y="-8" width="16" height="16"/><path d="M-4 0h8M0-4v8"/>
+            </g>
+            <g class="machine-node node-ai" transform="translate(305 196)">
+              <circle class="node-halo" r="24"/><path d="M-9-9h18v18H-9zM-4-4h8v8H-4z"/>
+            </g>
+            <g class="machine-node node-critical" transform="translate(464 143)">
+              <circle class="node-ring" r="27"/><circle class="node-halo" r="19"/><path d="M0-10 10 9h-20L0-10ZM0-3v5M0 6h.01"/>
+            </g>
+            <g class="machine-node node-ok" transform="translate(464 251)">
+              <circle class="node-halo" r="20"/><rect x="-8" y="-8" width="16" height="16"/><path d="m-4 0 3 3 6-7"/>
+            </g>
+            <text x="99" y="128">PRESS 07</text><text x="99" y="234">PACK 02</text>
+            <text x="271" y="178">AI ROUTER</text><text x="425" y="126">CONV B12</text><text x="425" y="235">QA GATE</text>
+          </svg>
+          <div class="scan-beam" aria-hidden="true"></div>
+          <div class="alert-ticket">
+            <div class="ticket-top">
+              <span class="ticket-code">${uiIcon('alert', 'ticket-icon')} ALT-2841</span>
+              <span class="chip crit">CRITICAL</span>
+            </div>
+            <strong>Conveyor B / Station 12</strong>
+            <p>Torque anomaly &middot; OPC-UA signal</p>
+            <div class="assignment">
+              <span class="agent-orb">AI</span>
+              <div><small>ASSIGNED TO</small><b>S. Karim</b></div>
+              <span class="confidence mono">92%</span>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="alertrow">
-        <div class="sev g">&#10003;</div>
-        <div><div class="t1">Resource shortage &mdash; Packaging &middot; Station 7</div>
-        <div class="t2">ALT-2837 &middot; resolved in 11 min &middot; validated</div>
-        <span class="chip ok">resolved &middot; fed back to the model</span></div>
+      <div class="signal-lifecycle">
+        <div class="lifecycle-track"><span class="lifecycle-runner"></span></div>
+        <div class="life-step active"><i>01</i><span>Signal received</span><b>00.0s</b></div>
+        <div class="life-step"><i>02</i><span>AI assigned</span><b>00.7s</b></div>
+        <div class="life-step"><i>03</i><span>Voice claimed</span><b>08.2s</b></div>
+        <div class="life-step resolved"><i>04</i><span>Resolution learned</span><b>11m</b></div>
       </div>
-      <div class="cfoot">&#9889; Forecast: 78% risk of product-defect alerts on MACH-041 within 24h &mdash; maintenance pre-briefed</div>
     </div>
   </div>
 
-  <div class="stats">
+  <div class="stats" data-reveal="up" aria-label="Platform operating facts">
     <div class="stat"><div class="n">~1.5s</div><div class="l">median alert push to phones</div></div>
     <div class="stat"><div class="n">24/7</div><div class="l">AI shift commander</div></div>
     <div class="stat"><div class="n">466</div><div class="l">automated tests in CI</div></div>
@@ -1583,139 +1683,153 @@ function landingBody(env, mode = 'card') {
     <div class="stat"><div class="n">EN&middot;FR</div><div class="l">fully bilingual, runtime switch</div></div>
   </div>
 </div>
+</section>
 
-<section id="features"><div class="wrap">
-  <div class="shead"><span class="eyebrow">Platform</span>
-    <h2 style="margin-top:14px">Built for the plant floor, not the boardroom demo</h2>
+<section id="features" class="foundry-section"><div class="wrap">
+  <div class="section-index mono" aria-hidden="true">01 / SIGNAL ENGINE</div>
+  <div class="shead split-head" data-reveal="up"><span class="eyebrow">${uiIcon('chip', 'eyebrow-icon')} Platform</span>
+    <h2>Built for the plant floor,<br><span>not the boardroom demo.</span></h2>
     <p>Every capability below ships in your instance on day one &mdash; this is running software, not a roadmap.</p>
   </div>
-  <div class="grid3">
-    <div class="card feat"><div class="ic">&#129302;</div><h3>AI dispatch &amp; shift commander</h3><p>Scores every supervisor on history, workload, location and feedback, assigns in seconds, and can run entire shifts autonomously &mdash; with every decision explained and logged.</p></div>
-    <div class="card feat"><div class="ic">&#128200;</div><h3>Forecasts that earn trust</h3><p>A gradient-boosted model trains on your alert history in seconds, forecasts next-24h machine risk, then grades its own accuracy against what actually happened &mdash; daily.</p></div>
-    <div class="card feat"><div class="ic">&#127908;</div><h3>Voice-first operations</h3><p>Claim, resolve and escalate hands-free &mdash; even from a locked phone. Offline speech recognition with speaker verification, in English and French.</p></div>
-    <div class="card feat"><div class="ic">&#128268;</div><h3>Plugs into your estate</h3><p>OPC-UA, Modbus, MQTT, REST, PI and Ignition historians, plus ESP32/Arduino edge kits. Configured self-service from your console. SIAS observes &mdash; it never touches control loops.</p></div>
-    <div class="card feat"><div class="ic">&#128246;</div><h3>Built for bad networks</h3><p>Offline-aware mobile apps, queued sync, cached roles and durable retries. The plant floor does not stop when the Wi-Fi does &mdash; neither does SIAS.</p></div>
-    <div class="card feat"><div class="ic">&#128737;</div><h3>A command console you own</h3><p>Your SuperAdmin cockpit: live fleet monitor, security feed, hardware lab, custom alert types, model training and account provisioning &mdash; on your dedicated instance.</p></div>
+  <div class="grid3 feature-grid">
+    <article class="card feat feat-primary" data-reveal="up"><div class="ic">${uiIcon('brain')}</div><span class="module-id mono">MOD / 01</span><h3>AI dispatch &amp; shift commander</h3><p>Scores every supervisor on history, workload, location and feedback, assigns in seconds, and can run entire shifts autonomously &mdash; with every decision explained and logged.</p><div class="module-trace" aria-hidden="true"></div></article>
+    <article class="card feat" data-reveal="up"><div class="ic">${uiIcon('chart')}</div><span class="module-id mono">MOD / 02</span><h3>Forecasts that earn trust</h3><p>A gradient-boosted model trains on your alert history in seconds, forecasts next-24h machine risk, then grades its own accuracy against what actually happened &mdash; daily.</p><div class="module-trace" aria-hidden="true"></div></article>
+    <article class="card feat" data-reveal="up"><div class="ic">${uiIcon('mic')}</div><span class="module-id mono">MOD / 03</span><h3>Voice-first operations</h3><p>Claim, resolve and escalate hands-free &mdash; even from a locked phone. Offline speech recognition with speaker verification, in English and French.</p><div class="module-trace" aria-hidden="true"></div></article>
+    <article class="card feat" data-reveal="up"><div class="ic">${uiIcon('network')}</div><span class="module-id mono">MOD / 04</span><h3>Plugs into your estate</h3><p>OPC-UA, Modbus, MQTT, REST, PI and Ignition historians, plus ESP32/Arduino edge kits. Configured self-service from your console. SIAS observes &mdash; it never touches control loops.</p><div class="module-trace" aria-hidden="true"></div></article>
+    <article class="card feat" data-reveal="up"><div class="ic">${uiIcon('radio')}</div><span class="module-id mono">MOD / 05</span><h3>Built for bad networks</h3><p>Offline-aware mobile apps, queued sync, cached roles and durable retries. The plant floor does not stop when the Wi-Fi does &mdash; neither does SIAS.</p><div class="module-trace" aria-hidden="true"></div></article>
+    <article class="card feat" data-reveal="up"><div class="ic">${uiIcon('shield')}</div><span class="module-id mono">MOD / 06</span><h3>A command console you own</h3><p>Your SuperAdmin cockpit: live fleet monitor, security feed, hardware lab, custom alert types, model training and account provisioning &mdash; on your dedicated instance.</p><div class="module-trace" aria-hidden="true"></div></article>
   </div>
 </div></section>
 
-<section id="integrations" style="padding-top:0"><div class="wrap">
-  <div class="shead"><span class="eyebrow">Integrations</span>
-    <h2 style="margin-top:14px">Speaks fluent factory</h2>
+<section id="integrations" class="foundry-section integrations-section"><div class="wrap">
+  <div class="section-index mono" aria-hidden="true">02 / INDUSTRIAL I/O</div>
+  <div class="shead split-head" data-reveal="up"><span class="eyebrow">${uiIcon('network', 'eyebrow-icon')} Integrations</span>
+    <h2>Speaks fluent factory.</h2>
     <p>Cloud-pull, edge-push or broker-based &mdash; your IT team connects the estate without us on the phone.</p>
   </div>
-  <div class="logos">
-    <span>OPC-UA</span><span>Modbus</span><span>MQTT</span><span>REST APIs</span><span>OSIsoft PI</span><span>Ignition</span><span>ESP32 / Arduino</span><span>SCIM 2.0 (Okta &middot; Entra)</span><span>Firebase Auth + MFA</span>
+  <div class="protocol-board" data-reveal="up">
+    <div class="protocol-core" aria-hidden="true"><span>${uiIcon('pulse')}</span><b>SIAS</b><small>EDGE ROUTER</small></div>
+    <div class="logos">
+      <span><i></i>OPC-UA</span><span><i></i>Modbus</span><span><i></i>MQTT</span><span><i></i>REST APIs</span><span><i></i>OSIsoft PI</span><span><i></i>Ignition</span><span><i></i>ESP32 / Arduino</span><span><i></i>SCIM 2.0</span><span><i></i>Firebase Auth + MFA</span>
+    </div>
   </div>
 </div></section>
 
-<section id="kubix"><div class="wrap"><div class="kubix">
-  <div>
-    <span class="eyebrow">Included with every purchase</span>
-    <h2 style="margin-top:14px">Meet your Kubix Copilot</h2>
+<section id="kubix" class="foundry-section kubix-section"><div class="wrap">
+  <div class="section-index mono" aria-hidden="true">03 / HUMAN + MACHINE</div>
+  <div class="kubix">
+  <div data-reveal="left">
+    <span class="eyebrow">${uiIcon('brain', 'eyebrow-icon')} Included with every purchase</span>
+    <h2>Meet your<br><span>Kubix Copilot.</span></h2>
     <p class="mut" style="margin-top:16px;font-size:17px">The moment you buy, a named AI engineer is created for your company &mdash; trained on SIAS internals, your plan, and your integration stack. It guides activation, wires your SCADA/PLC/ESP32 connections, answers the 2am questions, and escalates to a human engineer when it should.</p>
-    <ul class="plan" style="border:none;padding:22px 0 0;background:none;box-shadow:none">
-      <li style="list-style:none;font-size:14.5px;color:var(--ink2);display:flex;gap:10px;margin-bottom:10px"><span class="ck" style="color:var(--amber2);font-weight:700">&#10003;</span> Knows your instance, tenant code and configuration</li>
-      <li style="list-style:none;font-size:14.5px;color:var(--ink2);display:flex;gap:10px;margin-bottom:10px"><span class="ck" style="color:var(--amber2);font-weight:700">&#10003;</span> Generates gateway snippets for your exact hardware</li>
-      <li style="list-style:none;font-size:14.5px;color:var(--ink2);display:flex;gap:10px"><span class="ck" style="color:var(--amber2);font-weight:700">&#10003;</span> Onboards supervisors, PMs and IT &mdash; in EN or FR</li>
+    <ul class="signal-list">
+      <li>${uiIcon('check', 'list-check')} Knows your instance, tenant code and configuration</li>
+      <li>${uiIcon('check', 'list-check')} Generates gateway snippets for your exact hardware</li>
+      <li>${uiIcon('check', 'list-check')} Onboards supervisors, PMs and IT &mdash; in EN or FR</li>
     </ul>
   </div>
-  <div class="card chatcard">
-    <div class="kbadge"><div class="av">K</div><div><div class="nm">Kubix &middot; NSW#7K2F</div><div class="st">&#9679; online &mdash; your dedicated copilot</div></div></div>
+  <div class="chatcard" data-tilt data-reveal="right">
+    <div class="chat-chrome mono"><span>SECURE COPILOT CHANNEL</span><span>LATENCY 230ms</span></div>
+    <div class="kbadge"><div class="av">${uiIcon('brain')}</div><div><div class="nm">Kubix &middot; NSW#7K2F</div><div class="st"><i></i> online &mdash; your dedicated copilot</div></div></div>
     <div class="msg user">How do I wire our Siemens S7 line into SIAS?</div>
     <div class="msg bot">Three steps, about 20 minutes:<ol><li>Enable the <b>OPC-UA connector</b> in your console (Infrastructure &rarr; Connectors)</li><li>I generate your gateway snippet with your ingest key baked in</li><li>We run a live <b>Verify link test</b> together</li></ol>Want me to prep the snippet for Line 2 now?</div>
     <div class="msg user">Yes &mdash; and set the alert type to maintenance.</div>
     <div class="msg bot">Done. Snippet ready &mdash; alerts from Line 2 will arrive tagged <b>maintenance</b>, routed by AI dispatch. I will watch the first 10 packets with you.</div>
+    <a class="chat-launch" href="/copilot">Open secure channel ${uiIcon('arrow', 'btn-icon')}</a>
   </div>
 </div></div></section>
 
-<section id="security" style="padding-top:0"><div class="wrap">
-  <div class="shead"><span class="eyebrow">Security &amp; trust</span>
-    <h2 style="margin-top:14px">Engineered like you will audit it &mdash; because you will</h2>
+<section id="security" class="foundry-section security-section"><div class="wrap">
+  <div class="section-index mono" aria-hidden="true">04 / TRUST BOUNDARY</div>
+  <div class="shead split-head" data-reveal="up"><span class="eyebrow">${uiIcon('shield', 'eyebrow-icon')} Security &amp; trust</span>
+    <h2>Engineered like you will audit it.<br><span>Because you will.</span></h2>
     <p>Industrial buyers audit before they buy. SIAS is built and operated for that scrutiny.</p>
   </div>
   <ul class="seclist">
-    <li class="card"><span class="ck">&#10003;</span><span><b>Dedicated isolated instance</b> per customer &mdash; your data never shares a database, auth realm or edge service with anyone else&rsquo;s.</span></li>
-    <li class="card"><span class="ck">&#10003;</span><span><b>Enforced service authentication</b> &mdash; identity-token verification is required on every backend service, not optional.</span></li>
-    <li class="card"><span class="ck">&#10003;</span><span><b>MFA + SCIM 2.0 provisioning</b> &mdash; plug in Okta or Microsoft Entra; joiners and leavers sync automatically.</span></li>
-    <li class="card"><span class="ck">&#10003;</span><span><b>Daily encrypted snapshots</b> to object storage with a 365-day alert retention policy you control.</span></li>
-    <li class="card"><span class="ck">&#10003;</span><span><b>PII separated and access-scoped</b> &mdash; personal data lives apart from operational data with strict role rules.</span></li>
-    <li class="card"><span class="ck">&#10003;</span><span><b>Independent security review</b> &mdash; externally scanned and fully remediated (July 2026). Whitepaper on request.</span></li>
+    <li data-reveal="up">${uiIcon('shield', 'security-icon')}<span><b>Dedicated isolated instance</b> per customer &mdash; your data never shares a database, auth realm or edge service with anyone else&rsquo;s.</span><em class="mono">ISOLATED</em></li>
+    <li data-reveal="up">${uiIcon('lock', 'security-icon')}<span><b>Enforced service authentication</b> &mdash; identity-token verification is required on every backend service, not optional.</span><em class="mono">ENFORCED</em></li>
+    <li data-reveal="up">${uiIcon('network', 'security-icon')}<span><b>MFA + SCIM 2.0 provisioning</b> &mdash; plug in Okta or Microsoft Entra; joiners and leavers sync automatically.</span><em class="mono">IDENTITY</em></li>
+    <li data-reveal="up">${uiIcon('chip', 'security-icon')}<span><b>Daily encrypted snapshots</b> to object storage with a 365-day alert retention policy you control.</span><em class="mono">RECOVERABLE</em></li>
+    <li data-reveal="up">${uiIcon('shield', 'security-icon')}<span><b>PII separated and access-scoped</b> &mdash; personal data lives apart from operational data with strict role rules.</span><em class="mono">SCOPED</em></li>
+    <li data-reveal="up">${uiIcon('check', 'security-icon')}<span><b>Independent security review</b> &mdash; externally scanned and fully remediated (July 2026). Whitepaper on request.</span><em class="mono">REVIEWED</em></li>
   </ul>
 </div></section>
 
-<section id="how"><div class="wrap">
-  <div class="shead"><span class="eyebrow">How buying works</span>
-    <h2 style="margin-top:14px">From card to control room in four steps</h2>
+<section id="how" class="foundry-section process-section"><div class="wrap">
+  <div class="section-index mono" aria-hidden="true">05 / DEPLOYMENT SEQUENCE</div>
+  <div class="shead split-head" data-reveal="up"><span class="eyebrow">${uiIcon('bolt', 'eyebrow-icon')} How buying works</span>
+    <h2>From ${quote ? 'quote' : 'card'} to control room.<br><span>Four controlled steps.</span></h2>
   </div>
   <div class="steps">
-    <div class="card step"><div class="n">STEP 01</div><h3>${quote ? 'Request your quote' : 'Buy &amp; tell us about your plant'}</h3><p>${quote ? 'Pick a plan, fill in five fields &mdash; your tailored quote and invoice terms land in your inbox within 1 business day.' : 'Pick a plan, fill in five fields, pay by card or request an invoice. VAT handled at checkout.'}</p></div>
-    <div class="card step"><div class="n">STEP 02</div><h3>We provision your instance</h3><p>A dedicated, isolated SIAS deployment &mdash; database, auth, edge services &mdash; spun up for your company within 1 business day.</p></div>
-    <div class="card step"><div class="n">STEP 03</div><h3>Claim your Owner console</h3><p>You receive a one-time activation link (never a password). Set your password + MFA and the instance is yours.</p></div>
-    <div class="card step"><div class="n">STEP 04</div><h3>Kubix onboards your team</h3><p>Your copilot introduces itself, invites your Production Managers, and wires your first integration with you.</p></div>
+    <article class="step" data-reveal="up"><div class="n">STEP 01</div><div class="step-node">${uiIcon('bank')}</div><h3>${quote ? 'Request your quote' : 'Buy &amp; tell us about your plant'}</h3><p>${quote ? 'Pick a plan, fill in five fields &mdash; your tailored quote and invoice terms land in your inbox within 1 business day.' : 'Pick a plan, fill in five fields, pay by card or request an invoice. VAT handled at checkout.'}</p></article>
+    <article class="step" data-reveal="up"><div class="n">STEP 02</div><div class="step-node">${uiIcon('chip')}</div><h3>We provision your instance</h3><p>A dedicated, isolated SIAS deployment &mdash; database, auth, edge services &mdash; spun up for your company within 1 business day.</p></article>
+    <article class="step" data-reveal="up"><div class="n">STEP 03</div><div class="step-node">${uiIcon('lock')}</div><h3>Claim your Owner console</h3><p>You receive a one-time activation link (never a password). Set your password + MFA and the instance is yours.</p></article>
+    <article class="step" data-reveal="up"><div class="n">STEP 04</div><div class="step-node">${uiIcon('brain')}</div><h3>Kubix onboards your team</h3><p>Your copilot introduces itself, invites your Production Managers, and wires your first integration with you.</p></article>
   </div>
 </div></section>
 
-<section id="pricing" style="padding-top:0"><div class="wrap">
-  <div class="shead" style="text-align:center;margin-left:auto;margin-right:auto"><span class="eyebrow">Pricing</span>
-    <h2 style="margin-top:14px">One instance. One price. Everything included.</h2>
+<section id="pricing" class="foundry-section pricing-section"><div class="wrap">
+  <div class="section-index mono" aria-hidden="true">06 / INSTANCE CONFIGURATION</div>
+  <div class="shead pricing-head" data-reveal="up"><span class="eyebrow">${uiIcon('chip', 'eyebrow-icon')} Pricing</span>
+    <h2>One instance. One price.<br><span>Everything included.</span></h2>
     <div class="toggle" role="tablist">
       <button type="button" id="bt-monthly">Monthly</button>
       <button type="button" id="bt-annual" class="on">Annual <span class="save">&nbsp;save 17%</span></button>
     </div>
   </div>
   <div class="plans">
-    <div class="card plan">
-      <h3>Starter</h3><div class="tag">One plant, the full platform</div>
+    <article class="plan" data-reveal="up">
+      <div class="plan-code mono">CFG / S01</div><h3>Starter</h3><div class="tag">One plant, the full platform</div>
       <div class="price" data-monthly="$590" data-annual="$490">$490<small>/mo</small></div>
       <div class="bill" data-monthly="billed monthly &middot; cancel anytime" data-annual="$5,880 billed annually">$5,880 billed annually</div>
       <ul>
-        <li><span class="ck">&#10003;</span>1 factory &middot; up to 10 supervisor seats</li>
-        <li><span class="ck">&#10003;</span>Dedicated isolated instance</li>
-        <li><span class="ck">&#10003;</span>Real-time alerts + AI dispatch &amp; escalations</li>
-        <li><span class="ck">&#10003;</span>Voice claiming from the lock screen</li>
-        <li><span class="ck">&#10003;</span>Kubix Copilot included</li>
-        <li><span class="ck">&#10003;</span>Email support</li>
+        <li>${uiIcon('check', 'list-check')}1 factory &middot; up to 10 supervisor seats</li>
+        <li>${uiIcon('check', 'list-check')}Dedicated isolated instance</li>
+        <li>${uiIcon('check', 'list-check')}Real-time alerts + AI dispatch &amp; escalations</li>
+        <li>${uiIcon('check', 'list-check')}Voice claiming from the lock screen</li>
+        <li>${uiIcon('check', 'list-check')}Kubix Copilot included</li>
+        <li>${uiIcon('check', 'list-check')}Email support</li>
       </ul>
-      <a class="btn btn-ghost buylink" data-plan="starter" href="/buy?plan=starter&billing=annual">${buyCta || 'Choose Starter'}</a>
-    </div>
-    <div class="card plan hot">
-      <div class="pop">Most popular</div>
-      <h3>Growth</h3><div class="tag">Multi-site operations on autopilot</div>
+      <a class="btn btn-ghost buylink" data-plan="starter" href="/buy?plan=starter&billing=annual">${buyCta || 'Choose Starter'} ${uiIcon('arrow', 'btn-icon')}</a>
+    </article>
+    <article class="plan hot" data-tilt data-reveal="up">
+      <div class="pop"><span class="live-pip"></span> Recommended configuration</div>
+      <div class="plan-code mono">CFG / G03</div><h3>Growth</h3><div class="tag">Multi-site operations on autopilot</div>
       <div class="price" data-monthly="$1,190" data-annual="$990">$990<small>/mo</small></div>
       <div class="bill" data-monthly="billed monthly &middot; cancel anytime" data-annual="$11,880 billed annually">$11,880 billed annually</div>
       <ul>
-        <li><span class="ck">&#10003;</span>Up to 3 factories &middot; 30 supervisor seats</li>
-        <li><span class="ck">&#10003;</span>Everything in Starter</li>
-        <li><span class="ck">&#10003;</span>SCADA / PLC / MQTT / historian connectors</li>
-        <li><span class="ck">&#10003;</span>AI failure forecaster + morning briefings</li>
-        <li><span class="ck">&#10003;</span>AI shift commander + handovers</li>
-        <li><span class="ck">&#10003;</span>Priority support</li>
+        <li>${uiIcon('check', 'list-check')}Up to 3 factories &middot; 30 supervisor seats</li>
+        <li>${uiIcon('check', 'list-check')}Everything in Starter</li>
+        <li>${uiIcon('check', 'list-check')}SCADA / PLC / MQTT / historian connectors</li>
+        <li>${uiIcon('check', 'list-check')}AI failure forecaster + morning briefings</li>
+        <li>${uiIcon('check', 'list-check')}AI shift commander + handovers</li>
+        <li>${uiIcon('check', 'list-check')}Priority support</li>
       </ul>
-      <a class="btn btn-amber buylink" data-plan="growth" href="/buy?plan=growth&billing=annual">${buyCta || 'Choose Growth'}</a>
-    </div>
-    <div class="card plan">
-      <h3>Enterprise</h3><div class="tag">For groups and regulated estates</div>
+      <a class="btn btn-amber buylink" data-magnetic data-plan="growth" href="/buy?plan=growth&billing=annual">${buyCta || 'Choose Growth'} ${uiIcon('arrow', 'btn-icon')}</a>
+    </article>
+    <article class="plan" data-reveal="up">
+      <div class="plan-code mono">CFG / ENT</div><h3>Enterprise</h3><div class="tag">For groups and regulated estates</div>
       <div class="price">Custom</div>
       <div class="bill">annual contract &middot; procurement-friendly</div>
       <ul>
-        <li><span class="ck">&#10003;</span>Unlimited factories &amp; seats</li>
-        <li><span class="ck">&#10003;</span>SCIM / SSO (Okta, Entra)</li>
-        <li><span class="ck">&#10003;</span>99.9% uptime SLA + status page</li>
-        <li><span class="ck">&#10003;</span>Dedicated onboarding engineer</li>
-        <li><span class="ck">&#10003;</span>Security review &amp; RFP support</li>
-        <li><span class="ck">&#10003;</span>Custom data residency options</li>
+        <li>${uiIcon('check', 'list-check')}Unlimited factories &amp; seats</li>
+        <li>${uiIcon('check', 'list-check')}SCIM / SSO (Okta, Entra)</li>
+        <li>${uiIcon('check', 'list-check')}99.9% uptime SLA + status page</li>
+        <li>${uiIcon('check', 'list-check')}Dedicated onboarding engineer</li>
+        <li>${uiIcon('check', 'list-check')}Security review &amp; RFP support</li>
+        <li>${uiIcon('check', 'list-check')}Custom data residency options</li>
       </ul>
-      <a class="btn btn-ghost" href="mailto:${mail}?subject=SIAS%20Enterprise%20inquiry">Talk to sales</a>
-    </div>
+      <a class="btn btn-ghost" href="mailto:${mail}?subject=SIAS%20Enterprise%20inquiry">Talk to sales ${uiIcon('arrow', 'btn-icon')}</a>
+    </article>
   </div>
-  <p class="dim" style="text-align:center;margin-top:22px;font-size:13px">${quote
+  <p class="dim pricing-note">${quote
     ? 'List prices in USD, excl. taxes. We invoice by bank transfer in USD, TND or EUR on net-15 terms &mdash; request a quote and it lands in your inbox within 1 business day. Every plan runs on its own dedicated instance with a 30-day money-back guarantee on your first payment.'
     : 'Prices in USD, excl. VAT (collected at checkout where applicable). Tunisian companies can pay in TND by local card via ClicToPay (annual billing). Every plan runs on its own dedicated instance &mdash; 30-day money-back guarantee on your first payment.'}</p>
 </div></section>
 
-<section id="faq" style="padding-top:0"><div class="wrap" style="max-width:760px">
-  <div class="shead"><span class="eyebrow">FAQ</span><h2 style="margin-top:14px">Questions factories ask us</h2></div>
+<section id="faq" class="foundry-section faq-section"><div class="wrap faq-wrap">
+  <div class="section-index mono" aria-hidden="true">07 / FIELD NOTES</div>
+  <div class="shead split-head" data-reveal="up"><span class="eyebrow">${uiIcon('pulse', 'eyebrow-icon')} FAQ</span><h2>Questions factories ask us.</h2></div>
   <details><summary>How fast can we go live?</summary><div class="a">Your dedicated instance is provisioned within 1 business day of purchase. Most plants have supervisors claiming real alerts the same week, including their first SCADA or MQTT connector &mdash; your Kubix Copilot drives that timeline with you.</div></details>
   <details><summary>Do you have access to our production data?</summary><div class="a">Your instance is isolated per customer &mdash; separate database, auth realm and edge services. KubixDesiney operates the infrastructure (updates, backups, monitoring) but your operational data is yours: export it anytime, and alert retention policy is under your control.</div></details>
   <details><summary>What hardware do we need?</summary><div class="a">None to start &mdash; supervisors use their phones and alerts can be raised manually or from your existing SCADA/PLC/historian systems. Optional ESP32/Arduino edge kits can be bound to machines through the built-in hardware lab.</div></details>
@@ -1727,19 +1841,21 @@ function landingBody(env, mode = 'card') {
     : `<details><summary>How can we pay from Tunisia?</summary><div class="a">Two rails: international cards in USD through Stripe (monthly or annual), or Tunisian CB cards in TND through ClicToPay, the national gateway operated by SMT (annual billing). Pick your rail at checkout &mdash; both trigger the same instant provisioning.</div></details>`}
 </div></section>
 
-<div class="cta-band"><div class="wrap"><div class="card">
-  <h2>Your plant&rsquo;s next alert could be the last one nobody caught.</h2>
+<div class="cta-band"><div class="wrap"><div class="cta-foundry" data-reveal="up">
+  <div class="cta-signal" aria-hidden="true"><span></span><i></i><i></i><i></i></div>
+  <span class="eyebrow">${uiIcon('alert', 'eyebrow-icon')} Next signal</span>
+  <h2>Your plant&rsquo;s next alert could be<br><span>the last one nobody caught.</span></h2>
   <p class="mut" style="margin:16px auto 30px;max-width:36em">${quote
     ? 'Request your quote today, sign this week, and let Kubix walk your team in.'
     : 'Buy today, get your activation email tomorrow, and let Kubix walk your team in.'}</p>
-  <a class="btn btn-amber" href="/buy?plan=growth&billing=annual">${quote ? 'Get a quote' : 'Get SIAS now'}</a>
+  <a class="btn btn-amber" data-magnetic href="/buy?plan=growth&billing=annual">${quote ? 'Get a quote' : 'Get SIAS now'} ${uiIcon('arrow', 'btn-icon')}</a>
 </div></div></div>
 </main>
 
-<footer><div class="wrap">
-  <span><b style="color:var(--ink2)">SIAS</b> &mdash; Smart Industrial Alert System &middot; by KubixDesiney</span>
+<footer class="site-footer"><div class="wrap">
+  <a class="logo footer-logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
   <span><a href="#pricing">Pricing</a> &middot; <a href="/copilot">Kubix Copilot</a> &middot; <a href="#security">Security</a>${legalPublishEnabled(env) ? ' &middot; <a href="/legal/privacy">Privacy</a> &middot; <a href="/legal/terms">Terms</a>' : ''} &middot; <a href="mailto:${mail}">${mail}</a></span>
-  <span>&copy; 2026 KubixDesiney. All rights reserved.</span>
+  <span class="mono">&copy; 2026 KUBIXDESINEY / ALL SYSTEMS RESERVED</span>
 </div></footer>
 
 <script>
@@ -1774,7 +1890,7 @@ function buyBody(plan, billing, env, mode = 'card') {
   }
   return `
 <header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
   <nav class="navlinks"><a href="/#pricing">&larr; Back to pricing</a></nav>
 </div></header>
 
@@ -1811,14 +1927,14 @@ function buyBody(plan, billing, env, mode = 'card') {
           </select></div>
         <div class="field"><label for="f-notes">Anything we should know? <span class="dim">(optional)</span></label><input id="f-notes" name="notes" maxlength="200" placeholder="Existing SCADA, timeline, constraints..."></div>
       </div>
-      <div class="err" id="err"></div>
+      <div class="err" id="err" role="alert" aria-live="polite"></div>
       <button class="btn btn-amber" type="submit" id="paybtn" style="margin-top:26px;width:100%">${quote ? 'Request my quote &rarr;' : 'Continue to secure checkout &rarr;'}</button>
       <p class="dim" style="font-size:12.5px;margin-top:14px;text-align:center">${quote
         ? 'No card needed. We invoice by bank transfer in USD, TND or EUR on net-15 terms. Questions first? <a href="mailto:' + mail + '?subject=SIAS%20quote%20question">Email us</a>.'
         : 'Payments handled by Stripe (international) or ClicToPay / SMT (Tunisia) &mdash; card details never touch our servers. Prefer an invoice? <a href="mailto:' + mail + '?subject=SIAS%20invoice%20request">Email us</a>.'}</p>
     </form>
     <div class="card okquote" id="quote-ok" hidden style="text-align:center;padding:38px 30px;margin-top:6px">
-      <div style="font-size:44px;color:var(--ok,#34D399)">&#10003;</div>
+      <div class="success-glyph">${uiIcon('check')}</div>
       <h3 style="margin:14px 0 8px">Order under review</h3>
       <p class="mut" id="qk-line" style="max-width:34em;margin:0 auto 24px">Your SIAS tenant code is reserved. We will email you when the order is confirmed.</p>
       <a class="btn btn-amber" id="qk-chat" href="/copilot">Chat with Kubix while you wait &rarr;</a>
@@ -1829,8 +1945,8 @@ function buyBody(plan, billing, env, mode = 'card') {
     <h3 id="sum-plan">Growth</h3>
     <p class="dim" id="sum-tag" style="font-size:13px;margin-top:2px"></p>${quote ? '' : `
     <div class="radio2" style="margin-top:16px">
-      <label><input type="radio" name="method" value="stripe"><span>&#127758; International card &middot; USD</span></label>
-      <label><input type="radio" name="method" value="clictopay"><span>&#127481;&#127475; Carte tunisienne &middot; TND</span></label>
+      <label><input type="radio" name="method" value="stripe"><span>${uiIcon('globe', 'radio-icon')} International card &middot; USD</span></label>
+      <label><input type="radio" name="method" value="clictopay"><span>${uiIcon('bank', 'radio-icon')} Carte tunisienne &middot; TND</span></label>
     </div>`}
     <p class="dim" id="method-note" style="font-size:12px;margin:${quote ? '14px' : '2px'} 0 4px"></p>
     <div class="radio2">
@@ -1895,6 +2011,8 @@ function submitIntake(ev) {
   var err = document.getElementById('err');
   err.style.display = 'none';
   btn.disabled = true;
+  btn.classList.add('is-loading');
+  btn.setAttribute('aria-busy', 'true');
   btn.textContent = SUBMIT_BUSY;
   var body = {
     name: document.getElementById('f-name').value,
@@ -1928,7 +2046,10 @@ function submitIntake(ev) {
           chat.href = '/copilot?tenant=' + encodeURIComponent(d.tenantCode) +
             '&company=' + encodeURIComponent(body.company) + '&name=' + encodeURIComponent(body.name) + '&plan=' + encodeURIComponent(body.plan);
         }
-        ok.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        ok.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+          block: 'center'
+        });
         return;
       }
       throw new Error(d.error || 'Something went wrong.');
@@ -1937,6 +2058,8 @@ function submitIntake(ev) {
       err.textContent = e.message;
       err.style.display = 'block';
       btn.disabled = false;
+      btn.classList.remove('is-loading');
+      btn.removeAttribute('aria-busy');
       btn.textContent = SUBMIT_LABEL;
     });
   return false;
@@ -1958,11 +2081,11 @@ function successBody(env) {
   const mail = salesEmail(env);
   return `
 <header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
 </div></header>
 
 <main class="okpage">
-  <div class="big">&#10003;</div>
+  <div class="big">${uiIcon('check')}</div>
   <span class="eyebrow">Payment confirmed</span>
   <h2 style="margin:18px 0 10px">Welcome aboard.</h2>
   <p class="mut" id="ok-line">Your dedicated SIAS instance is being provisioned.</p>
@@ -2012,7 +2135,7 @@ function welcomeBody(env) {
   const mail = salesEmail(env);
   return `
 <header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
   <nav class="navlinks"><a href="/copilot">Kubix Copilot</a><a class="btn btn-amber btn-sm" href="/#pricing">Pricing</a></nav>
 </div></header>
 
@@ -2113,7 +2236,7 @@ function copilotBody(dict) {
   return `
 <div class="kx-app">
   <div class="kx-header">
-    <div class="kx-avatar">K</div>
+    <div class="kx-avatar" aria-hidden="true">${uiIcon('brain')}</div>
     <div class="kx-header-text">
       <div class="kx-header-name"><span id="kx-agent-name">${dict.name}</span><span class="kx-online-dot"></span></div>
       <div class="kx-header-sub">${dict.sub}</div>
@@ -2353,7 +2476,7 @@ function adminLoginPage() {
     'Founder orders dashboard for SIAS',
     `
 <header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
 </div></header>
 <main class="wrap" style="max-width:420px;padding:120px 24px">
   <div class="card" style="padding:40px 32px">
@@ -2474,7 +2597,7 @@ function ordersDashboard(orders, env, origin) {
     'Manage customer orders and approvals',
     `
 <header class="nav"><div class="wrap">
-  <a class="logo" href="/"><span class="mark">&#9650;</span>SIAS</a>
+  <a class="logo" href="/" aria-label="SIAS home">${brandLockup()}</a>
   <nav class="navlinks"><button id="logout" class="btn btn-ghost btn-sm">Logout</button></nav>
 </div></header>
 <main class="wrap" style="padding:80px 24px 60px">
@@ -2526,17 +2649,134 @@ document.getElementById('logout').addEventListener('click', async function () {
   );
 }
 
+const SHELL_CLIENT_JS = `
+(function () {
+  var root = document.documentElement;
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var hoverFine = window.matchMedia('(hover: hover) and (pointer: fine)');
+  var progress = document.querySelector('.scroll-progress span');
+  var ticking = false;
+
+  function updateProgress() {
+    var doc = document.documentElement;
+    var distance = Math.max(1, doc.scrollHeight - window.innerHeight);
+    var value = Math.min(1, Math.max(0, window.scrollY / distance));
+    if (progress) progress.style.transform = 'scaleX(' + value.toFixed(4) + ')';
+    ticking = false;
+  }
+
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(updateProgress);
+  }, { passive: true });
+  updateProgress();
+
+  var reveals = Array.prototype.slice.call(document.querySelectorAll('[data-reveal]'));
+  reveals.forEach(function (el, index) {
+    el.style.setProperty('--reveal-delay', Math.min(index % 6 * 45, 225) + 'ms');
+  });
+
+  if (!reduceMotion.matches && 'IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -7% 0px' });
+    reveals.forEach(function (el) { observer.observe(el); });
+  } else {
+    reveals.forEach(function (el) { el.classList.add('is-visible'); });
+  }
+
+  function bindFocalInteractions() {
+    if (reduceMotion.matches || !hoverFine.matches) return;
+
+    document.querySelectorAll('[data-tilt]').forEach(function (el) {
+      var rect = null;
+      var frame = 0;
+      var nextX = 0;
+      var nextY = 0;
+      el.addEventListener('pointerenter', function () {
+        rect = el.getBoundingClientRect();
+      });
+      el.addEventListener('pointermove', function (event) {
+        if (!rect) rect = el.getBoundingClientRect();
+        nextX = (event.clientX - rect.left) / rect.width - 0.5;
+        nextY = (event.clientY - rect.top) / rect.height - 0.5;
+        if (frame) return;
+        frame = window.requestAnimationFrame(function () {
+          el.style.transform = 'perspective(1100px) rotateX(' + (-nextY * 2.4).toFixed(2) + 'deg) rotateY(' + (nextX * 3).toFixed(2) + 'deg) translateZ(0)';
+          el.style.setProperty('--pointer-x', ((nextX + 0.5) * 100).toFixed(1) + '%');
+          el.style.setProperty('--pointer-y', ((nextY + 0.5) * 100).toFixed(1) + '%');
+          frame = 0;
+        });
+      });
+      el.addEventListener('pointerleave', function () {
+        rect = null;
+        if (frame) window.cancelAnimationFrame(frame);
+        frame = 0;
+        el.style.transform = '';
+      });
+    });
+
+    document.querySelectorAll('[data-magnetic]').forEach(function (el) {
+      var rect = null;
+      el.addEventListener('pointerenter', function () { rect = el.getBoundingClientRect(); });
+      el.addEventListener('pointermove', function (event) {
+        if (!rect) rect = el.getBoundingClientRect();
+        var x = ((event.clientX - rect.left) / rect.width - 0.5) * 7;
+        var y = ((event.clientY - rect.top) / rect.height - 0.5) * 5;
+        el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
+      });
+      el.addEventListener('pointerleave', function () {
+        rect = null;
+        el.style.transform = '';
+      });
+    });
+  }
+  bindFocalInteractions();
+
+  var stageClock = document.querySelector('.stage-time');
+  if (stageClock && !reduceMotion.matches) {
+    window.setInterval(function () {
+      stageClock.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    }, 1000);
+  }
+
+  reduceMotion.addEventListener('change', function () {
+    root.classList.toggle('reduce-motion', reduceMotion.matches);
+    if (reduceMotion.matches) {
+      document.querySelectorAll('[data-tilt],[data-magnetic]').forEach(function (el) {
+        el.style.transform = '';
+      });
+      reveals.forEach(function (el) { el.classList.add('is-visible'); });
+    }
+  });
+  root.classList.toggle('reduce-motion', reduceMotion.matches);
+})();
+`;
+
 const BASE_CSS = `
 :root{
-  --bg:#0A0F1C; --bg2:#0D1526; --panel:rgba(148,163,184,.06); --panel2:rgba(148,163,184,.10);
-  --line:rgba(148,163,184,.16); --line2:rgba(148,163,184,.28);
-  --ink:#E7EDF7; --ink2:#9FB0C7; --ink3:#64748B;
-  --amber:#F59E0B; --amber2:#FBBF24; --cyan:#38BDF8; --red:#F87171; --green:#34D399;
-  --radius:14px; --max:1120px;
+  /* Shared with kubix-web globals.css - "Molten Amber & Steel".
+     One accent (amber). Cyan is telemetry. Red is alert. Rest is steel. */
+  --bg:#05070B; --bg2:#080C12; --surface:#0B1118; --surface2:#101923;
+  --panel:rgba(174,199,216,.06); --panel2:rgba(174,199,216,.11);
+  --line:rgba(174,199,216,.13); --line2:rgba(174,199,216,.25);
+  --ink:#F1F4F2; --ink2:#B7C2C8; --ink3:#8B99A3;
+  --amber:#F4B942; --amber2:#FFD36B; --cyan:#46D9E8; --red:#FF4D4D; --green:#55D98C;
+  --amber-rgb:244,185,66; --cyan-rgb:70,217,232; --alert-rgb:255,77,77;
+  --amber-ink:#090B0E;              /* 12.4:1 on amber - never white on amber */
+  --r-xs:4px; --r-sm:6px; --r:10px; --r-lg:14px;
+  --radius:2px; --max:1240px;       /* storefront keeps its sharper card edge */
+  --ease-out:cubic-bezier(.16,1,.3,1); --ease-spring:cubic-bezier(.2,.9,.2,1.18);
+  --nav-h:72px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--ink);font:400 16px/1.65 'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.65 'Archivo',system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background:
     radial-gradient(900px 500px at 85% -10%, rgba(56,189,248,.10), transparent 60%),
@@ -2545,7 +2785,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     repeating-linear-gradient(90deg, rgba(148,163,184,.035) 0 1px, transparent 1px 56px)}
 main,header.nav,footer{position:relative;z-index:1}
 .wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
-h1,h2,h3,.logo,.price{font-family:'Space Grotesk','Inter',sans-serif}
+h1,h2,h3,.logo,.price{font-family:'Archivo',system-ui,sans-serif}
 h1{font-size:clamp(34px,5vw,58px);line-height:1.08;letter-spacing:-.02em;font-weight:700}
 h2{font-size:clamp(26px,3.4vw,38px);line-height:1.15;letter-spacing:-.015em;font-weight:600}
 h3{font-size:19px;font-weight:600}
@@ -2571,7 +2811,6 @@ a{color:var(--cyan);text-decoration:none}
 .hero p.lead{font-size:18.5px;color:var(--ink2);margin:22px 0 32px;max-width:34em}
 .hero .ctas{display:flex;gap:14px;flex-wrap:wrap}
 .hero .sub{margin-top:16px;font-size:13.5px;color:var(--ink3)}
-.card{background:linear-gradient(180deg,rgba(148,163,184,.09),rgba(148,163,184,.04));border:1px solid var(--line);border-radius:var(--radius);}
 .console{padding:0;overflow:hidden;box-shadow:0 30px 80px rgba(2,6,17,.6)}
 .console .chead{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink2)}
 .dotr{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 10px rgba(248,113,113,.8);animation:pulse 1.6s infinite}
@@ -2589,7 +2828,7 @@ a{color:var(--cyan);text-decoration:none}
 .cfoot{padding:12px 18px;background:rgba(56,189,248,.06);font-size:12.5px;color:var(--ink2);display:flex;gap:8px;align-items:center}
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin:26px 0 0}
 .stat{background:var(--bg2);padding:22px 18px;text-align:center}
-.stat .n{font-family:'Space Grotesk';font-size:26px;font-weight:700;color:var(--amber2)}
+.stat .n{font-family:'IBM Plex Mono';font-size:26px;font-weight:700;color:var(--amber2)}
 .stat .l{font-size:12.5px;color:var(--ink3);margin-top:4px}
 section{padding:76px 0}
 .shead{max-width:640px;margin-bottom:44px}
@@ -2603,7 +2842,7 @@ section{padding:76px 0}
 .logos span{font-size:13.5px;font-weight:600;color:var(--ink2);border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:9px 18px}
 .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;counter-reset:step}
 .step{padding:24px 22px;position:relative}
-.step .n{font-family:'Space Grotesk';font-weight:700;font-size:13px;color:var(--amber2);letter-spacing:.12em;margin-bottom:10px}
+.step .n{font-family:'IBM Plex Mono';font-weight:700;font-size:13px;color:var(--amber2);letter-spacing:.12em;margin-bottom:10px}
 .step p{font-size:14px;color:var(--ink2);margin-top:6px}
 .kubix{display:grid;grid-template-columns:1fr 1fr;gap:52px;align-items:center}
 .chatcard{padding:20px}
@@ -2612,14 +2851,14 @@ section{padding:76px 0}
 .msg.bot{background:var(--panel2);border:1px solid var(--line)}
 .msg.bot ol{margin:8px 0 4px 18px}
 .kbadge{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.kbadge .av{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#38BDF8,#6366F1);display:grid;place-items:center;font-weight:700;color:#fff;font-family:'Space Grotesk'}
+.kbadge .av{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#38BDF8,#6366F1);display:grid;place-items:center;font-weight:700;color:#fff;font-family:'IBM Plex Mono'}
 .kbadge .nm{font-size:14.5px;font-weight:600}
 .kbadge .st{font-size:12px;color:var(--green)}
 .seclist{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .seclist li{display:flex;gap:12px;align-items:flex-start;font-size:14.5px;color:var(--ink2);padding:16px 18px}
 .seclist .ck{color:var(--green);font-weight:700;flex:0 0 auto}
 .toggle{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px;gap:2px;margin:26px 0 34px}
-.toggle button{border:none;background:transparent;color:var(--ink2);font:600 14px 'Inter';padding:9px 20px;border-radius:999px;cursor:pointer}
+.toggle button{border:none;background:transparent;color:var(--ink2);font:600 14px 'Archivo';padding:9px 20px;border-radius:999px;cursor:pointer}
 .toggle button.on{background:linear-gradient(135deg,var(--amber2),var(--amber));color:#1a1204}
 .toggle .save{font-size:11.5px;font-weight:700;color:var(--green)}
 .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
@@ -2629,7 +2868,7 @@ section{padding:76px 0}
 .plan h3{font-size:21px}
 .plan .tag{font-size:13.5px;color:var(--ink3);margin-top:3px}
 .price{font-size:44px;font-weight:700;margin-top:20px;letter-spacing:-.02em}
-.price small{font-size:15px;color:var(--ink3);font-weight:500;font-family:'Inter'}
+.price small{font-size:15px;color:var(--ink3);font-weight:500;font-family:'Archivo'}
 .plan .bill{font-size:12.5px;color:var(--ink3);min-height:18px;margin-top:2px}
 .plan ul{list-style:none;margin:22px 0 26px;display:grid;gap:10px}
 .plan ul li{font-size:14px;color:var(--ink2);display:flex;gap:10px}
@@ -2650,7 +2889,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
 .field.full{grid-column:1/-1}
 .field label{font-size:13px;font-weight:600;color:var(--ink2)}
 .field input,.field select,.field textarea{background:var(--bg2);border:1px solid var(--line2);border-radius:10px;color:var(--ink);
-  font:400 15px 'Inter';padding:12px 14px;outline:none;transition:.15s}
+  font:400 15px 'Archivo';padding:12px 14px;outline:none;transition:.15s}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(245,158,11,.15)}
 .field textarea{resize:vertical;min-height:84px}
 .err{display:none;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.35);color:#FCA5A5;border-radius:10px;padding:12px 16px;font-size:14px;margin-top:16px}
@@ -2674,7 +2913,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
 .kx-avatar {
   width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
   background: linear-gradient(135deg, var(--amber), #D97706);
-  display: flex; align-items: center; justify-content: center; font-family: 'Space Grotesk',ui-monospace,monospace;
+  display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono',ui-monospace,monospace;
   font-weight: 800; color: #14171c; font-size: 15px;
 }
 .kx-header-text { flex: 1; min-width: 0; }
@@ -2696,7 +2935,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
 .kx-bubble p:last-child { margin-bottom: 0; }
 .kx-bubble h2, .kx-bubble h3 { margin: 10px 0 6px; }
 .kx-bubble ul, .kx-bubble ol { margin: 4px 0 10px; padding-left: 20px; }
-.kx-bubble code { font-family: 'Space Grotesk',ui-monospace,monospace; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.kx-bubble code { font-family: 'IBM Plex Mono',ui-monospace,monospace; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 .kx-bubble pre.kx-code { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0; }
 .kx-bubble pre.kx-code code { background: none; padding: 0; }
 .kx-typing { display: flex; gap: 4px; padding: 14px 15px; }
@@ -2720,7 +2959,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
   background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.4); color: #fcd34d;
   border-radius: 10px; padding: 12px 16px; margin: 0 0 18px; font-size: 13.5px;
 }
-.ldoc code { font-family: 'Space Grotesk',ui-monospace,monospace; background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.ldoc code { font-family: 'IBM Plex Mono',ui-monospace,monospace; background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
 .ldoc pre.ldoc-code { background: #0b0d10; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; margin: 8px 0 16px; }
 .kx-feedback { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .kx-feedback button {
@@ -2736,7 +2975,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
 .kx-input-bar { display: flex; gap: 10px; padding: 14px 4px 4px; border-top: 1px solid var(--line); }
 .kx-input {
   flex: 1; resize: none; background: var(--bg2); border: 1px solid var(--line); color: var(--ink);
-  border-radius: 10px; padding: 12px 14px; font-family: 'Inter',sans-serif; font-size: 14.5px; max-height: 140px;
+  border-radius: 10px; padding: 12px 14px; font-family: 'Archivo',sans-serif; font-size: 14.5px; max-height: 140px;
 }
 .kx-input:focus { outline: none; border-color: var(--amber); }
 .kx-send {
@@ -2754,6 +2993,382 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-con
   .navlinks a.hideM{display:none}
   .formgrid{grid-template-columns:1fr}
   .sumcard{position:static}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Signal Foundry / industrial noir                                           */
+/* -------------------------------------------------------------------------- */
+html{color-scheme:dark;scroll-padding-top:calc(var(--nav-h) + 18px);scrollbar-color:var(--line2) var(--bg)}
+body{min-width:320px;min-height:100%;background:
+  radial-gradient(circle at 16% 5%,rgba(var(--cyan-rgb),.065),transparent 30rem),
+  radial-gradient(circle at 88% 18%,rgba(var(--amber-rgb),.055),transparent 34rem),
+  var(--bg)}
+body::before{background:
+  linear-gradient(90deg,transparent 0 49.92%,rgba(118,153,174,.045) 50%,transparent 50.08%),
+  linear-gradient(0deg,transparent 0 49.92%,rgba(118,153,174,.038) 50%,transparent 50.08%);
+  background-size:64px 64px;mask-image:linear-gradient(to bottom,#000,transparent 84%)}
+::selection{background:rgba(var(--amber-rgb),.28);color:var(--ink)}
+a,button,input,select,textarea,summary{touch-action:manipulation}
+button,input,select,textarea{font:inherit}
+.mono,.eyebrow,.section-index,.module-id,.plan-code,.chip,.stage-head,.rail-readout,.life-step,.chat-chrome{
+  font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Consolas,monospace
+}
+.ui-icon{display:block;width:24px;height:24px;flex:0 0 auto}
+.btn-icon{width:18px;height:18px;transition:transform .22s var(--ease-out)}
+.micro-icon,.eyebrow-icon{width:16px;height:16px}
+.radio-icon{width:18px;height:18px}
+.list-check{width:18px;height:18px;color:var(--amber);margin-top:2px}
+.skip-link{position:fixed;left:16px;top:12px;z-index:1001;padding:11px 16px;background:var(--amber);color:#16120A;
+  font:600 13px 'IBM Plex Mono',monospace;transform:translateY(-180%);transition:transform .2s var(--ease-out)}
+.skip-link:focus{transform:translateY(0)}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+.scroll-progress{position:fixed;inset:0 0 auto;z-index:1000;height:2px;pointer-events:none;background:rgba(255,255,255,.035)}
+.scroll-progress span{display:block;width:100%;height:100%;transform:scaleX(0);transform-origin:left;background:linear-gradient(90deg,var(--amber),var(--cyan))}
+.wrap{width:min(100%,var(--max));padding-inline:32px}
+.card{background:linear-gradient(145deg,rgba(18,31,43,.95),rgba(9,15,22,.97));border:1px solid var(--line);border-radius:0}
+h1,h2,h3{font-feature-settings:'ss02' 1,'ss03' 1}
+h1{font-size:clamp(3.1rem,5.45vw,5.15rem);line-height:.98;letter-spacing:-.055em;font-weight:750}
+h2{font-size:clamp(2.35rem,4.25vw,4.25rem);line-height:1.02;letter-spacing:-.045em;font-weight:730}
+h2 span,.split-head h2 span,.kubix h2 span,.cta-foundry h2 span{color:var(--ink2);font-weight:500}
+h3{font-size:1.18rem;line-height:1.2;letter-spacing:-.02em}
+p{max-width:72ch}
+.mut{color:var(--ink2)}.dim{color:var(--ink3)}
+
+.nav{z-index:100;min-height:var(--nav-h);margin:0;background:rgba(7,10,15,.88);border-bottom:1px solid var(--line);
+  backdrop-filter:blur(18px) saturate(130%)}
+.nav::after{content:'';position:absolute;left:0;bottom:-1px;width:23%;height:1px;background:linear-gradient(90deg,var(--amber),transparent)}
+.nav .wrap{height:var(--nav-h);gap:28px}
+.logo{min-height:48px;gap:10px;white-space:nowrap}
+.brand-mark{position:relative;display:grid;place-items:center;width:38px;height:38px;border:1px solid rgba(var(--amber-rgb),.34);
+  background:#0A1016;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+.brand-mark svg{width:30px;height:30px;overflow:visible}
+.cube-top{fill:var(--amber)}.cube-left{fill:#A96A13}.cube-right{fill:var(--cyan)}
+.cube-signal{fill:none;stroke:#071017;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.brand-word{font-size:19px;font-weight:800;letter-spacing:.06em}
+.brand-by{padding-left:9px;border-left:1px solid var(--line);color:var(--ink3);font:500 10px 'IBM Plex Mono',monospace;
+  text-transform:uppercase;letter-spacing:.08em}
+.navlinks{gap:7px}
+.navlinks a,.navlinks button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding-inline:12px;
+  color:var(--ink2);font-size:13px;letter-spacing:.01em}
+.navlinks a:hover{color:var(--ink)}
+.btn{position:relative;min-height:48px;padding:12px 22px;border-radius:0;font-size:14px;letter-spacing:.01em;
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));
+  transition:color .2s var(--ease-out),background .2s var(--ease-out),border-color .2s var(--ease-out),box-shadow .2s var(--ease-out),transform .26s var(--ease-spring)}
+.btn:hover .btn-icon,.chat-launch:hover .btn-icon{transform:translateX(3px)}
+.btn:active{filter:brightness(.92)}
+.btn-amber{color:#181207;background:var(--amber);border-color:var(--amber);box-shadow:0 10px 34px rgba(var(--amber-rgb),.14)}
+.btn-amber:hover{background:var(--amber2);box-shadow:0 14px 42px rgba(var(--amber-rgb),.21)}
+.btn-ghost{color:var(--ink);background:rgba(10,17,24,.78);border-color:var(--line2)}
+.btn-ghost:hover{background:var(--surface2);border-color:rgba(var(--cyan-rgb),.48)}
+.btn.is-loading::before{content:'';width:14px;height:14px;flex:0 0 14px;border:1.5px solid currentColor;border-right-color:transparent;
+  border-radius:50%;animation:buttonSpin .72s linear infinite}
+.btn-sm{min-height:44px;padding:9px 16px;font-size:12.5px}
+.eyebrow{min-height:32px;padding:6px 10px;border-radius:0;color:var(--amber2);background:rgba(var(--amber-rgb),.07);
+  border:1px solid rgba(var(--amber-rgb),.25);font-size:10.5px;letter-spacing:.12em}
+
+/* Hero signal command scene */
+.hero-section{position:relative;padding:0;min-height:calc(100svh - var(--nav-h));display:flex;align-items:center;overflow:clip}
+.hero-section::before{content:'LIVE INDUSTRIAL EVENT FABRIC';position:absolute;right:-102px;top:50%;z-index:2;transform:rotate(90deg);
+  color:rgba(181,202,213,.33);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.25em}
+.hero{padding:84px 0 54px;grid-template-columns:minmax(0,.84fr) minmax(560px,1.16fr);gap:58px;align-items:center}
+.hero-copy{position:relative;z-index:3}
+.hero-copy h1{margin-top:20px;max-width:12ch}
+.signal-text{display:inline;color:var(--amber);text-shadow:0 0 32px rgba(var(--amber-rgb),.12)}
+.hero p.lead{max-width:58ch;margin:26px 0 30px;color:var(--ink2);font-size:17px;line-height:1.7}
+.hero .ctas{gap:12px}
+.hero-assurance{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;margin-top:24px;color:var(--ink3);
+  font-size:11.5px}
+.hero-assurance span{display:inline-flex;align-items:center;gap:7px;min-height:30px}
+.hero-assurance span+span{position:relative}
+.hero-assurance span+span::before{content:'';position:absolute;left:-10px;width:1px;height:14px;background:var(--line2)}
+.signal-stage{--pointer-x:50%;--pointer-y:50%;position:relative;z-index:2;isolation:isolate;min-width:0;color:var(--ink);
+  border:1px solid rgba(128,164,185,.34);background:linear-gradient(145deg,rgba(12,20,28,.98),rgba(5,9,14,.99));
+  clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px));
+  box-shadow:0 32px 90px rgba(0,0,0,.48);transform-style:preserve-3d;will-change:transform;
+  transition:transform .45s var(--ease-out),border-color .25s ease}
+.signal-stage::before{content:'';position:absolute;inset:0;z-index:-2;pointer-events:none;
+  background:radial-gradient(420px circle at var(--pointer-x) var(--pointer-y),rgba(var(--cyan-rgb),.09),transparent 48%)}
+.signal-stage::after{content:'SIAS / COMMAND FABRIC / 2.4';position:absolute;right:24px;bottom:5px;color:rgba(164,186,198,.35);
+  font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.15em}
+.stage-corner{position:absolute;z-index:5;width:20px;height:20px;pointer-events:none}
+.stage-corner::before,.stage-corner::after{content:'';position:absolute;background:var(--amber)}
+.stage-corner::before{width:16px;height:1px}.stage-corner::after{width:1px;height:16px}
+.stage-corner-a{left:8px;top:8px}.stage-corner-b{right:8px;bottom:8px;transform:rotate(180deg)}
+.stage-head{height:48px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);
+  background:rgba(2,5,8,.52);font-size:10px;letter-spacing:.12em;color:var(--ink3)}
+.stage-title,.stage-health{display:flex;align-items:center;gap:10px}
+.stage-health b{color:var(--green);font-size:10px}.stage-health span:first-child{padding-right:10px;border-right:1px solid var(--line)}
+.live-pip{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(85,217,138,.1);
+  animation:livePulse 1.8s ease-in-out infinite}
+.stage-body{display:grid;grid-template-columns:78px minmax(0,1fr);min-height:405px}
+.stage-rail{display:flex;flex-direction:column;border-right:1px solid var(--line);background:rgba(3,7,11,.55)}
+.rail-readout{padding:17px 11px;border-bottom:1px solid var(--line)}
+.rail-readout span,.rail-readout small{display:block;color:var(--ink3);font-size:7.5px;letter-spacing:.09em}
+.rail-readout b{display:block;margin:5px 0 2px;color:var(--cyan);font-size:18px;font-weight:500;font-variant-numeric:tabular-nums}
+.rail-spectrum{display:flex;align-items:flex-end;gap:3px;min-height:82px;margin:auto 10px 14px;padding-top:12px;border-bottom:1px solid var(--line2)}
+.rail-spectrum i{width:5px;height:42%;transform-origin:bottom;background:linear-gradient(to top,var(--cyan),rgba(var(--cyan-rgb),.08));
+  animation:spectrum 1.7s ease-in-out infinite alternate}
+.rail-spectrum i:nth-child(2),.rail-spectrum i:nth-child(6){height:72%;animation-delay:-.8s}.rail-spectrum i:nth-child(3){height:48%;animation-delay:-.3s}
+.rail-spectrum i:nth-child(4),.rail-spectrum i:nth-child(8){height:88%;animation-delay:-1.2s}.rail-spectrum i:nth-child(5){height:61%;animation-delay:-.55s}
+.factory-field{position:relative;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(12,23,32,.35),rgba(3,7,11,.35))}
+.field-grid{position:absolute;inset:0;background:
+  linear-gradient(rgba(92,132,153,.065) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(92,132,153,.065) 1px,transparent 1px);
+  background-size:26px 26px;mask-image:linear-gradient(135deg,#000,rgba(0,0,0,.38))}
+.factory-schematic{position:absolute;inset:18px 6px 64px;width:calc(100% - 12px);height:calc(100% - 82px);overflow:visible}
+.plant-outline{fill:rgba(11,22,30,.42);stroke:rgba(122,161,181,.28);stroke-width:1}
+.plant-inner{fill:rgba(21,39,51,.24);stroke:rgba(122,161,181,.21);stroke-width:1}
+.route-base{fill:none;stroke:rgba(91,125,143,.24);stroke-width:3}.route-base.secondary{stroke-width:2}
+.route-flow{fill:none;stroke:url(#sias-route);stroke-width:2;stroke-dasharray:4 11;animation:dataFlow 2.8s linear infinite}
+.route-flow-secondary{animation-delay:-1.4s;opacity:.7}
+.machine-node{fill:#0C1720;stroke:var(--green);stroke-width:1.5}.machine-node .node-halo{fill:rgba(85,217,138,.045);stroke:rgba(85,217,138,.35)}
+.machine-node.node-ai{stroke:var(--cyan)}.machine-node.node-ai .node-halo{fill:rgba(var(--cyan-rgb),.055);stroke:rgba(var(--cyan-rgb),.48)}
+.machine-node.node-critical{stroke:var(--red)}.machine-node.node-critical .node-halo{fill:rgba(255,107,103,.08);stroke:var(--red)}
+.node-ring{fill:none;stroke:var(--red);stroke-width:1;transform-origin:center;animation:nodePing 2.2s ease-out infinite}
+.factory-schematic text{fill:rgba(181,203,214,.53);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.06em}
+.scan-beam{position:absolute;left:0;right:0;top:0;height:52px;pointer-events:none;opacity:.72;
+  border-bottom:1px solid rgba(var(--cyan-rgb),.5);background:linear-gradient(to bottom,transparent,rgba(var(--cyan-rgb),.055));
+  animation:scanField 5.8s var(--ease-out) infinite}
+.alert-ticket{position:absolute;right:18px;bottom:22px;width:min(310px,67%);padding:14px 15px 13px;border:1px solid rgba(255,107,103,.52);
+  background:rgba(8,13,19,.94);clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%)}
+.alert-ticket::before{content:'';position:absolute;inset:0 auto 0 0;width:2px;background:var(--red)}
+.ticket-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.ticket-code{display:flex;align-items:center;gap:7px;color:var(--red);font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.08em}
+.ticket-icon{width:15px;height:15px}.alert-ticket strong{display:block;font-size:14px}.alert-ticket p{margin-top:2px;color:var(--ink3);font-size:10.5px}
+.assignment{display:grid;grid-template-columns:30px 1fr auto;align-items:center;gap:9px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.agent-orb{display:grid;place-items:center;width:29px;height:29px;background:rgba(var(--cyan-rgb),.1);border:1px solid rgba(var(--cyan-rgb),.42);
+  color:var(--cyan);font:600 10px 'IBM Plex Mono',monospace}
+.assignment small{display:block;color:var(--ink3);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.1em}
+.assignment b{display:block;margin-top:1px;font-size:11px}.confidence{color:var(--cyan);font-size:12px}
+.signal-lifecycle{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;padding:18px 18px 21px;border-top:1px solid var(--line);
+  background:#080D12}
+.lifecycle-track{position:absolute;left:12.5%;right:12.5%;top:12px;height:1px;background:rgba(116,151,170,.27);overflow:visible}
+.lifecycle-runner{display:block;width:25%;height:2px;margin-top:-1px;background:linear-gradient(90deg,var(--amber),var(--cyan));
+  box-shadow:0 0 12px rgba(var(--cyan-rgb),.36);animation:lifecycleMove 8s var(--ease-out) infinite}
+.life-step{display:grid;gap:3px;padding-inline:8px;text-align:center;color:var(--ink3);font-size:10px;letter-spacing:.05em}
+.life-step i{display:grid;place-items:center;width:20px;height:20px;margin:-17px auto 5px;border:1px solid var(--line2);background:#080D12;
+  color:var(--ink2);font-style:normal;font-size:10px}
+.life-step span{font-family:'Archivo',sans-serif;font-size:9.5px;letter-spacing:0}.life-step b{color:var(--cyan);font-weight:500;font-variant-numeric:tabular-nums}
+.life-step.resolved b{color:var(--green)}
+.stats{margin:0 0 24px;border:1px solid var(--line);border-radius:0;background:var(--line);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%)}
+.stat{position:relative;padding:20px 14px;background:rgba(8,13,19,.96);text-align:left}
+.stat::before{content:'';position:absolute;left:14px;top:0;width:20px;height:1px;background:var(--amber)}
+.stat .n{color:var(--ink);font:600 23px 'IBM Plex Mono',monospace;letter-spacing:-.04em}
+.stat .l{max-width:18ch;color:var(--ink3);font-size:10px;line-height:1.35}
+
+/* Scroll chapters */
+.foundry-section{position:relative;padding:118px 0;border-top:1px solid rgba(123,157,177,.1)}
+.foundry-section::before{content:'';position:absolute;left:max(20px,calc((100vw - var(--max))/2 + 32px));top:0;width:72px;height:1px;background:var(--cyan)}
+.section-index{margin-bottom:28px;color:var(--ink3);font-size:10px;letter-spacing:.18em}
+.split-head{max-width:900px;margin-bottom:56px}
+.split-head h2{margin-top:18px}.split-head p{max-width:57ch;margin-top:18px;font-size:16px;line-height:1.7}
+.feature-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
+.feat{position:relative;grid-column:span 4;min-height:310px;padding:28px 26px 36px;overflow:hidden;
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));
+  transition:transform .26s var(--ease-out),border-color .26s ease,background .26s ease}
+.feat-primary{grid-column:span 8;background:
+  linear-gradient(115deg,rgba(var(--amber-rgb),.07),transparent 45%),
+  linear-gradient(145deg,rgba(18,31,43,.98),rgba(9,15,22,.98))}
+.feat:hover{transform:translateY(-4px);border-color:rgba(var(--cyan-rgb),.42);background-color:var(--surface2)}
+.feat .ic{width:48px;height:48px;margin-bottom:34px;border-radius:0;color:var(--amber);background:rgba(var(--amber-rgb),.06);
+  border:1px solid rgba(var(--amber-rgb),.24);clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+.feat .ic .ui-icon{width:23px;height:23px}.module-id{position:absolute;right:20px;top:20px;color:var(--ink3);font-size:10px;letter-spacing:.14em}
+.feat h3{max-width:22ch;margin-bottom:12px;font-size:20px}.feat p{max-width:54ch;color:var(--ink2);font-size:14px;line-height:1.68}
+.module-trace{position:absolute;left:0;right:0;bottom:0;height:22px;border-top:1px solid var(--line);
+  background:linear-gradient(90deg,transparent 0 8%,rgba(var(--cyan-rgb),.22) 8% 9%,transparent 9% 22%,rgba(var(--amber-rgb),.3) 22% 34%,transparent 34%)}
+.integrations-section{padding-top:108px}
+.protocol-board{position:relative;display:grid;grid-template-columns:210px 1fr;gap:1px;border:1px solid var(--line);background:var(--line);
+  clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%)}
+.protocol-core{display:grid;place-items:center;align-content:center;min-height:260px;padding:30px;background:
+  radial-gradient(circle,rgba(var(--cyan-rgb),.11),transparent 60%),#091017;text-align:center}
+.protocol-core>span{display:grid;place-items:center;width:72px;height:72px;border:1px solid rgba(var(--cyan-rgb),.52);color:var(--cyan);
+  transform:rotate(45deg)}.protocol-core>span .ui-icon{width:32px;height:32px;transform:rotate(-45deg)}
+.protocol-core b{margin-top:28px;font-size:23px;letter-spacing:.08em}.protocol-core small{margin-top:5px;color:var(--ink3);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.16em}
+.logos{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line)}
+.logos span{position:relative;display:flex;align-items:center;gap:12px;min-height:86px;padding:18px 20px;border:0;border-radius:0;background:#0A1118;
+  color:var(--ink2);font:500 11px 'IBM Plex Mono',monospace;letter-spacing:.03em}
+.logos span:hover{color:var(--ink);background:#0D1720}.logos i{width:7px;height:7px;border:1px solid var(--cyan);transform:rotate(45deg)}
+.logos i::after{content:'';display:block;width:3px;height:3px;margin:1px;background:var(--cyan)}
+.kubix-section{overflow:hidden}.kubix{grid-template-columns:.86fr 1.14fr;gap:72px}.kubix h2{margin-top:18px}
+.signal-list{display:grid;gap:12px;margin-top:28px;list-style:none}
+.signal-list li{display:flex;gap:11px;color:var(--ink2);font-size:14px}
+.chatcard{position:relative;padding:0 24px 24px;border:1px solid var(--line2);background:linear-gradient(145deg,#0D1821,#080D12);
+  clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px));
+  box-shadow:0 34px 90px rgba(0,0,0,.35);transition:transform .45s var(--ease-out)}
+.chat-chrome{display:flex;justify-content:space-between;margin:0 -24px 22px;padding:13px 18px;border-bottom:1px solid var(--line);
+  color:var(--ink3);font-size:10px;letter-spacing:.1em}.kbadge{margin-bottom:18px}
+.kbadge .av{width:44px;height:44px;border-radius:0;background:rgba(var(--cyan-rgb),.09);border:1px solid rgba(var(--cyan-rgb),.42);
+  color:var(--cyan);clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+.kbadge .av .ui-icon{width:23px;height:23px}.kbadge .st{display:flex;align-items:center;gap:6px}.kbadge .st i{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.msg{padding:12px 14px;border-radius:0;font-size:13px;line-height:1.6}
+.msg.user{background:rgba(var(--cyan-rgb),.065);border-color:rgba(var(--cyan-rgb),.22);clip-path:polygon(8px 0,100% 0,100% 100%,0 100%,0 8px)}
+.msg.bot{background:rgba(2,6,9,.55);clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+.chat-launch{display:flex;align-items:center;justify-content:space-between;min-height:48px;margin-top:18px;padding:11px 14px;border:1px solid rgba(var(--amber-rgb),.34);
+  color:var(--amber2);font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.06em}
+.security-section{background:linear-gradient(180deg,rgba(255,107,103,.018),transparent 38%)}
+.seclist{gap:1px;border:1px solid var(--line);background:var(--line)}
+.seclist li{position:relative;display:grid;grid-template-columns:42px 1fr auto;gap:16px;align-items:center;min-height:132px;padding:22px;
+  color:var(--ink2);background:#091017}
+.seclist li::before{content:'';position:absolute;inset:0 auto 0 0;width:2px;background:transparent;transition:background .2s ease}
+.seclist li:hover::before{background:var(--cyan)}
+.security-icon{width:34px;height:34px;padding:7px;border:1px solid rgba(var(--cyan-rgb),.27);color:var(--cyan)}
+.seclist b{color:var(--ink)}.seclist em{align-self:start;color:var(--ink3);font-size:10px;font-style:normal;letter-spacing:.12em}
+.process-section .steps{position:relative;gap:0}.process-section .steps::before{content:'';position:absolute;left:12.5%;right:12.5%;top:62px;height:1px;
+  background:linear-gradient(90deg,var(--amber),var(--cyan))}
+.process-section .step{padding:0 24px 24px;background:transparent;border:0;text-align:center}
+.step-node{position:relative;z-index:2;display:grid;place-items:center;width:58px;height:58px;margin:18px auto 24px;border:1px solid var(--line2);
+  color:var(--cyan);background:var(--bg);transform:rotate(45deg)}
+.step-node .ui-icon{width:23px;height:23px;transform:rotate(-45deg)}.step .n{font-family:'IBM Plex Mono',monospace;font-size:10px}
+.process-section .step h3{font-size:17px}.process-section .step p{margin:10px auto 0;font-size:13px;line-height:1.62}
+.pricing-head{max-width:none;margin-bottom:52px;text-align:center}.pricing-head h2{margin-top:18px}
+.toggle{border-radius:0;padding:3px;background:#091017}.toggle button{min-height:44px;border-radius:0;font:600 11px 'IBM Plex Mono',monospace;
+  text-transform:uppercase;letter-spacing:.06em}.toggle button.on{background:var(--amber)}
+.plans{gap:12px}.plan{position:relative;padding:34px 28px 30px;border:1px solid var(--line);background:linear-gradient(155deg,#0D1720,#080D12);
+  clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,15px 100%,0 calc(100% - 15px))}
+.plan::after{content:'';position:absolute;left:28px;top:0;width:42px;height:2px;background:var(--cyan)}
+.plan.hot{border-color:rgba(var(--amber-rgb),.64);background:
+  linear-gradient(145deg,rgba(var(--amber-rgb),.075),transparent 42%),
+  linear-gradient(155deg,#111A20,#080D12);box-shadow:0 30px 80px rgba(0,0,0,.28);transition:transform .45s var(--ease-out)}
+.plan.hot::after{width:72px;background:var(--amber)}
+.plan .pop{top:-16px;border-radius:0;background:var(--amber);font:700 10px 'IBM Plex Mono',monospace;letter-spacing:.09em;
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,0 100%);display:flex;align-items:center;gap:7px}
+.plan .pop .live-pip{background:#19240F;box-shadow:none}.plan-code{margin-bottom:26px;color:var(--ink3);font-size:10px;letter-spacing:.15em}
+.plan h3{font-size:25px}.plan .tag{color:var(--ink3)}.price{font-family:'IBM Plex Mono',monospace;font-size:42px;font-variant-numeric:tabular-nums}
+.price small{font-family:'IBM Plex Mono',monospace}.plan ul li{align-items:flex-start}.plan .btn{width:100%}
+.pricing-note{max-width:92ch;margin:24px auto 0;text-align:center;font:400 10px/1.6 'IBM Plex Mono',monospace}
+.faq-wrap{max-width:820px}.faq-section details{margin-bottom:8px;border-radius:0;background:#091017}
+.faq-section summary{min-height:60px;align-items:center;padding:16px 20px;font-size:15px}
+.faq-section summary::after{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--line);font:400 17px 'IBM Plex Mono',monospace}
+.faq-section details[open]{border-color:rgba(var(--cyan-rgb),.34);background:#0B141C}
+.faq-section details .a{padding:0 62px 20px 20px;line-height:1.7}
+.cta-band{padding:18px 0 112px}.cta-foundry{position:relative;overflow:hidden;padding:82px 34px;border:1px solid rgba(var(--amber-rgb),.36);
+  background:
+  linear-gradient(115deg,rgba(var(--amber-rgb),.08),transparent 42%),
+  repeating-linear-gradient(90deg,transparent 0 58px,rgba(119,151,168,.04) 59px),
+  #0A1118;clip-path:polygon(0 0,calc(100% - 24px) 0,100% 24px,100% 100%,24px 100%,0 calc(100% - 24px))}
+.cta-foundry h2{position:relative;margin-top:20px}.cta-foundry p,.cta-foundry .btn,.cta-foundry .eyebrow{position:relative}
+.cta-signal{position:absolute;inset:50% auto auto 50%;width:650px;height:650px;transform:translate(-50%,-50%);border:1px solid rgba(var(--amber-rgb),.1);
+  border-radius:50%}.cta-signal span,.cta-signal i{position:absolute;inset:50%;border:1px solid rgba(var(--amber-rgb),.12);border-radius:50%;transform:translate(-50%,-50%)}
+.cta-signal span{width:70%;height:70%}.cta-signal i:nth-child(2){width:45%;height:45%}.cta-signal i:nth-child(3){width:22%;height:22%}
+.cta-signal i:nth-child(4){width:7px;height:7px;background:var(--amber);border:0;box-shadow:0 0 22px rgba(var(--amber-rgb),.55)}
+.site-footer{margin-top:0;background:#05080C}.site-footer .wrap{display:grid;grid-template-columns:auto 1fr auto;gap:28px}
+.site-footer .wrap>span:nth-child(2){text-align:center}.footer-logo .brand-by{display:none}.site-footer .mono{font-size:10px;letter-spacing:.09em}
+
+/* Shared premium shell: checkout, Copilot, success, welcome, legal, admin */
+.buywrap{padding:92px 32px 80px;gap:46px}.buywrap h2{font-size:clamp(2.2rem,4vw,3.65rem)}
+.buywrap form{padding:26px;border:1px solid var(--line);background:#091017;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%)}
+.formgrid{gap:18px 14px}.field{gap:8px}.field label{color:var(--ink2);font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.05em;text-transform:uppercase}
+.field input,.field select,.field textarea{min-height:48px;border-radius:0;border-color:var(--line2);background:#060B10;color:var(--ink);
+  font:400 16px 'Archivo',sans-serif;transition:border-color .2s ease,box-shadow .2s ease,background .2s ease}
+.field input:hover,.field select:hover,.field textarea:hover{border-color:rgba(var(--cyan-rgb),.46)}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--cyan);background:#091119;box-shadow:0 0 0 3px rgba(var(--cyan-rgb),.12)}
+.sumcard{top:calc(var(--nav-h) + 22px);padding:28px;border-radius:0;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+.sumcard::before{content:'CONFIGURATION SUMMARY';display:block;margin-bottom:24px;color:var(--ink3);font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.15em}
+.sumline{border-color:var(--line);font-size:13px}.radio2 label{min-height:50px;display:grid;place-items:center;border-radius:0;background:#070C11}
+.radio2 label span{display:inline-flex;align-items:center;justify-content:center;gap:7px}.radio2 label:has(input:checked){border-color:var(--amber);background:rgba(var(--amber-rgb),.07)}
+.err{border-radius:0}.success-glyph{display:grid;place-items:center;width:58px;height:58px;margin:0 auto;color:var(--green);
+  border:1px solid rgba(85,217,138,.42);transform:rotate(45deg)}.success-glyph .ui-icon{transform:rotate(-45deg)}
+.okpage{padding:110px 24px 90px}.okpage .big{border-radius:0;transform:rotate(45deg);background:rgba(85,217,138,.07)}
+.okpage .big .ui-icon{transform:rotate(-45deg)}.nextsteps .card{border-radius:0}
+.nextsteps .n{border-radius:0;font-family:'IBM Plex Mono',monospace}
+.ldocwrap{padding-top:96px}.ldoc{padding:34px;border:1px solid var(--line);background:#091017}
+.ldoc code,.ldoc pre.ldoc-code{font-family:'IBM Plex Mono',monospace}.ldoc blockquote{border-radius:0}
+.kx-app{position:relative;max-width:900px;height:100dvh;padding:22px 28px;background:
+  linear-gradient(180deg,rgba(var(--cyan-rgb),.035),transparent 28%),
+  #080D12;border-inline:1px solid var(--line)}
+.kx-app::before{content:'KUBIX / SECURE COPILOT CHANNEL';position:absolute;left:-118px;top:50%;transform:rotate(-90deg);color:var(--ink3);
+  font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.15em}
+.kx-header{min-height:66px;padding:10px 2px 16px}.kx-avatar{width:46px;height:46px;border-radius:0;color:#161207;background:var(--amber);
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+.kx-avatar .ui-icon{width:23px;height:23px}.kx-header-name{font-size:16px}.kx-back{display:grid;place-items:center;min-width:70px;min-height:44px}
+.kx-messages{padding:26px 4px}.kx-bubble{border-radius:0;padding:13px 16px}
+.kx-msg-user .kx-bubble{background:var(--amber);clip-path:polygon(8px 0,100% 0,100% 100%,0 100%,0 8px)}
+.kx-msg-bot .kx-bubble{background:#0D1720;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+.kx-bubble code,.kx-bubble pre.kx-code{font-family:'IBM Plex Mono',monospace}.kx-bubble pre.kx-code{border-radius:0}
+.kx-feedback button{min-width:44px;min-height:44px;border-radius:0}.kx-input-bar{padding:14px 2px max(4px,env(safe-area-inset-bottom))}
+.kx-input{min-height:50px;border-radius:0;font:400 16px 'Archivo',sans-serif}.kx-send{min-width:92px;min-height:50px;border-radius:0;background:var(--amber);
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+table{font-variant-numeric:tabular-nums}th{font-family:'IBM Plex Mono',monospace}
+
+/* Reveal and state motion */
+.js [data-reveal]{opacity:0;transition:opacity .65s var(--ease-out) var(--reveal-delay,0ms),transform .7s var(--ease-out) var(--reveal-delay,0ms);will-change:opacity,transform}
+.js [data-reveal="up"]{transform:translate3d(0,34px,0)}.js [data-reveal="left"]{transform:translate3d(-34px,0,0)}
+.js [data-reveal="right"]{transform:translate3d(34px,0,0)}
+.js [data-reveal].is-visible{opacity:1;transform:translate3d(0,0,0)}
+@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.72)}}
+@keyframes dataFlow{to{stroke-dashoffset:-60}}
+@keyframes nodePing{0%{opacity:.85;transform:scale(.72)}70%,100%{opacity:0;transform:scale(1.4)}}
+@keyframes scanField{0%,12%{transform:translateY(-64px);opacity:0}20%{opacity:.75}74%{opacity:.65}86%,100%{transform:translateY(400px);opacity:0}}
+@keyframes spectrum{from{transform:scaleY(.35);opacity:.45}to{transform:scaleY(1);opacity:1}}
+@keyframes lifecycleMove{0%,8%{transform:translateX(0)}28%{transform:translateX(100%)}52%{transform:translateX(200%)}76%,100%{transform:translateX(300%)}}
+@keyframes buttonSpin{to{transform:rotate(1turn)}}
+
+/* 1440 / 1024 / 768 / 375 responsive system */
+@media(min-width:1440px){
+  :root{--max:1320px}
+  .hero{grid-template-columns:minmax(0,.8fr) minmax(620px,1.2fr);gap:74px}
+  .signal-stage{transform-origin:center}.stage-body{min-height:430px}
+  .foundry-section{padding-block:136px}
+}
+@media(max-width:1120px){
+  .hero-section{min-height:auto}.hero{grid-template-columns:1fr;padding-top:76px;gap:48px}
+  .hero-copy{max-width:780px}.hero-copy h1{max-width:13ch}.signal-stage{width:min(100%,860px);margin-inline:auto}
+  .kubix{grid-template-columns:1fr;gap:44px}.chatcard{max-width:820px}
+  .site-footer .wrap{grid-template-columns:1fr;text-align:center}.site-footer .logo{margin-inline:auto}.site-footer .wrap>span:nth-child(2){text-align:center}
+}
+@media(max-width:1023px){
+  .wrap{padding-inline:28px}.foundry-section{padding-block:104px}
+  .feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.feat,.feat-primary{grid-column:auto}
+  .protocol-board{grid-template-columns:180px 1fr}.logos{grid-template-columns:repeat(2,1fr)}
+  .seclist{grid-template-columns:1fr}.plans{grid-template-columns:1fr}.plan{max-width:680px;width:100%;margin-inline:auto}
+  .process-section .steps{grid-template-columns:repeat(2,1fr);gap:34px 0}.process-section .steps::before{display:none}
+  .buywrap{grid-template-columns:1fr}.sumcard{position:static}
+}
+@media(max-width:767px){
+  :root{--nav-h:64px}.wrap{padding-inline:20px}
+  .nav .wrap{height:var(--nav-h);padding-inline:16px}.brand-by{display:none}.navlinks{gap:4px}.navlinks a{padding-inline:8px}
+  .navlinks .btn{padding-inline:14px}.hero{padding:62px 0 34px;gap:36px}
+  h1{font-size:clamp(2.65rem,12vw,4.1rem)}h2{font-size:clamp(2rem,9vw,3.25rem)}
+  .hero p.lead{font-size:16px}.hero .ctas{display:grid}.hero .ctas .btn{width:100%}
+  .hero-assurance{gap:8px 14px}.signal-stage{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+  .stage-health>span:first-child{display:none}.stage-body{grid-template-columns:1fr;min-height:360px}.stage-rail{display:none}
+  .factory-schematic{inset:4px -48px 80px;width:calc(100% + 96px);height:calc(100% - 84px)}.alert-ticket{right:12px;bottom:16px;width:calc(100% - 24px)}
+  .signal-lifecycle{grid-template-columns:repeat(2,1fr);gap:20px 1px;padding-top:22px}.lifecycle-track{display:none}.life-step i{margin:0 auto 4px}
+  .stats{grid-template-columns:repeat(2,1fr)}.stats .stat:last-child{grid-column:1/-1}
+  .foundry-section{padding-block:84px}.section-index{margin-bottom:20px}.split-head{margin-bottom:38px}
+  .feature-grid{grid-template-columns:1fr}.feat{min-height:auto}.protocol-board{grid-template-columns:1fr}.protocol-core{min-height:210px}
+  .logos{grid-template-columns:1fr 1fr}.logos span{min-height:70px;padding:14px;font-size:10px}
+  .kubix{gap:34px}.chatcard{padding-inline:16px}.chat-chrome{margin-inline:-16px}.msg{max-width:94%}
+  .seclist li{grid-template-columns:38px 1fr;min-height:126px}.seclist em{display:none}
+  .process-section .steps{grid-template-columns:1fr}.process-section .step{text-align:left;display:grid;grid-template-columns:58px 1fr;column-gap:18px}
+  .process-section .step .n,.process-section .step p{grid-column:2}.step-node{grid-row:1/4;margin:10px 0}.process-section .step h3{align-self:end}
+  .pricing-head{text-align:left}.toggle{width:100%;display:grid;grid-template-columns:1fr 1fr}.toggle button{width:100%}
+  .faq-section details .a{padding-right:20px}.cta-foundry{padding:64px 20px}.cta-foundry h2 br{display:none}
+  .formgrid{grid-template-columns:1fr}.buywrap{padding:64px 20px}.buywrap form{padding:20px 16px}
+  .radio2{grid-template-columns:1fr}.kx-app{padding-inline:16px;border:0}.kx-app::before{display:none}.kx-bubble{max-width:88%}
+  .ldoc{padding:24px 18px}.ldocwrap{padding-inline:18px}
+}
+@media(max-width:479px){
+  .wrap{padding-inline:18px}.logo{gap:8px}.brand-mark{width:36px;height:36px}.brand-word{font-size:17px}
+  .navlinks>a:not(.btn){display:none}.navlinks .btn{min-width:108px}
+  .hero-copy h1{font-size:clamp(2.5rem,12vw,3.2rem)}.hero-assurance span+span::before{display:none}
+  .stage-head{padding-inline:12px}.stage-title .mono{font-size:10px}.stage-time{display:none}.stage-body{min-height:350px}
+  .alert-ticket{padding:12px}.assignment{grid-template-columns:28px 1fr auto}.signal-lifecycle{padding-inline:9px}
+  .stat{padding:18px 12px}.stat .n{font-size:20px}.foundry-section{padding-block:76px}
+  .logos{grid-template-columns:1fr}.protocol-core{min-height:190px}.protocol-core>span{width:62px;height:62px}
+  .seclist li{padding:18px 14px}.plan{padding-inline:22px}.price{font-size:37px}
+  .cta-band{padding-bottom:80px}.site-footer{padding-block:36px}.site-footer .wrap{padding-inline:18px}
+  .kx-header-sub{font-size:11px}.kx-back{min-width:56px}.kx-send{min-width:76px;padding-inline:14px}
+}
+@media(max-height:620px) and (orientation:landscape){
+  .hero-section{min-height:auto}.hero{padding-block:48px}.hero-copy h1{font-size:3.5rem}
+}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}
+  .js [data-reveal]{opacity:1!important;transform:none!important}
+  [data-tilt],[data-magnetic]{transform:none!important}
+  .scan-beam{display:none}.route-flow{stroke-dashoffset:0}.scroll-progress{display:none}
 }
 `;
 // eof
