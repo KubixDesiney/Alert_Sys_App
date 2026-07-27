@@ -2745,6 +2745,54 @@ const SHELL_CLIENT_JS = `
     }, 1000);
   }
 
+  /* Signal tags decode into place as they arrive — same effect as the hub.
+     The original string is always restored, so the accessible text never
+     changes; only the pixels in between are noise. */
+  var GLYPHS = '▚▞▛▜█▓▒░/<>|-_=+*#01';
+
+  function prepareTag(tag) {
+    var found = tag.querySelector('.eb-t');
+    if (found) return found;
+    var holder = document.createElement('span');
+    holder.className = 'eb-t';
+    Array.prototype.slice.call(tag.childNodes).forEach(function (n) {
+      var isIcon = n.nodeType === 1 && n.classList && n.classList.contains('eyebrow-icon');
+      if (n.nodeType === 3 || (n.nodeType === 1 && !isIcon)) holder.appendChild(n);
+    });
+    tag.appendChild(holder);
+    return holder;
+  }
+
+  function decodeTag(el) {
+    var target = el.textContent;
+    if (!target || el.getAttribute('data-decoded') === '1') return;
+    el.setAttribute('data-decoded', '1');
+    var total = Math.min(34, Math.max(16, Math.round(target.length * 1.1)));
+    var frame = 0;
+    var id = window.setInterval(function () {
+      frame += 1;
+      var settled = (frame / total) * target.length;
+      el.textContent = target.split('').map(function (ch, i) {
+        if (ch === ' ' || i < settled) return ch;
+        return GLYPHS.charAt((Math.random() * GLYPHS.length) | 0);
+      }).join('');
+      if (frame >= total) { window.clearInterval(id); el.textContent = target; }
+    }, 26);
+  }
+
+  var signalTags = Array.prototype.slice.call(document.querySelectorAll('.eyebrow'));
+  signalTags.forEach(prepareTag);
+  if (!reduceMotion.matches && 'IntersectionObserver' in window) {
+    var tagIo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        tagIo.unobserve(entry.target);
+        decodeTag(prepareTag(entry.target));
+      });
+    }, { threshold: 0.5 });
+    signalTags.forEach(function (t) { tagIo.observe(t); });
+  }
+
   reduceMotion.addEventListener('change', function () {
     root.classList.toggle('reduce-motion', reduceMotion.matches);
     if (reduceMotion.matches) {
@@ -2807,8 +2855,27 @@ a{color:var(--cyan);text-decoration:none}
 .btn-ghost{border-color:var(--line2);color:var(--ink);background:var(--panel)}
 .btn-ghost:hover{background:var(--panel2)}
 .btn-sm{padding:9px 18px;font-size:14px;border-radius:9px}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--amber2);background:rgba(56,189,248,.09);border:1px solid rgba(56,189,248,.25);padding:7px 14px;border-radius:999px}
+/* Signal tag — same component as kubix-web: a conic highlight orbits the rim
+   like a scanning signal, over a glass body. Not a flat bordered pill. */
+.eyebrow{position:relative;isolation:isolate;overflow:hidden;
+  display:inline-flex;align-items:center;gap:10px;
+  font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink2);padding:9px 18px;border-radius:999px;
+  -webkit-backdrop-filter:blur(14px) saturate(150%);backdrop-filter:blur(14px) saturate(150%);
+  transition:color .3s var(--ease-out),transform .45s var(--ease-out)}
+.eyebrow::before{content:'';position:absolute;z-index:-2;left:50%;top:50%;width:230%;aspect-ratio:1;
+  transform:translate(-50%,-50%);
+  background:conic-gradient(from 0deg,transparent 0 56%,
+    rgba(var(--cyan-rgb),.7) 71%,var(--amber) 83%,rgba(var(--amber-rgb),0) 95%);
+  animation:tagOrbit 4.6s linear infinite}
+.eyebrow::after{content:'';position:absolute;z-index:-1;inset:1px;border-radius:inherit;
+  background:radial-gradient(130% 190% at 0% 50%,rgba(var(--amber-rgb),.15),transparent 62%),
+    linear-gradient(180deg,rgba(19,36,60,.92),rgba(8,15,27,.95))}
+@keyframes tagOrbit{to{transform:translate(-50%,-50%) rotate(360deg)}}
+.eyebrow:hover{color:var(--ink);transform:translateY(-1px)}
+.eyebrow .eyebrow-icon{color:var(--cyan);filter:drop-shadow(0 0 6px rgba(var(--cyan-rgb),.7))}
+.eb-t{display:inline-block}
+.reduce-motion .eyebrow::before{animation:none}
 .hero{padding:84px 0 60px;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
 .hero p.lead{font-size:18.5px;color:var(--ink2);margin:22px 0 32px;max-width:34em}
 .hero .ctas{display:flex;gap:14px;flex-wrap:wrap}
