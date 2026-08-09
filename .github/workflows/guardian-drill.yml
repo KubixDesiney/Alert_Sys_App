@@ -46,7 +46,7 @@ jobs:
       fixed: ${{ steps.verify.outputs.fixed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.AUTOFIX_GITHUB_TOKEN || github.token }}
           fetch-depth: 0
@@ -167,7 +167,7 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ALERTAPPSYS }}
     steps:
       - name: Checkout (healed main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
 
