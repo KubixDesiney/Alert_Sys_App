@@ -103,7 +103,7 @@ jobs:
           echo "Resolved: id=$ID project=$PROJECT subdomain=$SUB r2=$R2"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
