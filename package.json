@@ -38,7 +38,7 @@
     "backup:drill": "node tool/backup_drill.mjs"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
+    "jest": "^30.5.0",
     "pdfkit": "^0.19.1",
     "wrangler": "^4.100.0"
   },
