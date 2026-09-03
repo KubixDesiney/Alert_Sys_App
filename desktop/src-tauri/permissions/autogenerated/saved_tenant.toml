@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-saved-tenant"
+description = "Enables the saved_tenant command without any pre-configured scope."
+commands.allow = ["saved_tenant"]
+
+[[permission]]
+identifier = "deny-saved-tenant"
+description = "Denies the saved_tenant command without any pre-configured scope."
+commands.deny = ["saved_tenant"]

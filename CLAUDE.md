@@ -51,6 +51,7 @@ SIAS - Smart Industrial Alert System is a Flutter industrial supervision app for
 - `cloudflare_app_worker.js`, `wrangler.app.toml`: Shared `sias-app` Flutter web/APK delivery worker and its Assets/KV/R2 bindings.
 - `web/firebase-messaging-sw.js`: Web push service worker; fetches the current tenant's messaging config from `/__swconfig`.
 - `assets/models/conformer_tisid_small.tflite`: Speaker embedding model used by voice auth.
+- `desktop/`: Tauri v2 desktop shell (Windows `.exe`/`.msi`, macOS `.dmg`, Linux `.deb`/`.rpm`/`.AppImage`). Hosts the deployed Flutter web app; see "Desktop App" below.
 - `worker/`: Modular Cloudflare worker source and helper modules. This is also re-exported by `cloudflare_worker.js` for tests and compatibility.
 - `worker_test/`: Jest worker test suite. There are currently 39 worker test files (recounted 2026-07-04).
 - `test/`: Flutter unit/widget tests. There are currently 39 Dart test files (recounted 2026-07-04).
@@ -81,6 +82,16 @@ npm test
 npm run test:watch
 npx wrangler deploy --config wrangler.ai.toml
 npx wrangler deploy --config wrangler.notify.toml
+```
+
+Desktop shell (from `desktop/`, needs Rust stable):
+
+```bash
+npm install
+npm run dev
+npm run build
+npm test
+npm run lint
 ```
 
 Autonomous bug-fix agent:
@@ -158,6 +169,71 @@ The manual `Build tenant APK` workflow takes the base64 file from the protected
 `<tenant>/sias-<tenant>.apk` to the app worker's R2 bucket. The tenant's `/app` page
 renders a dependency-free QR code and direct download link; the web PWA is available
 immediately without an install.
+
+### Desktop App — Tauri v2 Shell (2026-09-02)
+
+`desktop/` ships SIAS as real native installers: Windows `.exe` (NSIS) + `.msi`
+(WiX), macOS universal `.dmg`, Linux `.deb`/`.rpm`/`.AppImage`. It is a **Tauri v2
+shell around the deployed Flutter web app** — the OS webview loads
+`https://<tenant>.kubixdesiney.com`, so the desktop UI is byte-identical to the
+browser and every `sias-app` web deploy reaches desktop users with no new
+installer. Cut a desktop release only when the *shell* changes.
+
+**Why not `flutter build windows`:** `firebase_database` supports
+`android/ios/macos/web` only — no Windows, no Linux — and **55 files under `lib/`
+import it directly**. `firebase_messaging`, `mobile_scanner`,
+`google_maps_flutter` and `geocoding` have the same or worse desktop gaps. A
+native desktop build means rewriting the whole data layer onto an RTDB REST/SSE
+client plus stubs for push/scanner/maps/geocoding. Do not start that without a
+deliberate decision.
+
+Layout:
+
+- `desktop/src-tauri/src/tenant.rs` — **pure, unit-tested** tenant logic: a
+  deliberate Rust mirror of `tenantFromHost` / `isValidTenantSlug` /
+  `RESERVED_SUBDOMAINS` in `cloudflare_app_worker.js`, plus the top-level
+  navigation allowlist. **If the worker's host rules change, change this file and
+  its tests too**, or the desktop app will resolve tenants differently from the
+  edge.
+- `desktop/src-tauri/src/lib.rs` — window/menu/store wiring, zoom, updater.
+- `desktop/src-tauri/src/menu.rs` — native menu. The Edit submenu is load-bearing
+  on macOS: WKWebView only honours Cmd+C/Cmd+V when the standard edit items exist.
+- `desktop/ui/` — the local first-run workspace picker (vanilla HTML/CSS/JS, no
+  build step; `withGlobalTauri: true` so `window.__TAURI__.core.invoke` works
+  without a bundler). It probes the worker's `GET /__config`
+  (`{ok, tenant, hasConfig}`, already CORS-open) to tell "no such workspace" from
+  "not provisioned yet" before opening a window.
+
+Security model — two windows with different privileges:
+
+| Window | Label | Content | IPC |
+|---|---|---|---|
+| Workspace picker | `launcher` | local `ui/index.html` | the 5 app commands |
+| Application | `main` | `https://<tenant>.kubixdesiney.com` | **none** |
+
+`capabilities/default.json` sets `"windows": ["launcher"]` and nothing else, so
+the remote Flutter app cannot invoke a single shell command — enforced by Tauri's
+ACL, not convention. App commands are ACL-gated like plugin commands: they are
+declared in `build.rs` via `AppManifest::new().commands([...])`, which generates
+`allow-<kebab-command>` permissions. **Adding a command means editing `build.rs`
+AND `capabilities/default.json`**, or the call is denied at runtime.
+
+Top-level navigation in the app window is filtered by `classify_navigation`:
+`*.kubixdesiney.com` and known IdP hosts (Google, Microsoft, Okta, Auth0,
+OneLogin, Ping, `*.firebaseapp.com`) load in-app; everything else — including
+`mailto:`/`tel:` and suffix-confusion lookalikes like `kubixdesiney.com.evil.com`
+— is handed to the system browser. The saved workspace is re-validated on every
+read so a hand-edited settings file cannot repoint the window.
+
+Persisted per user: `sias-desktop.json` (workspace, zoom) and `.window-state.json`
+(geometry) in the platform app-data dir under `com.kubixdesiney.sias`.
+
+Auto-update is **feature-gated** (`--features updater`) and compiled in only when
+`TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PUBLIC_KEY` secrets exist; CI then
+generates `tauri.updater.conf.json` (git-ignored) from them, so no key material or
+stale placeholder pubkey is ever committed. Without those secrets the app is a
+normal installer-updated app and "Check for Updates" opens the Releases page.
+Full runbook: `desktop/README.md`.
 
 ### Store Worker (2026-07-13)
 
@@ -923,6 +999,10 @@ Current verified results (2026-07-20, after the commercial/integration max-out p
 - **`flutter` job**: checkout, Java 17, Flutter (pub-cache keyed on `pubspec.lock`), `flutter pub get`, `flutter analyze --no-fatal-infos --no-fatal-warnings`, `flutter test --reporter expanded`, then `flutter build apk --debug` + `flutter build web --release --no-wasm-dry-run` (both with the split worker URLs baked in via `--dart-define`), uploads `build/web` as the `web-build` artifact (7-day retention). The AI auto-fix flow described in older notes lives in the separate `autonomous-bugfix-agent.yml` workflow, not in `ci.yml` — `ci.yml` itself has no auto-fix step; a failing Flutter test simply fails the job.
 - **`worker` job**: Node 20, `npm ci`, `npm test` (the full Jest suite — all 8 data-plane/store workers, `sias-app`, `tool/`, and `gateway/`), then on direct pushes to `main` only (when `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` are set): deploys the 8 data-plane/store workers via their explicit configs (never a subset — that is how config drift happens) and idempotently pushes the `alertsys-github` worker's bootstrap secrets. The Flutter job deploys `sias-app` after building `build/web` when `ENABLE_APP_WORKER_DEPLOY=true`.
 - **`legal-lint` job** (2026-07-20, non-blocking — `continue-on-error: true`): `node tool/legal_lint.mjs` over `docs/legal/*.md`. Surfaces naming/forbidden-claim violations and counts `[[PLACEHOLDER]]` markers loudly without ever gating a deploy (counsel resolution is ongoing work, not a CI blocker).
+
+`.github/workflows/desktop-ci.yml` (paths-filtered to `desktop/**`): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` for the desktop shell on `ubuntu-22.04`. Cheap gate; it does not bundle installers.
+
+`.github/workflows/desktop-release.yml` (tag `desktop-v*` or manual): builds Windows/macOS-universal/Linux installers in parallel via `tauri-apps/tauri-action`, attaches them to a **draft** GitHub Release, and publishes it only after all three platforms succeed. Auto-updater and Apple notarization are compiled in only when the optional secrets exist (see `desktop/README.md`).
 
 `.github/workflows/security.yml` (push/PR/weekly cron): `secret-scan` (gitleaks, blocking on the current tree; full-history scan is warning-only pending the documented history purge), `dependency-audit` (`npm audit --omit=dev --audit-level=high` across root/`functions`/`codebasedelta`), and `sbom` (2026-07-20 — `npm sbom --sbom-format cyclonedx --omit dev`, uploaded as the `sbom-cyclonedx` artifact for buyer due-diligence).
 

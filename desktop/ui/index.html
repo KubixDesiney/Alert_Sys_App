@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SIAS - Connect workspace</title>
+    <link rel="stylesheet" href="launcher.css" />
+  </head>
+  <body>
+    <main class="card" role="main">
+      <div class="brand">
+        <svg
+          class="mark"
+          viewBox="0 0 64 64"
+          role="img"
+          aria-label="SIAS"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <rect x="2" y="2" width="60" height="60" rx="16" class="mark-bg" />
+          <path
+            d="M32 15.5 49.5 45.5H14.5L32 15.5Z"
+            class="mark-glyph"
+            stroke-linejoin="round"
+            stroke-width="3.5"
+            fill="none"
+          />
+          <rect x="30.2" y="26" width="3.6" height="11" rx="1.8" class="mark-dot" />
+          <circle cx="32" cy="41" r="2.1" class="mark-dot" />
+        </svg>
+        <h1>SIAS</h1>
+        <p class="tagline">Smart Industrial Alert System</p>
+      </div>
+
+      <form id="form" novalidate>
+        <label for="tenant">Workspace</label>
+        <div class="field">
+          <input
+            id="tenant"
+            name="tenant"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="none"
+            autocorrect="off"
+            spellcheck="false"
+            placeholder="your-company"
+            aria-describedby="hint status"
+            required
+          />
+          <span class="suffix" id="suffix" aria-hidden="true">.kubixdesiney.com</span>
+        </div>
+        <p class="hint" id="hint">
+          Enter your workspace name, or paste the full address your administrator gave you.
+        </p>
+
+        <button id="submit" type="submit">
+          <span class="label">Continue</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </form>
+
+      <footer>
+        <span id="version">&nbsp;</span>
+      </footer>
+    </main>
+
+    <script src="launcher.js"></script>
+  </body>
+</html>

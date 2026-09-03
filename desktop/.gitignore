@@ -1,0 +1,13 @@
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas/
+node_modules/
+
+# Signing material — NEVER commit these
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Generated at release time from repository secrets (see .github/workflows/desktop-release.yml)
+src-tauri/tauri.updater.conf.json
