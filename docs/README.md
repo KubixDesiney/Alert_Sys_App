@@ -15,6 +15,7 @@ and `../README.md` (product front door).
 | [PILOT_READINESS_CHECKLIST.md](PILOT_READINESS_CHECKLIST.md) | Everything checked before a customer pilot starts |
 | [SECRET_ROTATION.md](SECRET_ROTATION.md) | Credential rotation runbook + leaked-secret history status |
 | [TRUST_CENTER.md](TRUST_CENTER.md) | Buyer-facing trust summary page |
+| [../desktop/README.md](../desktop/README.md) | Desktop app (Tauri v2 shell): architecture, security model, build, code signing, release runbook |
 
 ## Sales (`sales/`)
 

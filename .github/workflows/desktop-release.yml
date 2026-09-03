@@ -1,0 +1,222 @@
+name: Desktop Release
+
+# Builds signed-if-configured native installers for the SIAS desktop shell and
+# attaches them to a GitHub Release:
+#
+#   Windows   .exe (NSIS)  +  .msi (WiX)
+#   macOS     .dmg + .app  (universal: Apple silicon and Intel)
+#   Linux     .deb + .rpm + .AppImage
+#
+# The shell loads https://<tenant>.kubixdesiney.com, so a release is only needed
+# when the SHELL changes — routine web deploys reach desktop users immediately
+# with no new installer.
+#
+# Trigger:  git tag desktop-v1.2.1 && git push origin desktop-v1.2.1
+#           (or run manually and pass the version)
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 1.2.1 (defaults to desktop/src-tauri/tauri.conf.json)'
+        required: false
+        type: string
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            version="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/desktop-v* ]]; then
+            version="${GITHUB_REF#refs/tags/desktop-v}"
+          else
+            version="$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Publishing SIAS Desktop ${version}"
+
+      - name: Create draft release
+        id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ steps.version.outputs.version }}';
+            const tag = `desktop-v${version}`;
+            const body = [
+              `## SIAS Desktop ${version}`,
+              '',
+              'Native desktop client for SIAS - Smart Industrial Alert System.',
+              '',
+              '| Platform | Download |',
+              '| --- | --- |',
+              '| Windows 10/11 | `.exe` installer (recommended) or `.msi` |',
+              '| macOS 10.15+ | `.dmg` (universal — Apple silicon and Intel) |',
+              '| Linux | `.AppImage`, `.deb` or `.rpm` |',
+              '',
+              'On first launch, enter your workspace name (the part before',
+              '`.kubixdesiney.com`). The app remembers it; use **Switch Workspace**',
+              'in the menu to change it.',
+            ].join('\n');
+
+            // Reuse an existing draft for this tag rather than stacking duplicates.
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner, repo: context.repo.repo, per_page: 100,
+            });
+            const existing = releases.data.find((r) => r.tag_name === tag && r.draft);
+            if (existing) return existing.id;
+
+            const created = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `SIAS Desktop ${version}`,
+              body,
+              draft: true,
+              prerelease: false,
+            });
+            return created.data.id;
+
+  build:
+    name: ${{ matrix.name }}
+    needs: prepare
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows (x64)
+            os: windows-latest
+            args: ''
+          - name: macOS (universal)
+            os: macos-latest
+            args: '--target universal-apple-darwin'
+          - name: Linux (x64)
+            os: ubuntu-22.04
+            args: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux bundling dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            patchelf \
+            rpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS universal targets
+        if: matrix.os == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: ${{ matrix.os }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Tauri CLI
+        working-directory: desktop
+        run: npm ci
+
+      # The auto-updater is only compiled in when an update-signing key exists.
+      # Without it the app is a perfectly good installer-updated desktop app and
+      # "Check for Updates" simply opens the Releases page.
+      - name: Configure updater
+        id: flags
+        shell: bash
+        working-directory: desktop
+        env:
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          if [ -n "$SIGNING_KEY" ] && [ -n "$PUBLIC_KEY" ]; then
+            # Generated here rather than committed, so no key material and no
+            # stale placeholder ever lives in the repository.
+            cat > src-tauri/tauri.updater.conf.json <<JSON
+          {
+            "bundle": { "createUpdaterArtifacts": true },
+            "plugins": {
+              "updater": {
+                "pubkey": "${PUBLIC_KEY}",
+                "endpoints": [
+                  "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/latest.json"
+                ]
+              }
+            }
+          }
+          JSON
+            echo 'args=--features updater --config src-tauri/tauri.updater.conf.json' >> "$GITHUB_OUTPUT"
+            echo 'updater=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'args=' >> "$GITHUB_OUTPUT"
+            echo 'updater=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PUBLIC_KEY not set - building without the auto-updater.'
+          fi
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Update signing (optional) ---
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # --- Apple code signing + notarization (optional) ---
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: desktop
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          includeUpdaterJson: ${{ steps.flags.outputs.updater == 'true' }}
+          args: ${{ matrix.args }} ${{ steps.flags.outputs.args }}
+
+  publish:
+    name: Publish release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.prepare.outputs.release_id }},
+              draft: false,
+            });
+            core.notice('SIAS Desktop ${{ needs.prepare.outputs.version }} published.');

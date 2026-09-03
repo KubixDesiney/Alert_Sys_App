@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-forget-tenant"
+description = "Enables the forget_tenant command without any pre-configured scope."
+commands.allow = ["forget_tenant"]
+
+[[permission]]
+identifier = "deny-forget-tenant"
+description = "Denies the forget_tenant command without any pre-configured scope."
+commands.deny = ["forget_tenant"]
