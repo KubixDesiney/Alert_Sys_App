@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "Overlay config for signed release builds. NOT used by `npm run build`.",
+    "CI generates the real tauri.updater.conf.json from the",
+    "TAURI_SIGNING_PUBLIC_KEY secret; this file only documents the shape.",
+    "Generate a key pair with:  npx tauri signer generate -w sias-updater.key"
+  ],
+  "bundle": { "createUpdaterArtifacts": true },
+  "plugins": {
+    "updater": {
+      "pubkey": "<contents of sias-updater.key.pub>",
+      "endpoints": [
+        "https://github.com/KubixDesiney/Alert_Sys_App/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

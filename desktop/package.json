@@ -1,0 +1,21 @@
+{
+  "name": "sias-desktop",
+  "version": "1.2.1",
+  "private": true,
+  "description": "SIAS - Smart Industrial Alert System desktop shell (Windows, macOS, Linux).",
+  "license": "SEE LICENSE IN ../LICENSE.md",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:debug": "tauri build --debug",
+    "icons": "tauri icon ../media/sia_logo.png",
+    "fmt": "cd src-tauri && cargo fmt",
+    "fmt:check": "cd src-tauri && cargo fmt --check",
+    "lint": "cd src-tauri && cargo clippy --all-targets -- -D warnings",
+    "test": "cd src-tauri && cargo test",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

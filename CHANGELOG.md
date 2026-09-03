@@ -10,6 +10,38 @@ plant's existing automation estate. It coordinates alerts and people; it does
 not execute control loops and is not a safety-instrumented system. See
 `RELEASE_NOTES.md` for the scope statement that accompanies each release.
 
+## [Unreleased] - 2026-09-02 — Native Desktop App
+
+### Added
+
+- **Desktop app (`desktop/`) — Windows, macOS and Linux.** SIAS now ships as
+  real native installers: `.exe` (NSIS) + `.msi` (WiX) on Windows, a universal
+  `.dmg` on macOS (Apple silicon + Intel), and `.deb` / `.rpm` / `.AppImage` on
+  Linux. Built with Tauri v2, so installers are ~10 MB and start natively
+  instead of bundling a browser.
+
+  The shell hosts the **already-deployed Flutter web app** at
+  `https://<tenant>.kubixdesiney.com`, which keeps the UI byte-identical to the
+  browser, preserves the `sias-app` worker's per-tenant `__SIAS_CONFIG__`
+  injection, and means routine web deploys reach desktop users with **no new
+  installer**. (A native `flutter build windows` is not viable: `firebase_database`
+  ships android/ios/macos/web only, and 55 files under `lib/` import it.)
+
+  Adds a first-run workspace picker that validates against the worker's
+  `GET /__config` probe, a native menu (reload, zoom, full screen, switch
+  workspace, about), remembered window geometry and zoom, single-instance
+  focus, and an optional signed auto-updater.
+
+### Security
+
+- The desktop app's remote window has **zero IPC**: `capabilities/default.json`
+  grants commands to the local picker window only, enforced by Tauri's ACL.
+  Top-level navigation is allowlisted to product and identity-provider hosts —
+  everything else (including `mailto:` and suffix-confusion lookalikes such as
+  `kubixdesiney.com.evil.com`) is handed to the system browser. The remembered
+  workspace is re-validated on every read, so a hand-edited settings file cannot
+  repoint the window. Covered by unit tests in `desktop/src-tauri/src/tenant.rs`.
+
 ## [Unreleased] - 2026-07-20 — Commercial & Integration Max-Out
 
 ### Added
