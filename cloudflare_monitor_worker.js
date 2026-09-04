@@ -371,14 +371,20 @@ export default {
       try {
         return Response.json(await runChecks(env));
       } catch (e) {
-        return Response.json({ error: e.message }, { status: 500 });
+        // Never echo the exception: these routes are public and a failed
+        // fetch() puts the whole request URL in e.message -- including the
+        // ?access_token= of the Firebase service account. Log it, return a
+        // generic body. (See the /status HTML branch, which already did this.)
+        console.error('monitor /check failed:', (e && e.message) || e);
+        return Response.json({ error: 'check_failed' }, { status: 500 });
       }
     }
     if (path === '/status.json') {
       try {
         return new Response(JSON.stringify(await buildStatus(env)), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       } catch (e) {
-        return new Response(JSON.stringify({ state: 'unknown', error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        console.error('monitor /status.json failed:', (e && e.message) || e);
+        return new Response(JSON.stringify({ state: 'unknown', error: 'status_unavailable' }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
     }
     if (path === '/status' || path === '/') {

@@ -238,7 +238,10 @@ export default {
         const r = await runBackup(env);
         return Response.json({ ok: true, ...r });
       } catch (e) {
-        return Response.json({ ok: false, error: e.message }, { status: 500 });
+        // Do not echo: e.message from a failed fetch carries the RTDB URL and
+        // its ?access_token=. Authenticated route, but same defect class.
+        console.error('backup route failed:', (e && e.message) || e);
+        return Response.json({ ok: false, error: 'operation_failed' }, { status: 500 });
       }
     }
     if (url.pathname === '/retention') {
@@ -253,7 +256,10 @@ export default {
         const r = await runRetention(env, token);
         return Response.json({ ok: true, ...r });
       } catch (e) {
-        return Response.json({ ok: false, error: e.message }, { status: 500 });
+        // Do not echo: e.message from a failed fetch carries the RTDB URL and
+        // its ?access_token=. Authenticated route, but same defect class.
+        console.error('backup route failed:', (e && e.message) || e);
+        return Response.json({ ok: false, error: 'operation_failed' }, { status: 500 });
       }
     }
     return new Response('alertsys backup worker');

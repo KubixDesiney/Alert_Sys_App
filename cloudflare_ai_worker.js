@@ -5728,7 +5728,8 @@ async function handleShiftAiAction(request, env) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: e.message }), {
+    console.error('ai action failed:', (e && e.message) || e);
+    return new Response(JSON.stringify({ ok: false, error: 'action_failed' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
