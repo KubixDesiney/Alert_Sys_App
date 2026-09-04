@@ -17,7 +17,7 @@ class _GuardianAgentPanelState extends State<_GuardianAgentPanel> {
   // The GitHub proxy worker URL + shared secret come from build-time config so
   // the live Actions/PR subtabs work in CI builds without per-widget defines.
   static const _ghUrl = AppConfig.githubWorkerBase;
-  static const _wSecret = AppConfig.workerSharedSecret;
+  static const _wSecret = AppConfig.clientWorkerKey;
 
   final _cfg = FirebaseDatabase.instance.ref('ai_agents/guardian');
   final _sec = FirebaseDatabase.instance.ref('ai_agent_secrets/guardian');

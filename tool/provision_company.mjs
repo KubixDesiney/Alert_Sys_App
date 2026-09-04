@@ -162,12 +162,12 @@ const shDefines = defines
   .map(([k, v]) => `  --dart-define=${k}="${v}" \\`)
   .join('\n');
 // The shared secret is sensitive: reference it from the environment, never inline.
-const psSecret = '  --dart-define=ALERTSYS_WORKER_SHARED_SECRET="$env:ALERTSYS_WORKER_SHARED_SECRET"';
-const shSecret = '  --dart-define=ALERTSYS_WORKER_SHARED_SECRET="$ALERTSYS_WORKER_SHARED_SECRET"';
+const psSecret = '  --dart-define=ALERTSYS_CLIENT_WORKER_KEY="$env:ALERTSYS_CLIENT_WORKER_KEY"';
+const shSecret = '  --dart-define=ALERTSYS_CLIENT_WORKER_KEY="$ALERTSYS_CLIENT_WORKER_KEY"';
 
 writeFileSync(join(outDir, 'build.ps1'),
 `# Build ${cfg.name} (${id}). Run from the repo root.
-# Set the shared secret first:  $env:ALERTSYS_WORKER_SHARED_SECRET = "<secret>"
+# Set the low-privilege client key first:  $env:ALERTSYS_CLIENT_WORKER_KEY = "<secret>"
 
 flutter build apk --release \`
 ${psDefines}
@@ -181,7 +181,7 @@ ${psSecret}
 writeFileSync(join(outDir, 'build.sh'),
 `#!/usr/bin/env bash
 # Build ${cfg.name} (${id}). Run from the repo root.
-# Set the shared secret first:  export ALERTSYS_WORKER_SHARED_SECRET="<secret>"
+# Set the low-privilege client key first:  export ALERTSYS_CLIENT_WORKER_KEY="<secret>"
 set -euo pipefail
 
 flutter build apk --release \\
@@ -266,10 +266,10 @@ ${deployCmds}
 
 ## 5. Build the apps
    # PowerShell
-   $env:ALERTSYS_WORKER_SHARED_SECRET = "<secret>"
+   $env:ALERTSYS_CLIENT_WORKER_KEY = "<secret>"
    ./companies/${id}/build.ps1
    # or bash
-   export ALERTSYS_WORKER_SHARED_SECRET="<secret>"
+   export ALERTSYS_CLIENT_WORKER_KEY="<secret>"
    bash companies/${id}/build.sh
 
 ## 6. First admin + monitoring

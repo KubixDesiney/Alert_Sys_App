@@ -103,7 +103,7 @@ jobs:
 
       - name: Build release APK
         env:
-          WORKER_SHARED_SECRET: ${{ secrets.WORKER_SHARED_SECRET }}
+          CLIENT_WORKER_KEY: ${{ secrets.CLIENT_WORKER_KEY }}
         run: |
           set -euo pipefail
           T="${{ inputs.tenant }}"
@@ -116,7 +116,7 @@ jobs:
           COMPANY_NAME="${{ inputs.company_name }}"
           if [ -z "$COMPANY_NAME" ]; then COMPANY_NAME="SIAS - Smart Industrial Alert System"; fi
           flutter build apk --release \
-            --dart-define=ALERTSYS_WORKER_SHARED_SECRET="${WORKER_SHARED_SECRET:-}" \
+            --dart-define=ALERTSYS_CLIENT_WORKER_KEY="${CLIENT_WORKER_KEY:-}" \
             --dart-define=ALERTSYS_AI_WORKER_URL="$AI_URL" \
             --dart-define=ALERTSYS_NOTIFY_WORKER_URL="$NOTIFY_URL" \
             --dart-define=ALERTSYS_INGEST_WORKER_URL="$INGEST_URL" \

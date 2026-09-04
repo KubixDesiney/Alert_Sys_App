@@ -593,13 +593,22 @@ function ingestStatus(env) {
 }
 
 function adminAuthorized(env, request) {
-  const want = env.WORKER_SHARED_SECRET || '';
+  // Two credentials are accepted, deliberately of different privilege:
+  //   CLIENT_WORKER_KEY    compiled into app builds, so it is public. It opens
+  //                        only these two connector routes and nothing else.
+  //   WORKER_SHARED_SECRET server-to-server and CI only; never in a build.
+  // Splitting them is what lets the app drive "Verify link test" without
+  // publishing the credential that unlocks the AI and notify workers.
+  const accepted = [env.CLIENT_WORKER_KEY, env.WORKER_SHARED_SECRET]
+    .map((v) => String(v || ''))
+    .filter(Boolean);
   // Fail closed: /verify and /control drive live connector actions with the
-  // worker service account. If no secret is configured the routes are denied
+  // worker service account. If neither is configured the routes are denied
   // (never "open in dev"), so a misconfigured deploy cannot be driven anonymously.
-  if (!want) return false;
+  if (!accepted.length) return false;
   const got = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  return timingSafeEqual(got, want);
+  // Compare against every accepted credential, without short-circuiting.
+  return accepted.reduce((ok, want) => timingSafeEqual(got, want) || ok, false);
 }
 
 async function handleConnectorIngest(env, request, connectorId) {

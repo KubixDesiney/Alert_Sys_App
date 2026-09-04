@@ -442,7 +442,7 @@ class ConnectorService {
   String ingestUrl(String id) => AppConfig.connectorIngestEndpoint(id);
 
   Map<String, String> get _authHeaders {
-    final secret = AppConfig.workerSharedSecret;
+    final secret = AppConfig.clientWorkerKey;
     return {
       'Content-Type': 'application/json',
       if (secret.isNotEmpty) 'Authorization': 'Bearer $secret',

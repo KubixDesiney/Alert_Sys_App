@@ -658,7 +658,7 @@ class _StatusController extends ChangeNotifier {
         _github = github ??
             GithubService(
               baseUrl: AppConfig.githubWorkerBase,
-              sharedSecret: AppConfig.workerSharedSecret,
+              sharedSecret: AppConfig.clientWorkerKey,
             );
 
   final FirebaseDatabase _db;

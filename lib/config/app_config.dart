@@ -29,7 +29,7 @@ class AppConfig {
 
   /// GitHub proxy Worker base URL (Guardian console: live Actions + PRs +
   /// repository_dispatch). The token stays server-side on this worker; the app
-  /// authenticates with [workerSharedSecret].
+  /// authenticates with the signed-in SuperAdmin's Firebase ID token.
   static const String githubWorkerBase = String.fromEnvironment(
     'ALERTSYS_GITHUB_WORKER_URL',
     defaultValue: 'https://alertsys-guardian-proxy.pages.dev/github-proxy',
@@ -56,9 +56,17 @@ class AppConfig {
   /// or notifyWorkerBase explicitly.
   static const String workerBaseUrl = aiWorkerBase;
 
-  /// Optional shared secret sent on worker requests when set.
-  static const String workerSharedSecret = String.fromEnvironment(
-    'ALERTSYS_WORKER_SHARED_SECRET',
+  /// Low-privilege key for the two client-facing worker routes that still
+  /// need a static credential: the ingest worker's `/verify` + `/control`.
+  ///
+  /// This is deliberately NOT `WORKER_SHARED_SECRET`. That secret is the
+  /// worker-to-worker credential and grants full access to the AI and notify
+  /// workers, so it must never be compiled into a build — anything shipped to
+  /// a browser or an APK is public. The AI and notify workers are reached with
+  /// the signed-in user's Firebase ID token instead (see WorkerAuth), and the
+  /// GitHub proxy requires a SuperAdmin ID token and ignores static secrets.
+  static const String clientWorkerKey = String.fromEnvironment(
+    'ALERTSYS_CLIENT_WORKER_KEY',
     defaultValue: '',
   );
 

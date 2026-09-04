@@ -7,7 +7,10 @@
 #   INGEST_SHARED_SECRET     optional — legacy/global gateways send it as x-alertsys-ingest
 #   FIREBASE_SERVICE_ACCOUNT required for cloud-pull, /verify, and the connector vault —
 #                            the service-account JSON (same value as the AI/GitHub workers)
-#   WORKER_SHARED_SECRET     required for /verify + /control — the bearer the app sends
+#   WORKER_SHARED_SECRET     server-to-server + CI bearer — never compiled into a build
+#   CLIENT_WORKER_KEY        low-privilege bearer the app sends on /verify + /control;
+#                            public by design (it ships in web/APK builds), so it must
+#                            differ from WORKER_SHARED_SECRET and open nothing else
 #   FB_DB_URL                required - this instance's RTDB base URL
 #   NOTIFY_WORKER_URL        required - this instance's notify-worker /notify endpoint
 #

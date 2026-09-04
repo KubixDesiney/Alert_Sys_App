@@ -128,6 +128,23 @@ describe('adminAuthorized (ingest /verify + /control, fail closed)', () => {
     expect(adminAuthorized({ WORKER_SHARED_SECRET: 's3cret' }, reqWith('Bearer nope'))).toBe(false);
     expect(adminAuthorized({ WORKER_SHARED_SECRET: 's3cret' }, reqWith(null))).toBe(false);
   });
+
+  // The app ships CLIENT_WORKER_KEY (it is public by design) and never
+  // WORKER_SHARED_SECRET, so these two routes must accept either credential
+  // while the rest of the fleet keeps accepting only the server secret.
+  test('accepts the low-privilege client key the app ships', () => {
+    expect(adminAuthorized({ CLIENT_WORKER_KEY: 'pub-key' }, reqWith('Bearer pub-key'))).toBe(true);
+  });
+  test('accepts either credential when both are configured', () => {
+    const env = { CLIENT_WORKER_KEY: 'pub-key', WORKER_SHARED_SECRET: 's3cret' };
+    expect(adminAuthorized(env, reqWith('Bearer pub-key'))).toBe(true);
+    expect(adminAuthorized(env, reqWith('Bearer s3cret'))).toBe(true);
+    expect(adminAuthorized(env, reqWith('Bearer neither'))).toBe(false);
+  });
+  test('still denies when neither credential is configured', () => {
+    expect(adminAuthorized({ CLIENT_WORKER_KEY: '', WORKER_SHARED_SECRET: '' }, reqWith('Bearer x')))
+      .toBe(false);
+  });
 });
 
 describe('mergeConnectorDefaults', () => {

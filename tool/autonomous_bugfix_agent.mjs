@@ -1061,7 +1061,7 @@ async function deployProduction() {
   if (config.deployWeb) {
     const buildCommand = [
       'flutter build web --release --no-wasm-dry-run',
-      `--dart-define=ALERTSYS_WORKER_SHARED_SECRET=${shellQuote(process.env.WORKER_SHARED_SECRET || '')}`,
+      `--dart-define=ALERTSYS_CLIENT_WORKER_KEY=${shellQuote(process.env.CLIENT_WORKER_KEY || '')}`,
       `--dart-define=ALERTSYS_AI_WORKER_URL=${shellQuote(config.aiWorkerUrl)}`,
       `--dart-define=ALERTSYS_NOTIFY_WORKER_URL=${shellQuote(config.notifyWorkerUrl)}`,
     ].join(' ');
