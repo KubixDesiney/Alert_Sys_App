@@ -195,7 +195,7 @@ class VoiceService {
       if (result == null || result.audioPath.isEmpty) return null;
 
       final file = File(result.audioPath);
-      if (!await file.exists()) return null;
+      if (!file.existsSync()) return null;
       final pcm = pcmFromWav(await file.readAsBytes());
       // Best-effort cleanup: the sample is biometric material, so it should not
       // linger in app storage once it has been read.

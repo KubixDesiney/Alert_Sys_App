@@ -199,7 +199,10 @@ describe.each([
 
     const res = await targetWorker.fetch(
       new Request('https://w.test/predict?factory=Usine%20A'),
-      { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key' },
+      // WORKER_AUTH_MODE now defaults to 'required' (it used to default to
+      // 'off', which meant an unset var disabled auth entirely). This test is
+      // about factory scoping, not the auth gate, so opt out explicitly.
+      { FB_DB_URL: 'https://db.test/', FB_API_KEY: 'key', WORKER_AUTH_MODE: 'off' },
       { waitUntil() {} },
     );
 
