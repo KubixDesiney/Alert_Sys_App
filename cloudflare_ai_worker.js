@@ -20,6 +20,16 @@ const MAX_ALERTS_TO_PUSH = 1;
 const MAX_ESCALATION_CHECKS = 5;
 const MAX_FANOUT = 5;
 const MAX_CRON_FANOUT = 1;
+// Hard ceiling on the alert table load in loadCoreData. Ordered by $key, not
+// by "timestamp": alert ids are Firebase push keys, so key order IS creation
+// order, every node has one, and a node missing a timestamp cannot sort itself
+// out of the window (which would hide it from the malformed-alert scan).
+// Raise via CORE_ALERTS_MAX if a tenant legitimately exceeds this.
+const CORE_ALERTS_DEFAULT_CAP = 20000;
+// Per-request history slice behind /ai-suggest. The consumer filters to one
+// type+conveyor+station and keeps 10, so this only has to be wide enough to
+// contain those matches, not the factory's whole history.
+const SUGGEST_HISTORY_CAP = 2000;
 const PUSH_LOCK_TTL_MS = 2 * 60 * 1000;
 const VALIDATION_CRON_INTERVAL_MIN = 30;
 const PREDICTIVE_CRON_INTERVAL_MIN = 60;
@@ -2212,10 +2222,21 @@ function pickActiveShift(shiftsMap, now = new Date()) {
 }
 
 // ============ Core data loader ============
+// Every full read of /alerts goes through here. Ordered by $key rather than
+// "timestamp": alert ids are Firebase push keys, so key order is creation
+// order, every node has one, and an alert missing a timestamp cannot sort
+// itself out of the window (which would hide it from the malformed-alert
+// scan in the security sweep).
+function _boundedAlertsUrl(env, token) {
+  return `${env.FB_DB_URL}alerts.json?auth=${token}`
+    + `&orderBy=${encodeURIComponent('"$key"')}`
+    + `&limitToLast=${Number(env.CORE_ALERTS_MAX || CORE_ALERTS_DEFAULT_CAP)}`;
+}
+
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
   const [alertsRes, usersRes, shiftsRes, factoriesRes, activeClaimsRes, usersPrivateRes] = await Promise.all([
-    fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
+    fetch(_boundedAlertsUrl(env, token)),
     fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
     fetch(`${env.FB_DB_URL}factories.json?auth=${token}`),
@@ -3108,7 +3129,8 @@ async function handleAiSuggest(request, env) {
     let pastResolutions = [];
     try {
       const res = await fetch(
-        `${env.FB_DB_URL}alerts.json?auth=${token}&orderBy="usine"&equalTo=${encodeURIComponent(usine)}`,
+        `${env.FB_DB_URL}alerts.json?auth=${token}&orderBy="usine"`
+        + `&equalTo=${encodeURIComponent(usine)}&limitToLast=${SUGGEST_HISTORY_CAP}`,
       );
       if (res.ok) {
         const data = (await res.json()) || {};
@@ -3259,7 +3281,7 @@ async function validatePredictions(env, ctx) {
   let alertsMap = ctx?.alertsMap;
   if (!alertsMap) {
     try {
-      const ar = await fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`);
+      const ar = await fetch(_boundedAlertsUrl(env, token));
       alertsMap = ar.ok ? ((await ar.json()) || {}) : {};
     } catch (_) { alertsMap = {}; }
   }
@@ -4120,7 +4142,7 @@ async function runAIAssignments(env, ctx) {
     activeShift = ctx.targetShift ?? ctx.activeShift ?? null;
   } else {
     const [ar, ur, sr, fr] = await Promise.all([
-      fetch(`${env.FB_DB_URL}alerts.json?auth=${token}`),
+      fetch(_boundedAlertsUrl(env, token)),
       fetch(`${env.FB_DB_URL}users.json?auth=${token}`),
       fetch(`${env.FB_DB_URL}shifts.json?auth=${token}`),
       fetch(`${env.FB_DB_URL}factories.json?auth=${token}`),

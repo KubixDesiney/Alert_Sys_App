@@ -255,7 +255,7 @@ describe('targeted queued notification push', () => {
       const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
       calls.push({ url: u, method, body });
       if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
-      if (u === 'https://db.test/alerts.json?auth=fb-token') return Promise.resolve(jsonRes({}));
+      if (u.startsWith('https://db.test/alerts.json?auth=fb-token&orderBy=%22%24key%22')) return Promise.resolve(jsonRes({}));
       if (u === 'https://db.test/users.json?auth=fb-token') {
         return Promise.resolve(jsonRes({
           u1: { role: 'supervisor', usine: 'Usine A', status: 'active', fcmToken: 'fcm-u1' },
@@ -310,7 +310,7 @@ describe('targeted queued notification push', () => {
       const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
       calls.push({ url: u, method, body });
       if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
-      if (u === 'https://db.test/alerts.json?auth=fb-token') return Promise.resolve(jsonRes({}));
+      if (u.startsWith('https://db.test/alerts.json?auth=fb-token&orderBy=%22%24key%22')) return Promise.resolve(jsonRes({}));
       if (u === 'https://db.test/users.json?auth=fb-token') {
         return Promise.resolve(jsonRes({
           sup1: { role: 'supervisor', usine: 'Usine A', status: 'active', fcmToken: 'fcm-sup1' },
@@ -375,7 +375,7 @@ describe('targeted queued notification push', () => {
       const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
       calls.push({ url: u, method, body });
       if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
-      if (u === 'https://db.test/alerts.json?auth=fb-token') return Promise.resolve(jsonRes({}));
+      if (u.startsWith('https://db.test/alerts.json?auth=fb-token&orderBy=%22%24key%22')) return Promise.resolve(jsonRes({}));
       if (u === 'https://db.test/users.json?auth=fb-token') {
         return Promise.resolve(jsonRes({
           u1: { role: 'supervisor', usine: 'Usine A', status: 'active', fcmToken: 'fcm-u1' },
@@ -423,7 +423,7 @@ describe('targeted queued notification push', () => {
       const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
       calls.push({ url: u, method, body });
       if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
-      if (u === 'https://db.test/alerts.json?auth=fb-token') return Promise.resolve(jsonRes({}));
+      if (u.startsWith('https://db.test/alerts.json?auth=fb-token&orderBy=%22%24key%22')) return Promise.resolve(jsonRes({}));
       if (u === 'https://db.test/users.json?auth=fb-token') {
         return Promise.resolve(jsonRes({
           u1: { role: 'supervisor', usine: 'Usine A', status: 'active', fcmToken: 'fcm-u1' },
@@ -457,7 +457,7 @@ describe('new_alert send-time gates (busy + factory + freshness)', () => {
       const body = opts.body && String(opts.body).trim().startsWith('{') ? JSON.parse(opts.body) : null;
       calls.push({ url: u, method, body });
       if (u.includes('accounts:signInWithCustomToken')) return Promise.resolve(jsonRes({ idToken: 'fb-token' }));
-      if (u === 'https://db.test/alerts.json?auth=fb-token') return Promise.resolve(jsonRes(alertsMap));
+      if (u.startsWith('https://db.test/alerts.json?auth=fb-token&orderBy=%22%24key%22')) return Promise.resolve(jsonRes(alertsMap));
       if (u === 'https://db.test/users.json?auth=fb-token') return Promise.resolve(jsonRes(usersMap));
       if (u === 'https://db.test/supervisor_active_alerts.json?auth=fb-token') return Promise.resolve(jsonRes(claimsMap));
       if (u.includes('/notifications/') && method === 'GET') return Promise.resolve(etagRes(notif));

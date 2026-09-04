@@ -61,7 +61,10 @@ async function runRetention(env, token) {
   // Bounded, indexed read: only alerts at or before the cutoff timestamp.
   const res = await fetch(
     `${base}alerts.json?access_token=${token}` +
-    `&orderBy=${encodeURIComponent('"timestamp"')}&endAt=${encodeURIComponent(JSON.stringify(cutoffIso))}`,
+    `&orderBy=${encodeURIComponent('"timestamp"')}&endAt=${encodeURIComponent(JSON.stringify(cutoffIso))}`
+    // The comment above already called this bounded; RETENTION_BATCH was only
+    // applied client-side, after the whole aged set was already in memory.
+    + `&limitToFirst=${cap}`,
   );
   if (!res.ok) throw new Error('retention alert read failed: ' + res.status);
   const aged = (await res.json()) || {};

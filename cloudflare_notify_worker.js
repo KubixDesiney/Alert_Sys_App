@@ -18,6 +18,14 @@ const PRIVATE_KEY_END = `-----END ${'PRIVATE KEY'}-----`;
 const MAX_ALERTS_TO_PUSH = 1;
 const MAX_FANOUT = 5;
 const MAX_CRON_FANOUT = 5;
+// Ceiling on the en_cours slice used to work out which supervisors are busy.
+// Far above any real concurrent-claim count: exceeding it can only risk
+// buzzing a supervisor who is in fact busy, never silencing an alert.
+const MAX_EN_COURS_SCAN = 5000;
+// Ceiling on the full alert-table read in this worker's loadCoreData. $key
+// order is creation order (alert ids are Firebase push keys), so this keeps
+// the most recent N and cannot be dodged by omitting a field.
+const CORE_ALERTS_DEFAULT_CAP = 20000;
 const PUSH_LOCK_TTL_MS = 2 * 60 * 1000;
 const NOTIFICATION_LOCK_TTL_MS = 2 * 60 * 1000;
 // A new-alert buzz is time-critical: past this age the alert has either been
@@ -418,7 +426,11 @@ function factoryMatches(targetSet, userSet) {
 async function loadCoreData(env) {
   const token = await getFirebaseToken(env);
   const [alertsRes, usersRes, activeClaimsRes] = await Promise.all([
-    fetch(`${_fbUrl(env, 'alerts.json')}?auth=${token}`),
+    fetch(
+      `${_fbUrl(env, 'alerts.json')}?auth=${token}`
+      + `&orderBy=${encodeURIComponent('"$key"')}`
+      + `&limitToLast=${Number(env.CORE_ALERTS_MAX || CORE_ALERTS_DEFAULT_CAP)}`,
+    ),
     fetch(`${_fbUrl(env, 'users.json')}?auth=${token}`),
     fetch(`${_fbUrl(env, 'supervisor_active_alerts.json')}?auth=${token}`),
   ]);
@@ -1223,7 +1235,8 @@ async function pushSingleAlert(env, alertId) {
     .then(v => v || {})
     .catch(() => ({}));
   const enCoursP = fetch(
-    `${_fbUrl(env, 'alerts.json')}?auth=${token}&orderBy=${encodeURIComponent('"status"')}&equalTo=${encodeURIComponent('"en_cours"')}`,
+    `${_fbUrl(env, 'alerts.json')}?auth=${token}&orderBy=${encodeURIComponent('"status"')}`
+    + `&equalTo=${encodeURIComponent('"en_cours"')}&limitToFirst=${MAX_EN_COURS_SCAN}`,
   )
     .then(r => r.ok ? readJsonResponse(r, 'alerts en_cours query') : null)
     .catch(() => null);
