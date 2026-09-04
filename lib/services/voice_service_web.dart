@@ -31,6 +31,10 @@ class VoiceService {
   bool get isAvailable => _recognitionConstructor() != null;
   bool get isListening => _listening;
   bool get requiresVoiceEnrollment => false;
+
+  /// No raw-audio source on this platform, so a spoken command can never be
+  /// tied to a person here. The dispatcher refuses rather than run unverified.
+  bool get supportsVoiceVerification => false;
   Stream<String> get commandStream => _commandsController.stream;
 
   Future<void> init() async {
@@ -106,7 +110,7 @@ class VoiceService {
             rawAudio: null,
             sampleRate: sampleRate,
             confidence: -1,
-            voiceAlreadyVerified: true,
+            voiceAlreadyVerified: false,
           ),
         );
         if (recognition != null) _stopRecognition(recognition);
@@ -117,7 +121,7 @@ class VoiceService {
         complete(
           VoiceCommandCapture.empty(
             sampleRate: sampleRate,
-            voiceAlreadyVerified: true,
+            voiceAlreadyVerified: false,
           ),
         );
       }).toJS;
@@ -126,7 +130,7 @@ class VoiceService {
         complete(
           VoiceCommandCapture.empty(
             sampleRate: sampleRate,
-            voiceAlreadyVerified: true,
+            voiceAlreadyVerified: false,
           ),
         );
       }).toJS;
@@ -140,7 +144,7 @@ class VoiceService {
           complete(
             VoiceCommandCapture.empty(
               sampleRate: sampleRate,
-              voiceAlreadyVerified: true,
+              voiceAlreadyVerified: false,
             ),
           );
         });
@@ -151,7 +155,7 @@ class VoiceService {
       lastError = 'Browser microphone capture failed: $e';
       return VoiceCommandCapture.empty(
         sampleRate: sampleRate,
-        voiceAlreadyVerified: true,
+        voiceAlreadyVerified: false,
       );
     } finally {
       timeoutTimer?.cancel();

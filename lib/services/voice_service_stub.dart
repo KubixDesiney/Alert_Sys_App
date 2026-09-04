@@ -14,6 +14,10 @@ class VoiceService {
   bool get isAvailable => false;
   bool get isListening => false;
   bool get requiresVoiceEnrollment => false;
+
+  /// No raw-audio source on this platform, so a spoken command can never be
+  /// tied to a person here. The dispatcher refuses rather than run unverified.
+  bool get supportsVoiceVerification => false;
   Stream<String> get commandStream => _commandsController.stream;
 
   Future<void> init() async {

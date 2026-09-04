@@ -5,16 +5,18 @@
 // existing speaker enrollment screen can keep collecting samples.
 
 import 'dart:async';
+import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import 'voice_command_parser.dart';
+import 'voice_lock_service.dart';
 
 class VoiceService {
   VoiceService._();
@@ -39,6 +41,14 @@ class VoiceService {
   bool get isListening => _listening;
   bool get requiresVoiceEnrollment =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  /// Whether this platform can produce raw audio for speaker verification.
+  ///
+  /// Only Android can: `speech_to_text` never exposes PCM, so the only sources
+  /// of a voiceprint sample are the native recorders behind `alertsys/voice_lock`
+  /// and `alertsys/audio`. Where this is false a spoken command cannot be tied
+  /// to a person, so the dispatcher refuses it rather than running unverified.
+  bool get supportsVoiceVerification => requiresVoiceEnrollment;
   Stream<String> get commandStream => _commandsController.stream;
 
   Future<void> init() async {
@@ -146,25 +156,95 @@ class VoiceService {
     if (!_initialized) await init();
     if (!await _ensureMicPermission()) {
       lastError = 'Microphone permission denied.';
-      return VoiceCommandCapture.empty(
-        sampleRate: sampleRate,
-        voiceAlreadyVerified: true,
-      );
+      return VoiceCommandCapture.empty(sampleRate: sampleRate);
+    }
+
+    // Android: the native recorder returns the transcript AND the raw audio
+    // from a single capture, which is the only way to get a voiceprint sample
+    // without asking the supervisor to speak twice. Everything else falls
+    // through to speech_to_text, which yields no audio -- the dispatcher then
+    // refuses the command rather than executing it unverified.
+    if (supportsVoiceVerification) {
+      final viaLock = await _captureViaVoiceLock(timeout, sampleRate);
+      if (viaLock != null) return viaLock;
     }
 
     if (!_available) {
       _initialized = false;
       await init();
       if (!_available) {
-        return VoiceCommandCapture.empty(
-          sampleRate: sampleRate,
-          voiceAlreadyVerified: true,
-        );
+        return VoiceCommandCapture.empty(sampleRate: sampleRate);
       }
     }
 
     await _releaseAndroidAudioSession();
     return _captureViaSpeechToText(timeout, sampleRate);
+  }
+
+  /// Android capture through `VoiceLockRecorderActivity`, which writes a
+  /// 16 kHz mono 16-bit WAV and hands back its path alongside the transcript.
+  /// Returns null if the flow is unavailable or produced no usable audio, so
+  /// the caller can fall back to the transcript-only path.
+  Future<VoiceCommandCapture?> _captureViaVoiceLock(
+    Duration timeout,
+    int sampleRate,
+  ) async {
+    try {
+      await _releaseAndroidAudioSession();
+      final result = await VoiceLockService.startVoiceLockFlow(timeout: timeout);
+      if (result == null || result.audioPath.isEmpty) return null;
+
+      final file = File(result.audioPath);
+      if (!await file.exists()) return null;
+      final pcm = pcmFromWav(await file.readAsBytes());
+      // Best-effort cleanup: the sample is biometric material, so it should not
+      // linger in app storage once it has been read.
+      try {
+        await file.delete();
+      } catch (_) {}
+      if (pcm == null || pcm.lengthInBytes < 1600) return null;
+
+      return VoiceCommandCapture(
+        transcript: result.transcript,
+        alternatives: result.alternatives,
+        rawAudio: pcm,
+        sampleRate: sampleRate,
+        voiceAlreadyVerified: false,
+      );
+    } catch (e) {
+      debugPrint('VoiceService._captureViaVoiceLock: $e');
+      return null;
+    } finally {
+      await _releaseAndroidAudioSession();
+    }
+  }
+
+  /// Strips the RIFF container so the bytes match what the enrollment path
+  /// produces (`recordPcm16` returns headerless PCM16). Walks the chunk table
+  /// rather than assuming the 44-byte header the recorder happens to write.
+  @visibleForTesting
+  static Uint8List? pcmFromWav(Uint8List bytes) {
+    if (bytes.lengthInBytes < 12) return null;
+    String tag(int o) => String.fromCharCodes(bytes.sublist(o, o + 4));
+    if (tag(0) != 'RIFF' || tag(8) != 'WAVE') {
+      // Not a RIFF file -- assume it is already raw PCM.
+      return bytes;
+    }
+    final view = ByteData.sublistView(bytes);
+    var offset = 12;
+    while (offset + 8 <= bytes.lengthInBytes) {
+      final id = tag(offset);
+      final size = view.getUint32(offset + 4, Endian.little);
+      final start = offset + 8;
+      if (id == 'data') {
+        final end = (start + size) <= bytes.lengthInBytes
+            ? start + size
+            : bytes.lengthInBytes;
+        return Uint8List.sublistView(bytes, start, end);
+      }
+      offset = start + size + (size.isOdd ? 1 : 0);
+    }
+    return null;
   }
 
   Future<VoiceCommandCapture> _captureViaSpeechToText(
@@ -265,7 +345,9 @@ class VoiceService {
       rawAudio: null,
       sampleRate: sampleRate,
       confidence: confidence,
-      voiceAlreadyVerified: true,
+      // No PCM from speech_to_text, so this capture cannot be verified. Left
+      // explicitly false: the dispatcher must refuse rather than assume.
+      voiceAlreadyVerified: false,
     );
   }
 

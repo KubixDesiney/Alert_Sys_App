@@ -134,7 +134,6 @@ class _VoiceCommandButtonState extends State<VoiceCommandButton>
         command,
         rawAudio: capture.rawAudio,
         rawAudioSampleRate: capture.sampleRate,
-        voiceAlreadyVerified: true,
       );
     } finally {
       _commandInFlight = false;

@@ -23,6 +23,8 @@ class VoiceCommandDispatcher {
   static const String enrollVoice = 'Please enroll your voice';
   static const String alertNotFound = 'Alert not found';
   static const String noCommandHeard = 'no command was heard';
+  static const String voiceUnavailable =
+      'Voice verification is not available on this device';
 
   Future<VoiceCommandExecutionResult> execute(
     VoiceCommand cmd, {
@@ -92,7 +94,18 @@ class VoiceCommandDispatcher {
     if (voiceAlreadyVerified) return null;
 
     final hasAudio = rawAudio != null && rawAudio.lengthInBytes >= 1600;
-    if (!hasAudio) return _speakResult(false, unrecognizedVoice);
+    if (!hasAudio) {
+      // Fail closed. Without a sample there is nothing to match the speaker
+      // against, so the command does not run. On a platform that has no
+      // raw-audio source at all the condition is permanent, so say that rather
+      // than implying the speech was merely unclear.
+      return _speakResult(
+        false,
+        VoiceService.instance.supportsVoiceVerification
+            ? unrecognizedVoice
+            : voiceUnavailable,
+      );
+    }
 
     final auth = await VoiceAuthService.instance.verifyCurrentUser(
       rawAudio: rawAudio,

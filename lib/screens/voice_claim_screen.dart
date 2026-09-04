@@ -162,7 +162,6 @@ class _VoiceClaimScreenState extends State<VoiceClaimScreen> {
       command,
       rawAudio: capture.rawAudio,
       rawAudioSampleRate: capture.sampleRate,
-      voiceAlreadyVerified: true,
       fallbackAlertId: widget.alertId,
     );
     await _finish(success: result.success, message: result.message);
