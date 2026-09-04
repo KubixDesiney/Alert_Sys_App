@@ -150,7 +150,14 @@ function _constantTimeEquals(a, b) {
 }
 
 async function _workerAuthCheck(request, env) {
-  const mode = String(env.WORKER_AUTH_MODE || 'off').toLowerCase();
+  const rawMode = String(env.WORKER_AUTH_MODE ?? '').trim().toLowerCase();
+  // Default to the strict mode: an unset or blank var must never mean "no auth".
+  const mode = rawMode === '' ? 'required' : rawMode;
+  // An unrecognised value (typo, stray whitespace) fails closed rather than
+  // falling through to the permissive branches below.
+  if (mode !== 'off' && mode !== 'log' && mode !== 'required') {
+    return { ok: false, mode, error: 'invalid_worker_auth_mode' };
+  }
   if (mode === 'off') return { ok: true, mode, method: 'none' };
 
   const secret = String(env.WORKER_SHARED_SECRET || env.SIA_WORKER_SHARED_SECRET || '').trim();

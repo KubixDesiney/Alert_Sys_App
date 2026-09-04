@@ -35,7 +35,12 @@ import {
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runConnectorCron(env).catch(() => {}));
+    // Never swallow silently: a dead connector cron is invisible otherwise.
+    ctx.waitUntil(
+      runConnectorCron(env).catch((e) =>
+        console.error('ingest cron failed:', (e && e.message) || e),
+      ),
+    );
   },
 
   async fetch(request, env) {

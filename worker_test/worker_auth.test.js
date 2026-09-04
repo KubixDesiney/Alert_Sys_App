@@ -69,9 +69,30 @@ describe('_constantTimeEquals', () => {
 describe('_workerAuthCheck modes', () => {
   const env = { WORKER_SHARED_SECRET: 's3cret', FB_DB_URL: 'https://alertappsys-default-rtdb.firebaseio.com/' };
 
-  test("mode 'off' (default) allows everything", async () => {
+  test("an unset mode defaults to 'required', not 'off'", async () => {
     const res = await _workerAuthCheck(requestWith({}), { ...env });
+    expect(res).toMatchObject({ ok: false, mode: 'required', error: 'no_credentials' });
+  });
+
+  test("an explicit 'off' still allows everything", async () => {
+    const res = await _workerAuthCheck(requestWith({}), { ...env, WORKER_AUTH_MODE: 'off' });
     expect(res).toEqual({ ok: true, mode: 'off', method: 'none' });
+  });
+
+  test.each(['enforce', 'require', 'Required ', 'REQUIRED'])(
+    'mode %p is normalised or rejected, never silently allowed',
+    async (raw) => {
+      const res = await _workerAuthCheck(requestWith({}), { ...env, WORKER_AUTH_MODE: raw });
+      expect(res.ok).toBe(false);
+    },
+  );
+
+  test('both workers reject an unrecognised mode identically', async () => {
+    const bad = { ...env, WORKER_AUTH_MODE: 'enforce' };
+    const ai = await _workerAuthCheck(requestWith({}), bad);
+    const notify = await workerAuthCheckNotify(requestWith({}), bad);
+    expect(ai).toEqual({ ok: false, mode: 'enforce', error: 'invalid_worker_auth_mode' });
+    expect(notify).toEqual(ai);
   });
 
   test("mode 'required' accepts the legacy shared secret", async () => {

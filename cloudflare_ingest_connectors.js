@@ -733,6 +733,14 @@ async function handleGlobalPush(env, request) {
 // Cron: poll all due pull connectors + refresh MQTT link status.
 async function runConnectorCron(env) {
   if (!env.FIREBASE_SERVICE_ACCOUNT || !env.FB_DB_URL) return { polled: 0, created: 0 };
+  // A templated config that was deployed without substitution is truthy, so the
+  // presence check above passes and every RTDB call then resolves to a host that
+  // does not exist. Fail loudly instead of polling into the void.
+  const unsubstituted = ['FB_DB_URL', 'NOTIFY_WORKER_URL']
+    .filter((k) => String(env[k] || '').includes('REPLACE'));
+  if (unsubstituted.length) {
+    throw new Error(`ingest config not substituted: ${unsubstituted.join(', ')}`);
+  }
   let token;
   try { token = await getAccessToken(env); } catch (_) { return { polled: 0, created: 0, error: 'auth' }; }
 
