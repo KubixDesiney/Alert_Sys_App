@@ -1,0 +1,37 @@
+<!-- Include these groups in Wazuh local_rules.xml. -->
+<group name="supabase,application_monitoring,">
+  <rule id="100511" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="source" type="pcre2">supabase</field>
+    <description>Supabase operational telemetry event.</description>
+    <group>supabase_event,</group>
+  </rule>
+  <rule id="100512" level="8">
+    <if_sid>100511</if_sid>
+    <field name="outcome" type="pcre2">^(failure|failed|denied|error)$</field>
+    <description>Supabase backend reported an agent or notification failure.</description>
+    <group>supabase_failure,application_error,</group>
+  </rule>
+  <rule id="100513" level="12">
+    <if_sid>100511</if_sid>
+    <field name="severity" type="pcre2">^(critical|high)$</field>
+    <description>Supabase backend reported a high-severity operational event.</description>
+    <group>supabase_high_severity,application_error,</group>
+  </rule>
+</group>
+
+<group name="supabase,application_monitoring,">
+  <rule id="100514" level="8">
+    <if_sid>1002</if_sid>
+    <field name="source" type="pcre2">supabase</field>
+    <field name="outcome" type="pcre2">^(failure|failed|denied|error)$</field>
+    <description>Supabase backend reported an agent or notification failure.</description>
+    <group>supabase_failure,application_error,</group>
+  </rule>
+  <rule id="100515" level="12">
+    <if_sid>100514</if_sid>
+    <field name="severity" type="pcre2">^(critical|high)$</field>
+    <description>Supabase backend reported a high-severity operational event.</description>
+    <group>supabase_high_severity,application_error,</group>
+  </rule>
+</group>
