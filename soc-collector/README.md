@@ -81,3 +81,23 @@ powershell -ExecutionPolicy Bypass -File soc-collector\\run-vercel-collector.ps1
 ```
 
 The Wazuh integration snippets are in `wazuh-vercel-rules.xml` and `wazuh-vercel-localfile.conf`. Include the rules in the manager's local rules file and the localfile block inside the manager configuration, then restart the manager.
+
+## Supabase operational collector
+
+`supabase_collector.py` reads only the protected `agent_runs`, `agent_actions`, and `notifications` status fields through the Supabase REST API. Keep a service key in a file outside the repository; never use a publishable or browser key for this collector.
+
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_KEY_FILE=C:\\SOC-Secrets\\supabase-readonly.key
+SOC_EVENTS_FILE=C:\\SOC-Lab\\events\\supabase.ndjson
+SOC_STATE_FILE=C:\\SOC-Lab\\state\\supabase-collector.json
+SUPABASE_ENVIRONMENT=production
+```
+
+Run it with:
+
+```text
+powershell -ExecutionPolicy Bypass -File soc-collector\\run-supabase-collector.ps1 -KeyFile C:\\SOC-Secrets\\supabase-readonly.key -ProjectUrl https://<project-ref>.supabase.co
+```
+
+The matching Wazuh snippets are `wazuh-supabase-rules.xml` and `wazuh-supabase-localfile.conf`.
