@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 DEFAULT_EVENTS_DIR = r"C:\SOC-Lab\events"
+DEFAULT_EVENTS_FILE = r"C:\SOC-Lab\events\sias.ndjson"
 DEFAULT_STATE_FILE = r"C:\SOC-Lab\state\sias-collector.json"
 
 
@@ -182,17 +183,15 @@ def write_state(path: Path, state: dict[str, str]) -> None:
     os.replace(temporary, path)
 
 
-def append_event(events_dir: Path, event: dict[str, Any]) -> None:
-    events_dir.mkdir(parents=True, exist_ok=True)
-    day = event["event_time"][:10]
-    path = events_dir / f"sias-audit-{day}.json"
-    with path.open("a", encoding="utf-8", newline="\n") as stream:
+def append_event(events_file: Path, event: dict[str, Any]) -> None:
+    events_file.parent.mkdir(parents=True, exist_ok=True)
+    with events_file.open("a", encoding="utf-8", newline="\n") as stream:
         stream.write(json.dumps(event, separators=(",", ":"), ensure_ascii=True) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
 
 
-def run_once(client: FirebaseRest, events_dir: Path, state_path: Path, environment: str, lookback_minutes: int) -> int:
+def run_once(client: FirebaseRest, events_file: Path, state_path: Path, environment: str, lookback_minutes: int) -> int:
     state = read_state(state_path, lookback_minutes)
     records = client.audit_records(state["cursor_at"])
     ordered = sorted(records.items(), key=lambda item: (parse_time(first_value(item[1], "at", "event_time", "timestamp")), item[0]))
@@ -203,7 +202,7 @@ def run_once(client: FirebaseRest, events_dir: Path, state_path: Path, environme
             continue
         event = normalize_record(key, record, environment)
         if event:
-            append_event(events_dir, event)
+            append_event(events_file, event)
             count += 1
         state = {"cursor_at": event_time, "cursor_key": key}
     write_state(state_path, state)
@@ -228,12 +227,12 @@ def main() -> int:
         print("Set FB_DB_URL and FIREBASE_SERVICE_ACCOUNT_FILE before starting the collector.", file=sys.stderr)
         return 2
     client = FirebaseRest(database_url, Path(service_account_file))
-    events_dir = Path(os.environ.get("SOC_EVENTS_DIR", DEFAULT_EVENTS_DIR))
+    events_file = Path(os.environ.get("SOC_EVENTS_FILE", DEFAULT_EVENTS_FILE))
     state_path = Path(os.environ.get("SOC_STATE_FILE", DEFAULT_STATE_FILE))
     environment = os.environ.get("SIAS_ENVIRONMENT", "development")
     while True:
         try:
-            count = run_once(client, events_dir, state_path, environment, args.lookback_minutes)
+            count = run_once(client, events_file, state_path, environment, args.lookback_minutes)
             print(f"SIAS collector: wrote {count} event(s)", flush=True)
         except Exception as error:  # keep the long-running collector alive
             print(f"SIAS collector error: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
