@@ -1,0 +1,38 @@
+<!-- Include these groups in Wazuh local_rules.xml. -->
+<group name="vercel,application_monitoring,">
+  <rule id="100506" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="source" type="pcre2">vercel</field>
+    <description>Vercel application runtime telemetry event.</description>
+    <group>vercel_event,</group>
+  </rule>
+  <rule id="100507" level="8">
+    <if_sid>100506</if_sid>
+    <field name="outcome" type="pcre2">^(failure|failed|denied|error)$</field>
+    <description>Vercel runtime reported an error or failed request.</description>
+    <group>vercel_failure,application_error,</group>
+  </rule>
+  <rule id="100508" level="12">
+    <if_sid>100506</if_sid>
+    <field name="severity" type="pcre2">^(critical|high)$</field>
+    <description>Vercel runtime reported a high-severity application error.</description>
+    <group>vercel_high_severity,application_error,</group>
+  </rule>
+</group>
+
+<!-- Fallback for Vercel JSON events decoded by the built-in JSON rule first. -->
+<group name="vercel,application_monitoring,">
+  <rule id="100509" level="8">
+    <if_sid>1002</if_sid>
+    <field name="source" type="pcre2">vercel</field>
+    <field name="outcome" type="pcre2">^(failure|failed|denied|error)$</field>
+    <description>Vercel runtime reported an error or failed request.</description>
+    <group>vercel_failure,application_error,</group>
+  </rule>
+  <rule id="100510" level="12">
+    <if_sid>100509</if_sid>
+    <field name="severity" type="pcre2">^(critical|high)$</field>
+    <description>Vercel runtime reported a high-severity application error.</description>
+    <group>vercel_high_severity,application_error,</group>
+  </rule>
+</group>
