@@ -1,6 +1,6 @@
 # SIAS to local Wazuh collector
 
-This collector reads the SIAS `audit_log` Realtime Database path over outbound HTTPS and writes a small, redacted JSON-lines envelope into the local SOC folder. Wazuh reads the resulting `*.json` files from `C:\SOC-Lab\events`.
+This collector reads the SIAS `audit_log` Realtime Database path over outbound HTTPS and writes a small, redacted JSON-lines envelope into the append-only `C:\SOC-Lab\events\sias.ndjson` file. Wazuh reads that file locally.
 
 The service-account file and cursor stay on the Windows host. They are never committed to this repository. The first run looks back five minutes; later runs resume from `C:\SOC-Lab\state\sias-collector.json` and deduplicate by the Firebase record key.
 
@@ -11,7 +11,7 @@ Create a Python virtual environment outside the repository, install `requirement
 ```text
 FB_DB_URL=https://<firebase-project>-default-rtdb.firebaseio.com
 FIREBASE_SERVICE_ACCOUNT_FILE=C:\SOC-Secrets\sias-reader.json
-SOC_EVENTS_DIR=C:\SOC-Lab\events
+SOC_EVENTS_FILE=C:\SOC-Lab\events\sias.ndjson
 SOC_STATE_FILE=C:\SOC-Lab\state\sias-collector.json
 SIAS_ENVIRONMENT=development
 ```
@@ -28,6 +28,14 @@ Then perform one real poll:
 
 ```text
 python soc-collector\sias_collector.py --once
+```
+
+For a continuous local run, use the included PowerShell wrapper. It keeps the
+credential path in the process environment and starts the collector at its
+15-second polling interval:
+
+```text
+powershell -ExecutionPolicy Bypass -File soc-collector\run-sias-collector.ps1 -ServiceAccountFile C:\SOC-Secrets\sias-reader.json
 ```
 
 After the output is reviewed, run it continuously with the default 15-second interval. The Windows Scheduled Task or service wrapper should run under a dedicated local account with write access only to `C:\SOC-Lab\events` and `C:\SOC-Lab\state`.
