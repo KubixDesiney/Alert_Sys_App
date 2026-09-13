@@ -46,3 +46,30 @@ The collector emits `schema_version`, `event_id`, `event_time`, `source`, `envir
 
 Use the `soc-foundation` branch for review. Deployment of a Firebase service account and enabling a recurring Windows task are separate operational steps.
 
+## Vercel runtime collector
+
+`vercel_collector.py` polls the read-only Vercel deployment events endpoint and writes redacted runtime events to `C:\\SOC-Lab\\events\\vercel.ndjson`. Keep the token outside the repository and give it only the project/team read access needed for logs.
+
+```text
+VERCEL_TOKEN=<read-only token>
+VERCEL_PROJECT_ID=prj_<project id>
+VERCEL_TEAM_ID=team_<team id>
+VERCEL_ENVIRONMENT=production
+SOC_EVENTS_FILE=C:\\SOC-Lab\\events\\vercel.ndjson
+SOC_STATE_FILE=C:\\SOC-Lab\\state\\vercel-collector.json
+```
+
+Run the local self-test before supplying a token:
+
+```text
+python soc-collector\\vercel_collector.py --self-test
+```
+
+Then perform one real poll or run continuously:
+
+```text
+python soc-collector\\vercel_collector.py --once
+python soc-collector\\vercel_collector.py
+```
+
+The collector deduplicates events by a hash of the deployment and event body, keeps a bounded local cursor, and never writes Vercel credentials to the event file.
