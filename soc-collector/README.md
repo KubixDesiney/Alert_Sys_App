@@ -79,3 +79,5 @@ For a scheduled Windows run, keep the token in a file outside the repository and
 ```text
 powershell -ExecutionPolicy Bypass -File soc-collector\\run-vercel-collector.ps1 -TokenFile C:\\SOC-Secrets\\vercel-readonly.token -ProjectId prj_<project id> -TeamId team_<team id>
 ```
+
+The Wazuh integration snippets are in `wazuh-vercel-rules.xml` and `wazuh-vercel-localfile.conf`. Include the rules in the manager's local rules file and the localfile block inside the manager configuration, then restart the manager.
