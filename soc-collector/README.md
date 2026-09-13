@@ -73,3 +73,9 @@ python soc-collector\\vercel_collector.py
 ```
 
 The collector deduplicates events by a hash of the deployment and event body, keeps a bounded local cursor, and never writes Vercel credentials to the event file.
+
+For a scheduled Windows run, keep the token in a file outside the repository and use the wrapper:
+
+```text
+powershell -ExecutionPolicy Bypass -File soc-collector\\run-vercel-collector.ps1 -TokenFile C:\\SOC-Secrets\\vercel-readonly.token -ProjectId prj_<project id> -TeamId team_<team id>
+```
