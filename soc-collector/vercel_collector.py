@@ -127,14 +127,19 @@ class VercelApi:
         params: dict[str, str] = {"projectId": self.project_id, "limit": "10"}
         if self.team_id:
             params["teamId"] = self.team_id
-        response = self.session.get(f"{API_BASE}/v13/deployments", params=params, timeout=20)
+        # Vercel currently serves the deployments collection at v6. Older
+        # versions return a 400 "Invalid API version" response.
+        response = self.session.get(f"{API_BASE}/v6/deployments", params=params, timeout=20)
         response.raise_for_status()
         deployments = response.json().get("deployments", [])
         if not deployments:
             raise RuntimeError("Vercel returned no deployments for the configured project")
         candidates = [item for item in deployments if item.get("target") == "production" and item.get("state") == "READY"]
         selected = (candidates or deployments)[0]
-        return str(selected["id"]), clean(selected.get("url"), 240)
+        deployment_id = selected.get("uid") or selected.get("id") or selected.get("deploymentId")
+        if not deployment_id:
+            raise RuntimeError("Vercel deployment response did not include an identifier")
+        return str(deployment_id), clean(selected.get("url"), 240)
 
     def runtime_events(self, deployment_id: str) -> Iterable[dict[str, Any]]:
         response = self.session.get(
