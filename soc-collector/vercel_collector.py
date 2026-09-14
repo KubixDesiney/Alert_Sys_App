@@ -84,6 +84,14 @@ def normalize_event(deployment_id: str, deployment_url: str | None, record: dict
     level = clean(record.get("level") or record.get("type") or "info", 20) or "info"
     if not text:
         return None
+    # The deployment-events endpoint also returns build stdout. Keep build
+    # warnings/errors for triage, but avoid flooding Wazuh with routine npm
+    # installation and cache messages.
+    info = record.get("info") if isinstance(record.get("info"), dict) else {}
+    lower_text = text.lower()
+    build_signal = any(token in lower_text for token in ("error", "failed", "exception", "fatal", "warn"))
+    if info.get("type") == "build" and level.lower() not in {"error", "fatal", "warning", "warn"} and not build_signal:
+        return None
     severity, outcome, event_type = severity_for(level, text)
     event: dict[str, Any] = {
         "schema_version": "1.0",
