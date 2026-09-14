@@ -71,7 +71,10 @@ def normalize_record(table: str, record: dict[str, Any], environment: str) -> di
     record_type = clean(record.get("type"), 60)
     is_failure = status in {"error", "failed", "rejected"} or record_type == "agent_error"
     is_warning = status in {"running", "pending"} or (table == "notifications" and not is_failure)
-    severity = "high" if is_failure else ("medium" if is_warning else "low")
+    # Run and notification failures are reliability signals and can be
+    # frequent. Reserve high severity for a failed/rejected agent action that
+    # represents an attempted change or approval decision.
+    severity = "high" if is_failure and table == "agent_actions" else ("medium" if is_failure or is_warning else "low")
     outcome = "failure" if is_failure else ("warning" if is_warning else "success")
     event_type = {"agent_runs": "agent.run", "agent_actions": "agent.action", "notifications": "notification"}[table]
     event: dict[str, Any] = {
