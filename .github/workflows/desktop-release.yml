@@ -185,19 +185,44 @@ jobs:
             echo '::notice::TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PUBLIC_KEY not set - building without the auto-updater.'
           fi
 
+      # A GitHub secret that was never configured resolves to an EMPTY STRING
+      # in `env:`, not an unset variable. tauri-bundler's macOS signing gate
+      # (crates/tauri-bundler/src/bundle/macos/sign.rs) checks
+      # `var_os("APPLE_CERTIFICATE").is_some()`, which is true even for "" -
+      # so an empty-but-present APPLE_CERTIFICATE makes it attempt codesigning
+      # with no actual certificate and fail on `security import`. Only export
+      # each key when its secret is genuinely non-empty, so an unconfigured
+      # secret leaves the env var absent instead of present-and-empty.
+      - name: Configure Apple code signing (optional)
+        if: runner.os == 'macOS'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PW: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PW_SECRET: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set_if_present() {
+            if [ -n "$2" ]; then
+              echo "$1=$2" >> "$GITHUB_ENV"
+            fi
+          }
+          set_if_present APPLE_CERTIFICATE "$CERT"
+          set_if_present APPLE_CERTIFICATE_PASSWORD "$CERT_PW"
+          set_if_present APPLE_SIGNING_IDENTITY "$IDENTITY"
+          set_if_present APPLE_ID "$APPLE_ID_SECRET"
+          set_if_present APPLE_PASSWORD "$APPLE_PW_SECRET"
+          set_if_present APPLE_TEAM_ID "$TEAM_ID"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # --- Update signing (optional) ---
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # --- Apple code signing + notarization (optional) ---
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # --- Apple code signing + notarization (optional; exported above ---
+          # --- ONLY when actually configured - see the step above) ---
         with:
           projectPath: desktop
           releaseId: ${{ needs.prepare.outputs.release_id }}
