@@ -79,7 +79,12 @@ instance credentials.
 npm install && npm test                      # 8 Cloudflare workers + tools (Jest)
 flutter pub get && flutter test              # Flutter app
 node gateway/bin/sias-gateway.mjs --sim 3 --dry-run   # edge gateway, offline demo
+cd desktop && npm install && npm test         # desktop shell (Tauri, needs Rust)
 ```
+
+Desktop installers (Windows `.exe`/`.msi`, macOS `.dmg`, Linux
+`.deb`/`.rpm`/`.AppImage`) are built by tagging `desktop-v*`; see
+[`desktop/README.md`](desktop/README.md).
 
 Engineering source of truth: [`CLAUDE.md`](CLAUDE.md). Docs index:
 [`docs/README.md`](docs/README.md).

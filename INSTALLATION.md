@@ -132,7 +132,31 @@ worker base URLs; see `lib/config/app_config.dart`.
 - Confirm the SuperAdmin Overview Monitor shows live worker health and sessions.
 - Walk `docs/PILOT_READINESS_CHECKLIST.md` before going live with a sponsor.
 
-## 6. Notes
+## 6. Desktop app (Windows / macOS / Linux)
+
+End users can run SIAS as a native desktop application instead of a browser tab.
+Download the installer for their platform from the
+[Releases page](https://github.com/KubixDesiney/Alert_Sys_App/releases):
+
+| Platform | File |
+| --- | --- |
+| Windows 10/11 | `SIAS_<version>_x64-setup.exe` (or `.msi` for managed deployment) |
+| macOS 10.15+ | `SIAS_<version>_universal.dmg` (Apple silicon and Intel) |
+| Linux | `.AppImage` (no install), `.deb` (Debian/Ubuntu), `.rpm` (RHEL/Fedora) |
+
+On first launch the app asks for the **workspace name** — the label before
+`.kubixdesiney.com` in the customer's app URL. It verifies the workspace exists,
+remembers it, and opens straight to the dashboard from then on. **Switch
+Workspace** in the menu changes it later.
+
+The desktop app renders the same web application the browser does and reads the
+same per-tenant configuration from the `sias-app` Worker, so no separate
+provisioning step is required — a provisioned tenant works on desktop
+immediately. Routine web deploys reach desktop users with no new installer.
+
+Build and release instructions: [`desktop/README.md`](desktop/README.md).
+
+## 7. Notes
 
 - **Package identifiers are intentionally stable.** The Dart package is
   `alertsysapp`; do not rename it.

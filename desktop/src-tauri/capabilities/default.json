@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "IPC is granted to the local workspace picker ONLY. The remote tenant window ('main') is deliberately absent from `windows`, so the SIAS web app running inside it cannot call a single shell command.",
+  "windows": ["launcher"],
+  "permissions": [
+    "core:default",
+    "allow-app-version",
+    "allow-app-domain",
+    "allow-saved-tenant",
+    "allow-open-tenant",
+    "allow-forget-tenant"
+  ]
+}

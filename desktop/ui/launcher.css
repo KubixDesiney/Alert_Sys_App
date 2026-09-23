@@ -1,0 +1,271 @@
+/* SIAS desktop — first-run workspace picker.
+   Palette mirrors lib/theme.dart (AppColors) so the launcher and the product
+   read as one piece of software. Light and dark follow the OS setting, the
+   same way the web app follows ThemeProvider. */
+
+:root {
+  --navy: #0d4a75;
+  --navy-hover: #0b3d61;
+  --on-navy: #ffffff;
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-strong: #111827;
+  --muted: #6b7280;
+  --red: #dc2626;
+  --green: #15803d;
+  --ring: rgba(13, 74, 117, 0.28);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 32px rgba(15, 23, 42, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Matches lib/theme.dart's brandPrimary(isDark) = #60A5FA. That colour is
+       light, so the primary button takes DARK text on it: white would land at
+       2.9:1, under the 4.5:1 AA floor. This pairing is 7.2:1. */
+    --navy: #60a5fa;
+    --navy-hover: #7db6fb;
+    --on-navy: #0f172a;
+    --bg: #0f172a;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #f1f5f9;
+    --text-strong: #f8fafc;
+    --muted: #94a3b8;
+    --red: #f87171;
+    --green: #4ade80;
+    --ring: rgba(96, 165, 250, 0.35);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 26px;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* A launcher is chrome, not a document: no text selection or drag-scroll. */
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+/* --- Brand ---------------------------------------------------------------- */
+
+.brand {
+  text-align: center;
+}
+
+.mark {
+  width: 62px;
+  height: 62px;
+  display: block;
+  margin: 0 auto 14px;
+}
+
+.mark-bg {
+  fill: var(--navy);
+}
+
+.mark-glyph {
+  stroke: var(--card);
+}
+
+.mark-dot {
+  fill: var(--card);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-strong);
+}
+
+.tagline {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* --- Form ----------------------------------------------------------------- */
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field:focus-within {
+  border-color: var(--navy);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.field.invalid {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18);
+}
+
+input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 4px 12px 14px;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+input::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.suffix {
+  padding: 0 14px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* A pasted full URL makes the static suffix misleading — JS hides it. */
+.suffix.hidden {
+  display: none;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+button {
+  margin-top: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--navy);
+  color: var(--on-navy);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--navy-hover);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.62;
+  cursor: default;
+}
+
+.spinner {
+  display: none;
+  width: 15px;
+  height: 15px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+button.busy .spinner {
+  display: block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+  .field,
+  button {
+    transition: none;
+  }
+}
+
+.status {
+  margin: 2px 0 0;
+  min-height: 34px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.status.error {
+  color: var(--red);
+}
+
+.status.ok {
+  color: var(--green);
+}
+
+footer {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--muted);
+}

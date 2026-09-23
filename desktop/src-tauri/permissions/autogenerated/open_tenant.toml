@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-tenant"
+description = "Enables the open_tenant command without any pre-configured scope."
+commands.allow = ["open_tenant"]
+
+[[permission]]
+identifier = "deny-open-tenant"
+description = "Denies the open_tenant command without any pre-configured scope."
+commands.deny = ["open_tenant"]

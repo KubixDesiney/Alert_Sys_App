@@ -1,0 +1,46 @@
+[package]
+name = "sias-desktop"
+version = "1.2.1"
+description = "SIAS - Smart Industrial Alert System"
+authors = ["KubixDesiney"]
+edition = "2021"
+rust-version = "1.82"
+publish = false
+
+# The binary is a thin wrapper around the lib so the app can be unit-tested
+# (`cargo test`) without a windowing system — see src/tenant.rs.
+[lib]
+name = "sias_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-log = "2.9.1"
+tauri-plugin-opener = "2.5.5"
+tauri-plugin-single-instance = "2.4.4"
+tauri-plugin-store = "2.4.4"
+tauri-plugin-window-state = "2.4.1"
+tauri-plugin-updater = { version = "2.11.0", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+[features]
+default = []
+# Enabled only for signed release builds that ship an update feed.
+# See desktop/README.md → "Auto-update".
+updater = ["dep:tauri-plugin-updater"]
+# Ships the webview inspector in a release build. Debug builds always have it;
+# this exists so `cfg(feature = "devtools")` is a declared feature rather than
+# an unexpected-cfg warning (which CI treats as an error).
+devtools = ["tauri/devtools"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

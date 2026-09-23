@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-domain"
+description = "Enables the app_domain command without any pre-configured scope."
+commands.allow = ["app_domain"]
+
+[[permission]]
+identifier = "deny-app-domain"
+description = "Denies the app_domain command without any pre-configured scope."
+commands.deny = ["app_domain"]
