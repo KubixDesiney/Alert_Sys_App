@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "pdfkit": "^0.19.1",
+    "pdfkit": "^0.21.0",
     "wrangler": "^4.129.0"
   },
   "dependencies": {
